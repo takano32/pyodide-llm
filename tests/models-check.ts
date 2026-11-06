@@ -159,7 +159,7 @@ assert.ok(largest.rebuilt && largest.original === largest.hf.vocabulary.repo && 
 assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
   ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"],
   "rebuilt is for a GGUF no check can hold to its original");
-// its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
+// its two forms share one conversion (kept.ts's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
 assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8), "ternary");
 // T286.5: the 1-bit Bonsai 27B; T634.2: kept binary, one bit a weight as its Q1_0 has them, 3.9 GB (ternary's 7.2

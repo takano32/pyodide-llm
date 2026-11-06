@@ -264,7 +264,7 @@ export const HF_FAMILIES: Entry[] = [
   { group: "hf", id: "hf-lfm2.5-2.6b", name: "Liquid AI LFM2.5 2.6B", note: "thinks · 日本語 / English · fetches 2.9 GB (GGUF) → int8 3.0 GB", japanese: true, thinks: true, converted: 3.0e9,
     ...ggufOf("LiquidAI/LFM2.5-2.6B-GGUF", "e7caca5d835a3901a8e0d63e94009429bafafdfc", "LFM2.5-2.6B-Q8_0.gguf",
       "LiquidAI/LFM2.5-2.6B", "b212e75975bbda9676a94d3cb7b2ca25b65fed48"), download: 2874779648,
-    conversion: {}, options: {}, template: "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>",
+    conversion: {}, options: {}, template: `${CHATML}<think>`,
     generation: { steps: 0, temperature: 0.1, topp: 1.0, top_k: 50, repetition_penalty: 1.1 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T596.1: Liquid AI's LFM2 350M that translates English into Japanese and back. Its card says it works only with one

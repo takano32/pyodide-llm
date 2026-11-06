@@ -19,7 +19,7 @@ const searchNotEnded = (how: PathThreads) => `the search had not ended after ${h
 const gpuStopped = (gpu: { lost?: string }) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
 const NO_SHARED_MEMORY = "no shared memory here";
 
-/** T190: how the page path's number of threads came about (worker/timing.js's timedPaths), in a few words */
+/** T190: how the page path's number of threads came about (worker/timing.ts's timedPaths), in a few words */
 export function threadsHow(how: PathThreads | undefined): string {
   if (!how) return "";
   if (how.alone) return `: ${how.alone}`;
@@ -31,7 +31,7 @@ export function threadsHow(how: PathThreads | undefined): string {
   return `${verdicts.length ? `, searched here (${verdicts.join(", ")})` : ""}${stopped}`;
 }
 
-/** T190's review: the writing on each number of software threads (worker/timing.js's timedPaths: in turn, CPU only), the page's
+/** T190's review: the writing on each number of software threads (worker/timing.ts's timedPaths: in turn, CPU only), the page's
  * marked; "" where there is one count or none. perCount: [{ threads, speed, low, high, unsteady }] */
 export function threadsLine(perCount: PathsFound["perCount"] = [], page?: number): string {
   if (perCount.length < 2) return "";
@@ -41,14 +41,14 @@ export function threadsLine(perCount: PathsFound["perCount"] = [], page?: number
   return `Writing on each number of software threads (CPU only): ${cells.join(" · ")}`;
 }
 
-/** T184: the prompts the model page's path is timed on: one block of the GPU's (forward.js's GPU_BLOCK) and four; and
+/** T184: the prompts the model page's path is timed on: one block of the GPU's (forward.ts's GPU_BLOCK) and four; and
  * the tokens it writes after a prompt */
 export const PATH_PROMPTS = [64, 256];
 export const PATH_WRITES = 64;
 
 /** T184: why a GPU cell of the page path is empty, in a few words: "not here" (no WebGPU, no adapter), "not on a
  * fallback adapter" (the CPU in a GPU's place: the page refuses it, T148, and CI's are all such, T182), else the words of
- * forward.js (a model the GPU does not take yet, too little memory, a failure). */
+ * forward.ts (a model the GPU does not take yet, too little memory, a failure). */
 export function gpuSkipped(why = ""): string {
   if (why === REASONS.noWebGpu || why === REASONS.noAdapter) return "not here";
   if (why === REASONS.fallback) return "not on a fallback adapter";
@@ -56,7 +56,7 @@ export function gpuSkipped(why = ""): string {
 }
 
 /** T184: the model page's own path on this device, as one table (the model section times it on its first load,
- * worker/timing.js's timedPaths and forward.js's timePrompts): prompts as the page chooses between the GPU and the CPU (T148),
+ * worker/timing.ts's timedPaths and forward.ts's timePrompts): prompts as the page chooses between the GPU and the CPU (T148),
  * on the CPU only and on the GPU only, how many times faster the GPU is, and the writing after a prompt. paths:
  * { threads, how (threadsHow()), perCount (threadsLine()), gpu: { seconds, matrices, attention, lost? } or { why },
  * status (the status line's words of the GPU),
@@ -102,7 +102,7 @@ export function pathTable(paths: PathsFound | undefined, name = ""): string {
 
 /**
  * T227's review: what the model page's path says went wrong, as it says it in pathTable()'s first line, for warnings() to
- * list as the section's own (said). The GPU stopped while the sides were timed (forward.js gives a dozen reasons for
+ * list as the section's own (said). The GPU stopped while the sides were timed (forward.ts gives a dozen reasons for
  * stopping it, and only some have "failed" in them: it said nothing, its worker stopped answering, its logits were not
  * finite), software threads that stopped or did not start, a search for their count that did not end. [] where none
  * did; a page that is not isolated has no software threads, and that is no failure.

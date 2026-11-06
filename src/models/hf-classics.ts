@@ -65,7 +65,7 @@ export const HF_CLASSICS: Entry[] = [
     original: "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
     hf: { repo: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", revision: "52e7645ba7c309695bec7ac98f4f005b139cf465", weights: "tinyllama-1.1b-chat-v1.0.Q8_0.gguf",
           vocabulary: { repo: "TinyLlama/TinyLlama-1.1B-Chat-v1.0", revision: "fe8a4ea1ffedaf415f4da2f062534de366a451e6", tokenizer: "tokenizer.model" } }, download: 1170781568,
-    conversion: {}, options: { specials: ["</s>"] }, generation: sampled(1.1), template: "<|user|>\n{prompt}</s>\n<|assistant|>\n",
+    conversion: {}, options: { specials: ["</s>"] }, generation: sampled(1.1), template: ZEPHYR,
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T106: Llama 3. The original (meta-llama) is gated, so the same weights come from unsloth's copy (`original`
   // names whose they are). The chat template and its special tokens are read from the model (T73)
@@ -223,7 +223,7 @@ export const HF_CLASSICS: Entry[] = [
     ...ggufOf("ggml-org/SmolLM3-3B-GGUF", "4965cb60b150737b68a0408c36aeefb65078f894", "SmolLM3-Q8_0.gguf",
       "HuggingFaceTB/SmolLM3-3B", "a07cc9a04f16550a088caea529712d1d335b0ac1"), download: 3275574624,
     conversion: {}, options: smollm3, shares: ["hf-smollm3-3b-thinking", "hf-smollm3-3b"], template,
-    generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
+    generation: thinking,
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" })),
   // DeepSeek-R1's larger distills, as the 1.5B above: the tokenizer's own BOS, <｜begin▁of▁sentence｜> (which the
   // real template writes first), and the thought opened by the format. The converter reads both itself now (T143: the

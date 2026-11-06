@@ -51,7 +51,7 @@ export const TRANSLATE = "Translate the following Japanese text into English.\n\
 // since T369, for the converter alone begins with the template's <|start|> now (T264). T399 (the owner's choice,
 // 2026-11-04): the instruct begins with that <|start|> (10) as the real template does, and its format is what follows
 // it (HARMONY_AFTER_START, harmonyFromStart): <|startoftext|> in front cost the hand-written answers 3.64% (19 of 24)
-export const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
+const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
   "2025-12\nCurrent date: {date}\n\n# Valid channels: analysis, commentary, final. Channel must be included for every " +
   "message.<|end|><|start|>user<|message|>{prompt}<|end|><|start|>assistant<|channel|>final<|message|>";
 export const HARMONY_AFTER_START = HARMONY.slice("<|start|>".length);

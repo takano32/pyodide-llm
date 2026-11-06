@@ -25,7 +25,7 @@ function layerSplit(r: LayerStepsFound, form: StepsForm) {
 }
 
 /**
- * T202: the GPU section's table of where a layer's time goes (src/runtime/benchmark/gpu.js's layerSteps()): each step of
+ * T202: the GPU section's table of where a layer's time goes (src/runtime/benchmark/gpu.ts's layerSteps()): each step of
  * the fused forms a token would run on this device alone, the four matrices alone, a dispatch of one workgroup, and
  * the whole layer, timed in turn. step: {name, result: {model, pos, layers, GB, dp4a, forms: [{form, check, normApart,
  * dispatches, steps: [{step, count}], ms, unsteady} or {form, check, error}], steps: [{step, kind ("matrix",
@@ -130,7 +130,7 @@ export function layerStepsTable(step: Step<LayerStepsFound> | undefined, check: 
 }
 
 /**
- * T224: under the steps' table, a token's attention alone at 128, 1024 and 4096 positions (src/runtime/benchmark/gpu.js's
+ * T224: under the steps' table, a token's attention alone at 128, 1024 and 4096 positions (src/runtime/benchmark/gpu.ts's
  * attentionLengths()): the prompt's tiles, and llama.cpp's flash_attn_vec with subgroups and with the lanes of the
  * workgroup standing for one. lengths: { positions, rows: [{ attention, tiles, times: [{ ms, n, ratio, unsteady } or
  * { error } or { none } a length] }], base, MB } or { error }; none: noRatios()'s (no "faster than the tiles" then). The

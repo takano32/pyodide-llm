@@ -127,7 +127,7 @@ type Source = Pick<Remote, "original" | "hf">;
 export function thinkingAndNot(id: string, name: string, source: Source, download: number, sizes: string, { languages = "日本語 / English", ...chat }: { languages?: string } & Partial<Remote> = {},
   formats: { thinking?: string; atOnce?: string } = {}, sampling: { thinking?: Generation; atOnce?: Generation } = {}): Entry[] {
   // T369: where nothing else is said, a Qwen3 as the list has had it: <|endoftext|> in front of ChatML (QWEN3_OWN_BOS and
-  // the whole format, formats.js's note on QWEN25). The converter alone would begin with the template's <|im_start|> now
+  // the whole format, formats.ts's note on QWEN25). The converter alone would begin with the template's <|im_start|> now
   const common: Common = { group: "hf", ...source, download, conversion: {}, options: QWEN3_OWN_BOS, shares: [`${id}-thinking`, id],
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, japanese: true, ...chat };
   return [
@@ -226,7 +226,7 @@ export const gemma4 = (size: string, revision: string, ggufRevision: string, dow
  * texts as well). It is said last, so that a size's own options (`start`) keep it. The original's template
  * always begins the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, which the
  * converter reads; it is written here (QWEN3_AT_ONCE) since T369, for the entries keep <|endoftext|> in front of it
- * (formats.js's note on QWEN25). It names no BOS (QWEN3_OWN_BOS, which the 1.7B and the 4B bear: 1.5% better than nothing in front
+ * (formats.ts's note on QWEN25). It names no BOS (QWEN3_OWN_BOS, which the 1.7B and the 4B bear: 1.5% better than nothing in front
  * on plain text; the 8B does not: 70% worse, as a Qwen3 8B is, and begins at QWEN3_FROM_IM_START: `start`, T250's review).
  * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
  * has not) */

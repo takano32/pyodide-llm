@@ -7,7 +7,7 @@ import { staged, worker, model, workerFailed } from "./section.ts";
 import { UPDATED } from "../runtime/updated.ts";
 import type { Bench, ModelWorker, Paths, Progress, Ready, Round, ToWorker } from "../runtime/contracts/messages.ts";
 
-// the model page's worker itself (src/runtime/worker.js): the model loads as the model page loads it (the GPU too), the
+// the model page's worker itself (src/runtime/worker.ts): the model loads as the model page loads it (the GPU too), the
 // model page's own path is timed on it (T184: prompts and writing as the page chooses between the GPU and the CPU,
 // and on each alone), then the rounds of ?bench=1 (T45), which load it again each, on the CPU alone
 // what a request of the section is answered with (T643.15): the worker's message of its kind, or why there is none

@@ -510,7 +510,7 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/shisa-v2.1-qwen3-8b-GGUF", "9b9187f69adca28b8e2b9490b2c151fcb85c0df6", "shisa-v2.1-qwen3-8b.Q8_0.gguf",
       "shisa-ai/shisa-v2.1-qwen3-8b", "0b0fe7c76dac910510ccd04fc807fdbdbc2fc16e"), download: 8709519392,
     conversion: {}, options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START,
-    generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
+    generation: thinking,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T607.5: AXCXEPT's Qwen3-EZO-8B-beta, Qwen3 8B trained further for multi-turn chat (its card: MT-Bench 9.08, JMT-Bench
   // 8.87). Its chat template is an older copy of Qwen3's (the same one turn), its generation_config.json Qwen3's thinking

@@ -18,7 +18,7 @@ export function overheadMarkdown(s?: Step<Overhead>): string[] {
     `| the token's id read back (4 bytes) | ${fixed(o.readToken, 2)} |`,
     `| every logit read back (${o.vocab} floats) | ${fixed(o.readLogits, 2)} |`];
 }
-// T168: the device's ceilings, each a loop of that alone (src/runtime/shaders.js, the method of clpeak): what the
+// T168: the device's ceilings, each a loop of that alone (src/runtime/shaders.ts, the method of clpeak): what the
 // prompt's shaders are held against
 const percent = (part: number, whole: number) => `${fixed((100 * part) / whole, 1)}%`;
 /** T168: the device's ceilings as a table. */

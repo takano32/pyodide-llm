@@ -5,14 +5,14 @@ import type { Ratios, Step } from "./cells.ts";
 import type { GenerateFound, SamplingAlone, SamplingTimed, Verdicts } from "../runtime/contracts/benchmark.ts";
 
 /**
- * T151: the GPU section's table of tokens generated on the GPU (src/runtime/shaders.js's EMBED, fusedMatVec and SAMPLE: the
+ * T151: the GPU section's table of tokens generated on the GPU (src/runtime/shaders.ts's EMBED, fusedMatVec and SAMPLE: the
  * sampling on the GPU too, the state carried from token to token there). step: {name, result: {model, layers, vocab,
  * GB, dispatches, chunkDispatches, tokens, settings, work: {ms, unsteady}, chunkWork, rows: [{perSubmission, msPerToken,
  * fixedMs, chunks}], sampling: {vocab, msEach, over, unsteady, chunks: {msEach, unsteady, pick} (pick: its last stage
  * alone, the same form), flat: {msEach, over, unsteady, chunks}}}} or {name, error} (a time {error} where it failed);
  * check: the shaders against JavaScript ("sampling", "sampling in chunks"
  * and "tokens on the GPU"); gpu: { fallback, lost }. T191: each row also the ms a token with the sampling in chunks
- * (shaders.js's SAMPLER_STAGES, many workgroups) where the rest is SAMPLE's one workgroup. A row a way of submitting: one token a submission, each read back as it comes, and
+ * (shaders.ts's SAMPLER_STAGES, many workgroups) where the rest is SAMPLE's one workgroup. A row a way of submitting: one token a submission, each read back as it comes, and
  * several in one submission, read back once. "A submission besides its tokens" (F) is what a submission costs past its
  * tokens' work (the wait and the reading back: a row's ms a token times its tokens, less a token's work, the
  * difference of 2n tokens in one submission and n), "of it a token" F over the row's tokens (what is left of F a
