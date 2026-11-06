@@ -139,7 +139,7 @@
 - T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T619 [追加][モデル] LFM3（lfm3） — 候補
 - T650 [性能][モデル] Firefox の翻訳にショートリストを使って速くする — 未着手
-- T653 [モデル][遠隔試験] サイトを小さくする: llm-jp-3 150M と stories42M の原本をサイトから外し、HF から取る — 未着手
+- T653 [モデル][遠隔試験] サイトを小さくする: llm-jp-3 150M と stories42M の原本をサイトから外し、HF から取る — 反映済み
 - T639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T638.1 の案） — 未着手
 - T640 [リファクタリング][変換] 変換器のリファクタリング（T638.2 の案） — 未着手
 - T641 [リファクタリング][CPU] worker と CPU の forwardのリファクタリング（T638.3 の案） — 未着手
@@ -1353,7 +1353,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 正しさの基準は、ショートリストを使う形の fxtranslate の `translate()` の訳（3 本 × 100 文、`tests/fixtures/translations.json` の隣に）で 100/100。速さは 1 文あたりの秒をショートリストなしと並べる（出力の層は語彙 32,000〜64,000 行で、1 ステップのいちばん大きな行列）。
 - ページで使うかを項目の設定にするか、いつも使うかは、速さと訳の違いを見て持ち主に。
 
-### T653 [モデル][遠隔試験] サイトを小さくする: llm-jp-3 150M と stories42M の原本をサイトから外し、HF から取る — 状態: 未着手（2026-11-06、持ち主の決め）
+### T653 [モデル][遠隔試験] サイトを小さくする: llm-jp-3 150M と stories42M の原本をサイトから外し、HF から取る — 状態: 反映済み（2026-11-06、持ち主の決め。Opus medium の 1 コミットと取りまとめ役の直し 1: llm-jp-3 150M の float16（291 MiB）と stories42M の float32（159 MiB）の部品をサイトから外した（サイト 約 1,007 → 556.9 MiB）。`llm-jp-3-150m-f16` は `llm-jp/llm-jp-3-150m`@b112feef の safetensors をページで float16 に変換する `hf` の項目（変換器の tokenizer.bin はサイトのものとバイト単位で同じで、options は止まり 7 を足すだけ: `llmJp`、`loaded` は 305161244×3）。`stories42M-f32` は `karpathy/tinyllamas`@0bd21da7 の `stories42M.bin` を「2 つの URL」の取り込み元で取り、サイトの `tokenizer.bin` で読む（項目の型 `Linked` を足した。worker はトークナイザの名前を root の `models/` から引く）。id は同じ。Makefile の `CHECKPOINTS` から 2 つを外し、`dist-check` に規則 11（`dist/models/` の部品を `CHECKPOINTS` と突き合わせる）と `dist-rules-check` の壊し方 2 つ。`models-check` が番地を持つ項目のリビジョンとトークナイザを見る。手元の Chrome で 2 項目とも答えた（39.5 秒で準備完了・52.2 tok/s、77.7 秒・30.0 tok/s）。取りまとめ役の決め: note の書き方（「fetches 305 MB → float16 305 MB」「float32 · fetches 167 MB」: HF の項目の書き方に寄せた）、`shares` は付けない（int8 はサイトの部品で、分け合う保存が無い）。取りまとめ役の直し（レビューの should）: 外した 2 つの部品の写しが訪問者の Cache API（`models-v2`）に最大約 460 MB 残って誰も消さないので、`runtime.ts` の `init()` が `models-v1` を消す所の隣で `dropRemovedParts()` が消す（`silent-check` の `SILENT` に 1 行。`sources.ts` から呼ぶと import の輪になるので `runtime.ts` に）。レビュー（Sonnet low、2026-11-06）: OK、must-fix なし。前からの `?checkpoint=…&tokenizer=…` は `address.ts` が両方とも `https://` のときだけ `url` を作るので `new URL(絶対, base)` はそのまま返し、相対の名前が worker に届くのは一覧の項目だけ。覚えた `stories42M-f32` は id が同じでそのまま HF から取り、`llm-jp-3-150m-f16` は前から OPFS に入らず保存の名前も衝突しない。`coi.js` の写し `offline-v1` は `/models/*.NNN` の部品を写さない。note の書き方は HF の項目の形と合い、`.done` が Makefile に依るのは CI では無害。）
 
 2026-11-06 の夕方、GitHub Pages のデプロイが 14 回のうち 7 回、Pages の段の 10 分を越えて落ち、最後の 2 回は続けて落ちた（T652。GitHub の状態ページに障害は無い。サイトは約 1,007 MiB）。持ち主の選択: 「サイトを小さくする」→「原本 2 つを HF から」（勧め）。外すのは llm-jp-3 150M の float16（`llm-jp-3-150m.f16`、291 MiB）と stories42M の float32（`stories42M.f32`、159 MiB）で、約 450 MiB 減って約 560 MiB に。int8 の版はサイトに残る。方針 5 の「原本も選べる」は残す: 一覧の「(original)」の 2 項目（`llm-jp-3-150m-f16`・`stories42M-f32`）は、サイトの部品でなく Hugging Face から取る形に（llm-jp-3 150M は `llm-jp/llm-jp-3-150m` の safetensors をページで float16 に変換する `hf` の項目、stories42M は `karpathy/tinyllamas` の `stories42M.bin` を URL の取り込み元で: どちらもリビジョンを固定）。項目の id は変えない（覚えたモデルの鍵）。Makefile の `CHECKPOINTS` から 2 つを外す。`dist-check` の線とサイトの大きさの記録（AGENTS.md の落とし穴「サイトは約 1,007 MiB」）を直す。初めて選ぶ訪問者は HF から取り直すので読み込みが遅くなる（持ち主が承知）。確かめ: 本番で 2 項目を `models.yml` で開く。
 
