@@ -257,7 +257,8 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   // must name every one of them and nothing else, from the file it is in: what the window leaves out is in no module.)
   // (T363.4: and blocks.ts and blocks_relaxed.ts are the windows over blocks/*.ts, two modules of their own.)
   const source = {}, argumentsOf = {};
-  for (const [folder, windows, more] of [["kernel", ["kernel.ts"], ["kernels/kernel_relaxed.ts"]], ["blocks", ["blocks.ts", "blocks_relaxed.ts"], []]]) {
+  // (T644.6: and kernel_relaxed.ts is the window over relaxed/*.ts.)
+  for (const [folder, windows, more] of [["kernel", ["kernel.ts"], []], ["relaxed", ["kernel_relaxed.ts"], []], ["blocks", ["blocks.ts", "blocks_relaxed.ts"], []]]) {
     const parts = fs.readdirSync(`${root}kernels/${folder}`).filter((file) => file.endsWith(".ts")).sort(), written = [];
     for (const file of [...parts.map((part) => `kernels/${folder}/${part}`), ...more]) {
       for (const [, name, parameters] of fs.readFileSync(root + file, "utf8").matchAll(/^export function (\w+)\(([^)]*)\)/gm)) {

@@ -1,5 +1,5 @@
 // ternary.ts (T231): the weights of a ternary model, two bits each, as the dot products take them. kernel/matmul.ts
-// (matmul_t2) and kernel_relaxed.ts (matmul_t2r) import it. The layout is llama2_numpy.pack_ternary's, which is
+// (matmul_t2) and relaxed/ternary.ts and relaxed/binary.ts (matmul_t2r, matmul_b1r) import it. The layout is llama2_numpy.pack_ternary's, which is
 // Prism ML's PQ2_0's: a group of 128 weights in 32 bytes, weight j as its code (the weight + 1: 0, 1 or 2) in byte
 // j >> 2 at bits 2 (j & 3), and one scale a group (a float16 from T533, below).
 //
@@ -40,4 +40,4 @@
 // arm64 and x86-64 (tests/ternary-bench.ts: TASKS.md's T533): the same speed; one half widened a group was 7 to 9 %
 // slower on arm64. The form is ssig33/pyodide-llm's (7d7b776c, MPL-2.0: the blocks of PQ2_0 as they are, a half
 // widened once a block); none of its lines is here.
-// (kernel/matmul.ts and kernel_relaxed.ts import halves4 and half from kernel/halves.ts.)
+// (kernel/matmul.ts and relaxed/ import halves4 and half from kernel/halves.ts.)

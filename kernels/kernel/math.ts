@@ -16,7 +16,7 @@ const GS: i32 = 32; // int8 quantization group size, as in quantize.py
 // T167: the four int32 lanes of each of four groups' dot products added up into one lane per group: [sum d0, sum d1,
 // sum d2, sum d3] (a transpose by shuffles and two adds, as sums4 in kernel/attention.ts for float32; integers, so the
 // order of the adds does not matter). A group's sum is at most 32 × 128 × 127 = 520192, within float32's exact
-// integers. kernel_relaxed.ts's int8 and int6 products and the blocks' (blocks/) take it.
+// integers. relaxed/'s int8 and int6 products and the blocks' (blocks/) take it.
 // @ts-ignore: decorator
 @inline function groupSums(d0: v128, d1: v128, d2: v128, d3: v128): v128 {
   const s01 = i32x4.add(v128.shuffle<i32>(d0, d1, 0, 4, 1, 5), v128.shuffle<i32>(d0, d1, 2, 6, 3, 7));  // d0 l0+l2, d1 l0+l2, d0 l1+l3, d1 l1+l3

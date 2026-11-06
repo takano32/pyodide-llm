@@ -1,4 +1,4 @@
-// int8-check.ts (T644.1): the int8 and int6 kernels the default model takes at every token (kernel_relaxed.ts's
+// int8-check.ts (T644.1): the int8 and int6 kernels the default model takes at every token (relaxed/int8.ts's and relaxed/six.ts's
 // matmul_q8r, matmul_q8r_tile and matmul_q6r; kernel/matmul.ts's matmul_q8, matmul_q6, int8_sums and six_sums; and
 // kernel/quantize.ts's quantize_x, whose bytes they read) against the same arithmetic written out here, in the same
 // order, value by value: int8's numbers change with the order of the adds, so the model adds as the kernels do. Node and
@@ -13,11 +13,11 @@
 //   int8_sums and six_sums: -64 times the sum of each group, an int32, for every n.
 //   matmul_q8r: lane k of the accumulator adds the groups 4j + k in order (each group's exact integer sum with the
 //     correction in it, dot(w, q - 64), times the float32 product of the two scales), the four lanes are added in order,
-//     then the groups past the fours one at a time (kernel_relaxed.ts 26-36).
+//     then the groups past the fours one at a time (relaxed/int8.ts 40-47).
 //   matmul_q8: dot32's lane k holds products 2k, 2k + 1, 2k + 8, 2k + 9 of each half of a group; each lane times the
 //     product of the scales into its own float32 lane, group by group, and the four lanes added in order at the end.
 //   matmul_q6, matmul_q6r: those two on the int6 weights widened (llama2_numpy.pack6's bytes, written here).
-//   matmul_q8r_tile: every (row, token) is matmul_q8r's number to the bit (kernel_relaxed.ts 80-85), for 1 to 9 tokens,
+//   matmul_q8r_tile: every (row, token) is matmul_q8r's number to the bit (relaxed/int8.ts 60-65), for 1 to 9 tokens,
 //     ranges of rows that begin and end off the fours and fewer than four rows, rows of 1 to 9 groups (ng % 4 of 0 to 3)
 //     and rows of 2560 and of 2592 bytes (the read ahead of a quad of rows up to 10 KB, and none past it).
 //   quantize_x: the scales and bytes of the scalar steps (the largest |x| over 127 or 63, round half to even, plus the bias)

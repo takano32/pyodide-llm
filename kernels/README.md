@@ -9,8 +9,9 @@ sequencing the layers, NumPy keeps owning the memory, the kernels get addresses 
 copied and there is no JavaScript glue. When they cannot be loaded, NumPy does the math as before.
 
 `kernel.ts` is a window (T356): the kernels are in `kernel/`, by what they are, and `kernel.ts` names every one of
-them in the order of the module's exports. `kernel_relaxed.ts` is one file. `six.ts`, `ternary.ts` and `binary.ts` are what both
-import (the widening of an int6 group, of a ternary one and, T634, of a binary one). `kernel_relaxed.ts` and `blocks/` take
+them in the order of the module's exports. `kernel_relaxed.ts` is the window of the relaxed module in the same way (T644.6),
+over `relaxed/`, by what the products multiply. `six.ts`, `ternary.ts` and `binary.ts` are what both
+import (the widening of an int6 group, of a ternary one and, T634, of a binary one). `relaxed/` and `blocks/` take
 the small things of `kernel/math.ts` and `kernel/halves.ts` too (T644.5: one copy of each, compiled into every module
 that imports it, all `@inline`). `blocks.ts` and `blocks_relaxed.ts` are the windows of
 two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
@@ -25,13 +26,14 @@ two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
 | `kernel/stateful.ts` | the layers with a state: `gate`, `convolve`, `delta_rule` (Qwen3.5), `short_conv` (LFM2) |
 | `kernel/sample.ts` | `argmax`, `penalize`, `sample` |
 | `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum (`hsum`, and `laneSum` of int32s), four groups' integer sums at once (`groupSums`), `fexp` and `vexp`, the largest of floats |
+| `relaxed/int8.ts`, `six.ts`, `ternary.ts`, `binary.ts` | the products with relaxed SIMD (`kernel_relaxed.ts`'s module): `matmul_q8r` and `matmul_q8r_tile`, `matmul_q6r`, `matmul_t2r` and `matmul_t2r_tile`, `matmul_b1r` and `matmul_b1r_tile` (the binary ones take the ternary file's `planes` and `scaled`) |
 
-A new kernel goes into the file of its kind and into a line of `kernel.ts` (`tests/forward-check.ts` fails when the
-window and the files disagree, and when `src/runtime/jobs.ts` does not say which of its arguments are addresses). The Makefile's rule
+A new kernel goes into the file of its kind and into a line of `kernel.ts` (or, with relaxed SIMD, of `kernel_relaxed.ts`: `tests/forward-check.ts` fails when a
+window and its files disagree, and when `src/runtime/jobs.ts` does not say which of its arguments are addresses). The Makefile's rule
 reads its sources off the folder (`KERNEL_SOURCES`: every `.ts` of `kernels/` and of its folders), so a new file needs no line there. `node tests/kernels-same.ts [--before <commit>]` builds this tree's kernels and
 another commit's and says for every built file whether it is the same bytes, the same functions in another order,
 or different, and whether `src/runtime/built/`'s are this tree's. (The division itself changed the order of the functions in the
-five builds of `kernel.ts`, and nothing else: Binaryen sorts the functions that are used equally often by their
+five builds of `kernel.ts`, and T644.6's division that of the four builds of `kernel_relaxed.ts`, and nothing else: Binaryen sorts the functions that are used equally often by their
 names, and AssemblyScript's name of a function begins with its file.)
 
 `make kernels` compiles them into `src/runtime/built/simdkernel.so` (the side module Python loads with ctypes, for the
