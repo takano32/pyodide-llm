@@ -45,7 +45,7 @@ for (const features of [[], ["shader-f16", "subgroups"]]) {
   assert.equal(m.forms.attention.name, `llama.cpp flash attention tiles${halves ? ", f16, subgroups" : ""}`, `${where}: the device's first option`);
   assert.deepEqual([m.forms.form, m.forms.tried], [null, []], `${where}: the record, nothing of the matrices yet`);
   await forms_.chooseMatrices(m);
-  const made = devicePromptForms(m.device, m.own), wrong = m.forms.tried.filter(({ none }) => none?.startsWith("wrong"));
+  const made = devicePromptForms(m.features, m.device.limits, m.own), wrong = m.forms.tried.filter(({ none }) => none?.startsWith("wrong"));
   assert.deepEqual(wrong, [], `${where}: no form wrong`);
   const timed = m.forms.tried.filter(({ ms }) => ms !== undefined).map(({ name }) => name);
   assert.deepEqual(timed, made.filter(({ none }) => !none).map(({ name }) => name), `${where}: every form the device makes right, and timed`);
@@ -81,7 +81,7 @@ for (const features of [[], ["shader-f16", "subgroups"]]) {
   await forms_.chooseAttention(m);
   await forms_.chooseMatrices(m);
   // (the packed forms read the codes; the float ones do not, and are right: one of them is taken)
-  const packed = devicePromptForms(m.device, m.own).filter(({ none, packed }) => !none && packed).map(({ name }) => name);
+  const packed = devicePromptForms(m.features, m.device.limits, m.own).filter(({ none, packed }) => !none && packed).map(({ name }) => name);
   assert.ok(packed.length > 0);
   for (const name of packed) assert.match(m.forms.tried.find((tried) => tried.name === name)?.none ?? "", /^wrong: .* are not quantize_x's/, `${name}: quantized activations off by one in a code of fifty`);
   assert.ok(!m.forms.form.packed, "a float form taken");
@@ -119,7 +119,7 @@ console.log("ok: what is a little off inside its line is taken, and a device's f
   const { m } = await opened({ weights: "ternary" });
   await forms_.chooseAttention(m);
   await forms_.chooseMatrices(m);
-  const made = devicePromptForms(m.device, m.own).filter(({ none }) => !none).map(({ name }) => name);
+  const made = devicePromptForms(m.features, m.device.limits, m.own).filter(({ none }) => !none).map(({ name }) => name);
   assert.ok(made.length > 0 && made.every((name) => name.endsWith(", ternary")), `a ternary model's own forms: ${made.join(", ")}`);
   assert.deepEqual(m.forms.tried.filter(({ none }) => none), [], "ternary: every form right");
   assert.ok(m.forms.form.ternary);
@@ -151,7 +151,7 @@ console.log(`ok: llama.cpp's blocks: each of the ten types' texts checked right 
   // (a pipeline of form: its text, and its override constants (llama.cpp's tiles are one text of two sizes))
   const formOf = ({ code, constants }, form) => code === form.code && JSON.stringify(constants ?? {}) === JSON.stringify(form.constants ?? {});
   const { m: first } = await opened();
-  const right = devicePromptForms(first.device, first.own).filter(({ none }) => !none);
+  const right = devicePromptForms(first.features, first.device.limits, first.own).filter(({ none }) => !none);
   // (the costs: a dispatch of the target ms, of another form twice that, of what is no form's (the quantization) none)
   const costsOf = (target, ms) => (pipeline) => (formOf(pipeline, target) ? ms : right.some((form) => formOf(pipeline, form)) ? 2 * ms : 0);
   for (const target of [right[0], right.at(-1)]) {

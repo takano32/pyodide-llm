@@ -102,7 +102,7 @@ assert.deepEqual(Object.keys(m).sort(), ["adapter", "device", "fallback", "featu
   "what device.js puts in the model's record: the device and what it said of itself, the plan and the memory, the buffers owned and held; the records are their owners'");
 assert.equal(m.device, gpu.device);
 assert.equal(m.memory, null, "no memory until start() hands one");
-assert.deepEqual(m.features, { subgroups: false, packed: false }, "T642.3: the device's subgroups and WGSL's packed dot, taken once: none here");
+assert.deepEqual(m.features, { half: false, shuffles: false, subgroups: false, packed: false }, "T642.3: the device's features and WGSL's, taken once: none here");
 assert.equal(m.own, null, "no shaders of its own: an int8 model's (T547.2.3)");
 assert.equal(m.remembered, null, "nothing remembered where the page kept nothing");
 assert.equal(m.limit, 1 << 27, "the largest buffer the device binds");
@@ -121,7 +121,7 @@ handed(memory, plan);
     const there = standIn({ language: [...(id ? ["subgroup_id"] : []), "packed_4x8_integer_dot_product"] });
     if (device) there.device.features.add("subgroups");
     const opened = await openDevice(plan);
-    assert.deepEqual(opened.features, { subgroups, packed: true }, `the device ${device ? "has" : "lacks"} subgroups and WGSL ${id ? "has" : "lacks"} subgroup_id: subgroups ${subgroups}`);
+    assert.deepEqual(opened.features, { half: false, shuffles: device, subgroups, packed: true }, `the device ${device ? "has" : "lacks"} subgroups and WGSL ${id ? "has" : "lacks"} subgroup_id: subgroups ${subgroups}`);
   }
 }
 {
@@ -449,7 +449,7 @@ console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as f
     new Uint8Array(shared.buffer).set(random(size));
     const model = await openDevice(binary(made));
     assert.equal(model.own, "ternary", "a binary model is multiplied by ternary's shaders, with their device's key");
-    assert.deepEqual(model.features, { subgroups: false, packed: true }, "T642.3: WGSL's packed dot, said once in the record (the device has no subgroups)");
+    assert.deepEqual(model.features, { half: false, shuffles: false, subgroups: false, packed: true }, "T642.3: WGSL's packed dot, said once in the record (the device has no subgroups)");
     handed(shared, model.plan);
     await uploadLayers(model);
     for (const [name, [rows, n]] of Object.entries(BINARY)) {

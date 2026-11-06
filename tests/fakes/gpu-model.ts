@@ -34,7 +34,7 @@ const { upload } = await import(runtimeUrl("gpu/weights.ts"));
 const block_ = await import(runtimeUrl("gpu/block.ts"));
 const { ENGINE } = await import(runtimeUrl("shaders/engine.ts"));
 const { flashShape, flashVecShape } = await import(runtimeUrl("shaders/attention.ts"));
-const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
+const { devicePromptForms, deviceFeatures } = await import(runtimeUrl("shaders/key.ts"));
 const { BLOCK_PACKINGS } = await import(runtimeUrl("shaders/common.ts"));
 const { SUPERBLOCKS } = await import(runtimeUrl("shaders/superblocks.ts"));
 
@@ -175,7 +175,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
     }
   }
   // (spoil.form: a maker of each form's model, given the right one)
-  for (const form of devicePromptForms(device, own)) {
+  for (const form of devicePromptForms(deviceFeatures(device), device.limits, own)) {
     const right = tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8", tile: form.tile });
     answers.add(form.code, spoil.form ? spoil.form(right) : right);
     // (T465.2: and each text of a type of llama.cpp's blocks beside it)

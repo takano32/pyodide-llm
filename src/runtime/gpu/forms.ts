@@ -40,15 +40,14 @@ const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
 // the tiled shaders of T146 this device can make (shaders/prompt.ts's promptForms)
 // (T271.1: a rotated basis turns a matrix's input as it quantizes it, ROTATE_QUANTIZE: the packed forms alone;
 // T547.2.3: a model's own forms, a ternary model's or a Q4_K one's, are packed ones too)
-const candidates = (m: Model) => devicePromptForms(m.device, m.own).filter((form) => form.packed || !m.plan.rotated);
+const candidates = (m: Model) => devicePromptForms(m.features, m.device.limits, m.own).filter((form) => form.packed || !m.plan.rotated);
 
 // ---- the attention: llama.cpp's flash attention with tiles, with f16 in the workgroup's memory where there is
 // shader-f16 and its subgroups where there are (and subgroup_id), else the same without them; each checked first
 // against JavaScript (checkAttention), the next one tried where it is wrong
 async function chooseAttention(m: Model) {
   const { device, plan } = m;
-  const half = device.features.has("shader-f16");
-  const { subgroups } = m.features;
+  const { half, subgroups } = m.features;
   const limits = { memory: device.limits.maxComputeWorkgroupStorageSize, threads: threadsOf(device),
     subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize };
   const tried: string[] = [];

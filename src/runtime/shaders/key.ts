@@ -29,12 +29,23 @@ export type Adapter = Made & { info?: Info };
 // every piece of text of the shaders gpu.ts runs reaches the hash, and that the key does not move with the source.
 // T379.1: which texts those are, each maker's choices and their order is the catalogue's (engine.ts: the rows of every
 // model's shaders, and those of a model of ternary weights alone), which the worker takes its shaders from as well.
+// T642.16: what a device and the browser's WGSL have, which choose its shaders: the one place they are read (gpu/device.ts's
+// openDevice() takes them once into the model's record, m.features; the key takes them here). half: shader-f16;
+// shuffles: the device's subgroups alone, which the prompt's DP4A tiles read (subgroupShuffle, with subgroup_size and
+// subgroup_invocation_id: no subgroup_id); subgroups: the device's subgroups and WGSL's subgroup_id together, which the
+// flash attention and a token's fused matrices need; packed: WGSL's packed_4x8_integer_dot_product (DP4A)
+export type Features = { half: boolean; shuffles: boolean; subgroups: boolean; packed: boolean };
+export function deviceFeatures(device: Made): Features {
+  const language = globalThis.navigator?.gpu?.wgslLanguageFeatures;
+  const shuffles = device.features.has("subgroups");
+  return { half: device.features.has("shader-f16"), shuffles, subgroups: shuffles && Boolean(language?.has("subgroup_id")),
+    packed: Boolean(language?.has("packed_4x8_integer_dot_product")) };
+}
 /** the tiled shaders of T146 a device can make (promptForms; T232, T547.2.3, own: those of a model of ternary weights,
- * or of Q4_K blocks besides int8) */
-export const devicePromptForms = (device: Made, own: Own = null) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
-  packed: Boolean(globalThis.navigator?.gpu?.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")),
-  memory: device.limits.maxComputeWorkgroupStorageSize,
-  threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX), own });
+ * or of Q4_K blocks besides int8), by its features (deviceFeatures, T642.16: the record's) and its limits */
+export const devicePromptForms = (features: Features, limits: Made["limits"], own: Own = null) => promptForms({ half: features.half,
+  subgroups: features.shuffles, packed: features.packed, memory: limits.maxComputeWorkgroupStorageSize,
+  threads: Math.min(limits.maxComputeInvocationsPerWorkgroup, limits.maxComputeWorkgroupSizeX), own });
 // T232, ternary: the key of a model of ternary weights, the same with the text of its own shaders hashed after the
 // others': the key of every other model does not hold them (a device keeps what it remembers of those), and a
 // deployment that changes a ternary shader has the ternary models choose anew. T547.2.3: own, a model's own shaders
@@ -52,10 +63,11 @@ export function deviceKey(adapter: Adapter, device: Made = adapter, own: Own = n
     language?.has("packed_4x8_integer_dot_product") ? "packed" : "", language?.has("subgroup_id") ? "subgroup_id" : ""].map((part) => part ?? "").join("|");
   // (T547.3.3: a form's texts of the blocks in BLOCK_PACKINGS' order)
   const tiles = (forms: PromptForm[]) => forms.flatMap((form) => [form.name, form.code, ...(form.blocks ? BLOCK_PACKINGS.map((packing) => form.blocks![packing]) : [])]);
+  const features = deviceFeatures(device), forms = (own: Own) => devicePromptForms(features, device.limits, own);
   let hash = 0x811c9dc5;
   const written = (rows: { text: () => string }[]) => rows.map((row) => row.text());
-  for (const text of [...tiles(devicePromptForms(device)), ...written(ENGINE_SHADERS),
-    ...(own === "ternary" ? [...tiles(devicePromptForms(device, "ternary")), ...written(TERNARY_SHADERS)] : own === "blocks" ? [...tiles(devicePromptForms(device, "blocks")), ...written(BLOCK_SHADERS)] : [])]) {
+  for (const text of [...tiles(forms(null)), ...written(ENGINE_SHADERS),
+    ...(own === "ternary" ? [...tiles(forms("ternary")), ...written(TERNARY_SHADERS)] : own === "blocks" ? [...tiles(forms("blocks")), ...written(BLOCK_SHADERS)] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
     hash = Math.imul(hash ^ 0x1f, 0x01000193);  // (the unit separator: in no WGSL)
   }

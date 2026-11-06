@@ -9,12 +9,13 @@
 // (T379.1: the shaders themselves, the texts and their makers, are taken from one catalogue, shaders/engine.ts's
 // ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
 import { halvesOf, floatOfHalf } from "../shaders/halves.ts";
-import { deviceKey } from "../shaders/key.ts";
+import { deviceKey, deviceFeatures } from "../shaders/key.ts";
 import { Failure, kindOf } from "../failure.ts";
 import { REASONS } from "../forward/reasons.ts";
 import { PACKINGS, packingsOf, isBlock, asTernary, spreadBits } from "./packings.ts";
 import type { FromGpu, GpuPacking, Matrices, Opened, Remembered, Started, Tables, Tokens as TokensPlan } from "../contracts/gpu/protocol.ts";
 import type { Own } from "../shaders/prompt.ts";
+import type { Features } from "../shaders/key.ts";
 import type { Weights } from "./weights.ts";
 import type { Block } from "./block.ts";
 import type { Forms } from "./forms.ts";
@@ -56,14 +57,14 @@ type Base = {
   // (T642.3: "ternary" is a ternary model's, or a binary one's, which goes up as ternary codes: there is no other field
   // that says it)
   own: Own;
-  // T642.3: what the device and the browser's WGSL have, taken once here for the parts to read: subgroups (the
-  // device's feature and WGSL's subgroup_id), packed (WGSL's packed_4x8_integer_dot_product, DP4A)
+  // T642.3: what the device and the browser's WGSL have, taken once here for the parts to read (T642.16: shaders/key.ts's
+  // deviceFeatures, which the key reads too): half (shader-f16), shuffles (the device's subgroups: the prompt's tiles),
+  // subgroups (the device's and WGSL's subgroup_id: the attention and a token's matrices), packed (WGSL's DP4A)
   features: Features;
   // T642.4: the clock the timings that choose a form read (forms.ts, tokenattention.ts, block.ts, tokenforms.ts):
   // performance.now, but where a check hands openDevice() another (createForward()'s clock is the CPU's, the same way)
   now: () => number;
 };
-type Features = { subgroups: boolean; packed: boolean };
 type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens?: TokenBuffers; tokenAttention?: TokenAttentionChosen; tokenForm?: TokenChoice };
 // T626: the record of a model, or of one on the GPU alone as it opens, before handed() puts start()'s plan and the
 // memory in (its memory null till then says which): what runs then (start.ts's open(), and routed() as the checkpoint's
@@ -182,10 +183,8 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
     // T232: ternary weights are multiplied as packed int8 alone (shaders/prompt.ts's TERNARY_PACKED; T547.2.3: and Q4_K's
     // blocks, packings.ts's dot): said before anything goes up
     const own = ownOf(plan);
-    const language = navigator.gpu.wgslLanguageFeatures;
-    const packed = Boolean(language?.has("packed_4x8_integer_dot_product"));
     const dotted = Object.values(plan.matrices).flatMap(packingsOf).find((packing) => PACKINGS[packing].dot);
-    if (dotted && !packed) {
+    if (dotted && !deviceFeatures(adapter).packed) {
       return say(REASONS.packed(dotted));
     }
     // the largest buffer the device binds (T155: a matrix larger than it goes in pieces, piecesOf)
@@ -204,7 +203,7 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
     // (T232: a ternary model's key holds its own shaders too; T547.2.3: and a model of Q4_K blocks its own)
     const key = deviceKey(adapter, device, own);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
-    const features: Features = { subgroups: device.features.has("subgroups") && Boolean(language?.has("subgroup_id")), packed };
+    const features = deviceFeatures(device);
     model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, own, features, now } satisfies Made as unknown as Model;
     if (stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes

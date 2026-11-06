@@ -28,7 +28,9 @@ import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.ts";
 import { MAKERS_APART, makersOfWgsl } from "./shader-makers.ts";
 
-const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS, deviceKey, devicePromptForms, ...window } = await import(runtimeUrl("shaders.js"));
+const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS, deviceKey, deviceFeatures, devicePromptForms, ...window } = await import(runtimeUrl("shaders.js"));
+// (T642.16: a device's tiles by its features, as the key takes them)
+const formsOf = (device, own) => devicePromptForms(deviceFeatures(device), device.limits, own);
 
 // ---- the order. A row: its name, and for a maker the choices it is given (what is no number), in the row's own order
 const said = ({ name, given }) => (given ? `${name}(${Object.entries(given).filter(([, value]) => typeof value !== "number").map(([key, value]) => `${key}=${value}`).join(", ")})` : name);
@@ -123,8 +125,8 @@ const LEFT = { "flashVec(subgroups=true)": ["lanes_add4"],
   "flashVecReduce(subgroups=false)": ["shuffle_down", "shuffle_down4", "shuffle"], "flashVecReduce(subgroups=true)": ["shuffle_down", "shuffle_down4", "shuffle"] };
 const given = [...rows.map((row) => [said(row), row.text()]),
   // (T547.2.3: and a Q4_K model's, each with its Q4_K text)
-  ...[null, "ternary", "blocks"].flatMap((own) => devicePromptForms({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own)
-    .concat(devicePromptForms({ features: new Set(), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own))
+  ...[null, "ternary", "blocks"].flatMap((own) => formsOf({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own)
+    .concat(formsOf({ features: new Set(), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own))
     .flatMap((form) => [[`the tile ${form.name}`, form.code], ...Object.entries(form.blocks ?? {}).map(([packing, code]) => [`the ${packing} text of ${form.name}`, code])]))];
 let declarations = 0;
 for (const [what, raw] of given) {
@@ -174,10 +176,20 @@ console.log(`shaders-catalogue-check: and each of their ${calls} calls is of a f
 {
   const every = { features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } };
   const reads = (form) => /fn ternary_packed\(/.test(form.code) && /var<storage, read> b: array<u32>;/.test(form.code);
-  const ternary = devicePromptForms(every, "ternary"), others = devicePromptForms(every, null);
+  const ternary = formsOf(every, "ternary"), others = formsOf(every, null);
   assert.ok(ternary.length > 0 && ternary.every((form) => form.ternary && / ternary$/.test(form.name) && reads(form)), "every tile of a ternary model unpacks its weights' codes (ternary_packed), under a name that says ternary");
   assert.ok(others.length > ternary.length && others.every((form) => !form.ternary && !/ternary/.test(form.name) && !reads(form)), "no tile of another model reads ternary codes");
   console.log(`shaders-catalogue-check: the ${ternary.length} tiles of a ternary model read codes, the ${others.length} of the others do not`);
+}
+
+// ---- (T642.16) the prompt's DP4A tiles with subgroups read the device's subgroups alone (subgroupShuffle, no
+// subgroup_id): the record's shuffles, not its subgroups (the attention's and a token's, which want subgroup_id too)
+{
+  const limits = { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 };
+  const lanes = (features) => devicePromptForms({ half: false, packed: true, ...features }, limits, null).filter((form) => / subgroups/.test(form.name)).length;
+  assert.ok(lanes({ shuffles: true, subgroups: false }) > 0, "a device with subgroups and no WGSL subgroup_id makes the prompt's tiles with subgroups");
+  assert.equal(lanes({ shuffles: false, subgroups: true }), 0, "and one without the device's subgroups makes none");
+  console.log("shaders-catalogue-check: the prompt's tiles with subgroups follow the device's subgroups alone (shuffles)");
 }
 
 // ---- ENGINE: the rows by name
@@ -200,7 +212,7 @@ function folded(texts) {
   }
   return (hash >>> 0).toString(16);
 }
-const tiles = (device, ternary) => devicePromptForms(device, ternary ? "ternary" : null).flatMap((form) => [form.name, form.code]);
+const tiles = (device, ternary) => formsOf(device, ternary ? "ternary" : null).flatMap((form) => [form.name, form.code]);
 const texts = (list) => list.map((row) => row.text());
 const hashes = new Set();
 for (const device of DEVICES) {
