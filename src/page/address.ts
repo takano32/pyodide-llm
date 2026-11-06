@@ -1,6 +1,6 @@
 // src/page/address.ts (T355): what the page's address says: which model, how it is weighed (?bits=), whether to measure.
 import { weightsFor } from "../models.ts";
-import { SAFETENSORS, noteOf } from "./repository.ts";
+import { REPOSITORY, REVISION, SAFETENSORS, noteOf } from "./repository.ts";
 import type { Model, Unlisted } from "./model.ts";
 import type { Address } from "./parameters.ts";
 
@@ -19,7 +19,6 @@ export const weighed = <Of extends Model>(entry: Of) => {
   const dtype = weightsFor(entry, parameters.get("bits"), (navigator as Navigator & { deviceMemory?: number }).deviceMemory);
   return dtype ? { ...entry, conversion: { ...entry.conversion, dtype } } : entry;
 };
-export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/, REVISION = /^[\w.-]+$/;
 // (T505.3) a file of a repository goes into an address too: a name, or names with / between them, none of them dots alone
 // (the hyphens escaped: the sheet's field takes the same source as its pattern, which a browser reads more strictly;
 // T508.4: and FILE_MOST characters at the most, a name of an address and not a page of text)

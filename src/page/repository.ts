@@ -12,6 +12,8 @@ import type { Model, Unlisted } from "./model.ts";
 
 /** The file the conversion of a repository asks for where nobody named one, and the index that stands for its shards. */
 export const SAFETENSORS = "model.safetensors";
+// what names a repository and its revision, in an address (?hf=, ?revision=) and in the sheet (T88)
+export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/, REVISION = /^[\w.-]+$/;
 const INDEX = `${SAFETENSORS}.index.json`;
 
 // The quantizations a GGUF's name may say, the best to take first (the owner, 2026-10-13: quality first, Q8_0 where

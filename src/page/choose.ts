@@ -1,8 +1,9 @@
 // src/page/choose.ts (T355): choosing a model: the select, the files of the visitor's own disk, the sheet that asks
-// for a repository of Hugging Face, the buttons of the intro. Each ends in the select's change, which tells the worker.
-import { DEFAULT_MODEL, MODELS, UNASKED_BYTES, asksBefore, memoryWarning } from "../models.ts";
+// for a repository of Hugging Face, the buttons of the intro. Each sets the select and ends in chooseSelected(), which
+// asks what is to be asked and tells the worker (T643.10: what is decided is choosing.ts's, which Node imports).
+import { asksBefore } from "../models.ts";
 import { $, files, progress, run, select, statusText } from "./dom.ts";
-import { FILE, REPOSITORY, REVISION, fromUrl, hfEntry, weighed } from "./address.ts";
+import { FILE, fromUrl, hfEntry, weighed } from "./address.ts";
 import { looked, unlisted, unnamed } from "./repository.ts";
 import { addressOf } from "./parameters.ts";
 import { gpuFor, threadsFor } from "./remembered.ts";
@@ -12,6 +13,8 @@ import { show } from "./settings.ts";
 import { message } from "./draw.ts";
 import { root, worker } from "./receiver.ts";
 import { openHuggingFace, openLegacy } from "./folder.ts";
+import { OTHER, askedFirst, chosenOf, sheetSays, shownForOther } from "./choosing.ts";
+import type { ToWorker } from "../runtime/contracts/messages.ts";
 
 // A model of the visitor's own disk, from the folder button or dropped on the page (folder.ts makes it: what Hugging
 // Face publishes, or a checkpoint of llama2.c's format and its tokenizer.bin).
@@ -46,7 +49,7 @@ function showLocal() {
   select.querySelector('option[value="local"]')?.remove();
   select.add(new Option(`${local!.name} — ${local!.note}`, "local"));
   select.value = "local";
-  select.onchange!(new Event("change"));
+  chooseSelected();
 }
 files.onchange = () => {
   const chosen = [...(files.files ?? [])];
@@ -68,7 +71,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(".intro .choos
   button.onclick = () => {
     if (!select.disabled && select.value !== button.dataset.model) {
       select.value = button.dataset.model!;
-      select.onchange!(new Event("change"));
+      chooseSelected();
     }
   };
 }
@@ -102,16 +105,11 @@ fileField.pattern = FILE.source;
 ($("repository-form") as HTMLFormElement).onsubmit = async (event) => {
   event.preventDefault();
   const field = $("repository-name") as HTMLInputElement, revisionField = $("repository-revision") as HTMLInputElement;
-  const file = fileField.value.trim() || undefined;
-  // the address of the model's page is what people copy: owner/name is what is needed of it
-  const repository = field.value.trim().replace(/^https?:\/\/huggingface\.co\//, "").replace(/\/(tree|blob)\/.*$/, "").replace(/\/+$/, "");
-  const revision = revisionField.value.trim() || "main";
+  const says = sheetSays(field.value, revisionField.value, fileField.value);
   // T119: the message goes on the field that is wrong, and goes away as that field is edited (on the name alone,
   // a wrong revision put right left the name marked, and the form would not open)
-  const wrong: [HTMLInputElement, string] | undefined = !REPOSITORY.test(repository) ? [field, "owner/name, as huggingface.co spells it"]
-    : !REVISION.test(revision) ? [revisionField, "a branch, a tag or a commit"] : undefined;
-  if (wrong) {
-    const [at, words] = wrong;
+  if (says.wrong) {
+    const at = says.wrong === "name" ? field : revisionField, words = says.words;
     at.setCustomValidity(words);
     at.reportValidity();
     at.oninput = () => at.setCustomValidity("");
@@ -122,7 +120,7 @@ fileField.pattern = FILE.source;
   repositorySheet.hidePopover();
   let entry: Unlisted;
   try {
-    entry = await looked(hfEntry(repository, revision, { file }));
+    entry = await looked(hfEntry(says.repository, says.revision, { file: says.file }));
   } catch (error) {
     message("model error", String((error as Error).message ?? error));  // (a repository with nothing this page opens)
     return;
@@ -160,19 +158,21 @@ export async function urlLooked() {
   return true;
 }
 
-select.onchange = () => {
-  if (select.value === "hf-other") {
-    select.value = model.id === "local" && !select.querySelector('option[value="local"]') ? DEFAULT_MODEL.id : model.id;
+/** The select's entry, chosen: the sheet for the last one of the Hugging Face group, the model for any other. Each way
+ * of choosing (the select, the intro's buttons, the disk's files, the sheet) sets the select and calls this. */
+function chooseSelected() {
+  if (select.value === OTHER) {
+    select.value = shownForOther(model, !!select.querySelector('option[value="local"]'));
     repositorySheet.showPopover();
     return;
   }
-  const chosen = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;
-  // a large download is asked for first: what is fetched, from whom, and that the conversion happens here
-  const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : (chosen.download ?? 0);
-  // T90: and one that probably does not fit in a device that says how much memory it has (Chromium only)
-  const asks = [download > UNASKED_BYTES && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
-                memoryWarning(weighed(chosen), (navigator as Navigator & { deviceMemory?: number }).deviceMemory)].filter(Boolean);
-  if (asks.length && !confirm(`${asks.join(" ")} Go on?`)) {
+  chooseModel(chosenOf(select.value, local), !!select.selectedOptions[0]?.textContent?.includes("kept in this browser"));
+}
+/** A model chosen (`kept`: the browser kept it, and nothing is fetched): asked for first where choosing.ts says so,
+ * then the page's model, its address, its settings, and the worker's load. */
+function chooseModel(chosen: Model, kept: boolean) {
+  const asked = askedFirst(weighed(chosen), kept, (navigator as Navigator & { deviceMemory?: number }).deviceMemory);
+  if (asked && !confirm(asked)) {
     select.value = model.id;
     return;
   }
@@ -185,5 +185,6 @@ select.onchange = () => {
   $("load").classList.remove("measured");
   ($("load") as HTMLDetailsElement).open = false;
   // search: this may reach the worker before init does, while the page looks at what is kept (T116)
-  worker.postMessage({ type: "load", root, search: location.search, model: weighed(model), load, threads: threadsFor(model), gpu: gpuFor(model) });
-};
+  worker.postMessage({ type: "load", root, search: location.search, model: weighed(model), load, threads: threadsFor(model), gpu: gpuFor(model) } satisfies ToWorker);
+}
+select.onchange = chooseSelected;

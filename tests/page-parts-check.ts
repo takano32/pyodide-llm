@@ -722,4 +722,36 @@ console.log(`page-parts-check: fields.ts by itself: the settings a link sets, an
   cases += 9;
 }
 console.log(`page-parts-check: parameters.ts by itself: the names of the address, and the address of the model the page has`);
+{
+  // T643.10: choosing.ts, what choosing a model decides apart from the select and the sheet (choose.ts draws it)
+  const { OTHER, shownForOther, chosenOf, askedFirst, sheetSays } = await fresh("page/choosing.ts");
+  const { UNASKED_BYTES } = await import("../src/models.ts");
+  assert.equal(OTHER, "hf-other", "the select's entry that opens the sheet (index.astro's option)");
+  const listText = (await import("node:fs")).readFileSync(fileURLToPath(new URL("../src/page/list.ts", import.meta.url)), "utf8");
+  assert.ok(/new Option\([^;]*, OTHER\)/.test(listText) && !listText.includes(`"${OTHER}"`), "list.ts writes the entry that opens the sheet by OTHER");
+  const listed = MODELS.find(({ id }) => id !== DEFAULT_MODEL.id), mine = { id: "local", name: "mine", note: "x", prompt: "" };
+  assert.equal(shownForOther(listed, false), listed.id, "the sheet opens over the model the page has");
+  assert.equal(shownForOther(mine, true), "local", "and over the disk's model while its entry is there");
+  assert.equal(shownForOther(mine, false), DEFAULT_MODEL.id, "and over the default where the disk's entry is gone");
+  assert.equal(chosenOf(listed.id, mine), listed, "an entry of the list names that model");
+  assert.equal(chosenOf("local", mine), mine, "local names the disk's model or the repository's");
+  const large = { ...listed, name: "Big", download: UNASKED_BYTES + 1e8 }, small = { ...large, download: UNASKED_BYTES };
+  assert.equal(askedFirst(large, false, undefined), `Big: ${((UNASKED_BYTES + 1e8) / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser. Go on?`,
+    "a download past UNASKED_BYTES is asked for, in the owner's words");
+  assert.equal(askedFirst(large, true, undefined), undefined, "not where the browser kept it");
+  assert.equal(askedFirst(small, false, undefined), undefined, "nor at UNASKED_BYTES itself");
+  const heavy = { ...small, download: 0, bytes: 3e9 };
+  assert.match(askedFirst(heavy, false, 4) ?? "", /^Big needs about .* of memory, and this device has 4 GB: it may run out of memory\. Go on\?$/,
+    "a model past what a device says it has is asked for, a download or not");
+  assert.equal(askedFirst(heavy, false, undefined), undefined, "and nothing is guessed where the device says nothing");
+  assert.match(askedFirst({ ...heavy, download: 1e9 }, false, 4) ?? "", /^Big: 1\.0 GB will be fetched .* browser\. Big needs about .* Go on\?$/, "both, in that order");
+  assert.deepEqual(sheetSays(" https://huggingface.co/o/n/tree/main/x ", " ", " "), { repository: "o/n", revision: "main", file: undefined },
+    "the sheet takes the address of a model's page, and main where the revision is empty");
+  assert.deepEqual(sheetSays("o/n/", "v1", "n-Q8_0.gguf"), { repository: "o/n", revision: "v1", file: "n-Q8_0.gguf" }, "the revision and the file named");
+  assert.deepEqual(sheetSays("o", "main", ""), { wrong: "name", words: "owner/name, as huggingface.co spells it" }, "a name that is no owner/name");
+  assert.deepEqual(sheetSays("o/n", "a b", ""), { wrong: "revision", words: "a branch, a tag or a commit" }, "a revision that is none");
+  assert.deepEqual(sheetSays("o", "a b", ""), { wrong: "name", words: "owner/name, as huggingface.co spells it" }, "the name is said first");
+  cases += 17;
+}
+console.log(`page-parts-check: choosing.ts by itself: the sheet's entry, the model an entry names, what is asked first, the sheet's fields`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);

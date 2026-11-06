@@ -5,6 +5,7 @@ import { fromUrl, weighed } from "./address.ts";
 import { remember } from "./remembered.ts";
 import { type Model, type Unlisted, model } from "./model.ts";
 import { forget, keptModels, outdated, serves } from "../runtime/kept.ts";
+import { OTHER } from "./choosing.ts";
 
 // What the worker kept of its conversions (src/runtime/kept.ts: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.
@@ -69,7 +70,7 @@ for (const [group, label] of Object.entries(GROUPS)) {
     options.append(new Option(`${name} — ${note}`, id));
   }
   if (group === "hf") {
-    options.append(new Option("Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX", "hf-other"));  // T88
+    options.append(new Option("Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX", OTHER));  // T88
   }
   select.append(options);
 }
