@@ -556,7 +556,7 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   const ELSEWHERE = {
     ready: Object.fromEntries(["heap", "keptIn", "keptMiss", "widened"].map((key) => [key, "tests/e2e.ts reads it off window.__ready"])),
     done: { prompt_seconds: "Python's generate() says it (Stats are its stats: worker-modules-check); the page says the prompt's tok/s" },
-    gpu: { tokenAttention: "forward/gpuside.ts says it for the tests (T224), and none reads it off the page", tablePieces: "forward/gpuside.ts says it (T209), and nothing reads it off the page" },
+    gpu: { tokenAttention: "forward/gpuside.ts says it for the tests (T224): tests/gpu-check/harness.js reads it off engine.gpuReady, nothing off the page", tablePieces: "forward/gpuside.ts says it (T209): tests/gpu-check/harness.js reads it off engine.gpuReady, nothing off the page" },
     "threads-compared": { model: "the page reads the verdicts of the model it loads, and threads' model alone" },
   };
   for (const key of Object.keys(ELSEWHERE.ready)) assert.match(e2e, new RegExp(`\\?\\.${key}\\b`), `tests/e2e.ts reads ${key} off window.__ready no more: ELSEWHERE says it does`);
