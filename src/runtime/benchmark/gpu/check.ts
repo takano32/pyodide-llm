@@ -22,7 +22,7 @@ async function check(): Promise<Verdicts> {
   shared.device.queue.writeBuffer(io.xs, 0, xs);
   const signed = new Int8Array(w.buffer);
   const verdicts: Verdicts = {};
-  for (const kind of shared.packed ? ["widen", "packed"] satisfies ("widen" | "packed")[] : ["widen"] satisfies "widen"[]) {
+  for (const kind of shared.features.packed ? ["widen", "packed"] satisfies ("widen" | "packed")[] : ["widen"] satisfies "widen"[]) {
     const m = matrix([rows, n], io, kind, { w, s });
     const readback = buffer(rows * 4, MAP_READ | COPY_DST);
     const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();

@@ -96,7 +96,7 @@ async function ceilings(): Promise<GpuCeilings> {
   const scaled = (key: "GOPS" | "GBps", r: Awaited<ReturnType<typeof rate>>): GpuCeiling => ({ [key]: r.rate / 1e9, unsteady: r.unsteady, loops: r.loops, dispatches: r.dispatches, ratio: r.ratio });
   await measure("f32", null, () => fma(false));
   await measure("f16", shared.device.features.has("shader-f16") ? null : "no shader-f16 here", () => fma(true));
-  await measure("dot4", shared.packed ? null : "no packed int8 dot here",
+  await measure("dot4", shared.features.packed ? null : "no packed int8 dot here",
     async () => scaled("GOPS", await rate(shared.WGSL.DOT4_CEILING, { perLoop: shared.WGSL.DOT4_PER_LOOP })));
   await measure("shared", null, async () => scaled("GBps", await rate(shared.WGSL.SHARED_CEILING, { perLoop: shared.WGSL.SHARED_PER_LOOP })));
   await measure("global", null, async () => ({ MiB: globalThreads * shared.WGSL.GLOBAL_PER_THREAD / 2 ** 20,

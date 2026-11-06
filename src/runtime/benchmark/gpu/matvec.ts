@@ -75,7 +75,7 @@ async function bandwidth(shape: Shape): Promise<Bandwidth> {
   }
   // the vector of a packed shader quantized (QUANTIZE, one dispatch a vector of this width)
   let quantize: Bandwidth["quantize"];
-  if (shared.packed) {
+  if (shared.features.packed) {
     const q = quantizer(io, shape[1]);
     try {
       const r = await validated(() => time([[q.dispatch]]));

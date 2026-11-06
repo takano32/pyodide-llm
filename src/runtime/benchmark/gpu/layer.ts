@@ -304,7 +304,7 @@ function stepForms(): { forms: Form[]; chosen: LayerStepsFound["chosen"] } {
   const fastest = (shared.layerTimes ?? []).filter((row) => row.fused && row.msPerLayer! > 0 && shared.layerVerdicts?.[row.check]?.ok === true)
     .sort((a, b) => a.msPerLayer! - b.msPerLayer!).map((row) => engine.find((form) => form.name === row.form)).find(Boolean);
   if (!fastest) {
-    const forms = LAYER_KINDS.filter((kind) => kind.fused && Boolean(kind.dp4a) === shared.packed).map((kind) => ({ ...kind, subgroups: false }));
+    const forms = LAYER_KINDS.filter((kind) => kind.fused && Boolean(kind.dp4a) === shared.features.packed).map((kind) => ({ ...kind, subgroups: false }));
     return { forms, chosen: { by: "packed", why: shared.layerTimes ? "the layer table has no fused layer timed and found right" : "no layer table was timed before" } };
   }
   const partner = fused.find((form) => form !== fastest && form.base === fastest.base && form.subgroups === fastest.subgroups && form.attention === fastest.attention &&

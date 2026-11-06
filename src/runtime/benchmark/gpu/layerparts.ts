@@ -84,21 +84,21 @@ const LAYER_KINDS: LayerKind[] = [{ name: "llama.cpp, separate steps", base: "ll
 // llama.cpp's decode form, flash_attn_vec (vecAttention()): the engine chooses the attention of a token on the device
 const layerForms = (): Form[] => {
   const subgroups = hasSubgroupId();
-  const llama = LAYER_KINDS.filter((kind) => !kind.dp4a && !(kind.withoutDp4a && shared.packed)), dp4a = LAYER_KINDS.filter((kind) => kind.dp4a);
+  const llama = LAYER_KINDS.filter((kind) => !kind.dp4a && !(kind.withoutDp4a && shared.features.packed)), dp4a = LAYER_KINDS.filter((kind) => kind.dp4a);
   const vec = vecAttention();
   const withVec = (form: Form): Form[] => (form.fused && !form.withoutDp4a ? [form, { ...form, name: `${form.name}, ${vec.name}`, attention: "vec", vecSubgroups: vec.subgroups }] : [form]);
   return [...(subgroups ? [false, true] : [false]).flatMap((withSubgroups) => llama.map((kind) =>
     ({ ...kind, name: `${kind.name}${withSubgroups ? ", subgroups" : ""}`, subgroups: withSubgroups }))),
-    ...dp4a.map((kind) => ({ ...kind, subgroups: false, ...(shared.packed ? {} : { none: "no packed int8 dot here" }) }))].flatMap(withVec);
+    ...dp4a.map((kind) => ({ ...kind, subgroups: false, ...(shared.features.packed ? {} : { none: "no packed int8 dot here" }) }))].flatMap(withVec);
 };
-// whether this device's shaders may use subgroups and subgroup_id
-const hasSubgroupId = () => shared.device.features.has("subgroups") && (navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ?? false);
+// whether this device's shaders may use subgroups and subgroup_id (T642.17: deviceFeatures()'s subgroups, as the engine's)
+const hasSubgroupId = () => shared.features.subgroups;
 // T224's review: the prompt's tiles for a head of headSize as the engine makes them on this device (src/runtime/gpu.js's
 // chooseAttention: f16 in the workgroup's memory where there is shader-f16, subgroups where there are and subgroup_id,
 // the first it tries), which it chooses a token's attention against; the layer rows' tiles are f32 without subgroups
 // (T150), which the engine makes only where the first is not here. { name, shape }, or null where the two are one
 function engineTiles(headSize: number): { shape: FlashShape; name: string } | null {
-  const half = shared.device.features.has("shader-f16"), subgroups = hasSubgroupId();
+  const half = shared.features.half, subgroups = hasSubgroupId();
   if (!half && !subgroups) return null;
   const shape = shared.WGSL.flashShape({ headSize, half, subgroups, memory: shared.device.limits.maxComputeWorkgroupStorageSize,
     threads: Math.min(shared.device.limits.maxComputeInvocationsPerWorkgroup, shared.device.limits.maxComputeWorkgroupSizeX),
@@ -112,7 +112,7 @@ const vecAttention = (subgroups = hasSubgroupId()) => ({ subgroups, name: `flash
     subgroupMin: shared.adapter.info?.subgroupMinSize, subgroupMax: shared.adapter.info?.subgroupMaxSize }) });
 const DP4A_TOKEN = "DP4A, fused (T175)";
 const tokenForm = (): Form => {
-  const dp4a = shared.packed && shared.layerVerdicts?.[`a layer, ${DP4A_TOKEN}`]?.ok === true;
+  const dp4a = shared.features.packed && shared.layerVerdicts?.[`a layer, ${DP4A_TOKEN}`]?.ok === true;
   return { ...LAYER_KINDS.find((kind) => (dp4a ? kind.name === DP4A_TOKEN : kind.name === "llama.cpp, fused (T150)"))!, subgroups: false };
 };
 // T624.2: a plain matrix × vector (the separate steps' products and a matrix alone): the engine's text of a token's

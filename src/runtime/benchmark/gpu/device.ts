@@ -16,11 +16,12 @@ shaders.catch(() => {});
 // steps take them with `import type` (what crosses to the page is contracts/benchmark.ts's).
 import type * as Shaders from "../../shaders.ts";
 import type { PromptForm, Tile } from "../../shaders/prompt.ts";
+import type { Features } from "../../shaders/key.ts";
 import type { Alive, GpuAbout, Lost, GpuInfo, GpuModel, LayerRow, Verdict } from "../../contracts/benchmark.ts";
 // What the steps share, as a step reads it: every step awaits load() (the shaders' module, its GROUP and TILE) and
 // gpu() (the device and its adapter) before anything else, and reads them as there from then on. Until then they are
 // undefined, which is what the object is made with (Unset: the same fields, none of them set).
-type Shared = { WGSL: typeof Shaders; GROUP: number; TILE: number; device: GPUDevice; adapter: GPUAdapter; packed: boolean; fallback: boolean;
+type Shared = { WGSL: typeof Shaders; GROUP: number; TILE: number; device: GPUDevice; adapter: GPUAdapter; features: Features; fallback: boolean;
   layerVerdicts: Record<string, Verdict> | undefined; layerTimes: LayerRow[] | undefined };
 type Unset = { [Field in keyof Shared]: Shared[Field] extends boolean ? boolean : undefined };
 // (an adapter of before GPUAdapterInfo said whether it is a fallback said so itself)
@@ -59,8 +60,10 @@ export type Timed = { ms: number; dispatches: number; ratio?: number; unsteady?:
 const shared = {
   // shaders.ts's module, and its GROUP and TILE (load())
   WGSL: undefined, GROUP: undefined, TILE: undefined,
-  // the device, its adapter, and whether WGSL has packed_4x8_integer_dot_product here (gpu())
-  device: undefined, adapter: undefined, packed: false,
+  // the device, its adapter, and what the device and WGSL have here (gpu(): T642.17, the engine's deviceFeatures(), as
+  // the model's GPU worker reads them: half, shader-f16; shuffles, the device's subgroups; subgroups, those and WGSL's
+  // subgroup_id; packed, WGSL's packed_4x8_integer_dot_product)
+  device: undefined, adapter: undefined, features: undefined,
   // a fallback adapter (SwiftShader: the CPU pretending to be a GPU, as in CI) says nothing of a GPU's speed, and takes
   // 16 s for one token of Llama 3.2 1B: every measurement is taken once there, and only its answers are worth anything
   fallback: false,
@@ -101,7 +104,6 @@ async function gpu(): Promise<GPUDevice> {
   shared.adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" }) as GPUAdapter;
   if (!shared.adapter) throw new Error("navigator.gpu gave no adapter");
   shared.fallback = Boolean(shared.adapter.info?.isFallbackAdapter ?? (shared.adapter as Older).isFallbackAdapter);
-  shared.packed = navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product") ?? false;
   // as much of a buffer and of a binding as the adapter allows: the weights are the point. T146's tiled shaders use
   // shader-f16 and subgroups where the adapter has them (asked for only then: a device refuses a feature it lacks)
   shared.device = await shared.adapter.requestDevice({
@@ -111,6 +113,7 @@ async function gpu(): Promise<GPUDevice> {
       maxBufferSize: shared.adapter.limits.maxBufferSize,
     },
   });
+  shared.features = shared.WGSL.deviceFeatures(shared.device);
   shared.device.lost.then((info) => postMessage({ lost: `${info.reason}: ${info.message}` } satisfies Lost));
   return shared.device;
 }
@@ -133,7 +136,7 @@ async function info(): Promise<GpuInfo> {
     subgroupSizes: shared.adapter.info?.subgroupMinSize ? [shared.adapter.info.subgroupMinSize, shared.adapter.info.subgroupMaxSize] : null,
     features: [...shared.adapter.features].sort(),
     wgsl: [...(navigator.gpu.wgslLanguageFeatures ?? [])].sort(),
-    packed: shared.packed,
+    packed: shared.features.packed,
   } satisfies GpuAbout);
   return found;
 }
@@ -159,7 +162,7 @@ let pipelines: Pipelines | undefined;
 function pipelinesFor(): Pipelines {
   if (pipelines) return pipelines;
   const make = (code: string) => shared.device.createComputePipeline({ layout: "auto", compute: { module: shared.device.createShaderModule({ code }), entryPoint: "main" } });
-  pipelines = { widen: make(shared.WGSL.WIDEN), packed: shared.packed ? make(shared.WGSL.PACKED) : null, small: make(shared.WGSL.SMALL),
+  pipelines = { widen: make(shared.WGSL.WIDEN), packed: shared.features.packed ? make(shared.WGSL.PACKED) : null, small: make(shared.WGSL.SMALL),
                 batched: make(shared.WGSL.BATCHED), argmax: make(shared.WGSL.ARGMAX), empty: make(shared.WGSL.EMPTY) };
   return pipelines;
 }
@@ -173,8 +176,8 @@ const tiledPipelines = new Map<string, Promise<GPUComputePipeline>>();
 function promptShaders(): PromptShader[] {
   const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = shared.device.limits;
   // T147: the tiled ones are the model's GPU worker's candidates (shaders/prompt.ts's promptForms), the same list
-  return [{ name: "batched (T135)", kind: "batched" }, ...shared.WGSL.promptForms({ half: shared.device.features.has("shader-f16"),
-    subgroups: shared.device.features.has("subgroups"), packed: shared.packed, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) })];
+  return [{ name: "batched (T135)", kind: "batched" }, ...shared.WGSL.promptForms({ half: shared.features.half,
+    subgroups: shared.features.shuffles, packed: shared.features.packed, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) })];
 }
 // T149: the shaders of a matrix times one vector (a generated token's): T134's two, then llama.cpp's mul_mat_vec (its
 // float form and its MMVQ one, each with the workgroup's reduction and, where subgroups are, with subgroupAdd) and
@@ -183,9 +186,10 @@ function promptShaders(): PromptShader[] {
 // fusedDp4aMatVec with the output "write", as the classifier's), named "(engine)": their numbers are not those of the
 // benchmark's copies before (the owner, 2026-10-31)
 function matVecShaders(): MatVecShader[] {
-  const noPacked = shared.packed ? undefined : "no packed int8 dot here";
-  const subgroups = shared.device.features.has("subgroups");
-  const noSubgroupId = navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ? undefined : "no subgroup_id in this WGSL";
+  const noPacked = shared.features.packed ? undefined : "no packed int8 dot here";
+  const subgroups = shared.features.shuffles;
+  // (subgroups: the device's and WGSL's subgroup_id; where the device has them, only subgroup_id may be missing)
+  const noSubgroupId = shared.features.subgroups ? undefined : "no subgroup_id in this WGSL";
   // check: the name of the shader's verdict in check() (T134's two are checked on their own there)
   const shaders: MatVecShader[] = [{ name: "widened (T134)", kind: "widen", check: "widen" },
     { name: "packed int8 (T134)", kind: "packed", check: "packed", none: noPacked }];
