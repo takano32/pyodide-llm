@@ -155,6 +155,12 @@ const x = floats(n);
     const token = got.slice();
     token.copyWithin(3 * qDim, 4 * qDim, 5 * qDim);
     assert.ok(promptAttentionOff(token, data, sizes) > 4e-3, "a token of another's");
+    // (and the window itself: an answer that ignores it, or reads one position more or fewer, is past the line too: the
+    // smallest of 120 draws was 0.147 for one more or 0.172 for one fewer, 0.42 for none; promptAttentionData's numbers are Math.random's, not this file's)
+    for (const other of window ? [0, window - 1, window + 1] : [window + 13]) {
+      const [wrong] = called("flash_tile", bytesOf(data.q), bytesOf(data.keys), bytesOf(data.values), heads, kvHeads, Math.fround(1 / Math.sqrt(size)), other, tokens, pos, size);
+      assert.ok(promptAttentionOff(asFloats(wrong), data, sizes) > 4e-3, `a window of ${other} for ${window}`);
+    }
     const nan = got.slice();
     nan[tokens * qDim - 1] = NaN;
     assert.ok(!(promptAttentionOff(nan, data, sizes) <= 4e-3), "a NaN");
