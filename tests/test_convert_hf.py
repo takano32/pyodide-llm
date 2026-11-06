@@ -146,3 +146,30 @@ def test_the_builds_tokenizer_is_the_pages(tmp_path):
     for name, data, size in made:
         page, build = page_and_build(tmp_path, name, data, size)
         assert build == page, name
+
+
+def test_the_build_puts_off_a_tokenizer_json_that_writes_out_a_sentencepiece_model_as_the_page_does(tmp_path, capsys):
+    """T257 (Later): the model's own file first where there is one, the tokenizer.json where none other will do."""
+    from test_spelled_bpe import model, written_out
+    spec, _ = written_out(True)
+    size, data = len(spec["model"]["vocab"]), json.dumps(spec).encode()
+    (tmp_path / "tokenizer.json").write_bytes(data)
+    (tmp_path / "tokenizer.model").write_bytes(model(True))
+    convert_hf.convert_tokenizer(tmp_path, tmp_path / "out", size)
+    assert (tmp_path / "out").read_bytes() == convert_hf.tokenizer_of("tokenizer.model", model(True), size)
+    said = capsys.readouterr().err.splitlines()
+    assert len(said) == 1 and "tokenizer.json: not read (Later:" in said[0] and said[0].endswith("so the tokenizer is tokenizer.model"), said
+    (tmp_path / "tokenizer.model").unlink()
+    convert_hf.convert_tokenizer(tmp_path, tmp_path / "out", size)
+    assert (tmp_path / "out").read_bytes() == convert_hf.tokenizer_of("tokenizer.json", data, size)
+    assert capsys.readouterr().err == ""
+
+
+def test_the_build_leaves_out_an_added_token_past_the_models_last_row(tmp_path):
+    """T257 (with_a_row()): a text-only Gemma 3's <image_soft_token>, one past the model's rows, was refused by the build."""
+    from test_spelled_bpe import written_out
+    spec, _ = written_out(False, True)
+    size = len(spec["model"]["vocab"])
+    spec["added_tokens"] += [{**spec["added_tokens"][0], "id": size, "content": "<image_soft_token>", "special": True}]
+    page, build = page_and_build(tmp_path, "tokenizer.json", json.dumps(spec).encode(), size)
+    assert build == page

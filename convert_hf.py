@@ -18,9 +18,11 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "python"))
 from llama2_convert import (Arrays, Safetensors, Shards, bfloat16, checkpoint_form, checkpoint_header, checkpoint_size,  # noqa: E402
-                            convert_weights, family_of, normalize, sentencepiece_charsmap, sentencepiece_pieces, tokenizer_bin,
-                            tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces)
-from convert.conduct import TOKENIZERS  # noqa: E402 (a part, read as the parts read one another: the window does not hand it out)
+                            convert_weights, family_of, normalize)
+# (parts, read as the parts read one another: the window does not hand them out)
+from convert.conduct import TOKENIZERS  # noqa: E402
+from convert.tokenizer import Later  # noqa: E402
+from convert.vocabulary import vocabulary_of  # noqa: E402
 
 
 # ------------------------------------------------------------------------------------------------ weights
@@ -77,31 +79,39 @@ def convert(directory, out_path, dtype, max_seq_len):
     return normalize(config)["vocab_size"]  # a Qwen3.5 has it one level down (T229)
 
 
-def tokenizer_of(name, data, vocab_size):
-    """tokenizer.bin of one candidate's bytes: by its name, as the page's conversion reads it (llama2_convert.Conversion)."""
-    if not name.lower().endswith(".json"):
-        return tokenizer_bin(sentencepiece_pieces(data), vocab_size, charsmap=sentencepiece_charsmap(data))
-    parsed = json.loads(data)
-    return tokenizer_bin(tokenizer_json_pieces(parsed), vocab_size, charsmap=tokenizer_json_charsmap(parsed),
-                         spaces=tokenizer_json_options(parsed)["tokenizer_kind"] != "bytebpe")
+def tokenizer_of(name, data, vocab_size, last=True):
+    """tokenizer.bin of one candidate's bytes, by its name: what the page's conversion makes of it (T640.7: the one
+    reader, convert/vocabulary.py's VOCABULARIES, by convert.vocabulary's vocabulary_of()). The bytes do not hang on
+    tokenizer_config.json, which only the options read. last: see Conversion (T257's Later)."""
+    return vocabulary_of(data, name, vocab_size, last=last).tokenizer
 
 
 def convert_tokenizer(directory, out_path, vocab_size):
-    """The tokenizer of the directory: of the candidates the page tries, in its order (T374.2.3: convert.conduct's
-    TOKENIZERS, the one list), the first that is there and that the converter reads. Where none will do, the refusal
-    of one that is there says why; where a later one does, a line on stderr says which was left and why (T414)."""
-    refusal, left = None, []
+    """The tokenizer of the directory, as the page's conduct picks it (convert.conduct's tokenized()): of the candidates
+    in its order (T374.2.3: convert.conduct's TOKENIZERS, the one list), the first that is there and that the converter
+    reads, and a tokenizer.json that writes out a sentencepiece model with its dummy prefix only where no candidate
+    after it will do (T257). Where none will do, the refusal of one that is there says why; where a later one does, a
+    line on stderr says which was left and why (T414)."""
+    refusal, left, later = None, [], None
     for name in TOKENIZERS:
         if not (directory / name).exists():
             continue
+        data = (directory / name).read_bytes()
         try:
-            vocabulary = tokenizer_of(name, (directory / name).read_bytes(), vocab_size)
+            vocabulary = tokenizer_of(name, data, vocab_size, last=False)
             break
+        except Later as error:
+            later = later or (name, data, error)
         except Exception as error:  # (whatever it was refused with: the next candidate may do)
             refusal = refusal or error
             left.append((name, error))
     else:
-        raise refusal or FileNotFoundError(f"{directory} has no tokenizer: none of {', '.join(TOKENIZERS)}")
+        if not later:
+            raise refusal or FileNotFoundError(f"{directory} has no tokenizer: none of {', '.join(TOKENIZERS)}")
+        name, data, _ = later
+        vocabulary = tokenizer_of(name, data, vocab_size)
+    if later and later[0] != name:
+        left.append(later[::2])
     for skipped, error in left:
         print(f"{directory / skipped}: not read ({type(error).__name__}: {' '.join(str(error).split())}), so the tokenizer is {name}", file=sys.stderr)
     Path(out_path).write_bytes(vocabulary)
