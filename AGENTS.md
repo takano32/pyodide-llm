@@ -212,7 +212,7 @@
 | `forward/control.ts`・`forward/cache.ts` | 制御領域の語と待ち / KV のキャッシュ |
 | `gpu/device.ts` | `model`・`stopping`・`lost` と、モデルの記録（端末の事実 `m.features`（`half`: shader-f16、`shuffles`: 装置の subgroups だけ（プロンプトの DP4A のタイル: `subgroup_id` を読まない）、`subgroups`: 装置の subgroups と WGSL の `subgroup_id`（attention と答えのステップの行列）、`packed`: packed int8 dot）と、モデル自身のシェーダ `m.own`（3 値と 1 ビットは `"ternary"`）と、形を選ぶ計測の時計 `m.now`（T642.4）は `openDevice()` が 1 回作る: `gpu/` の部品は `navigator.gpu` の WGSL の機能を直に読まない（読むのは `shaders/key.ts` の `deviceFeatures()` の 1 か所で、記録も端末の鍵もそれから。鍵と同じ形のプロンプトの形の一覧 `devicePromptForms(features, limits, own)` は記録の `features` を受ける。T642.3・T642.16。`/benchmark/` の GPU の節はまだ自分で読む）。`m.weights`・`m.block`・`m.forms`・`m.tokens`: **持ち主のファイルがリテラルで作り、その鍵が宣言**。別の部品の記録には代入しない。層の種類が作る物は種類のファイルの閉包の中にあり、`m.block.kinds`・`m.tokens.kinds` に置くのは `block.ts`・`tokens.ts`） |
 | `src/page/model.ts`・`answer.ts` | ページが持つモデルと読み込みの進み / 書いている答え（描く間合い: 最初はすぐ、その後 8 トークンか 32 ms ごと） |
-| `src/benchmark/running.ts` | 走っている run |
+| `src/benchmark/running.ts` | 走っている run と、節ごとの結果 `results`（T643.14: 出来事 `sectionEnded()`・`gpuRewritten()` のたびに新しいオブジェクト。節の要素 `parts` は `section.ts` が自分で作り、節の Worker の終わりは `endWorkers()`、`window.__benchmark` に書くのは `dom.ts` の `told()` の 1 か所で、`results` はそこの getter が今のものを読む） |
 
 - **ページの持ち主**（`model.ts`・`answer.ts`）は、ほかの部品を import せず、出来事でない関数も定数も持てない（`page-modules-check`）: 計算は純な部品に置き、出来上がった値を渡す。時計と乱数は引数で（Node がそのまま import して試験できる）。描く関数は状態を書かない。**持ち主に変数を足すと、部品の試験の「最初の状態」の断言が落ちる**（2 つ目の写し）。`opening.ts` は `model` を読む部品より先に走る（`index.astro` の import の順）。
 - **部品に渡すのは数個の物**。部品は頭で 1 回ほどき、動く値だけを毎回オブジェクト越しに読む。

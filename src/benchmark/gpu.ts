@@ -3,7 +3,8 @@
 // (T643.11: the section's Markdown and its state are src/bench/gpusection.ts's gpuResult(), from the steps kept here)
 import { BRIDGE_ROUNDS, gpuKept, gpuNone, gpuPlan, gpuResult } from "../bench.ts";
 import type { Bridge, GpuFound, GpuStepKey, Step } from "../bench.ts";
-import { $, results } from "./dom.ts";
+import { $ } from "./dom.ts";
+import { results } from "./running.ts";
 import type { Result } from "../bench.ts";
 import { staged, ask, worker } from "./section.ts";
 import type { Asking } from "./section.ts";

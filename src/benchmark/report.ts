@@ -4,7 +4,8 @@
 declare const __BUILD__: string;
 import { environmentOf, reportOf } from "../bench.ts";
 import { hiddenLine, wakeKeeper } from "./wake.ts";
-import { $, results } from "./dom.ts";
+import { $, told } from "./dom.ts";
+import { results } from "./running.ts";
 import { measured } from "./model.ts";
 
 // ---- one report: the model's table first (as ?bench=1 writes it, which tests/reports.ts reads), then every section
@@ -18,7 +19,7 @@ export function report() {
   $("long").hidden = !whole.long || whole.longer;
   $("longer").hidden = !whole.longer;
   (document.querySelector(".report") as HTMLElement).hidden = false;
-  (window as any).__benchmark.markdown = whole.markdown;
+  told({ markdown: whole.markdown });
 }
 
 // T194: the screen kept on while sections run, and the seconds the page was hidden counted

@@ -191,7 +191,8 @@ for (const [what, pattern] of [
   ["", /return storageResult\(await ask\(/],
   ["", /return lineResult\(await ask\(/],
   ["the GPU section's steps go to gpuResult() with the CPU section's result", /return gpuResult\(found, bridge, lost, results\.cpu\);/],
-  ["and are written again after the CPU section", /Object\.assign\(g, gpuMarkdown\(g\.data\.found, g\.data\.bridge, g\.data\.lost, results\.cpu\)\);/],
+  // (T643.14: as a new result, which running.ts holds in its place)
+  ["and are written again after the CPU section", /const rewritten = \{ \.\.\.g, \.\.\.gpuMarkdown\(g\.data\.found, g\.data\.bridge, g\.data\.lost, results\.cpu\) \};\s*gpuRewritten\(rewritten\);/],
   ["the model section hands over what its path says", /said: pathWarnings\(paths\)/],
   ["the report is reportOf()'s", /reportOf\(\{ results, measured, environment, hidden: hiddenLine\(awake\.hidden\(\)\) \}\)/],
   // T242's review: the worker makes its shared memory for the loads it is told follow, without a gigabyte for a next model

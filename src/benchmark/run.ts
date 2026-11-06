@@ -3,11 +3,11 @@
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { forgetMark, readMark, memoryResult } from "./page-memory.ts";
 import { cpuBaseline, CPU_SPEED_KEY, gpuMarkdown, STATE } from "../bench.ts";
-import { $, parameters, ALL, results } from "./dom.ts";
+import { $, parameters, ALL, told } from "./dom.ts";
 import { SECTIONS } from "../bench.ts";
 import type { Name, Result } from "../bench.ts";
-import { runAt, runBegan, runEnded, sectionAt, sectionBegan } from "./running.ts";
-import { parts, rendered, clock, staged, ticked, live, stalled } from "./section.ts";
+import { gpuRewritten, results, runAt, runBegan, runEnded, sectionAt, sectionBegan, sectionEnded } from "./running.ts";
+import { parts, rendered, clock, staged, ticked, endWorkers, stalled } from "./section.ts";
 import { device, cpu } from "./cpu.ts";
 import { modelSection } from "./model.ts";
 import { gpu } from "./gpu.ts";
@@ -19,37 +19,14 @@ import { report, awake } from "./report.ts";
 type Baseline = { why?: string; token?: { threads: number; msPerToken: number; GBps: number; isolated: boolean };
   prompt?: { threads: number; msPerToken: number; isolated: boolean } };
 
-for (const section of document.querySelectorAll<HTMLElement>("section[data-section]")) {
-  const name = section.dataset.section as Name;
-  const head = document.createElement("div");
-  head.className = "head";
-  const title = section.querySelector("h2")!;
-  const run = document.createElement("button");
-  run.type = "button";
-  run.textContent = "Run";
-  const state = document.createElement("span");
-  state.className = "state";
-  head.append(title, run, state);
-  section.prepend(head);
-  const box = document.createElement("div");
-  box.className = "progress";
-  box.hidden = true;
-  box.innerHTML = `<div class="bar" role="progressbar" aria-label="${title.textContent}"><div></div></div><span class="stage"></span><span class="elapsed"></span>`;
-  const progress = { box, bar: box.querySelector<HTMLElement>(".bar")!, fill: box.querySelector<HTMLElement>(".bar > div")!,
-    stage: box.querySelector<HTMLElement>(".stage")!, elapsed: box.querySelector<HTMLElement>(".elapsed")! };
-  const out = document.createElement("div");
-  out.className = "out";
-  section.append(box, out);
-  parts[name] = { run, state, progress, out };
-  run.onclick = () => runSections([name]);
-}
+for (const name of SECTIONS) parts[name].run.onclick = () => runSections([name]);
 
 const RUN: Record<Name, () => Promise<Result>> = { device, cpu, model: modelSection, gpu, storage, line, memory: pageMemory };
 async function runSections(names: readonly Name[]) {
   if (!runBegan(names, performance.now())) return;
   const buttons = [$("run-all"), ...Object.values(parts).map((p) => p.run)] as HTMLButtonElement[];
   buttons.forEach((b) => (b.disabled = true));
-  (window as any).__benchmark.done = false;
+  told({ done: false });
   $("overall").hidden = names.length < 2;
   const tick = setInterval(ticked, 1000);
   awake.start();
@@ -70,13 +47,12 @@ async function runSections(names: readonly Name[]) {
       result = { status: "error", markdown: String((error as Error)?.message ?? error) };
     } finally {
       stall.stop();
-      live.forEach((w) => w.terminate());  // the section's own finally has done it, unless it was stopped
-      live.clear();
+      endWorkers();
       // T173's review: a page-memory run stopped for its silence never reaches its own finally: its mark would
       // later read as a tab the browser ended
       if (name === "memory") forgetMark(tabStorage);
     }
-    results[name] = result;
+    sectionEnded(name, result);
     // T156: the CPU's reading of the weights here, for the model page (a model on the GPU alone is held against it)
     const speed = name === "cpu" ? (cpuBaseline(result) as Baseline).token : undefined;
     if (speed?.isolated) {
@@ -97,8 +73,9 @@ async function runSections(names: readonly Name[]) {
     // button) writes them again, and the report with them
     const g = results.gpu;
     if (name === "cpu" && g?.data?.found) {
-      Object.assign(g, gpuMarkdown(g.data.found, g.data.bridge, g.data.lost, results.cpu));
-      parts.gpu.out.innerHTML = rendered(g.markdown);
+      const rewritten = { ...g, ...gpuMarkdown(g.data.found, g.data.bridge, g.data.lost, results.cpu) };
+      gpuRewritten(rewritten);
+      parts.gpu.out.innerHTML = rendered(rewritten.markdown);
     }
     report();
   }
@@ -107,7 +84,7 @@ async function runSections(names: readonly Name[]) {
   if (names.length > 1) $("overall").textContent = `${names.length} sections in ${clock(performance.now() - runAt)}`;
   buttons.forEach((b) => (b.disabled = false));
   runEnded();
-  (window as any).__benchmark.done = true;
+  told({ done: true });
 }
 $("run-all").onclick = () => runSections(ALL);
 // T192: where the clipboard refuses (or there is none), say so and select the whole for copying by hand: on a
@@ -138,13 +115,14 @@ $("issue").addEventListener("click", () => {
 // section is not run again by the ?run= below (a ?run=memory would end the tab over and over)
 const ended = readMark(tabStorage);
 if (ended) {
-  const result = (results.memory = memoryResult(ended) as Result);
+  const result = memoryResult(ended) as Result;
+  sectionEnded("memory", result);
   parts.memory.state.className = `state ${result.status}`;
   parts.memory.state.textContent = `${STATE[result.status]} · the page was loaded again`;
   parts.memory.out.innerHTML = rendered(result.markdown);
   report();
 }
-(window as any).__benchmark.all = ALL;
+told({ all: ALL });
 // ?run=all runs every section at once but the page memory, ?run=cpu,line those (tests/bench-check.ts)
 const asked = parameters.get("run");
 if (asked) runSections((asked === "all" ? ALL : SECTIONS.filter((name) => asked.split(",").includes(name))).filter((name) => !(ended && name === "memory")));

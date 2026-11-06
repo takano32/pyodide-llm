@@ -12,7 +12,8 @@
 //   src/page/answer.ts        the answer being written: its bubble, the settings it is written with (the steps held to
 //                             the context, the seed drawn once where the run samples and gone where it is greedy), and
 //                             that it is being written
-//   src/benchmark/running.ts  the run of /benchmark/ that is going on: one at a time, its sections and the times it is told
+//   src/benchmark/running.ts  the run of /benchmark/ that is going on: one at a time, its sections and the times it is told,
+//                             and what the sections found (T643.14)
 //   src/page/opening.ts       the model a visit opens with, in a process of its own for each address and storage (it
 //                             reads both as it loads, through address.ts and remembered.ts): the URL's first, then the
 //                             one remembered, then the default (T511.6)
@@ -282,7 +283,7 @@ console.log("page-parts-check: answer.ts by itself: the bubble, the settings of 
 // ---- src/benchmark/running.ts
 {
   const r = await fresh("benchmark/running.ts");
-  assert.deepEqual(held(r), { current: undefined, sectionAt: 0, runNames: [], runAt: 0 }, "no run as the page starts");
+  assert.deepEqual(held(r), { current: undefined, sectionAt: 0, runNames: [], runAt: 0, results: {} }, "no run as the page starts, and nothing found");
   unassignable(r, "running.ts");
   only(r, () => r.runEnded(), {}, "an end before any run changes nothing");
   const names = ["device", "cpu", "model"];
@@ -296,8 +297,24 @@ console.log("page-parts-check: answer.ts by itself: the bubble, the settings of 
   r.sectionBegan("gpu", 9001);
   only(r, () => r.runEnded(), { current: undefined }, "");
   only(r, () => r.runEnded(), {}, "ended twice");
+  // T643.14: what the sections found, a new object each time (window.__benchmark.results reads the one there is now)
+  const device = { status: "ok", markdown: "| device |" }, cpu = { status: "ok", markdown: "| cpu |" };
+  const gpu = { status: "ok", markdown: "| gpu |", data: { found: {} } }, rewritten = { ...gpu, markdown: "| gpu against the CPU |" };
+  const before = r.results;
+  only(r, () => r.sectionEnded("device", device), { results: { device } }, "a section found this");
+  assert.equal(before.device, undefined, "the results held before are as they were");
+  only(r, () => r.sectionEnded("gpu", gpu), { results: { device, gpu } }, "another section");
+  const held2 = r.results;
+  only(r, () => r.sectionEnded("cpu", cpu), { results: { device, gpu, cpu } }, "the CPU section after the GPU's");
+  only(r, () => r.gpuRewritten(rewritten), { results: { device, gpu: rewritten, cpu } }, "the GPU section's tables written again: that alone changes");
+  assert.equal(held2.gpu, gpu, "the GPU section's result held before is not written over");
+  assert.equal(gpu.markdown, "| gpu |", "nor is what was told");
+  only(r, () => r.sectionEnded("device", cpu), { results: { device: cpu, gpu: rewritten, cpu } }, "a section run again: its last result");
+  only(r, () => r.runBegan(["cpu"], 10000), { runNames: ["cpu"], runAt: 10000 }, "a run begins: what the sections found stays (the report holds them all)");
+  r.runEnded();
+  cases += 2;
 }
-console.log("page-parts-check: running.ts by itself: one run at a time, its sections and the times it is told");
+console.log("page-parts-check: running.ts by itself: one run at a time, its sections and the times it is told, what the sections found");
 
 // ---- src/page/opening.ts: a process for each visit (address.ts and remembered.ts read the address and the storage as
 // they load, and a module is made once)

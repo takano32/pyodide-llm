@@ -11,9 +11,35 @@ import type { Answer, Asked, Said } from "../runtime/contracts/benchmark.ts";
 import type { ModelWorker } from "../runtime/contracts/messages.ts";
 
 // ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T177), and what
-// the section found
+// the section found. T643.14: made here, once, as the page's sections are; the other parts read them (run.ts gives each
+// Run button what it does)
 type Progress = { box: HTMLElement; bar: HTMLElement; fill: HTMLElement; stage: HTMLElement; elapsed: HTMLElement };
-export const parts: Record<string, { run: HTMLButtonElement; state: HTMLElement; progress: Progress; out: HTMLElement }> = {};
+type Part = { run: HTMLButtonElement; state: HTMLElement; progress: Progress; out: HTMLElement };
+function partOf(section: HTMLElement): Part {
+  const head = document.createElement("div");
+  head.className = "head";
+  const title = section.querySelector("h2")!;
+  const run = document.createElement("button");
+  run.type = "button";
+  run.textContent = "Run";
+  const state = document.createElement("span");
+  state.className = "state";
+  head.append(title, run, state);
+  section.prepend(head);
+  const box = document.createElement("div");
+  box.className = "progress";
+  box.hidden = true;
+  box.innerHTML = `<div class="bar" role="progressbar" aria-label="${title.textContent}"><div></div></div><span class="stage"></span><span class="elapsed"></span>`;
+  const progress = { box, bar: box.querySelector<HTMLElement>(".bar")!, fill: box.querySelector<HTMLElement>(".bar > div")!,
+    stage: box.querySelector<HTMLElement>(".stage")!, elapsed: box.querySelector<HTMLElement>(".elapsed")! };
+  const out = document.createElement("div");
+  out.className = "out";
+  section.append(box, out);
+  return { run, state, progress, out };
+}
+// (every name of SECTIONS has its section: tests/bench.ts holds benchmark.astro's sections to SECTIONS, T643.16)
+export const parts: Readonly<Record<Name, Part>> = Object.fromEntries([...document.querySelectorAll<HTMLElement>("section[data-section]")]
+  .map((section) => [section.dataset.section as Name, partOf(section)])) as Record<Name, Part>;
 
 // Markdown as the page shows it: tables and paragraphs, which is all the sections write
 const escape = (text: string) => text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
@@ -101,7 +127,7 @@ const WORKERS = {
   "benchmark/storage.js": () => new Worker(new URL("../runtime/benchmark/storage.ts", import.meta.url), { type: "module" }),
   "benchmark/waiter.js": () => new Worker(new URL("../runtime/benchmark/waiter.ts", import.meta.url), { type: "module" }),
 };
-export const live = new Set<Worker>();
+const live = new Set<Worker>();
 let heard = 0;
 type Made<File> = File extends keyof Asked ? Asking<File> : File extends "worker.js" ? ModelWorker : Worker;
 export function worker<File extends keyof typeof WORKERS>(file: File): Made<File> {
@@ -114,6 +140,11 @@ export function worker<File extends keyof typeof WORKERS>(file: File): Made<File
   return w as Made<File>;
 }
 const STALL_MS = 5 * 60_000, TICK_MS = 5000;
+/** The section is over: its workers are ended (its own finally has done it, unless it was stopped). */
+export function endWorkers() {
+  live.forEach((w) => w.terminate());
+  live.clear();
+}
 export function stalled(): { promise: Promise<Result>; stop: () => void } {
   heard = performance.now();
   let last = heard, timer = 0;
