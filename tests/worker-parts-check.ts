@@ -524,33 +524,4 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
 }
 console.log("ok: load.js on stand-ins: a load to its ready (of the site, two files, two URLs, a translation model), the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
 
-// ---- T380.2: runtime.js asking for the adapter as the worker begins. What fails there was silent: an adapter that
-// cannot be asked for, and a device with no key (in this vm no module can be imported later, which is such a failure)
-{
-  const begun = async (gpu) => {
-    const warn = console.warn, said = [];
-    console.warn = (...words) => said.push(words.join(" "));
-    try {
-      const { run } = workerHarness({ root: null, gpu });
-      await run("adapterAsked");
-      return { said, adapter: JSON.parse(JSON.stringify(run("gpuAdapter"))) };
-    } finally {
-      console.warn = warn;
-    }
-  };
-  // no adapter here: nothing failed, and nothing is said
-  assert.deepEqual(await begun({ requestAdapter: async () => null }), { said: [], adapter: null });
-  // the asking itself fails
-  assert.deepEqual(await begun({ requestAdapter: () => Promise.reject(new Error("the GPU process is gone")) }),
-    { said: ["gpu: the adapter could not be asked for (Error: the GPU process is gone): no GPU on this visit"], adapter: null });
-  // an adapter that is not what one is
-  const odd = await begun({ requestAdapter: async () => ({}) });
-  assert.equal(odd.adapter, null);
-  assert.match(odd.said.join("|"), /^gpu: the adapter could not be asked for \(TypeError: [^|]+\): no GPU on this visit$/);
-  // an adapter, and no key of it: the adapter stands, without one
-  const keyless = await begun({ requestAdapter: async () => ({ limits: { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28 }, info: { isFallbackAdapter: false } }) });
-  assert.deepEqual(keyless.adapter, { fallback: false, limits: { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28 }, packed: false });
-  assert.match(keyless.said.join("|"), /^gpu: no key of this device \([^|]+\): what the page kept of it is not used$/);
-}
-console.log("ok: T380.2, an adapter that cannot be asked for and a device without a key are said on the console; no adapter at all is no failure and says nothing");
 console.log("worker-parts-check: ok");

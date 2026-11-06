@@ -34,9 +34,6 @@ const MODEL_CACHE = "models-v2";
 // its bytes (T648.4: a translation model's file is one too)
 type Parts = Pick<OfThisSite, "checkpoint" | "bytes">;
 
-// what an earlier version of this page stored
-globalThis.caches?.delete("models-v1").catch(() => {});
-
 // A part's bytes: PART_BYTES, the last one less
 const partBytes = (model: Parts, part: number) => Math.min(PART_BYTES, model.bytes - part * PART_BYTES);
 const partKey = (url: string, model: Parts) => `${url}?bytes=${model.bytes}`;

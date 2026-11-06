@@ -429,7 +429,8 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   };
   vm.runInContext(strictly("forwardModule = stand.forward; llama2_numpy = stand.llama2_numpy; jsKernels = { relaxed: true }; " +
     "sharedKernels = {}; wideKernels = { plain: {}, shared: {} }; roundBegan([]);"), gpuContext);
-  await vm.runInContext(strictly("adapterAsked"), gpuContext);
+  // (T641.8: asked for by init(), which this check does not run: asked here as init() asks)
+  await vm.runInContext(strictly("adapterAsked = askAdapter()"), gpuContext);
   const opened = () => {
     const into = vm.runInContext(strictly("checkpointSink()"), gpuContext);
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));

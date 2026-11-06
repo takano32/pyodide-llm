@@ -179,10 +179,10 @@ const SILENT = {
   "src/runtime/worker/runtime.ts": [
     ["compileKernelsHere", "catch { wideKernels = undefined; }", "T101: a browser that says it makes 64-bit memories and cannot compile their kernels (Playwright's WebKit did, on an ordinary visit) " +
       "keeps the 32-bit ones; a model past 4 GB is then refused with its own sentence"],
+    ["init", "globalThis.caches?.delete(\"models-v1\").catch(() => {})", "what an earlier version of the page stored: if it cannot be deleted it stays, and nothing reads it"],
     ["init", "engine.catch(() => {})", "awaited below (placePython): a load that ends before that leaves no unhandled rejection"],
   ],
   "src/runtime/worker/sources.ts": [
-    ["(the module)", "globalThis.caches?.delete(\"models-v1\").catch(() => {})", "what an earlier version of the page stored: if it cannot be deleted it stays, and nothing reads it"],
     ["fetchPart", "globalThis.caches?.open(MODEL_CACHE).catch(() => undefined)", "T117: a Cache API that will not open (some private modes) leaves a plain fetch"],
     ["fetchPart", "cache?.match(key).catch(() => undefined)", "T117: a copy that cannot be read leaves the network to answer"],
     ["fetchPart", "cache.put(key, new Response(res.clone().body.pipeThrough(whole))).catch(() => {})", "a copy that is not stored (no room, a part that broke off or was cancelled: " +

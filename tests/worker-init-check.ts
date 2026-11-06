@@ -11,7 +11,10 @@
 //     imports llama2_numpy, writes the two kernels for Python beside it, and compiles the plain kernels of forward.ts
 //     (no shared ones: the vm is not cross-origin isolated);
 //   - where forward.ts does not come, the engine runs on NumPy: no kernels of forward.ts, and the console says why;
-//   - runtimeAsked() starts it once: a second load is the same promise.
+//   - runtimeAsked() starts it once: a second load is the same promise;
+//   - T641.8: the two the worker began as its modules were imported, it begins in init(), with its first load: the
+//     adapter asked for (none, one that cannot be asked for, one that is not what one is, one without a key: T380.2's,
+//     out of tests/worker-parts-check.ts), and the Cache API of an earlier version of the page deleted.
 // Not held here: STARTS's own catch of forward.ts (the failure handed in is the check's: tests/updated-check.ts holds that
 // catch's text), the switches but hfParts (hfConnections, wide, gpuTest, bench), the shared kernels of a cross-origin
 // isolated page, the kernels of a 64-bit memory as they are kept, and blockKernels(). Pyodide's real start is trodden
@@ -44,8 +47,8 @@ function madeUpPyodide() {
 }
 
 // a worker on the made-up network: the version, and the built files from the disk
-function started() {
-  const harness = workerHarness();
+function started(gpu = false) {
+  const harness = workerHarness({ gpu });
   harness.fresh((url) => {
     if (url === "https://data.jsdelivr.com/v1/packages/npm/pyodide/resolved?specifier=latest") return Response.json({ version: VERSION });
     if (url.endsWith("/built/engine.zip")) return new Response(ARCHIVE);
@@ -100,3 +103,55 @@ console.log("worker-init-check: init() resolves Pyodide's version, starts it by 
     `the console says why: ${JSON.stringify(warned)}`);
 }
 console.log("worker-init-check: where forward.ts does not come, the engine runs on NumPy and the console says why");
+
+// ---- T641.8: the adapter and the old Cache API, asked for by init() and not as the modules are imported
+{
+  const asked = [], deleted = [];
+  const { run, context } = started({ requestAdapter: async () => { asked.push("adapter"); return null; } });
+  context.caches = { delete: async (name) => { deleted.push(name); return true; } };
+  // (the worker's modules have run: nothing of the two yet)
+  assert.equal(run("adapterAsked"), undefined, "no adapter is asked for as the worker's modules are imported (T641.8)");
+  assert.deepEqual([asked, deleted], [[], []], "nothing asked of the GPU or the Cache API before the first load");
+  const { importer } = madeUpPyodide();
+  const first = run("runtimeAsked")("", { pyodide: importer, forward: async () => forward });
+  // (init()'s first statements, before it awaits anything: the load that follows waits on adapterAsked)
+  assert.deepEqual(asked, ["adapter"], "init() asks for the adapter before it awaits anything");
+  assert.deepEqual(deleted, ["models-v1"], "and deletes what an earlier version of the page stored");
+  await first;
+  assert.deepEqual([asked, deleted], [["adapter"], ["models-v1"]], "once, whatever the loads after");
+}
+
+// T380.2 (out of tests/worker-parts-check.ts): what fails as the adapter is asked for was silent: an adapter that cannot
+// be asked for, and a device with no key (in this vm no module can be imported later, which is such a failure)
+{
+  const begun = async (gpu) => {
+    const warn = console.warn, said = [];
+    console.warn = (...words) => said.push(words.join(" "));
+    try {
+      const { run } = started(gpu);
+      const { importer } = madeUpPyodide();
+      await run("runtimeAsked")("", { pyodide: importer, forward: async () => forward });
+      await run("adapterAsked");
+      return { said, adapter: JSON.parse(JSON.stringify(run("gpuAdapter"))) };
+    } finally {
+      console.warn = warn;
+    }
+  };
+  // no adapter here: nothing failed, and nothing is said
+  assert.deepEqual(await begun({ requestAdapter: async () => null }), { said: [], adapter: null });
+  // the asking itself fails
+  assert.deepEqual(await begun({ requestAdapter: () => Promise.reject(new Error("the GPU process is gone")) }),
+    { said: ["gpu: the adapter could not be asked for (Error: the GPU process is gone): no GPU on this visit"], adapter: null });
+  // an adapter that is not what one is
+  const odd = await begun({ requestAdapter: async () => ({}) });
+  assert.equal(odd.adapter, null);
+  assert.match(odd.said.join("|"), /^gpu: the adapter could not be asked for \(TypeError: [^|]+\): no GPU on this visit$/);
+  // an adapter, and no key of it: the adapter stands, without one
+  const keyless = await begun({ requestAdapter: async () => ({ limits: { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28 }, info: { isFallbackAdapter: false } }) });
+  assert.deepEqual(keyless.adapter, { fallback: false, limits: { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28 }, packed: false });
+  assert.match(keyless.said.join("|"), /^gpu: no key of this device \([^|]+\): what the page kept of it is not used$/);
+  // a fallback adapter: said to be one
+  const fallback = await begun({ requestAdapter: async () => ({ limits: { maxStorageBufferBindingSize: 1, maxBufferSize: 2 }, info: { isFallbackAdapter: true } }) });
+  assert.equal(fallback.adapter.fallback, true, "a fallback adapter is taken for one");
+}
+console.log("worker-init-check: init() asks for the adapter and deletes the old Cache API before it awaits anything (none as the modules are imported); an adapter that cannot be asked for and a device without a key are said on the console");

@@ -53,27 +53,33 @@ let initialized: Promise<void> | undefined;
 // block of a prompt it can take given to it (its speed is no GPU's: the tests look at its numbers, not at its time),
 // and the first right shader of the matrices taken untimed (SwiftShader timed Llama 3.2 1B's past gpu.ts's 180 s)
 export const hasWebGpu = Boolean(self.navigator?.gpu);
+// T156: the adapter as it is asked for, by init() (T641.8: no longer as this module is imported): a load waits for it
+// (weights.ts's loadBegan()), and every load asks for the runtime first (worker.ts's loadOf()). Before that, nothing
+export let adapterAsked: Promise<void> | undefined;
 // (and its key, T148's: what the page kept of the model on this device holds only for the same, shaders.ts's deviceKey)
-export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.requestAdapter().then(async (adapter) => {
-  if (!adapter) return;
-  const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
-  // (T232, packed: WGSL's packed int8 dot, which ternary weights are multiplied with on the GPU)
-  gpuAdapter = { fallback: Boolean(adapter.info?.isFallbackAdapter ?? (adapter as GPUAdapter & { isFallbackAdapter?: boolean }).isFallbackAdapter),
-    limits: { maxStorageBufferBindingSize, maxBufferSize },
-    packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
-  try {
-    const wgsl = await import("../shaders/key.ts");
-    // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.ts says that one; T547.3.7: and a
-    // model of llama.cpp's blocks one, with theirs. T623: the three in one, by the shaders of a model's own)
-    gpuAdapter.keys = { plain: wgsl.deviceKey(adapter), ternary: wgsl.deviceKey(adapter, adapter, "ternary"), blocks: wgsl.deviceKey(adapter, adapter, "blocks") };
-  } catch (error) {
-    // no key: nothing the page kept of this device holds (a model on the GPU alone is weighed again)
-    console.warn(`gpu: no key of this device (${told(error)}): what the page kept of it is not used`);
-  }
-}).catch((error) => {
-  // (T380.2: said. What was found of the adapter before it failed stays; with none, no model goes on the GPU)
-  console.warn(`gpu: the adapter could not be asked for (${told(error)}): no GPU on this visit`);
-});
+function askAdapter(): Promise<void> {
+  if (!hasWebGpu) return Promise.resolve();
+  return navigator.gpu.requestAdapter().then(async (adapter) => {
+    if (!adapter) return;
+    const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
+    // (T232, packed: WGSL's packed int8 dot, which ternary weights are multiplied with on the GPU)
+    gpuAdapter = { fallback: Boolean(adapter.info?.isFallbackAdapter ?? (adapter as GPUAdapter & { isFallbackAdapter?: boolean }).isFallbackAdapter),
+      limits: { maxStorageBufferBindingSize, maxBufferSize },
+      packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
+    try {
+      const wgsl = await import("../shaders/key.ts");
+      // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.ts says that one; T547.3.7: and a
+      // model of llama.cpp's blocks one, with theirs. T623: the three in one, by the shaders of a model's own)
+      gpuAdapter.keys = { plain: wgsl.deviceKey(adapter), ternary: wgsl.deviceKey(adapter, adapter, "ternary"), blocks: wgsl.deviceKey(adapter, adapter, "blocks") };
+    } catch (error) {
+      // no key: nothing the page kept of this device holds (a model on the GPU alone is weighed again)
+      console.warn(`gpu: no key of this device (${told(error)}): what the page kept of it is not used`);
+    }
+  }).catch((error) => {
+    // (T380.2: said. What was found of the adapter before it failed stays; with none, no model goes on the GPU)
+    console.warn(`gpu: the adapter could not be asked for (${told(error)}): no GPU on this visit`);
+  });
+}
 
 // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
 // them, or with ?kernel=off, NumPy does the math, several times slower. They are read even with ?kernel=off: the
@@ -144,6 +150,10 @@ const STARTS: Starts = {
 
 async function init(search: string, starts: Starts) {
   const started = performance.now();
+  // (T641.8: the two this worker began as its modules were imported, now with its first load: before anything awaits)
+  adapterAsked = askAdapter();
+  // what an earlier version of the page stored (sources.ts's MODEL_CACHE is the one now)
+  globalThis.caches?.delete("models-v1").catch(() => {});
   const asked = new URLSearchParams(search);
   const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
   if (parts >= 1 && parts <= 64) hfPartBytes = Math.round(parts * 1024 * 1024);
