@@ -97,7 +97,7 @@ async function device(): Promise<DeviceFound> {
 }
 
 // ---- the CPU. A made-up model of Llama 3.2 1B's width (benchmark/madeup.ts). The forward pass is forward.ts's own
-// (createForward, the kernels of simdkernel_*.wasm, the software threads of helper.js): what differs from the model
+// (createForward, the kernels of simdkernel_*.wasm, the software threads of helper.ts): what differs from the model
 // page is only that the plan comes from there instead of from Python.
 const TOKENS = 12, WARM = 3;
 // T108: a prompt's tokens go through the layers BATCH (16) at a time, without logits
@@ -119,7 +119,7 @@ function fillWeights(memory: WebAssembly.Memory, base: number, { plan }: Pick<Mo
   }
 }
 
-// a software thread of forward.ts, as the model's worker starts one (src/runtime/worker/weights.ts's spawnThread)
+// a software thread of forward.ts, as the model's worker starts one (src/runtime/worker/alone.ts's spawnThread)
 const spawn: Spawn = (data) => new Promise((resolve, reject) => {
   const worker = new Worker(new URL("../helper.ts", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });

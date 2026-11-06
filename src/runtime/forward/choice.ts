@@ -53,7 +53,7 @@ export function promptTimes() {
   };
   const onLine = (count: number) => line!.fixed + line!.perToken * count;
   return {
-    /** gpu.js's blocks timed as it started: [{ count, ms }], the smaller first */
+    /** gpu/start.ts's blocks timed as it started: [{ count, ms }], the smaller first */
     started(blocks: Block[]) {
       const [a, b = a] = blocks;
       const perToken = b.count > a.count ? Math.max(0, (b.ms - a.ms) / (b.count - a.count)) : 0;

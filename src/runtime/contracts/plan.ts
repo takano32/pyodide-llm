@@ -6,7 +6,7 @@
 // ends are in two languages, so no compiler holds them together: tests/plan-keys-check.ts does, and it holds the keys
 // written here to Python's too (a key added or dropped on one side alone fails the light suite).
 //
-// A key that is added: plan.py's dict, this file, and whatever reads it in forward/ (AGENTS.md, "計画を値にして渡すとき").
+// A key that is added: plan.py's dict, this file, and whatever reads it in forward/ (AGENTS.md, 物を足す手順, "worker の知らせ・計画の鍵・GPU の計画の鍵を足す").
 import type { Arch, Convolution, Linear } from "./form.ts";
 
 // Where a tensor of the checkpoint is (engine/checkpoint.py's Tensor.plan()), counted from the start of the file:

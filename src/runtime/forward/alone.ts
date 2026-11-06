@@ -89,8 +89,8 @@ const layersOf = (header: Header, form: Formed) => {
 /** T156: the bytes the GPU holds of a model with this header and form (FORM): its layers' matrices (as the GPU holds
  * their packing: gpuWeightBytes()), its two norms a layer, its own keys
  * and values (float16, the whole context), and for a generation's steps (T152) the classifier (and the embedding where
- * it is another table), RoPE's table of every position and the sampling's three arrays of the vocabulary. forward.js
- * counts the same of a model it runs (layersOnGpu, tokensUnfit). */
+ * it is another table), RoPE's table of every position and the sampling's three arrays of the vocabulary. forward.ts
+ * counts the same of a model it runs (gpufit.ts's layersOnGpu, tokensUnfit). */
 // (T271.4: the keys and values of the attending layers alone, and a Qwen3.5's linear-attention layers' own: layersOf())
 // (T547.3.7: of a form whose rows have kinds of their own, each row's and layer's as its kind: Saluki's types of blocks)
 export function gpuBytes(header: Header, { dtype = "int8", ...form }: GpuForm & { dtype?: Dtype; kinds?: Record<string, unknown> | null } = {}) {
@@ -171,7 +171,7 @@ export const USAGE_UNKNOWN = { prompt: 1, written: 1 };
  * token written reads the checkpoint once (size bytes at GBps, T157), a prompt's token makes layerWeights multiply-adds
  * at promptGMACs (its model is two layers as wide as Llama 3.2 1B; a narrower model runs slower than that says,
  * T157's review: 1.09 to 1.21 on llm-jp-3 150M's shape). The GPU's side is its own (gpu: { stepMs, promptMs }: a step
- * of a run of GPU_TOKENS, a token of a block of GPU_BLOCK, as gpu.js timed them as it started). A side not known on
+ * of a run of GPU_TOKENS, a token of a block of GPU_BLOCK, as gpu/start.ts timed them as it started). A side not known on
  * either leaves its part out; nothing known of the CPU: the GPU stays. Returns { cpuFaster, cpu, gpu } (ms of that use).
  * T232: size is what an int8 model's token reads, 1.125 bytes a weight. A ternary model's checkpoint is a quarter of
  * that, and its CPU kernel is bound by its arithmetic, not by the reading (T231: 1.0 to 2.0 times the int8 kernel's
@@ -217,7 +217,7 @@ const BINDS_AT = 256;
  * line of jobs.ts's PACKED: int8; not six bits, which are for a device short of memory, where the widened int8 on the
  * GPU, 1.125 bytes a weight against six bits' 0.875, would not fit either: T155's review; T232 ternary, where the
  * browser's WGSL has the packed int8 dot: adapter.packed),
- * heads of a multiple of 4, and q, k and v and gate and up each one range of a buffer the device binds (gpu.js's
+ * heads of a multiple of 4, and q, k and v and gate and up each one range of a buffer the device binds (gpu/weights.ts's
  * tokensLayout says the last word: a GPU that refuses then means the model is loaded again on the CPU). */
 // T219: what a model on the GPU alone says where the GPU sampled an id outside the vocabulary (its logits were not
 // finite numbers, most likely: the words of T195's NOT_FINITE, llama2_numpy.py), since no CPU can take the step again
@@ -320,7 +320,7 @@ export function gpuPacking(kind: string): GpuPacking {
 // counts nothing more: gone() says so, and nothing waits for it from then on (else every load waited those 60 s and
 // then failed, where the model can be loaded again on the CPU at once)
 const FLOW_BYTES = 64 * 2 ** 20, FLOW_STALL_MS = 60000;
-/** T156: the weights of a model on the GPU alone. worker: the GPU's worker (gpu.js, told to open with gpuOnlyPlan()),
+/** T156: the weights of a model on the GPU alone. worker: the GPU's worker (gpu.ts, told to open with gpuOnlyPlan()),
  * tensors: llama2_numpy.external_tensors(), size: the checkpoint's bytes. Returns { holes, place, stored, flow,
  * write(offset, bytes), room(), drained() }: write() puts the bytes outside the holes into memory at base +
  * place(offset), and posts those in them to the worker (a copy each); room() resolves once the worker is no more than
@@ -371,7 +371,7 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
     },
   };
 }
-/** T156: what the GPU's worker opens with (gpu.js's open(): the device, and a buffer for every piece of every layer's
+/** T156: what the GPU's worker opens with (gpu/start.ts's open(): the device, and a buffer for every piece of every layer's
  * matrices, before a byte comes): each matrix's rows and length and, a layer each, where its values and scales start in
  * the checkpoint (the offsets the bytes come with). T210: and the tables' ({ classifier, embedding }, the embedding
  * null where the classifier is it: { rows, n, at: [values, scales] } each, in the checkpoint too) */

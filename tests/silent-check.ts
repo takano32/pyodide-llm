@@ -241,7 +241,7 @@ const found = new Map();
 for (const { file, where, what, line } of silentOf(root)) found.set(file, [...(found.get(file) ?? []), { where, what, line }]);
 const key = ({ where, what }) => `${where}: ${what}`;
 const WAYS = "say it (read the caught value: console.warn(`what failed (${told(error)}): what stands in`), never console.error), throw it on, or keep it silent " +
-  "with a row of SILENT in tests/silent-check.ts that says what may fail and why nobody needs to know (AGENTS.md: 失敗を捕まえて黙るとき)";
+  "with a row of SILENT in tests/silent-check.ts that says what may fail and why nobody needs to know (AGENTS.md: 物を足す手順, 失敗の種類・GPU の訳・黙った catch・後から取るファイル)";
 let rows = 0;
 for (const file of new Set([...found.keys(), ...Object.keys(SILENT)])) {
   const here = found.get(file) ?? [], listed = (SILENT[file] ?? []).map(([where, what, why]) => ({ where, what, why }));

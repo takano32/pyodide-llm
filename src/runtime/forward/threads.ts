@@ -41,7 +41,7 @@ const CHUNKS_PER_THREAD = 4;
  * leaves it out where the model is on the GPU alone, T156). gpuGettingReady(): whether the GPU's side is still getting
  * ready, which is made after this.
  * T378.2: kernels: the two a thread is started with ({ plain, relaxed }, relaxed null where the model does not run on
- * it): the part knows nothing of the plan. control: the control area (control.js), which is the engine's and the GPU's
+ * it): the part knows nothing of the plan. control: the control area (control.ts), which is the engine's and the GPU's
  * side's as well. */
 export function softwareThreads({ memory, wide, kernels, spawn, control, runRows, gpuGettingReady }: {
   memory: WebAssembly.Memory; wide: boolean; kernels: { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; blocks?: Blocks | null }; spawn: Spawn | null | undefined;

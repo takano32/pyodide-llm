@@ -65,10 +65,10 @@ let gpuRequests = 0;
  *   taken    what the GPU is to take of this model: gpuFit()'s matrices and vectors, why it would take none (whyNot)
  *            or no steps (tokensWhyNot), and the places in the memory it answers into (staging, rows, ids: 0 for none)
  *   cpuSide  the CPU's side: the memory, its views made anew (views), the cache of the keys and values as it is now
- *            (cpuSide.H, .capacity, .keys, .values: read each time, they move as the cache grows) and grown (grow),
+ *            (cpuSide.H, .capacity and .places(): read each time, they move as the cache grows) and grown (grow),
  *            and what the CPU does for a block (embed, fromStaging, stagingFinite, run)
- *   control  the control area (control.js): the words the GPU's worker answers in, and the wait on one
- *   threads  the software threads' (threads.js): threads.count and threads.searching are read
+ *   control  the control area (control.ts): the words the GPU's worker answers in, and the wait on one
+ *   threads  the software threads' (threads.ts): threads.count and threads.searching are read
  *   options  { gpu: makes the GPU's worker (none: no WebGPU here), remembered, force (gpuForce), direct (T156),
  *            stalledMs, now (T455: the engine's clock, createForward()'s, the blocks and steps are timed by) } */
 /** T456: the side the benchmark puts every block of a prompt and every step on, or null: the page's choice */

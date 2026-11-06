@@ -168,7 +168,7 @@ export function addressed(exports: WebAssembly.Exports, wide: boolean): Kernels 
 //   warm      a tiny call of each of its kernels on the scratch (warmUp())
 // runner() and warmUp() read every line once as a thread is made; a job then costs a look into an array by its
 // number. A new kind is a line here, at the end (the numbers before it stay), its kernels' names in ADDRESSES, and
-// whoever builds its jobs writing KIND.<its name> (AGENTS.md, "カーネルを登録簿から引くとき").
+// whoever builds its jobs writing KIND.<its name> (AGENTS.md, 物を足す手順, "カーネル・仕事の種類を足す").
 type Call = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, a8: number, rows: number, r0: number, r1: number) => unknown;
 type Tile = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, r0: number, r1: number, count: number, os: number, as: number, a8: number) => unknown;
 type Scratch = { xq: number; xs: number; w: number; s: number; c: number; out: number };

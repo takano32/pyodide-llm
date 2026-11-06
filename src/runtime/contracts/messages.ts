@@ -1,4 +1,4 @@
-// contracts/messages.ts (T368.2): what a page and the model's worker (src/runtime/worker.js) say to one another. Types
+// contracts/messages.ts (T368.2): what a page and the model's worker (src/runtime/worker.ts) say to one another. Types
 // alone: nothing of this file is in what a browser gets (it is read with `import type`).
 //
 // Two pages talk to that worker: the model page (src/page/, and the script of src/pages/index.astro, which sends the

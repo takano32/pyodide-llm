@@ -58,12 +58,12 @@ const STALLED_MS = 10000;
 
 /** spawn (stage 2, a shared memory only): starts one helper thread with { memory, plain, relaxed } and resolves once
  * it is ready; the result has terminate(). Without it, or on a memory that is not shared, everything runs here. */
-/** gpu (T135; T148: wherever the worker has WebGPU): makes the GPU's worker (gpu.js, not started: a Worker, or what
+/** gpu (T135; T148: wherever the worker has WebGPU): makes the GPU's worker (gpu.ts, not started: a Worker, or what
  * posts and listens as one). A prompt's blocks then go through the layers there where the model allows it and the GPU
  * is faster; see forwardMany. gpuRoom (T148): the bytes this device can give the GPU's copy of the layers (the
  * worker's reckoning from navigator.deviceMemory, 4 GB where the browser does not say; none handed in: no limit).
  * gpuRemembered: what the page kept of the GPU's shaders on an earlier visit ({ key, matrices, attention },
- * gpu.js). */
+ * gpu/forms.ts). */
 /** wrap (tests/profile.ts only): gets the kernels' exports and returns what to call instead, to time the forward
  * pass with some kernels replaced by functions that do nothing. */
 /** stalledMs (tests only): how long a phase may make no progress before its software threads are given up (T120) */
@@ -73,12 +73,12 @@ const STALLED_MS = 10000;
  * worker asks again for the plain one). Left out (the tests, the benchmark's own model): float16 on a shared memory
  * where every head has keys of its own, which keysInHalf answers for every model that fits a 32-bit memory with
  * float32 keys and values. */
-/** gpuForce (tests only, T147): { matrices, attention }, the names of the GPU's shaders to take (shaders.js's
- * promptForms, gpu.js's attentions), without timing the others. T148: fallback, a fallback adapter taken as a GPU
+/** gpuForce (tests only, T147): { matrices, attention }, the names of the GPU's shaders to take (shaders/prompt.ts's
+ * promptForms, gpu/forms.ts's chooseAttention()), without timing the others. T148: fallback, a fallback adapter taken as a GPU
  * (SwiftShader and lavapipe: the only WebGPU of CI and the development machine); always, every block the GPU can take
  * goes there, whatever the CPU's time (a fallback adapter is far slower than the CPU); quick (the page's tests), the
  * first right shader of the matrices untimed, and no block timed (SwiftShader timing Llama 3.2 1B's took more than
- * gpu.js's STEP_MS in CI, T147); pieceBytes (T155), the most bytes of a piece of a matrix on the GPU, so that a small
+ * gpu/device.ts's STEP_MS in CI, T147); pieceBytes (T155), the most bytes of a piece of a matrix on the GPU, so that a small
  * model goes in pieces as a matrix past a buffer of the device does */
 /** kinds (tests only, T375.3): the table of the kinds of layers there is a step for (forward/kinds.ts's LAYER_KINDS):
  * a test hands in one with a kind of its own */
@@ -508,7 +508,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     /** Use n threads from the next token on (stage 2): starts the helpers that are missing. 1 on a memory that is
      * not shared. Resolves to the number in use. */
     setThreads: use,
-    /** Find the number of threads while generating (see threads.js): from a hint, or from a count remembered from an
+    /** Find the number of threads while generating (see threads.ts): from a hint, or from a count remembered from an
      * earlier visit, which is then only checked against its neighbours now and then (every recheck generations).
      * chose(count) is told the answer, compared(verdict) every comparison on the way. The helpers of the starting count are started (and warmed) before this
      * resolves, so the first tokens do not wait for them. */
@@ -538,7 +538,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       bound = array.copy ? array.copy() : array;
     },
     /** T108: tokens of a prompt at positions pos, pos + 1, ...: the same as forward() for each of them in turn without
-     * logits, BATCH at a time through the layers. T135: on the GPU where it is on (see gpuside.js), GPU_BLOCK at a time */
+     * logits, BATCH at a time through the layers. T135: on the GPU where it is on (see gpuside.ts), GPU_BLOCK at a time */
     forwardMany(tokens: Ids, pos: number) {
       onGpu.prompt(tokens.toJs ? tokens.toJs() : [...tokens], pos);
     },
@@ -605,7 +605,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     get tokenBlock() {
       return tokenBlock();
     },
-    /** T152: count steps of generate() on the GPU, or undefined where it did not take them (gpuside.js's generateMany) */
+    /** T152: count steps of generate() on the GPU, or undefined where it did not take them (gpuside.ts's generateMany) */
     generateMany,
     forward(token: number, pos: number, needLogits = true): number | undefined {
       if (tokenBegan(needLogits)) {

@@ -30,7 +30,7 @@ type Failed = { message?: string } | null | undefined;
 export const UPDATED = "The site was updated while this page was open. Reload the page to go on.";
 
 /** T439: what the status line of a model says where it goes on without a file of its build that is gone, on a slower
- * path (worker/outdated.js): the owner's too, as it is, small letters and no full stop. */
+ * path (worker/outdated.ts): the owner's too, as it is, small letters and no full stop. */
 export const SLOWER = "the site was updated: reload for full speed";
 
 /** The error that says so: a Failure of the kind "updated" (T380.1), an Error by name, so that whatever reports an error

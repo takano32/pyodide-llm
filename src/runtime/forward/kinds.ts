@@ -7,7 +7,7 @@
 // calls. Python's side of the same table is engine/model.py's STATEFUL_LAYERS.
 //
 // A new kind of layer is a file of its own beside attention.ts, linear.ts and convolution.ts, and a line of
-// LAYER_KINDS (AGENTS.md, "層の部品を作るときに選ぶ", has the steps).
+// LAYER_KINDS (AGENTS.md, 物を足す手順, "層の種類（状態を持つ層）を足す", has the steps).
 import { attention } from "./attention.ts";
 import { linear } from "./linear.ts";
 import { convolution } from "./convolution.ts";

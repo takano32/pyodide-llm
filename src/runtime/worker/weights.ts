@@ -123,7 +123,7 @@ export function automaticBits(header: List<Header>, form: Dict<Partial<Form>>, s
 // engine on it ({ llama, outside }: Python's Llama and, where forward.ts runs it, what forward.ts made for it; loaded.ts
 // takes the two), destroy() lets go of the Python buffer (a memory of forward.ts goes with the engine).
 // header: the checkpoint's 7 ints, options: what it is loaded with (its dtype and arch): what the forward pass puts
-// after the checkpoint follows from them (T115). T156, keep: where a conversion is kept as it comes (kept.js's
+// after the checkpoint follows from them (T115). T156, keep: where a conversion is kept as it comes (kept.ts's
 // keeper()), for a model on the GPU alone, whose weights nothing holds whole to keep afterwards
 // T329.2.2, later: the checkpoint is read from where it is kept, which can be read from at once once it is all read
 // (attach()): a table of every layer's inputs may stay there. keep: the file of the first visit, to read from as it comes

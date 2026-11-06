@@ -115,7 +115,7 @@ export function placesOf(header: Header, dtype: Dtype, form: Partial<Form>) {
     proxy.destroy();
   }
 }
-/** The bytes of forward.js's memory of the model loaded now (0 where Python holds the weights, or nothing is loaded) */
+/** The bytes of forward.ts's memory of the model loaded now (0 where Python holds the weights, or nothing is loaded) */
 export const weightsBytes = () => weightsNow?.buffer.byteLength ?? 0;
 /** Whether the memory the weights are in is a shared one (software threads can be had on it) */
 export const memoryShared = () => Boolean(weightsPool?.shared);

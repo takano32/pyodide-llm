@@ -1,5 +1,5 @@
 // worker/convert.ts (T350): a Hugging Face model converted in here as it arrives (src/python/llama2_convert.py), and what
-// a conversion made kept for the next visit and read back (kept.js).
+// a conversion made kept for the next visit and read back (kept.ts).
 // T374.2.1: the conversion is conducted by Python (src/python/convert/conduct.py) and answered by conduct.ts: a model of
 // huggingface.co from there, and (T374.2.2) a folder of the visitor's disk from its Files.
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
@@ -28,10 +28,10 @@ import type { Bytes, Conduct, Conversion, ConverterWindow, Dict, Options, Proxy,
 type Remote = OfHuggingFace & { hf: Hf & { repo: string; revision: string } };
 
 // What this file alone holds (T378.3): the converter's window, imported when the first conversion comes (the function of that name below),
-// and the models kept from earlier conversions (kept.js, T99), imported then too
+// and the models kept from earlier conversions (kept.ts, T99), imported then too
 let llama2_convert: ConverterWindow | undefined, keptModule: typeof Kept | undefined;
 
-// What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
+// What a conversion made is kept for the next visit (kept.ts): in the origin private file system where there is one
 // (T99), else in the Cache API. The original is twice as large, and fetching and converting it again on every visit
 // would be no way to use a model. The page lists what is kept and deletes it.
 // Returns what the page needs of it, or { miss } with why nothing kept could be used (for tests/e2e.ts).
@@ -117,7 +117,7 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
 
 // checkpoint: the weights (weightsBuffer), bytes long; tokenizer: a PyProxy of the converted tokenizer. Returns why
 // nothing was kept, or undefined.
-// T156, kept: the file of a model on the GPU alone, written as the conversion came (kept.js's keeper)
+// T156, kept: the file of a model on the GPU alone, written as the conversion came (kept.ts's keeper)
 async function keepConverted(model: Remote, checkpoint: Weights, bytes: number, tokenizer: Bytes, options: Options, signal: AbortSignal, kept?: Keeper) {
   const view = tokenizer.getBuffer("u8");
   const vocabulary = view.data.slice();

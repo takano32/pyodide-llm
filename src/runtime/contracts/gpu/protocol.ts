@@ -28,7 +28,7 @@ export type Table = { rows: number; n: number; packing: GpuPacking; at: [number,
 // a vector of every layer: where it is, and its size a layer (T545: of, as a matrix's)
 export type Vector = { at: number; size: number; of?: LayerKind };
 
-// The vectors a model has (gpuside.js's gpuVectors()): the norms' weights always; LayerNorm's biases (T154), Qwen2's
+// The vectors a model has (gpufit.ts's gpuVectors()): the norms' weights always; LayerNorm's biases (T154), Qwen2's
 // biases of q, k and v and Qwen3's norms of a head (T153), a GPT-2's biases after its matrices, where the model has them
 export type Vectors = {
   attention: Vector;
@@ -61,7 +61,7 @@ export type Vectors = {
 // T625: a plan's matrices, by the names of the plan's tensors, and only those the model has
 export type Matrices = Partial<Record<TensorName, Matrix>>;
 
-// T152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
+// T152: what the worker takes for a generation's steps (gpuside.ts's gpuTokensPlan()): the classifier and, where it is
 // another table, the embedding; the final norm (its bias and GPT-2's positions: 0 where the model has none); whether
 // the classifier has outlier channels (T92) and which; where the ids go; the most steps of a submission
 export type Tokens = {
@@ -201,7 +201,7 @@ export type TokensChosen = { form: string; ms: number | undefined; forms: Tried[
 
 export type FromGpu =
   | { type: "progress" }
-  // form, attention, forms, remembered: gpu/forms.js's formsSaid(); blocks: what a whole block of count tokens takes
+  // form, attention, forms, remembered: gpu/forms.ts's formsSaid(); blocks: what a whole block of count tokens takes
   | { type: "ready"; adapter: string; key: string; bytes: number; seconds: number; form: string; attention: string; forms: Tried[];
       remembered: boolean; blocks: { count: number; ms: number }[]; tokens: TokensChosen | null; tokensWhy: string | null | undefined }
   | { type: "unusable"; reason: string }

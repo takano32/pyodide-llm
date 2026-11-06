@@ -13,10 +13,10 @@ export let llama: Answering | undefined;
 // T93: forward.ts's external() of it (the forward pass in JavaScript), or undefined where NumPy runs the model
 let outside: Outside | undefined;
 
-/** forward.js's engine of the model loaded now, or undefined (no model, or NumPy's) */
+/** forward.ts's engine of the model loaded now, or undefined (no model, or NumPy's) */
 export const engineNow = () => outside?.engine;
 
-/** A model was built: made is what the place of its weights made of it ({ llama, outside }, weights.js) */
+/** A model was built: made is what the place of its weights made of it ({ llama, outside }, weights.ts) */
 export function adopted(made: { llama: Answering; outside?: Outside }) {
   ({ llama, outside } = made);
 }

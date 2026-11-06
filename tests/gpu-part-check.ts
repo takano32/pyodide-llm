@@ -554,7 +554,7 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
   unstarted.beside.worker.fail({ message: "no such file" });
   assert.equal(await unstarted.part.note, "prompts on the CPU (the GPU's worker did not start (no such file))");
   assert.equal(await unstarted.part.release(), true, "a worker that did not start holds nothing to wait for");
-  // (T377: under a model on the GPU alone the worker is told so, once: it loads the model again on the CPU. worker/weights.js
+  // (T377: under a model on the GPU alone the worker is told so, once: it loads the model again on the CPU. worker/alone.ts
   // hands the engine an error its GPU's worker said before the engine was built, by this same handler)
   const gone = [], alone = made({ direct: { onLost: (why) => gone.push(why) } });
   alone.beside.worker.fail({ message: "no such file" });

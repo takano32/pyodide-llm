@@ -6,7 +6,7 @@
 // from the converter's sink.open() (worker/weights.ts) and hands it on by the same names to forward.ts's footprint()
 // and to external_tensors(). tests/worker-sink-check.ts holds these keys to FORM's and follows them to footprint().
 //
-// A key that is added here is added in layout.py's FORM first (AGENTS.md, "形式を変えるとき").
+// A key that is added here is added in layout.py's FORM first (AGENTS.md, 物を足す手順, "ファイルの形式を変える・行を足す").
 
 // how a row of the file is stored (src/python/engine/dtypes.py's DTYPES; a file has one for its matrices)
 export type Dtype = "float32" | "float16" | "int8" | "int6" | "ternary" | "binary";

@@ -21,12 +21,14 @@
 // T350: this file is the window of the worker: its URL, generate() and the messages. The rest is in the modules
 // of worker/: runtime.ts (what the visit finds once), request.ts (what the page asked for with a load), loaded.ts (the
 // model loaded now) (T378.3: each sets its own, and the others say what happened and read), clock.ts, pyodide.ts (the runtime's
-// loading), weights.ts (where a model's weights go), ranges.ts and sources.ts (the fetching), conduct.ts (T374.2.1: what
-// answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.ts (a Hugging Face model), load.ts and timing.ts (what /benchmark/ times).
+// loading), weights.ts (where a model's weights go; T641.1: pool.ts, the memory used again, and alone.ts, a model on
+// the GPU alone), ranges.ts and sources.ts (the fetching), conduct.ts (T374.2.1: what answers the conduct of a
+// conversion, which is Python's, from huggingface.co or from a folder), convert.ts (a Hugging Face model), load.ts,
+// translate.ts (T648.4: a model that translates), timing.ts (what /benchmark/ times) and outdated.ts (T439).
 // T367.3: a bundler links them (static imports, src/runtime/): they are part of this worker's own file, whose name
 // carries a hash of its text, so that all are of one deployment, and nothing is awaited before the handler at the end
-// of this file is set (the messages that came while the modules were fetched one by one were kept in a queue until
-// then). What the worker asks for later is asked for by a literal name: forward.ts, kept.ts and the device's key as
+// of this file is set (before T367.3, the messages that came while the modules were fetched one by one were kept in a
+// queue until then). What the worker asks for later is asked for by a literal name: forward.ts, kept.ts and the device's key as
 // modules (import("./forward.ts")), the kernels and the Python's archives as files (built.ts). The site's root, where
 // models/ is, the page hands over with a load (request.ts's root): this file's own URL is under _astro/.
 // T380.1: what fails is carried and read in one way (failure.ts): the catch at the end of this file tells the page what
@@ -218,4 +220,3 @@ async function receive(data: ToWorker) {
   }
 }
 self.onmessage = ({ data }: MessageEvent<ToWorker>) => receive(data);
-// (T350) what came while the modules were fetched
