@@ -192,19 +192,21 @@ const up = await upload(m);
   assert.equal(unbound.weights.together, null);
   assert.deepEqual(unbound.weights.joined, []);
 }
-// T642.2: a matrix a token's layer reads whole (one piece: linear.ts's and convolution.ts's steps read pieces[0]) past a
-// buffer keeps the steps off, whichever kind's it is: the names a second copy of the kinds' matrices() but q, k and v
-// (gpu/kinds.ts), and the FFN's down and its up where it has no gate. A kind's matrix left out of the list tokensLayout
-// reads goes on to the checks after it, and says why they fail instead
+// T642.2, T642.15: a matrix a token's layer reads whole (one piece: linear.ts's and convolution.ts's steps read
+// pieces[0]) past a buffer keeps the steps off: every matrix of the plan but q, k and v, and gate and up where there is
+// a gate (tokensLayout() reads no kind's roles). The cases: each kind's matrices but q, k and v (gpu/kinds.ts's
+// matrices(), with the gate of the output), the FFN's down, its up where it has no gate, and a matrix of no kind's roles
+// (one a kind's gpu.matrices on the CPU's side would put on the GPU and its roles left out)
 {
   const { GPU_KINDS } = await import(runtimeUrl("gpu/kinds.js"));
-  const WHOLE = { attention: ["wg", "wo"], linear: ["wqkv", "wz", "wout"], convolution: ["win", "wout"] };
-  assert.deepEqual(Object.keys(WHOLE), Object.keys(GPU_KINDS), "a kind of GPU_KINDS has its line here");
-  const cases = [...Object.entries(WHOLE).flatMap(([kind, names]) => names.map((name) => [kind, name, SIZES])),
-    ["attention", "w2", SIZES], ["attention", "w1", Object.fromEntries(Object.entries(SIZES).filter(([name]) => name !== "w3"))]];
-  for (const [kind, name, sizes] of cases) {
+  const ownOf = (kind) => Object.entries(GPU_KINDS[kind].matrices({ matrices: { wg: {} } })).flatMap(([role, names]) => (role === "qkv" ? [] : names));
+  const unrolled = Object.fromEntries(Object.entries(SIZES).filter(([name]) => name !== "w3"));
+  const cases = [...Object.keys(GPU_KINDS).flatMap((kind) => ownOf(kind).map((name) => [kind, name, SIZES, []])),
+    ["attention", "w2", SIZES, []], ["attention", "w1", unrolled, []], ["attention", "wnew", SIZES, ["wnew"]], ["linear", "wnew", SIZES, ["wnew"]]];
+  assert.ok(cases.length >= 11, "every kind's matrices are among the cases");
+  for (const [kind, name, sizes, more] of cases) {
     standIn();
-    const own = Object.fromEntries(WHOLE[kind].map((one) => [one, [DIM, DIM]]));
+    const own = Object.fromEntries([...ownOf(kind), ...more].map((one) => [one, [DIM, DIM]]));
     const { plan: wide, bytes } = planned({ kinds: Array(LAYERS).fill(kind), force: { pieceBytes: 2048 },
       tokens: { classifier: { rows: 96, n: DIM, packing: "int8", at: [0, 0] } } }, { ...sizes, ...own, [name]: [160, DIM] });
     const wideMemory = { buffer: new SharedArrayBuffer(bytes) };
@@ -214,7 +216,7 @@ const up = await upload(m);
     assert.equal(pieced.weights.matrices[name].pieces.length, 3, `${name} in pieces`);
     assert.equal(pieced.weights.unjoined, `${name} is past a buffer of this GPU`, `a ${kind} layer's ${name} in pieces keeps a token's steps off`);
   }
-  console.log(`gpu-worker-parts-check: a token's ${cases.length} matrices read whole (the kinds' and the FFN's) past a buffer keep its steps off`);
+  console.log(`gpu-worker-parts-check: a token's ${cases.length} matrices read whole (the kinds', the FFN's and one of no kind's roles) past a buffer keep its steps off`);
 }
 // T547.3.1: a stack whose layers are each of a packing of its own (Saluki's): each layer's rows as its packing holds them,
 // Q4_K's blocks without scales and int8's with, the model's own shaders Q4_K's, and no layer joined for a token's step

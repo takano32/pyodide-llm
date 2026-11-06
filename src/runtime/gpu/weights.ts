@@ -9,7 +9,6 @@ import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, CODES, packingAt, packingsOf, spreadBits } from "./packings.ts";
-import { GPU_KINDS } from "./kinds.ts";
 import type { Model, Open, Bound } from "./device.ts";
 import type { GpuPacking, Matrix, Started, Table, Tables, Vector, Vectors } from "../contracts/gpu/protocol.ts";
 import type { TensorName } from "../contracts/plan.ts";
@@ -396,14 +395,14 @@ function tokensLayout(m: Open): Together | null {
   };
   // (T226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
   const gated = Boolean(m.weights.matrices.w3);
-  // (T642.2: the matrices a token's layer reads whole, each one piece: the kinds' (gpu/kinds.ts's matrices(): every one
-  // but q, k and v, which are joined or apart below; T545.2 an LFM2's in and out of its convolution layers, T271.3 a
-  // Qwen3.5's of its linear-attention layers and the gate of its output) and the FFN's down, and its up where it has no
-  // gate. Every kind's: a matrix the model has not is passed over, and a model on the GPU alone of attending layers
-  // alone is opened with no kinds, forward/alone.ts's gpuOnlyPlan())
-  const whole = new Set<TensorName>([...Object.values(GPU_KINDS).flatMap((kind) =>
-    Object.entries(kind.matrices(m.plan)).flatMap(([role, names]) => (role === "qkv" ? [] : names))), "w2", ...(gated ? [] : ["w1" as const])]);
-  for (const name of whole) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
+  // (T642.15: the matrices a token's layer reads whole, each one piece: every matrix of the plan but q, k and v, and gate
+  // and up where there is a gate, which are joined or apart below and checked there. So a kind's matrix (gpu/kinds.ts's
+  // matrices(): T545.2 an LFM2's in and out of its convolution layers, T271.3 a Qwen3.5's of its linear-attention layers
+  // and the gate of its output), the FFN's down and its up where it has no gate are, and a matrix a kind's roles left
+  // out of too: a step reads pieces[0] of it, T642.2's review)
+  const joinable = new Set<TensorName>(["wq", "wk", "wv", ...(gated ? ["w1", "w3"] as const : [])]);
+  const whole = named(m.weights.matrices).map(([name]) => name).filter((name) => !joinable.has(name));
+  for (const name of whole) if (m.weights.matrices[name]!.pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
   const homes: Together["homes"] = {}, sizes: Together["sizes"] = {}, matrices = m.weights.matrices;
   // T547.2.4: matrices are one of a packing alone (a matrix's shader reads one): q, k and v one where they are; q and
   // k where v is of another (a 4-bit Q4_K_M's q and k of Q4_K blocks, its v int8: a token's layer writes v apart into
