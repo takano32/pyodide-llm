@@ -5,6 +5,7 @@
 // (fused.ts) and the embedding's rows (run.ts) take the texts from here, the GPU worker's checks the reading.
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // A part takes its neighbours' names by static imports (T367.3: a bundler links them).
+import { floatOfHalf } from "./halves.ts";
 import type { BlockPacking } from "./common.ts";
 // ---- T547.2.3, T547.3.3: llama.cpp's blocks of 256 weights (as src/python/convert/superblocks.py and
 // tests/blocks-model.ts read them) on the GPU, as the checkpoint holds them: a type a row of SUPERBLOCKS. A block is
@@ -115,10 +116,7 @@ fn iq_nl(q: u32) -> u32 {
 }`;
 // T547.3.3: JavaScript's reading of each type's blocks (the checks' answer, tests/blocks-model.ts's read(): the weights,
 // float32 at each step), and where its float16 scales are (d and dmin: where a check draws them small)
-const halfAt = (bytes: Uint8Array, at: number) => {
-  const bits = bytes[at] | (bytes[at + 1] << 8), sign = bits & 0x8000 ? -1 : 1, e = (bits >> 10) & 31, m = bits & 1023;
-  return e === 31 ? (m ? NaN : sign * Infinity) : e === 0 ? sign * m * 2 ** -24 : sign * (1 + m / 1024) * 2 ** (e - 15);
-};
+const halfAt = (bytes: Uint8Array, at: number) => floatOfHalf(bytes[at] | (bytes[at + 1] << 8));
 // (T547.3.4: of the IQ types of 8 values an entry: entryOf(p, entry) -> [the entry's first byte in the codebooks, its
 // signs, its scale s], for each of a block's 32 entries)
 const word = (bytes: Uint8Array, at: number) => (bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16) | (bytes[at + 3] << 24)) >>> 0;
@@ -411,7 +409,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
     weights: (blocks: Uint8Array, codebooks?: Uint8Array) => readBlocks(blocks, 56, codebooks!, (p, grid, out) => {
       const w = [0, 1, 2, 3].map((i) => blocks[p + 48 + 2 * i] | (blocks[p + 49 + 2 * i] << 8));
       const bits = (w[0] >> 12) | ((w[1] >> 8) & 0xf0) | ((w[2] >> 4) & 0xf00) | (w[3] & 0xf000);
-      const d = halfAt(Uint8Array.of(bits & 255, bits >> 8), 0);
+      const d = floatOfHalf(bits);
       for (let h = 0; h < 16; h++) {
         const scale = f(d * (2 * ((w[h >> 2] >> (3 * (h & 3))) & 7) + 1));
         for (let k = 0; k < 2; k++) {

@@ -21,8 +21,13 @@ function toHalf(value: number): number {
   const kept = (exponent << 10) | (mantissa >> 13), rest = mantissa & 0x1fff;
   return sign | (kept + (rest > 0x1000 || (rest === 0x1000 && kept & 1) ? 1 : 0));
 }
+// float16's bits to the number, exactly (T642.7: ±Infinity and NaN at exponent 31 too, where this read 2^16 × (1 + m/1024)).
+// The engine's is shaders/halves.ts's floatOfHalf, which this worker takes with the shaders, as a chunk fetched when it
+// is used (benchmark/gpu/device.ts): a static import here would put that module in this worker's entry, and the
+// shaders' chunk would import the entry. tests/gpu-choice-check.ts holds the two the same on all 65,536 float16s.
 function fromHalf(h: number): number {
   const exponent = (h >> 10) & 31, mantissa = h & 1023, sign = h & 0x8000 ? -1 : 1;
+  if (exponent === 31) return mantissa ? NaN : sign * Infinity;
   return sign * (exponent ? 2 ** (exponent - 15) * (1 + mantissa / 1024) : 2 ** -14 * (mantissa / 1024));
 }
 // T225: the keys or values of a position as the GPU wrote them (got: float16 bits), against the reference's own (x,

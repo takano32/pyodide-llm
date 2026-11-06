@@ -8,6 +8,7 @@ import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
 import { SUPERBLOCKS, CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
+import { floatOfHalf } from "../shaders/halves.ts";
 import { PACKINGS, packingAt, isBlock, blocksOf } from "./packings.ts";
 import { devicePromptForms } from "../shaders/key.ts";
 import type { Model } from "./device.ts";
@@ -118,7 +119,7 @@ async function checkAttention(m: Model, pipeline: GPUComputePipeline) {
     pass.end();
     m.device.queue.submit([encoder.finish()]);
     const got = new Float32Array(await readBack(m, out, tokens * qDim * 4));
-    const k = Float32Array.from(keys, halfToFloat), v = Float32Array.from(values, halfToFloat);
+    const k = Float32Array.from(keys, floatOfHalf), v = Float32Array.from(values, floatOfHalf);
     let worst = 0;
     for (let t = 0; t < tokens; t++) {
       for (let h = 0; h < heads; h++) {
@@ -143,12 +144,6 @@ async function checkAttention(m: Model, pipeline: GPUComputePipeline) {
   } finally {
     owned.forEach((b) => b.destroy());
   }
-}
-function halfToFloat(h: number) {
-  const sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 31, fraction = h & 1023;
-  if (exponent === 0) return sign * fraction * 2 ** -24;
-  if (exponent === 31) return fraction ? NaN : sign * Infinity;
-  return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
 
 // a form's pipelines: its text's, and (T547.2.3) its text's of each type of llama.cpp's blocks the model has (T547.3.3:
@@ -367,6 +362,6 @@ async function timeForms(m: Model, forms: Tiled[]) {
   }
 }
 
-export { TIMED_MS, MOST_PASSES, PAIRS, chooseAttention, LINE, halfToFloat, chooseMatrices, formsSaid, threadsOf, productGroups,
+export { TIMED_MS, MOST_PASSES, PAIRS, chooseAttention, LINE, chooseMatrices, formsSaid, threadsOf, productGroups,
   multiply };
 export type { Forms, Tiled, Attention };

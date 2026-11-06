@@ -8,7 +8,7 @@
 // text the model's worker reads its key from: tests/dist-check.ts holds the two built files to one key.)
 // (T379.1: the shaders themselves, the texts and their makers, are taken from one catalogue, shaders/engine.ts's
 // ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
-import { halvesOf } from "../shaders/run.ts";
+import { halvesOf, floatOfHalf } from "../shaders/halves.ts";
 import { deviceKey } from "../shaders/key.ts";
 import { Failure, kindOf } from "../failure.ts";
 import { REASONS } from "../forward/reasons.ts";
@@ -295,10 +295,7 @@ function widenIn(m: Model, target: GPUBuffer, address: number, halves: number, o
 }
 /** float16s (their bits) as float32s into out */
 function widenedHalves(halves: Uint16Array, out: Float32Array) {
-  for (let i = 0; i < halves.length; i++) {
-    const h = halves[i], sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;
-    out[i] = exponent === 0 ? sign * fraction * 2 ** -24 : exponent === 31 ? (fraction ? NaN : sign * Infinity) : sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
-  }
+  for (let i = 0; i < halves.length; i++) out[i] = floatOfHalf(halves[i]);
   return out;
 }
 async function readBack(m: Model, source: GPUBuffer, bytes: number, from = 0) {

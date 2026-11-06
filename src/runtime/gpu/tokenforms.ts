@@ -4,7 +4,7 @@
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, rowBytes, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, widenedHalves, bind, dispatch, whyOf } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { PACKINGS, packingAt, blocksOf } from "./packings.ts";
-import { halfToFloat } from "./forms.ts";
+import { floatOfHalf } from "../shaders/halves.ts";
 import { roomFor, BLOCK_ROUNDS } from "./block.ts";
 import { chooseTokenAttention } from "./tokenattention.ts";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.ts";
@@ -377,7 +377,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     await readH.mapAsync(MAP_READ);
     const h = new Float32Array(readH.getMappedRange().slice(0));
     readH.unmap();
-    const [gotK, gotV] = kv!.map((layers) => Float64Array.from(new Uint16Array(layers[0].buffer, layers[0].byteOffset, kvDim), halfToFloat));
+    const [gotK, gotV] = kv!.map((layers) => Float64Array.from(new Uint16Array(layers[0].buffer, layers[0].byteOffset, kvDim), floatOfHalf));
     // JavaScript's layer
     const [eRow, eScales] = embeddingRow(token);
     // (T226: with GPT-2's learned position of pos, as the CPU's embed() adds it)
@@ -388,7 +388,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const xn = norm(x0, vectorOf("attention")!, vectorOf("attentionBias"));
     // (T261.4.2: a Gemma 3's norm behind the attention and behind the FFN, of what joins the stream)
     const behind = (x: Float64Array, name: keyof Vectors) => (vectorOf(name) ? rms(x, vectorOf(name)!) : x);
-    const { o, k, v, wrong } = await first.then({ x0, xn, pos, line, row0: [Float64Array.from(row0[0], halfToFloat), Float64Array.from(row0[1], halfToFloat)], got: [gotK, gotV],
+    const { o, k, v, wrong } = await first.then({ x0, xn, pos, line, row0: [Float64Array.from(row0[0], floatOfHalf), Float64Array.from(row0[1], floatOfHalf)], got: [gotK, gotV],
       held: heldFloats, matmul, vectorOf, plus, rms, behind, largest, off });
     if (wrong) return wrong;
     const h1 = x0.map((value, i) => value + o[i]);

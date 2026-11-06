@@ -8,7 +8,7 @@ const { aloneHolds, aloneVerdict, footprint, gpuBytes, gpuOnlyPlan, gpuOnlyUnfit
 // (T641.10: what only the tests read, from the parts)
 const { gpuLine, PROMPTS_CPU, PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes } = await import(runtimeUrl("forward/choice.js"));
 const { BOTH_ON_8, cpuReadBytes } = await import(runtimeUrl("forward/alone.js"));
-const { deviceKey, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData,
+const { deviceKey, floatOfHalf, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData,
   tokenAttentionOff } = await import(runtimeUrl("shaders.js"));
 import { usedAfter } from "../src/bench.ts";
 import { python as sources, runtimeUrl } from "./tree.ts";
@@ -156,6 +156,28 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // toHalf (the check's) and halvesOf (the engine's) are the same rounding; fromHalf takes every finite float16 back
   for (const x of values) assert.equal(toHalf(x), nearest(x), `toHalf of ${x}`);
   for (let h = 0; h < 0x10000; h++) if ((h & 0x7c00) !== 0x7c00) assert.equal(fromHalf(h), toFloat(h), `fromHalf of ${h.toString(16)}`);
+  // T642.7: the three readings of a float16 (the GPU worker's and the shaders' floatOfHalf, the forward pass's
+  // halfToFloat, /benchmark/'s fromHalf) are the float32 a float16 is, on all 65,536 of them: ±0 (Object.is tells
+  // them apart), the subnormals, ±Infinity and NaN. The answer is made of the bits (the float32 whose sign, exponent
+  // and fraction the float16's are), not of a formula like theirs
+  const word = new Float32Array(1), wordBits = new Uint32Array(word.buffer);
+  const float32Of = (h) => {
+    const sign = (h & 0x8000) << 16, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;
+    if (exponent === 31) wordBits[0] = sign | 0x7f800000 | (fraction << 13);
+    else if (exponent) wordBits[0] = sign | ((exponent + 112) << 23) | (fraction << 13);
+    else if (!fraction) wordBits[0] = sign;
+    else {
+      // a subnormal: shift the fraction up to its leading 1, one exponent down a step
+      let e = 113, f = fraction;
+      while (!(f & 0x400)) (f <<= 1), e--;
+      wordBits[0] = sign | (e << 23) | ((f & 0x3ff) << 13);
+    }
+    return word[0];
+  };
+  const { halfToFloat } = await import(runtimeUrl("forward/memory.js"));
+  for (const [name, read] of [["floatOfHalf", floatOfHalf], ["forward/memory.ts's halfToFloat", halfToFloat], ["/benchmark/'s fromHalf", fromHalf]]) {
+    for (let h = 0; h < 0x10000; h++) assert.ok(Object.is(read(h), float32Of(h)), `${name} of ${h.toString(16)}: ${read(h)}, not ${float32Of(h)}`);
+  }
   // to the nearest: all of them
   assert.deepEqual(counts(nearest).line, [values.length, 0, 0, 0]);
   // toward zero: the ones that differ from the nearest are neighbours toward zero, about half of them, taken as the

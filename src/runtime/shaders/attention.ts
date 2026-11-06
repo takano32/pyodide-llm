@@ -5,6 +5,7 @@
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { STEP } from "./common.ts";
+import { floatOfHalf } from "./halves.ts";
 
 // (T368.5) the shapes the makers below are given, each what its shape function returns: a number is written into the
 // text, half and subgroups choose its lines. none: why a device cannot run it (and then nothing is made of it)
@@ -765,7 +766,6 @@ export function tokenAttentionData({ heads, kvHeads, size, positions, steep = []
   }
   return { q, keys, values: new Uint16Array(rows).map(halfBits) };
 }
-const fromHalf = (h: number) => (h & 0x8000 ? -1 : 1) * ((h >> 10) & 31 ? 2 ** (((h >> 10) & 31) - 15) * (1 + (h & 1023) / 1024) : 2 ** -14 * ((h & 1023) / 1024));
 /** T224: how far got (a token's attention output, heads × size, from the GPU) is from the attention of data
  * (tokenAttentionData's, heads of q on kvHeads, each head of q to kvHeads' own, the token reading positions) in float64:
  * the largest difference of a head's output over the largest |value| of its head. NaN where got holds one. T261.4.2: of
@@ -777,15 +777,15 @@ export function tokenAttentionOff(got: ArrayLike<number>, { q, keys, values }: A
     const kv = Math.floor(h / (heads / kvHeads)) * size, row = h * size, weights = new Float64Array(positions).fill(-Infinity);
     for (let p = first; p < positions; p++) {
       weights[p] = 0;
-      for (let d = 0; d < size; d++) weights[p] += q[row + d] * fromHalf(keys[p * kvDim + kv + d]) * scale;
+      for (let d = 0; d < size; d++) weights[p] += q[row + d] * floatOfHalf(keys[p * kvDim + kv + d]) * scale;
     }
     const most = weights.reduce((a, b) => Math.max(a, b), -Infinity);
     let sum = 0, largest = 0;
     for (let p = first; p < positions; p++) sum += (weights[p] = Math.exp(weights[p] - most));
-    for (let p = first; p < positions; p++) for (let d = 0; d < size; d++) largest = Math.max(largest, Math.abs(fromHalf(values[p * kvDim + kv + d])));
+    for (let p = first; p < positions; p++) for (let d = 0; d < size; d++) largest = Math.max(largest, Math.abs(floatOfHalf(values[p * kvDim + kv + d])));
     for (let d = 0; d < size; d++) {
       let want = 0;
-      for (let p = first; p < positions; p++) want += weights[p] * fromHalf(values[p * kvDim + kv + d]);
+      for (let p = first; p < positions; p++) want += weights[p] * floatOfHalf(values[p * kvDim + kv + d]);
       // (Math.max keeps a NaN, as the comment above says: `if (!(off <= worst)) worst = off` let the next value take its
       // place, and a NaN in one head, or in the first values of the last, passed: T224's review)
       worst = Math.max(worst, Math.abs(got[row + d] - want / sum) / largest);

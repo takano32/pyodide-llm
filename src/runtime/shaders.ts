@@ -39,9 +39,10 @@ import { FLASH_Q_TILE, flashShape, flashTile, FLASH_VEC_KV_TILE, FLASH_VEC_LANES
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE,
   fusedDp4aMatVec } from "./shaders/fused.ts";
 import { ORT_MATVEC_ROWS, mulMatVec, ortMatVec } from "./shaders/matvec.ts";
-import { REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, halvesOf, samplingState, SAMPLING_BYTES,
+import { REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, samplingState, SAMPLING_BYTES,
   samplingSettings, EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, embedBlocks, OUTLIERS_MOST, TAKE_OUTLIERS, TERNARY_COLUMNS,
   outliersOf } from "./shaders/run.ts";
+import { halvesOf, floatOfHalf } from "./shaders/halves.ts";
 import { SAMPLE } from "./shaders/sample.ts";
 import { ROTATE_MOST, ROTATE_QUANTIZE, UNROTATE, rotateLikeCpu, unrotateLikeCpu, rotateGroups } from "./shaders/rotate.ts";
 import { SAMPLE_CHUNK, sampleChunks, samplePartsBytes, SAMPLE_MAX, SAMPLE_SUM, SAMPLE_GATHER, SAMPLE_PICK,
@@ -57,7 +58,7 @@ export { GROUP, BLOCK_PACKINGS, TILE, WIDEN, PACKED, BATCHED, REG_TILES, regTile
   tokenAttentionData, tokenAttentionOff, SWIGLU, GELU, RMSNORM_ADD, GEGLU, SHORT_CONV, CONV_STATE, DELTA_GATES, DELTA_CONV, DELTA_CONV_STATE, DELTA_NET, DELTA_THREADS, OUTPUT_GATE, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP, SHARED_PER_LOOP,
   GLOBAL_PER_THREAD, FMA_SHAPES, fmaCeiling, DOT4_CEILING, SHARED_CEILING, GLOBAL_CEILING, MUL_MAT_VEC_ROWS,
   ORT_MATVEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVec, ortMatVec, TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE,
-  fusedDp4aMatVec, REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, halvesOf, samplingState,
+  fusedDp4aMatVec, REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, halvesOf, floatOfHalf, samplingState,
   SAMPLING_BYTES, samplingSettings, EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, embedBlocks, OUTLIERS_MOST, TAKE_OUTLIERS,
   TERNARY_COLUMNS, outliersOf, SAMPLE, SAMPLE_CHUNK, sampleChunks, samplePartsBytes, SAMPLE_MAX, SAMPLE_SUM,
   SAMPLE_GATHER, SAMPLE_PICK, SAMPLER_STAGES, penalizeLikeCpu, sampleLikeCpu, argmaxLikeCpu, finiteLikeCpu, walkLikeCpu,
