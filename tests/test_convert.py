@@ -23,10 +23,11 @@ def reader(file, log=None):
     return read
 
 
-def converted(source, published, dtype, max_seq_len=1 << 20):
+def converted(source, published, dtype, max_seq_len=1 << 20, **more):
+    """more: what else convert_weights() takes (piece)."""
     out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype,
                                     checkpoint_form(published, source)))
-    convert_weights(source, published, dtype, max_seq_len, out)
+    convert_weights(source, published, dtype, max_seq_len, out, **more)
     return bytes(out)
 
 
@@ -34,26 +35,24 @@ CONFIGS = [dict(n_kv_heads=4), dict(n_kv_heads=2), dict(n_kv_heads=1, shared=Fal
 
 
 @pytest.mark.parametrize("config", CONFIGS)
-def test_float32_is_the_checkpoint_the_weights_came_from(config, monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+def test_float32_is_the_checkpoint_the_weights_came_from(config):
     shared = config.get("shared", True)
     config, weights = synthetic_weights(**config)
     tensors, published = hugging_face(config, weights, shared)
     expected = pack_checkpoint(config, weights)
-    assert converted(Safetensors(reader(safetensors_file(tensors))), published, "float32") == expected
-    assert converted(Arrays(tensors), published, "float32") == expected
+    assert converted(Safetensors(reader(safetensors_file(tensors))), published, "float32", piece=700) == expected
+    assert converted(Arrays(tensors), published, "float32", piece=700) == expected
 
 
 @pytest.mark.parametrize("config", CONFIGS)
-def test_int8_is_what_quantize_makes_of_float32(tmp_path, config, monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", 700)
+def test_int8_is_what_quantize_makes_of_float32(tmp_path, config):
     shared = config.get("shared", True)
     config, weights = synthetic_weights(**config)
     tensors, published = hugging_face(config, weights, shared)
     source, target = tmp_path / "model.f32", tmp_path / "model.bin"
     source.write_bytes(pack_checkpoint(config, weights))
     subprocess.run([sys.executable, str(ROOT / "quantize.py"), str(source), str(target)], check=True)
-    int8 = converted(Safetensors(reader(safetensors_file(tensors))), published, "int8")
+    int8 = converted(Safetensors(reader(safetensors_file(tensors))), published, "int8", piece=700)
     assert int8 == target.read_bytes()
     assert checkpoint_dtype(struct.unpack_from("<7i", int8, 0), len(int8)) == "int8"
 
@@ -71,14 +70,13 @@ def test_half_precision_sources_and_targets():
     assert np.array_equal(np.frombuffer(float16, dtype=np.float16, offset=28), reference)
 
 
-def test_it_reads_pieces_and_never_the_whole_file(monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", 2048)
+def test_it_reads_pieces_and_never_the_whole_file():
     config, weights = synthetic_weights(vocab_size=1000)
     tensors, published = hugging_face(config, weights, True)
     file, log, progress = safetensors_file(tensors), [], []
     source = Safetensors(reader(file, log))
     out = bytearray(checkpoint_size(checkpoint_header(published, source, 1 << 20), "int8"))
-    convert_weights(source, published, "int8", 1 << 20, out, progress=lambda done, total: progress.append(done / total))
+    convert_weights(source, published, "int8", 1 << 20, out, piece=2048, progress=lambda done, total: progress.append(done / total))
     header_bytes = log[1]
     assert max(length for length in log if length != header_bytes) <= 2048 * 4
     assert progress == sorted(progress) and progress[-1] == 1.0 and len(progress) > 20
@@ -230,16 +228,17 @@ def test_every_transform_has_its_facts_written_twice():
     assert names == {"permute", "transpose", "heads", "part", "row", "rows", "scale", "one", "plus", "decay", "taps"}
 
 
-def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):
-    """The file fed to Stream from its beginning to its end, chunk bytes at a time."""
+def streamed(file, published, dtype, chunk, max_seq_len=1 << 20, **more):
+    """The file fed to Stream from its beginning to its end, chunk bytes at a time. more: what else Stream() takes
+    (piece)."""
     (size,) = struct.unpack("<Q", file[:8])
     header = json.loads(file[8:8 + size])
-    stream = llama2_convert.Stream(header, 8 + size, published, dtype, max_seq_len)
+    stream = llama2_convert.Stream(header, 8 + size, published, dtype, max_seq_len, **more)
     out = stream.out
     # the first stretch of the file may be skipped, as the page does once it has read the header
     skip = 8 + size if chunk > 100 else 0
     if skip:
-        stream = llama2_convert.Stream(header, 8 + size, published, dtype, max_seq_len, start=skip)
+        stream = llama2_convert.Stream(header, 8 + size, published, dtype, max_seq_len, start=skip, **more)
         out = stream.out
     progress = [stream.feed(file[start:start + chunk]) for start in range(skip, len(file), chunk)]
     stream.finish()
@@ -248,16 +247,15 @@ def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):
 
 @pytest.mark.parametrize("config", CONFIGS)
 @pytest.mark.parametrize("dtype, stored, chunk", [("float32", "F32", 1000), ("int8", "BF16", 4096), ("float16", "F16", 7), ("int8", "F32", 1 << 20)])
-def test_the_file_in_its_own_order_gives_the_same_checkpoint(config, dtype, stored, chunk, monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", 700)
+def test_the_file_in_its_own_order_gives_the_same_checkpoint(config, dtype, stored, chunk):
     shared = config.get("shared", True)
     config, weights = synthetic_weights(**config)
     tensors, published = hugging_face(config, weights, shared)
     # Hugging Face writes the tensors sorted by name, and a file may hold tensors nobody asks for
     tensors = dict(sorted({**tensors, "model.layers.0.self_attn.rotary_emb.inv_freq": np.arange(8, dtype=np.float32)}.items()))
     file = safetensors_file(tensors, stored)
-    expected = converted(Safetensors(reader(file)), published, dtype)
-    result, progress = streamed(file, published, dtype, chunk)
+    expected = converted(Safetensors(reader(file)), published, dtype, piece=700)
+    result, progress = streamed(file, published, dtype, chunk, piece=700)
     assert result == expected
     assert progress[-1][0] == progress[-1][1] and [done for done, _ in progress] == sorted(done for done, _ in progress)
 

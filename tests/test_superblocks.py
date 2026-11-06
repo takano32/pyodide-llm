@@ -301,20 +301,19 @@ def as_saluki(seen):
 
 
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
-def test_a_gguf_of_the_ten_types_is_the_safetensors_conversion_of_what_its_blocks_stand_for(dtype, monkeypatch):
+def test_a_gguf_of_the_ten_types_is_the_safetensors_conversion_of_what_its_blocks_stand_for(dtype):
     """A small Qwen3.5 as Underdog Saluki 27B's GGUF is: llama.cpp's names and order (the value heads tiled, three to
     a key head: the columns of ssm_out move by half a block), every matrix of one of the ten types and the types
     differing from layer to layer. Its checkpoint is that of a safetensors file of the values the blocks stand for, to
     the byte, and the engine reads it and gives finite logits."""
-    monkeypatch.setattr("convert.stream.PIECE", 70000)
     seen = {}
     config, file, same = qwen35_gguf(matrices=as_saluki(seen), **SALUKI)
     assert set().union(*seen.values()) == set(SLOW) and all(len(kinds) > 1 for role, kinds in seen.items() if role not in ("token_embd", "output"))
     header = json.loads(gguf_weights(file, json.dumps(config))[0])
     assert {info["dtype"] for name, info in header.items() if name != "__metadata__"} == {"F32", "Q8_0", *SLOW}
     vocabulary = unigram(config["text_config"]["vocab_size"])
-    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
-    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype, piece=70000)
+    expected = safetensors_conversion(same, config, vocabulary, dtype, piece=70000)
     assert bytes(got.checkpoint) == bytes(expected.checkpoint) and got.options == expected.options
     assert got.options["arch"] == "qwen35" and got.options["linear"]["value_heads"] == 6
     model = Llama(bytes(got.checkpoint), bytes(got.tokenizer), **got.options)

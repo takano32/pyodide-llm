@@ -206,12 +206,11 @@ def test_the_root_of_the_width_is_in_the_table_and_out_of_the_last_norm():
 
 @pytest.mark.parametrize("dtype", ["float32", "float16", "int8", "int6"])
 @pytest.mark.parametrize("shared", [True, False])
-def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared, monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared):
     tensors, config = gemma3_model(shared=shared)
     file = safetensors_file(tensors)
-    expected = converted(Safetensors(reader(file)), config, dtype)
-    got, progress = streamed(file, config, dtype, 4096)
+    expected = converted(Safetensors(reader(file)), config, dtype, piece=700)
+    got, progress = streamed(file, config, dtype, 4096, piece=700)
     assert got == expected and progress[-1][0] == progress[-1][1]
     assert checkpoint_dtype(struct.unpack_from("<7i", got, 0), len(got), options_of(config)) == dtype
     llama = Llama(got, pack_tokenizer(tiny_vocab(320)), dtype=dtype, **options_of(config))
@@ -223,7 +222,7 @@ def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared, monk
         assert np.corrcoef(np.ravel(got), np.ravel(want))[0, 1] > (0.999 if dtype == "float16" else 0.9)
 
 
-def test_the_table_goes_piece_by_piece_and_is_the_table_taken_whole(monkeypatch):
+def test_the_table_goes_piece_by_piece_and_is_the_table_taken_whole():
     """The embedding is the one tensor with a transform that is not given whole (262,144 rows of the real one): the
     pieces it comes in, of the reader's choosing or of the stream's, make the bytes of the whole tensor multiplied at
     once, and every other tensor with a transform is still asked for whole."""
@@ -232,10 +231,9 @@ def test_the_table_goes_piece_by_piece_and_is_the_table_taken_whole(monkeypatch)
     whole = streamed(file, config, "int8", 1 << 20)[0]
     asked = []
     for piece in (64, 700, 5000):
-        monkeypatch.setattr("convert.stream.PIECE", piece)
         log = []
-        assert converted(Safetensors(reader(file, log)), config, "int8") == whole
-        assert streamed(file, config, "int8", 333)[0] == whole
+        assert converted(Safetensors(reader(file, log)), config, "int8", piece=piece) == whole
+        assert streamed(file, config, "int8", 333, piece=piece)[0] == whole
         asked.append(len(log))
     assert asked[0] > asked[1] > asked[2]  # (the smaller the piece, the more reads: the table is not read at once)
     from convert.stream import piecewise
@@ -526,11 +524,11 @@ def gemma3_gguf(more=(), leave=(), change=None, **shape):
     return config, head + b"".join(blobs), same
 
 
-def safetensors_conversion(same, config, vocabulary, dtype):
+def safetensors_conversion(same, config, vocabulary, dtype, **more):
     safetensors = safetensors_file(same)
     size = struct.unpack("<Q", safetensors[:8])[0]
     expected = llama2_convert.Conversion(safetensors[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary,
-                                         "tokenizer.json", dtype=dtype, max_seq_len=1 << 20)
+                                         "tokenizer.json", dtype=dtype, max_seq_len=1 << 20, **more)
     expected.feed(safetensors)
     expected.finish()
     return expected
@@ -548,15 +546,14 @@ GGUF_SHAPES = {"as the published one says it": (AS_PUBLISHED, ()),
 
 @pytest.mark.parametrize("dtype", ["int8", "float32", "float16", "int6"])
 @pytest.mark.parametrize("shape", GGUF_SHAPES)
-def test_a_gemma3_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
+def test_a_gemma3_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype):
     """The list's way in: the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the byte.
     The norms come with their 1 added and are not given another; the last norm comes before the table."""
-    monkeypatch.setattr("convert.stream.PIECE", 700)
     model, more = GGUF_SHAPES[shape]
     config, file, same = gemma3_gguf(more=more, **model)
     vocabulary = unigram(config["vocab_size"])
-    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
-    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype, piece=700)
+    expected = safetensors_conversion(same, config, vocabulary, dtype, piece=700)
     assert bytes(got.checkpoint) == bytes(expected.checkpoint)
     assert bytes(got.tokenizer) == bytes(expected.tokenizer)
     assert got.options == expected.options

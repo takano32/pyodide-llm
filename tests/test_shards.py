@@ -22,8 +22,9 @@ def split(tensors, pieces, order=None):
     return [safetensors_file({name: tensors[name] for name in names[i:i + size]}) for i in range(0, len(names), size)]
 
 
-def fed(files, published, dtype, chunk):
-    """What the page does: the headers joined, then each shard from its base, chunk bytes at a time."""
+def fed(files, published, dtype, chunk, **more):
+    """What the page does: the headers joined, then each shard from its base, chunk bytes at a time. more: what else
+    Stream() takes (piece)."""
     headers, bases = [], []
     for file in files:
         (size,) = struct.unpack("<Q", file[:8])
@@ -31,7 +32,7 @@ def fed(files, published, dtype, chunk):
         bases.append(8 + size)
     header, lengths = joined_shards(headers)
     assert lengths == [len(file) - base for file, base in zip(files, bases)]
-    stream = llama2_convert.Stream(json.loads(header), 0, published, dtype, 1 << 20)
+    stream = llama2_convert.Stream(json.loads(header), 0, published, dtype, 1 << 20, **more)
     for file, base, length in zip(files, bases, lengths):
         data = file[base:base + length]
         for start in range(0, len(data), chunk):
@@ -51,15 +52,14 @@ def models():
 @pytest.mark.parametrize("pieces", [2, 3])
 @pytest.mark.parametrize("dtype, chunk", [("float32", 1000), ("int8", 777)])
 @pytest.mark.parametrize("name, tensors, published", list(models()), ids=[m[0] for m in models()])
-def test_shards_give_the_checkpoint_of_one_file(name, tensors, published, pieces, dtype, chunk, monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
-    expected = converted(Safetensors(reader(safetensors_file(tensors))), published, dtype)
+def test_shards_give_the_checkpoint_of_one_file(name, tensors, published, pieces, dtype, chunk):
+    expected = converted(Safetensors(reader(safetensors_file(tensors))), published, dtype, piece=700)
     # in the order the tensors come, and backwards (the classifier and the last layers first)
     for order in (list(tensors), list(reversed(tensors))):
         files = split(tensors, pieces, order)
         assert len(files) == pieces
-        assert fed(files, published, dtype, chunk) == expected
-        assert converted(Shards([Safetensors(reader(file)) for file in files]), published, dtype) == expected
+        assert fed(files, published, dtype, chunk, piece=700) == expected
+        assert converted(Shards([Safetensors(reader(file)) for file in files]), published, dtype, piece=700) == expected
 
 
 def test_one_shard_is_one_file():

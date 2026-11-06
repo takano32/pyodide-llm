@@ -1,5 +1,6 @@
 # The reader of chat templates: a part of Jinja, enough to render one user turn of a model's own template and give it
 # back as the format the page fills (T73, T127, T269).
+import functools
 import json
 import re
 import time
@@ -476,22 +477,17 @@ def date_format(form):
     return form
 
 
-JINJA = []  # jinja_environment()'s answer, once it was asked
-
-
+@functools.cache
 def jinja_environment():
     """jinja2's environment as transformers makes it for apply_chat_template (utils/chat_template_utils.py: sandboxed
     and immutable, trim_blocks and lstrip_blocks, the loop controls, {% generation %}, its tojson and
     raise_exception), or None where jinja2 is not there to import. Asked once: the import is a third of a second
-    in Pyodide, and only a conversion with a template pays it."""
-    if JINJA:
-        return JINJA[0]
+    in Pyodide, and only a conversion with a template pays it (functools.cache: cache_clear() asks again)."""
     try:
         import jinja2
         from jinja2.ext import Extension, loopcontrols
         from jinja2.sandbox import ImmutableSandboxedEnvironment
     except ImportError:
-        JINJA.append(None)
         return None
 
     def raise_exception(message):
@@ -516,7 +512,6 @@ def jinja_environment():
     environment = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True, extensions=[loopcontrols, Generation])
     environment.filters["tojson"] = tojson
     environment.globals["raise_exception"] = raise_exception
-    JINJA.append(environment)
     return environment
 
 

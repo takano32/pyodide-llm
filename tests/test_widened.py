@@ -200,19 +200,18 @@ def as_a_mixed_file(seen, with_kept=()):
 
 
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
-def test_a_gguf_of_these_types_is_the_safetensors_conversion_of_what_its_blocks_stand_for(dtype, monkeypatch):
+def test_a_gguf_of_these_types_is_the_safetensors_conversion_of_what_its_blocks_stand_for(dtype):
     """A small Qwen3.5 in llama.cpp's names and order whose matrices are of the eight types, differing from layer to
     layer: its checkpoint is that of a safetensors file of the values the blocks stand for, to the byte, the engine
     reads it and gives finite logits. Alone (its own vocabulary) it is the same checkpoint."""
-    monkeypatch.setattr("convert.stream.PIECE", 70000)
     seen = {}
     config, file, same = qwen35_gguf(matrices=as_a_mixed_file(seen), **SALUKI)
     assert set().union(*seen.values()) == set(SLOW)
     header = json.loads(gguf_weights(file, json.dumps(config))[0])
     assert {info["dtype"] for name, info in header.items() if name != "__metadata__"} == {"F32", "Q8_0", *SLOW}
     vocabulary = unigram(config["text_config"]["vocab_size"])
-    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
-    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype, piece=70000)
+    expected = safetensors_conversion(same, config, vocabulary, dtype, piece=70000)
     assert bytes(got.checkpoint) == bytes(expected.checkpoint) and got.options == expected.options
     model = Llama(bytes(got.checkpoint), bytes(got.tokenizer), **got.options)
     logits = [model.forward(token, position) for position, token in enumerate((3, 9, 27, 5))]

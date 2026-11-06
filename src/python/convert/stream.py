@@ -14,16 +14,18 @@ from convert.plan import checkpoint_form, made, model_plan, source_shape, steps_
 from convert.gguf import rope_freqs_agree
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
-# peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
+# peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed. The default
+# of every piece= below: a test gives a smaller one to have a small model's tensors cut in several pieces (T640.11)
 PIECE = 1024 * 1024
 
 
-def convert_weights(source, config, dtype, max_seq_len, out, progress=None, quantize_rows=None):
+def convert_weights(source, config, dtype, max_seq_len, out, progress=None, quantize_rows=None, piece=PIECE):
     """Fill out, a writable buffer of checkpoint_size() bytes, from source (Safetensors or Arrays).
 
-    progress(values done, values in all) is called after every piece. quantize_rows: see Writer.
+    progress(values done, values in all) is called after every piece. quantize_rows: see Writer. piece: the most
+    values converted at a time (PIECE).
     """
-    for done, total in convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows):
+    for done, total in convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows, piece):
         if progress:
             progress(done, total)
     return checkpoint_header(config, source, max_seq_len)
@@ -37,7 +39,7 @@ def piecewise(transform):
     return transform is None or not isinstance(transform[0], tuple) and transform_of(transform).piecewise
 
 
-def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
+def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None, piece=PIECE):
     """convert_weights() as a generator that yields (values done, values in all) after every piece: whoever drives
     it can show the progress, let other work in between, and stop half way (the worker of the page does all three)."""
     config = normalize(config)
@@ -67,7 +69,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
             rows = found[0] if len(found) > 1 else 1
             row = math.prod(found) // rows
             # a transform needs the whole tensor (a small one); everything else goes piece by piece
-            step = rows if not piecewise(transform) or len(found) == 1 else max(1, PIECE // row)
+            step = rows if not piecewise(transform) or len(found) == 1 else max(1, piece // row)
             for start in range(0, rows, step):
                 stop = min(start + step, rows)
                 values = source.rows(name, 0, found[0]) if len(found) == 1 else source.rows(name, start, stop)
@@ -88,13 +90,15 @@ class Stream:
     position in the file of the first byte that feed() will get. out: a buffer of checkpoint_size() bytes, or None
     to have one made (self.out). sink and quantize_rows: see Writer. readers: the readers of the stored types on
     the SIMD kernels, by the type's name (convert/readers.py's kernel_readers(): bfloat16, T123; GGUF's Q8_0, T136; the
-    two ternary types, T273), the same float32 as SOURCES' own, which read whatever type has none here.
+    two ternary types, T273), the same float32 as SOURCES' own, which read whatever type has none here. piece: the
+    bytes held before a tensor's rows are converted, unless it ends first (PIECE).
     """
 
     def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0, sink=None, quantize_rows=None,
-                 readers=None):
+                 readers=None, piece=PIECE):
         config = normalize(config)
         self.readers = readers or {}
+        self.piece = piece
         # T385: how each stored type that has a kernel's reader was widened, by its name: "kernel" or "NumPy"
         # (a page's conversion without its reader is only slower, and said nowhere else)
         self.widened = {}
@@ -195,7 +199,7 @@ class Stream:
         rows = len(self.pending) // row if not whole or last else 0
         if whole and last:
             rows = stored[0] if len(stored) > 1 else 1  # a vector is one row of its own length
-        if rows == 0 or (len(self.pending) < PIECE and not last):
+        if rows == 0 or (len(self.pending) < self.piece and not last):
             return
         values = reader(bytes(self.pending[:rows * row]))
         del self.pending[:rows * row]

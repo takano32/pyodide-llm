@@ -167,12 +167,11 @@ def test_the_state_has_a_size_the_context_does_not_change():
 
 @pytest.mark.parametrize("dtype", ["float32", "float16", "int8", "int6"])
 @pytest.mark.parametrize("shared", [True, False])
-def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared, monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared):
     tensors, config = lfm2_model(shared=shared)
     file = safetensors_file(tensors)
-    expected = converted(Safetensors(reader(file)), config, dtype)
-    got, progress = streamed(file, config, dtype, 4096)
+    expected = converted(Safetensors(reader(file)), config, dtype, piece=700)
+    got, progress = streamed(file, config, dtype, 4096, piece=700)
     assert got == expected and progress[-1][0] == progress[-1][1]
     assert checkpoint_dtype(struct.unpack_from("<7i", got, 0), len(got), options_of(config)) == dtype
     # the three places the order of the tensors lives in agree on the size: the Writer wrote it, checkpoint_dtype() named
@@ -504,11 +503,11 @@ def lfm2_gguf(more=(), bos=1, eos=7, change=None, leave=(), **shape):
     return config, head + b"".join(blobs), same
 
 
-def safetensors_conversion(same, config, vocabulary, dtype):
+def safetensors_conversion(same, config, vocabulary, dtype, **more):
     safetensors = safetensors_file(same)
     size = struct.unpack("<Q", safetensors[:8])[0]
     expected = llama2_convert.Conversion(safetensors[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary,
-                                         "tokenizer.json", dtype=dtype, max_seq_len=1 << 20)
+                                         "tokenizer.json", dtype=dtype, max_seq_len=1 << 20, **more)
     expected.feed(safetensors)
     expected.finish()
     return expected
@@ -521,15 +520,14 @@ LFM2_SHAPES = {"the 350M's order": dict(kinds="ccaccaccacacacac"), "a classifier
 
 @pytest.mark.parametrize("dtype", ["int8", "float32", "float16", "int6"])
 @pytest.mark.parametrize("shape", LFM2_SHAPES)
-def test_an_lfm2_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
+def test_an_lfm2_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype):
     """The list's way in: the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the byte.
     The convolution comes without its axis of one, the last norm and the convolution's tensors under llama.cpp's
     names, and nothing in another order. Fed 4096 bytes at a time, in pieces of a few rows."""
-    monkeypatch.setattr("convert.stream.PIECE", 700)
     config, file, same = lfm2_gguf(**LFM2_SHAPES[shape])
     vocabulary = unigram(config["vocab_size"])
-    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
-    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype, piece=700)
+    expected = safetensors_conversion(same, config, vocabulary, dtype, piece=700)
     assert bytes(got.checkpoint) == bytes(expected.checkpoint)
     assert bytes(got.tokenizer) == bytes(expected.tokenizer)
     assert got.options == expected.options

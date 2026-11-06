@@ -4,7 +4,7 @@ import json
 from engine.dtypes import dtype_of
 from engine.proxy import plain
 from convert.config import check_config, normalize
-from convert.stream import Kept, Stream
+from convert.stream import PIECE, Kept, Stream
 from convert.gguf import gguf_model, gguf_read, rope_freqs_values
 from convert.beginning import beginning_and_stops, options_of
 from convert.vocabulary import gguf_vocabulary, vocabulary_of
@@ -20,12 +20,12 @@ class Conversion:
     and dtype is how the others are stored.
     last (T257): no other tokenizer of the model is left to try. Without it a tokenizer.json that writes out a
     sentencepiece model with its dummy prefix is put off (convert.tokenizer's Later), for the model's own file to be
-    read where there is one.
+    read where there is one. piece: see Stream (a test's smaller pieces, T640.11).
     """
 
     def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0,
                  tokenizer_config=None, sink=None, quantize_rows=None, chat_template=None, readers=None, blocks=False,
-                 last=True):
+                 last=True, piece=PIECE):
         try:
             self.config = json.loads(config)
         except ValueError:
@@ -44,10 +44,11 @@ class Conversion:
         tokenizer = bytes(plain(tokenizer))
         vocabulary = vocabulary_of(tokenizer, tokenizer_name, self.config["vocab_size"], tokenizer_config, last)
         self.start(header, base, vocabulary, dtype, max_seq_len, start, sink, quantize_rows, chat_template, readers,
-                   blocks)
+                   blocks, piece=piece)
 
     @classmethod
-    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, readers=None, blocks=False):
+    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, readers=None, blocks=False,
+                  piece=PIECE):
         """The same from a GGUF file (T74): head is its beginning, as far as the tensors' data (Incomplete when it
         is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
         metadata, tensors, base = gguf_read(head)
@@ -76,11 +77,11 @@ class Conversion:
         vocabulary = gguf_vocabulary(metadata, config["vocab_size"])
         self.base = base
         self.start(header, base, vocabulary, dtype, max_seq_len, base, sink, quantize_rows, readers=readers,
-                   blocks=blocks, headless=None if named else nameless.format("BOS"))
+                   blocks=blocks, headless=None if named else nameless.format("BOS"), piece=piece)
         return self
 
     def start(self, header, base, vocabulary, dtype, max_seq_len, start, sink=None, quantize_rows=None,
-              chat_template=None, readers=None, blocks=False, headless=None):
+              chat_template=None, readers=None, blocks=False, headless=None, piece=PIECE):
         """vocabulary: convert/vocabulary.py's Vocabulary. sink and quantize_rows: see Writer, readers: see Stream.
         checkpoint is None with a sink: the bytes went there. chat_template: the text of chat_template.jinja, where
         there is one (T127). headless (T505.2): what to refuse a model with whose template begins with no token of
@@ -92,7 +93,7 @@ class Conversion:
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = (Kept if blocks else Stream)(header, int(base), self.config, dtype, int(max_seq_len),
                                                    start=int(start), sink=sink, quantize_rows=quantize_rows,
-                                                   readers=readers)
+                                                   readers=readers, piece=piece)
         self.options = options_of(self.stream.form, self.stream.dtype, self.config, vocabulary, beginning)
         self.checkpoint = self.stream.out
 

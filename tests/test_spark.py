@@ -418,11 +418,11 @@ def spark_gguf(more=(), leave=(), **shape):
     return config, head + b"".join(blobs), same
 
 
-def safetensors_conversion(same, config, vocabulary, dtype):
+def safetensors_conversion(same, config, vocabulary, dtype, **more):
     safetensors = safetensors_file(same)
     size = struct.unpack("<Q", safetensors[:8])[0]
     expected = llama2_convert.Conversion(safetensors[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary,
-                                         "tokenizer.json", dtype=dtype, max_seq_len=1 << 20)
+                                         "tokenizer.json", dtype=dtype, max_seq_len=1 << 20, **more)
     expected.feed(safetensors)
     expected.finish()
     return expected
@@ -430,13 +430,12 @@ def safetensors_conversion(same, config, vocabulary, dtype):
 
 @pytest.mark.parametrize("dtype", ["int8", "float32", "float16", "int6"])
 @pytest.mark.parametrize("shape", [dict(), dict(shared=False), dict(kinds="slssl", window=3)])
-def test_a_spark_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
+def test_a_spark_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype):
     """The list's way in: the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the byte."""
-    monkeypatch.setattr("convert.stream.PIECE", 700)
     config, file, same = spark_gguf(**shape)
     vocabulary = unigram(config["vocab_size"])
-    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
-    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype, piece=700)
+    expected = safetensors_conversion(same, config, vocabulary, dtype, piece=700)
     assert bytes(got.checkpoint) == bytes(expected.checkpoint)
     assert bytes(got.tokenizer) == bytes(expected.tokenizer)
     assert got.options == expected.options

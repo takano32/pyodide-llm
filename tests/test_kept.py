@@ -241,11 +241,10 @@ def boundaries(saluki):
 
 @pytest.mark.parametrize("pieces", ["at every tensor's ends and inside its blocks", "of 1000 bytes", "of 65537 bytes", "one"])
 @pytest.mark.parametrize("piece", [70000, 1 << 20])
-def test_the_checkpoint_is_the_same_however_the_file_is_cut(saluki, pieces, piece, monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", piece)
+def test_the_checkpoint_is_the_same_however_the_file_is_cut(saluki, pieces, piece):
     cuts = {"at every tensor's ends and inside its blocks": boundaries(saluki), "one": {len(saluki.file)}}.get(
         pieces) or range(saluki.base, len(saluki.file), int(pieces.split()[1]))
-    again = saluki.converted(cuts=cuts)
+    again = saluki.converted(cuts=cuts, piece=piece)
     assert bytes(again.checkpoint) == bytes(saluki.kept.checkpoint) and again.options == saluki.kept.options
 
 

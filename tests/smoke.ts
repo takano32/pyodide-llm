@@ -1157,7 +1157,7 @@ turn = llama2_convert.one_turn(macro, {})
 assert turn == ${loaded ? '"<|im_start|>user\\n{prompt}<|im_end|>\\n{date:%d %b %Y}"' : "None"}, turn
 chatml = "{% for m in messages %}{{ '<|im_start|>' + m.role + '\\n' + m.content + '<|im_end|>\\n' }}{% endfor %}{{ '<|im_start|>assistant\\n' }}"
 assert llama2_convert.one_turn(chatml, {}) == "<|im_start|>user\\n{prompt}<|im_end|>\\n<|im_start|>assistant\\n"
-sys.modules["convert.template"].JINJA.clear()  # (asked once: the next check asks again)
+llama2_convert.jinja_environment.cache_clear()  # (asked once: the next check asks again)
 seconds
 `);
   check(false);

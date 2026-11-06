@@ -536,15 +536,14 @@ GGUF_SHAPES = {"as E2B is": GGUF_E2B,
 
 @pytest.mark.parametrize("dtype", ["int8", "float32", "int6"])
 @pytest.mark.parametrize("shape", GGUF_SHAPES)
-def test_a_gemma4_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
+def test_a_gemma4_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype):
     """The list's way in (T529): the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the
     byte, the table of every layer among them (the row the page reads from the keeper, T329.2.2's tableHole()). The
     rope_freqs table passes as it streams by, held to the original's quarter."""
-    monkeypatch.setattr("convert.stream.PIECE", 700)
     config, file, same = gemma4_gguf(**GGUF_SHAPES[shape])
     vocabulary = unigram(text(config)["vocab_size"])
-    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
-    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype, piece=700)
+    expected = safetensors_conversion(same, config, vocabulary, dtype, piece=700)
     assert bytes(got.checkpoint) == bytes(expected.checkpoint)
     assert bytes(got.tokenizer) == bytes(expected.tokenizer)
     assert got.options == expected.options and got.options["arch"] == "gemma4" and got.options["per_layer"] == 32

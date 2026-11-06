@@ -238,11 +238,12 @@ def test_a_q8_0_tensor_whose_rows_are_not_groups_of_32_is_refused():
 
 
 # ---- T136's second stage: the weights of a GGUF with the vocabulary and config.json of the original repository
-def with_original(file, published, vocabulary, name, dtype, chunk=4096):
-    """What worker.js does for such an item: the GGUF's header made a safetensors one, then the original's files."""
+def with_original(file, published, vocabulary, name, dtype, chunk=4096, **more):
+    """What worker.js does for such an item: the GGUF's header made a safetensors one, then the original's files.
+    more: what else Conversion() takes (piece)."""
     header, base = llama2_convert.gguf_weights(file, json.dumps(published))
     conversion = Conversion(header, base, json.dumps(published), vocabulary, name, dtype=dtype, max_seq_len=1 << 20,
-                            start=base)
+                            start=base, **more)
     for start in range(base, len(file), chunk):
         conversion.feed(file[start:start + chunk])
     conversion.finish()
@@ -934,11 +935,11 @@ def qwen35_gguf(more=(), bos=1, eos=2, change=None, fold=None, matrices=None, ti
     return config, head + b"".join(blobs), same
 
 
-def safetensors_conversion(same, config, vocabulary, dtype):
+def safetensors_conversion(same, config, vocabulary, dtype, **more):
     safetensors = safetensors_file(same)
     size = struct.unpack("<Q", safetensors[:8])[0]
     expected = Conversion(safetensors[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary, "tokenizer.json",
-                          dtype=dtype, max_seq_len=1 << 20)
+                          dtype=dtype, max_seq_len=1 << 20, **more)
     expected.feed(safetensors)
     expected.finish()
     return expected
@@ -962,17 +963,16 @@ TILED_SHAPES = [name for name in QWEN35_SHAPES if "to a key head" in name or "to
 
 @pytest.mark.parametrize("dtype", ["int8", "float32", "float16", "int6"])
 @pytest.mark.parametrize("shape", QWEN35_SHAPES)
-def test_a_qwen35_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
+def test_a_qwen35_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype):
     """The list's way in: the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the byte.
     The norms come with their 1 and A_log as -exp(A_log), which the conversion must not do to them again (and could not
     undo to the bit), the convolution comes without its axis of one, and two tensors under names of their own. T245:
     and the value heads tiled where a key head has two or three, put back whole. Fed 4096 bytes at a time, in pieces
     of a few rows (a matrix whose heads are to be put back must not go piece by piece)."""
-    monkeypatch.setattr("convert.stream.PIECE", 700)
     config, file, same = qwen35_gguf(**QWEN35_SHAPES[shape])
     vocabulary = unigram(config["text_config"]["vocab_size"])
-    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
-    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype, piece=700)
+    expected = safetensors_conversion(same, config, vocabulary, dtype, piece=700)
     assert bytes(got.checkpoint) == bytes(expected.checkpoint)
     assert bytes(got.tokenizer) == bytes(expected.tokenizer)
     assert got.options == expected.options

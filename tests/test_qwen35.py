@@ -203,13 +203,12 @@ def test_the_state_has_a_size_the_context_does_not_change():
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float16", "int8", "int6"])
-def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, monkeypatch):
-    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype):
     # int6 needs rows of whole groups of 32: value heads that make 32 values
     tensors, config = qwen35_model(value_dim=8, shared=False)
     file = safetensors_file(tensors)
-    expected = converted(Safetensors(reader(file)), config, dtype)
-    got, progress = streamed(file, config, dtype, 4096)
+    expected = converted(Safetensors(reader(file)), config, dtype, piece=700)
+    got, progress = streamed(file, config, dtype, 4096, piece=700)
     assert got == expected and progress[-1][0] == progress[-1][1]
     assert checkpoint_dtype(struct.unpack_from("<7i", got, 0), len(got), options_of(config)) == dtype
     # and the engine reads exactly that many bytes, and something like the float32 model's numbers
