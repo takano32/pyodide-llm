@@ -40,7 +40,7 @@ from engine.proxy import plain
 # The form of a checkpoint: what sets its tensors and sizes its forward pass besides the 7 ints of the header, which
 # the legacy file cannot say (see Llama.__init__), with the value of a file that says nothing. The converter writes
 # them into the options, and one dict of these names goes to everything that lays the file out or sizes it
-# (tensor_rows() below and what reads it, forward.js's footprint()), so that another one is added where it is used,
+# (tensor_rows() below and what reads it, forward.ts's footprint()), so that another one is added where it is used,
 # not along the way (T144).
 # arch: the architecture, a name of LAYOUTS (below).
 # linear (T229): the linear-attention layers of arch "qwen35", see linear_form(); None where there are none.
@@ -243,7 +243,7 @@ NARROW_KEPT, WIDE_KEPT = "narrow kept", "wide kept"
 
 
 class Row(NamedTuple):
-    """A tensor of the file. name: the attribute the engine holds it as (and its key in the plan forward.js gets).
+    """A tensor of the file. name: the attribute the engine holds it as (and its key in the plan forward.ts gets).
     kind: how it is stored where that is not the file's way with a row of its role (the form's "kinds"), see
     kind_of(): a kind's name, or one for each layer of a stack (a tuple)."""
     name: str

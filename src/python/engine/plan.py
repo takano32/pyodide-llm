@@ -1,6 +1,6 @@
-# The plan Python hands public/forward.js (T93, T359.5): what a model is to an engine outside Python, as one dict made in
-# one place from the facts of the file (its header and form: engine/layout.py's Dims and rows), its dtype and how it is
-# to be run. No model is needed to make one, and nothing here reads one: Llama gathers what it has and calls
+# The plan Python hands src/runtime/forward.ts (T93, T359.5): what a model is to an engine outside Python, as one dict
+# made in one place from the facts of the file (its header and form: engine/layout.py's Dims and rows), its dtype and how
+# it is to be run. No model is needed to make one, and nothing here reads one: Llama gathers what it has and calls
 # forward_plan(), and ExternalForward (engine/external.py) is handed the result.
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
@@ -131,7 +131,7 @@ def plan_widths(dims):
 
 
 def forward_plan(dims, dtype, read, settings=None, **said):
-    """The plan of a model for an engine outside Python (forward.js's createForward()), a dict.
+    """The plan of a model for an engine outside Python (forward.ts's createForward()), a dict.
 
     What the file is: dims (engine/layout.py's Dims: the header and the form), dtype (a name of DTYPES), and read(offset,
     length), the bytes of the file, of which the final norm's weight is looked at for its outlier channels (T92).
@@ -188,7 +188,7 @@ def forward_plan(dims, dtype, read, settings=None, **said):
             "unturned": list(unturned_layers(dims.arch, dims.n_layers, settings.unturned)),
             # T237: the block of a rotated basis (0: the model's own basis); its signs are in derived
             "rotated": rotated["block"] if rotated else 0,
-            # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
+            # T110: the keys and values of an int8 model may be float16 (forward.ts uses that on a shared memory)
             "half_kv": bool(int8) and "kv16" not in disable,
             # T363.5: a linear-attention layer's output matrix has its columns in llama.cpp's order of the value heads
             "tiled": bool(settings.tiled),

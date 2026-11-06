@@ -1,4 +1,4 @@
-# The forward pass outside Python: public/forward.js's, over weights in a WebAssembly memory of its own (T93). What
+# The forward pass outside Python: src/runtime/forward.ts's, over weights in a WebAssembly memory of its own (T93). What
 # the page runs; the reference in NumPy is Llama's own (engine/model.py).
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
@@ -30,15 +30,15 @@ from engine.sampler import REPETITION_WINDOW
 # what an ExternalForward may have for a Llama to run by, in place of the NumPy forward pass and of what a Llama
 # has where there is no engine outside (no blocks of a prompt, no steps on the GPU)
 STEPS = ("forward", "forward_many", "prompt_block", "gpu_steps", "token_block")
-# the settings forward.js's generateMany() takes, which are all the GPU's sampler has (shaders/sample.js): a
+# the settings forward.ts's generateMany() takes, which are all the GPU's sampler has (shaders/sample.ts): a
 # generation with any other (Sampling.beyond()) is the CPU's, step by step. T546: a top-k, min-p and the presence
 # penalty too
 ON_GPU = ("temperature", "topp", "repetition_penalty", "top_k", "min_p", "presence_penalty")
 
 
 class ExternalForward:
-    """forward() in public/forward.js (T93): the engine is made from a plan (engine/plan.py: where every tensor is, and
-    the few small arrays Python computes itself), and it writes the logits into one array of Python's, which the
+    """forward() in src/runtime/forward.ts (T93): the engine is made from a plan (engine/plan.py: where every tensor
+    is, and the few small arrays Python computes itself), and it writes the logits into one array of Python's, which the
     sampling kernels then read.
 
     It keeps the JavaScript engine and that array (engine, logits) until release(), and has, of STEPS, forward()
@@ -47,7 +47,7 @@ class ExternalForward:
 
     def __init__(self, plan, external):
         """plan: forward_plan()'s, which is handed on and not kept (the bytes of its tables would stay in Python for as
-        long as the model); external: forward.js's (Llama's argument), of which start(plan) makes the engine. Nothing
+        long as the model); external: forward.ts's (Llama's argument), of which start(plan) makes the engine. Nothing
         of a model is read here: a plan and a stand-in for the engine are enough to make one."""
         engine = external.start(plan)
         self.backend = str(engine.backend)
@@ -55,13 +55,13 @@ class ExternalForward:
         engine.bind(logits)
         self.engine, self.logits = engine, logits  # keep both alive: JS writes into the array
         run = engine.forward
-        # T108: a prompt's tokens go through the layers several at a time, when forward.js offers that
+        # T108: a prompt's tokens go through the layers several at a time, when forward.ts offers that
         many = getattr(engine, "forwardMany", None)
         if many is not None:
             self.forward_many = lambda tokens, pos: many(list(tokens), pos)
             if getattr(engine, "promptBlock", None) is not None:
                 self.prompt_block = lambda: int(engine.promptBlock)
-        # T152: the steps of generate() on the GPU, where forward.js offers that
+        # T152: the steps of generate() on the GPU, where forward.ts offers that
         on_gpu = getattr(engine, "generateMany", None)
         if on_gpu is not None:
             def gpu_steps(sampling, rng):
@@ -118,8 +118,8 @@ class ExternalForward:
         self.forward = forward
 
     def release(self):
-        """Lets go of what JavaScript holds for this engine (forward.js's forward pass and the array it fills). T205:
-        what forward.js answers (a promise, settled once the GPU's worker let go of the device); None the second
+        """Lets go of what JavaScript holds for this engine (forward.ts's forward pass and the array it fills). T205:
+        what forward.ts answers (a promise, settled once the GPU's worker let go of the device); None the second
         time."""
         engine, self.engine, self.logits = self.engine, None, None
         return None if engine is None else engine.release()

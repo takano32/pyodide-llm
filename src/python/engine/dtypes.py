@@ -2,7 +2,7 @@
 # group of a quantized row, whether a row suits it, how its values are packed and read back, the kernel that packs
 # them: everything that depends on the kind is asked here, by its name (T359). A new one is an entry here (and its
 # packing in engine/packing.py; a row's kind that is no file's dtype is an entry of BLOCKS, T363); what the forward pass
-# multiplies it with is forward.js's (jobs.js) and not said here.
+# multiplies it with is forward.ts's (jobs.ts) and not said here.
 # This file reads engine/packing.py alone: engine/layout.py and everything above read it.
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
@@ -38,7 +38,7 @@ from engine.packing import (BINARY_GROUP, NOT_BINARY, NOT_TERNARY, TERNARY_GROUP
 class Dtype(NamedTuple):
     """How a file holds a tensor. One that is not quantized is its values, itemsize bytes each. A quantized one is its
     values in groups along the row, bits each, then one scale for every group: a float32, or scale_type's.
-    short: what forward.js calls the kind (Tensor's kind). group(length): the values of a group of a row of that
+    short: what forward.ts calls the kind (Tensor's kind). group(length): the values of a group of a row of that
     length. pack(float32 rows, whole ones) -> (the bytes of their values, in rows of a group's bytes; their float32
     scales): NumPy's. unpack(the bytes of the values) -> the int8 values, one after the other; a value is that times
     the scale of its group. packer: the kernel that packs (its export's name: packer(bytes out, scales out, float32

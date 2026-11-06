@@ -46,12 +46,12 @@ OUTLIER_RATIO = 4.0
 
 class Tensor:
     """Where a tensor of the checkpoint is, when the weights live outside Python (T93: the forward pass runs in
-    public/forward.js on its own WebAssembly memory). kind: "int8" (values, then one float32 scale per group of
+    src/runtime/forward.ts on its own WebAssembly memory). kind: "int8" (values, then one float32 scale per group of
     the last dimension at scales), "int6" (the same with the values packed, see pack6), "ternary" (T230: two bits a
     value and a scale per group of 128, see pack_ternary), "f32" or "f16", one of llama.cpp's blocks by its name (T363:
     256 values a group, the scales inside) or "u8" (the codebooks). Offsets count from the start of the checkpoint file.
     layers (T363.5): of a stack whose layers are each of a kind of their own (kind is then LAYERS), every layer's
-    Tensor, one after the other: forward.js chooses its kernels by the layer."""
+    Tensor, one after the other: forward.ts chooses its kernels by the layer."""
 
     __slots__ = ("kind", "offset", "shape", "group", "scales", "layers")
 
@@ -92,7 +92,7 @@ def outside(rows, dtype):
 
 def external_tensors(header, dtype, form=None):
     """Where every tensor of a checkpoint with this header, dtype and form (FORM) is, {name: Tensor.plan()}, as
-    Llama(external=) hands them to public/forward.js, before any of its bytes are there (T156: the worker sends the
+    Llama(external=) hands them to src/runtime/forward.ts, before any of its bytes are there (T156: the worker sends the
     layers' matrices to the GPU as they come, and keeps the rest). A model whose embedding is its classifier has it
     under both names. T363.5: of a file whose rows have kinds of their own too (a stack with a kind for each layer
     says its layers)."""
@@ -104,7 +104,7 @@ def external_tensors(header, dtype, form=None):
 def dtype_weights(header, dtype, form=None):
     """How many weights of the matrices an engine multiplies by (every matrix, and the classifier or the embedding that
     is it) a checkpoint of this header, dtype and form stores in the dtype itself: all of them, but for the rows and
-    layers its form gives kinds of their own (T363.5). forward.js's footprint() counts what the dtype's kernels put
+    layers its form gives kinds of their own (T363.5). forward.ts's footprint() counts what the dtype's kernels put
     beside them (relaxed SIMD's corrections) by this, where there is a form with kinds: it has no rows to ask."""
     dims, dtype = Dims(header, form), dtype_of(dtype)
     multiplied = (MATRIX, CLASSIFIER, *((EMBEDDING,) if dims.shared else ()))

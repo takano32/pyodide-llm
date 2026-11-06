@@ -1,4 +1,4 @@
-# Llama: a model loaded from a checkpoint, and its forward pass in NumPy (the reference; the page's is forward.js).
+# Llama: a model loaded from a checkpoint, and its forward pass in NumPy (the reference; the page's is forward.ts).
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
 # derived from two works under the MIT License, whose notice follows: tairov/llama2.py
@@ -52,9 +52,9 @@ KV_START = 256
 SWITCHES = ("kernels", "int8", "relaxed", "sampler", "kv16")
 
 
-# T108: how many tokens of a prompt forward_many() takes at once: forward.js's BATCH. The worker cannot answer a
+# T108: how many tokens of a prompt forward_many() takes at once: forward.ts's BATCH. The worker cannot answer a
 # message (stop, a new model) while one call runs, and a block of 16 keeps that under a second on a 1.5B model.
-# T147: forward.js says how many it takes (promptBlock: more where the GPU takes the prompt)
+# T147: forward.ts says how many it takes (promptBlock: more where the GPU takes the prompt)
 PROMPT_BLOCK = 16
 
 
@@ -146,7 +146,7 @@ def numpy_states(dims, layers):
 
 def backend_text(backend, disable, kernels):
     """What the line under an answer says ran it: the forward pass's backend, then the sampling where it is NumPy's
-    though there are kernels (or forward.js) to sample on, then what was left out (disable: switches()'), since the
+    though there are kernels (or forward.ts) to sample on, then what was left out (disable: switches()'), since the
     line has to say what the numbers are the numbers of."""
     if kernels and "sampler" in disable:
         backend += ", NumPy sampling"
@@ -169,7 +169,7 @@ OPTIONS = (*FORM, *SETTINGS, *PLANNED, *OWN)
 class Llama:
     """A model: what its checkpoint holds, each row an attribute of its name, the tokenizer, and the parts it writes
     with. The forward pass is one of two: the reference in NumPy, which is this class's own (forward() and the
-    methods after it, over the rows as arrays and the keys, values and states kept here), or public/forward.js's
+    methods after it, over the rows as arrays and the keys, values and states kept here), or src/runtime/forward.ts's
     (engine/external.py, with external: what the page runs). The sampler is one of two as well (engine/sampler.py):
     NumPy's or the kernels'. generate() (engine/generation.py) writes with whichever the model has.
 
@@ -186,9 +186,9 @@ class Llama:
     sampler = NumpySampler()
     external_forward = None  # the ExternalForward of a model whose weights are outside Python
     _external = None  # (its engine and the array it fills, until release(): tools read the engine off it)
-    forward_many = None  # T108: forward.js's forwardMany(tokens, pos) for a prompt, where there is one
+    forward_many = None  # T108: forward.ts's forwardMany(tokens, pos) for a prompt, where there is one
     prompt_block = staticmethod(lambda: PROMPT_BLOCK)  # T147: how many tokens forward_many() takes at once, now
-    # T152: gpu_steps(sampling, rng) is, for one generation, what runs count steps of it on forward.js's generateMany()
+    # T152: gpu_steps(sampling, rng) is, for one generation, what runs count steps of it on forward.ts's generateMany()
     # (the forward pass and the sampling on the GPU, with the random numbers drawn here) and returns the tokens it
     # sampled (a stop token last), or None where it did not (the CPU then takes the step); None itself where the GPU's
     # sampler has not all the settings. token_block(): how many steps it takes at once now, 0 where the CPU is
@@ -201,8 +201,9 @@ class Llama:
         their names (OPTIONS: the form's, the tokenizer's, the plan's and the Llama's own); any other is refused.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
-        dtype="int6" (T98) is int8 with six bits a value (pack6), and dtype="ternary" (T230) two bits a value with a
-        scale per group of 128 (pack_ternary): the weights of a ternary model as they are.
+        dtype="int6" (T98) is int8 with six bits a value (pack6), dtype="ternary" (T230) two bits a value with a
+        scale per group of 128 (pack_ternary): the weights of a ternary model as they are, and dtype="binary" (T634)
+        one bit a value with a scale per group of 128 (pack_binary): a 1-bit model's (ggml's Q1_0) as they are.
         arch="neox": GPT-NeoX, which is arch="gpt2" with RoPE over the first rotary values of every head
         (rotary=0 means all of them) and, when parallel_residual is on, the attention and the FFN both reading
         the same x instead of one after the other.
@@ -250,19 +251,19 @@ class Llama:
         kinds (T359): the rows the file holds in a kind of their own, {the row's name: "int6", ...} (FORM's, the file
         cannot say them): every other row is stored the way dtype stores a row of its role. T363: a list gives each
         layer of a stack one, and llama.cpp's blocks (engine/dtypes.py's BLOCKS) are kinds: NumPy reads them by the
-        converter's readers, and forward.js (external) multiplies by them as they are (T363.5).
+        converter's readers, and forward.ts (external) multiplies by them as they are (T363.5).
         tiled (T363): wout's columns are in llama.cpp's order of the value heads (FORM's), as a GGUF's blocks have them.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3). lowercase (T265), prefixed (T308) and spaced (T400): the tokenizer's, see Tokenizer.
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
         kernels is the path of simdkernel.so: the sampling runs on it (penalize, sample). The forward pass on the
-        kernels is public/forward.js's (external, below); without external, NumPy computes the forward pass.
+        kernels is src/runtime/forward.ts's (external, below); without external, NumPy computes the forward pass.
         disable: the optimizations to leave out, to measure what each one is worth (T52). Only what already has
         a fallback: "kernels" (NumPy does everything), "int8" (the weights are widened to float32 and the
         float32 kernel multiplies them), "relaxed" (matmul_q8 instead of matmul_q8r), "sampler" (NumPy
         samples) and "kv16" (an int8 model keeps its keys and values in float32 on a shared memory too, T110). Anything else is refused, so that a typo never quietly measures the wrong thing.
-        external (T93): the weights are not in Python but in a WebAssembly memory of public/forward.js, which also
+        external (T93): the weights are not in Python but in a WebAssembly memory of src/runtime/forward.ts, which also
         runs the forward pass. checkpoint is then None, and external has size (of the file), read(offset, length)
         (a few bytes: the header, the final norm) and start(plan), which gets where every tensor is and returns an
         object with forward(token, pos, need_logits, logits) and backend. Python keeps the tokenizer, generate()
@@ -290,8 +291,8 @@ class Llama:
                 raise ValueError("Without the kernels the weights have to be in Python: load them there instead.")
         header = struct.unpack_from("<7i", checkpoint, 0)
         self.disabled = disable = switches(planned["disable"])
-        # the file's dtype by its name (engine/dtypes.py). int6 (T98) and ternary (T230) are int8 with the values
-        # packed: past where the bytes are read, a quantized file is int8
+        # the file's dtype by its name (engine/dtypes.py). int6 (T98), ternary (T230) and binary (T634) are int8 with
+        # the values packed: past where the bytes are read, a quantized file is int8
         stored = dtype_of(dtype)
         quantized = stored in QUANTIZED
         # T255: the layers whose q and k go into the scores as their matrices (and norms) leave them
@@ -317,7 +318,7 @@ class Llama:
         kernels = load_kernels(kernels) if kernels and "kernels" not in disable and \
             (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
-        # (only forward.js computes on them: the NumPy forward widens every matrix)
+        # (only forward.ts computes on them: the NumPy forward widens every matrix)
         keep_int8 = external is not None and suitable and quantized and "int8" not in disable
 
         self.arch, self.parallel_residual = arch, parallel_residual
@@ -337,7 +338,7 @@ class Llama:
         settings = Settings(int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
                             parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
                             rotated=self.rotated, tiled=self.tiled, local=self.local, softcap=self.softcap)
-        # T639.2: what every layer is (engine/plan.py's layer_facts(), the table the plan hands forward.js): its kind
+        # T639.2: what every layer is (engine/plan.py's layer_facts(), the table the plan hands forward.ts): its kind
         # and place, its attention's width ("wide"), place in its stacks ("stack"), heads ("head") and keys and values
         # ("kept", -1 where it reads another's: T330; "reads"), whether and how RoPE turns it ("rope", "local",
         # "window", "rotary"), and its FFN's width ("double") and place ("ffn"). Worked out here once, and read by the
@@ -371,8 +372,8 @@ class Llama:
         rope_scaling = plain(rope_scaling)
         frequencies = lambda width: rope_frequencies(width, rope_theta, rope_scaling)
         self.rope_magnitude = rope_magnitude(rope_scaling)
-        # each row as an attribute of its name: where it is, with the weights outside Python (public/forward.js reads
-        # them, and widens what has to be widened, itself), or an array
+        # each row as an attribute of its name: where it is, with the weights outside Python (src/runtime/forward.ts
+        # reads them, and widens what has to be widened, itself), or an array
         self.file_tensors(checkpoint, self.rows, stored, shared_weights, external is not None)
         # (T331: the tables of the layers that attend over all the positions, whose heads are the wide ones where the
         # model has such)
@@ -388,7 +389,7 @@ class Llama:
             if file_size(self.rows, stored) != int(external.size):
                 raise ValueError(f"The checkpoint has {int(external.size)} bytes, and its header asks for "
                                  f"{file_size(self.rows, stored)} as {stored}.")
-            # forward.js's forward pass, and what else its engine offers, in the reference's places
+            # forward.ts's forward pass, and what else its engine offers, in the reference's places
             # (the plan is made here and handed over: nothing in Python keeps it)
             outside = self.external_forward = ExternalForward(forward_plan(dims, stored, external.read, settings._replace(
                 tables=tables, local_tables=self.local_cis)), external)
@@ -397,7 +398,7 @@ class Llama:
                 if hasattr(outside, name):
                     setattr(self, name, getattr(outside, name))
         else:
-            # NumPy's forward pass; the forward pass on the kernels is forward.js's (external), since T93
+            # NumPy's forward pass; the forward pass on the kernels is forward.ts's (external), since T93
             self.key_cache, self.value_cache = numpy_caches(dims, self.layers)
             # the states of its layers that keep one (STATEFUL_LAYERS), each an attribute of its name. state_at: the
             # next position
@@ -433,8 +434,8 @@ class Llama:
             setattr(self, name, tensor)
 
     def release(self):
-        """Let go of what JavaScript holds for this engine (the forward pass of forward.js and the array it fills).
-        The worker calls it before it drops a model (T93). T205: what forward.js answers (a promise, settled once the
+        """Let go of what JavaScript holds for this engine (the forward pass of forward.ts and the array it fills).
+        The worker calls it before it drops a model (T93). T205: what forward.ts answers (a promise, settled once the
         GPU's worker let go of the device), for the worker to wait on before it reads the next model; else None."""
         self._external = None
         return None if self.external_forward is None else self.external_forward.release()
