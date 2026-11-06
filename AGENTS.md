@@ -137,6 +137,7 @@
 | 塊の型の試験 | `test_blocks.py`・`saluki_form.py`（塊の型を行に持つチェックポイントの記述を、Saluki の形の小さな作り物で。`saluki_form.py` は実物の見出しと役ごとの型の数で、pytest と smoke が大きさ 7,956,712,492 を見る）・`test_kept.py`（塊をバイトのまま写す変換を小さな GGUF で: どの行も広げる変換の行とビット単位で同じ）・`test_widened.py` |
 | `tests/forward-check.ts`・`threads-check.ts` | forward を NumPy と（float32 は最尤が全位置で同じ・logits 1e-3 以下、int8 は最尤 85% 以上・perplexity 5% 以内、`made-up` の int8 は相対 0.5 以下）/ 本数を変えてもビット単位で同じ・途中で止まるスレッド |
 | `tests/blocks-forward-check.ts`・`blocks-check.ts`（`blocks-model.ts`） | 塊のまま持つモデルをページの forward で（呼び出しを 1 つずつ計画とカーネルの模型に照らす、logits は NumPy と 0.05）/ 塊のカーネル |
+| `tests/kernel_signatures.py` | Python の ctypes の署名（`engine/kernels.py` の `load_kernels()` と、`kernel_readers()` 越しの `kernel_wideners()`）を、`simdkernel.so` の源（Makefile と `kernels/build.py` が言う `kernel.ts` と、その `export { … } from` の部品）の `export function` の宣言と、作ってあれば `simdkernel.so` の型の節とも突き合わせる（軽い組）。Python の側は `ctypes.CDLL` を書き留めるだけの代役に替えて製品の関数を走らせて読む（写しを持たない） |
 | `tests/kernels-in-browser.ts`・`kernels-same.ts` | 各ブラウザの wasm のエンジンでカーネルの呼びを重ねて（**新しいカーネルはここに足す**）/ 2 つの版のカーネルを export ごとの命令で比べる |
 | `tests/int8-check.ts`・`ternary-check.ts`・`blocks-check.ts`ほか | カーネルを同じ順で足す JavaScript の模型とビット単位で（軽い組、32 ビットと 64 ビットのメモリ、4 GiB の上も）。int8 と int6（`int8-check`）は活性値を relaxed には 0〜127、素のものには −127〜127 だけで渡す: relaxed の内積が決まっていない所と int16 のあふれを踏まないので、どの CPU でもビット単位と言える。**int8 の積の和の順か群のレーンの割り方を変えたら、模型の `q8r()`・`q8()` も直す** |
 | `tests/dist-check.ts`・`dist-same.ts`・`same-syntax.ts`・`said-texts.ts`・`names-follow-check.ts` | ビルドした `dist/` の決まり / 2 つのビルドが同じコードか / 2 つのコミットのソースが構文木で同じか / `src/` の言いうる文の比べ / 替えた塊を名指す塊の名前も替わるか（2 回ずつビルド） |
@@ -195,7 +196,7 @@
 - **窓口の受け口**: worker・GPU の Worker・`/benchmark/` の GPU の Worker の窓口は、最上位で `onmessage` を置くより前に何も待たない（`tests/receivers-check.ts`、T483）。`tsconfig.base.json` は `moduleDetection: force`（import の無いファイルもモジュール: 大域の名前に取り違えない）。
 - **`types.ts` が言うもの**: 宣言も import もせずに使う名前は `AMBIENT` のどれか（**新しいグローバルは `AMBIENT` に 1 つ足す**）、書かれた `any` は `ANY_MOST` まで。**`*-modules-check.ts` に残してあるもの**: import の輪と届かないファイル、import した名前を隠す局所、2 つの部品の同じ最上位の名前、持ち主の検査、型の余り、`satisfies` の書き忘れ。**規則を消すかどうかは、壊し方を本当に入れて決める**。
 - **型の書き方**: (1) 型は境目に書き、中は推論に任せる。部品が渡し合う物の型は読む側に書き、作る側が変数に当てるか戻り値の型を書く（**変数を通ったオブジェクトは余分な鍵を調べられない**）。(2) **型は閉じて書く**（索引の型は綴りの誤りを通す）。表の鍵を型にする（`keyof typeof ADDRESSES`）。(3) **worker の `postMessage()` には `postMessage({ … } satisfies Ready)`**。受け口は `MessageEvent<ToWorker>`。(4) **`!` は「引数で受けていない状態を当てにしている」の印**。(5) **文を変えずに型を当てる**（後から埋まる `let` は `let x!: T`）。関数を cast しない。`Object.assign`・`Object.fromEntries`・spread の中の配列は鍵を見ないので `satisfies` か戻り値の型を。caught value は `unknown`。(6) 文を読む試験（`tests/bench.ts`、`test_converter_version.py`）があるので、式の中に注釈を書かない所がある。
-- **型は片側しか守らない**（Python と試験の代役は読まれない: 試験の `.ts` は tsc のプログラムに入っていない）。だから線の両端を突き合わせる検査が型の鍵も読む（`plan-keys-check`・`worker-modules-check`・`worker-sink-check`・`contracts-check`: 「型にあって誰も書かない」「書いているのに型に無い」の両方で落ちる）。**教えないもの**: 値の型、同じ型の引数の取り違え、カーネルの引数の数と順。
+- **型は片側しか守らない**（Python と試験の代役は読まれない: 試験の `.ts` は tsc のプログラムに入っていない）。だから線の両端を突き合わせる検査が型の鍵も読む（`plan-keys-check`・`worker-modules-check`・`worker-sink-check`・`contracts-check`: 「型にあって誰も書かない」「書いているのに型に無い」の両方で落ちる）。**教えないもの**: 値の型、同じ型の引数の取り違え、forward.ts がカーネルに渡す引数の数と順（Python の ctypes の署名は `tests/kernel_signatures.py` が AssemblyScript の宣言と突き合わせる: T639.11）。
 
 ### 状態の持ち主
 
@@ -347,7 +348,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 
 1. `kernels/` にカーネル。**形の決まり**: 静的データを置けない（数学関数はテーブルなしで）。relaxed SIMD を使うものは別ファイル。内側のループに定数のベクトルを書かず引数から作る。シャッフルを続けた形は疑う（JavaScriptCore が誤って畳んだ）。x86 に 8 ビットのシフトと `f32x4.max` の命令は無い。int8 の積の和を i16 で足すならあふれる組を数える。Makefile の規則は `kernels/` とその下のフォルダの `.ts` を全部 `$(wildcard)` で拾う（`KERNEL_SOURCES`: ファイルを足しても Makefile は触らない。`kernels/` の中に作る物の源でない `.ts` を置かない）。部品が使う共通の関数は末尾の `export { … };` で出す。
 2. `jobs.ts` の `ADDRESSES` に名前と番地の引数（64 ビットのメモリで番地は BigInt、仕事の表は float64）。段の仕事なら **`WORK` の最後に 1 行**（`from`・`one(k)`・`tile(k, スレッドの番号)`・`rowBytes`・タイルが一度に取る行の数 `tileRows`（プロンプトの塊はこの数ずつに切る: 1 なら書かない）・`warm`）。組む所が `KIND.<名前>` と書く。`runner()`・`helper.ts`・`threads.ts` は触らない。
-3. 試験: `kernel-registry-check.ts` の `KINDS`、JavaScript の同じ順の計算と比べる検査（残りが 0〜3 のどれも通る幅で）、**`tests/kernels-in-browser.ts` に足す**、smoke。任意の機能の準備は別の `try` に。
+3. 試験: `kernel-registry-check.ts` の `KINDS`、JavaScript の同じ順の計算と比べる検査（残りが 0〜3 のどれも通る幅で）、**`tests/kernels-in-browser.ts` に足す**、smoke。任意の機能の準備は別の `try` に。**Python が ctypes で呼ぶカーネルは `engine/kernels.py` の `load_kernels()` の署名の表と restype の 1 行**: 引数の型（`usize` は `c_void_p`、`i32`・`f32`・`f64` は `c_int32`・`c_float`・`c_double`）・数・戻り値が `export function` の宣言と違えば、軽い組の `tests/kernel_signatures.py` が名指して落とす（Python が束ねたのに `kernel.ts` が出さないカーネルも。出すだけで Python が束ねないもの（forward.ts のもの）は一覧に言うだけ）。宣言は 1 行に書き、型は 4 つのどれかで（読めない形は道具が断る）。今ある違い（`to_f16` の戻り値を Python が読まない）は道具の `KNOWN` に訳つきで、無くなれば落ちる。
 4. 速さは x86-64 と arm64 で、行列をメモリから読む形で測り、的の arm で決める。int8 は加算順で文が変わる（回帰試験を「前と同じ文」にしない）。
 5. **塊の型（`BLOCKS`）のカーネルは別のモジュール**（`kernels/blocks.ts`・`blocks_relaxed.ts`）。型を足すなら `blocks/types.ts` に型のクラスと GGUF の番号、塊のバイト数（`bytesOf`・`sizeOf`）、16 個の重みの読み（`magnitudes`・`minuses`）、`scaleOf`・`blockScale`、`bySixteen`・`hasSigns`。`blocks/row.ts` の `floatScale`。**型の番号で分ける並びが 4 か所**（`rowsOf`・`tileOf`・`matmul_sbw_tile`・`sb_row`: 忘れるとその型は 0 を書く。`blocks-check` が落とす）。試験は `tests/blocks-model.ts` の `TYPES`。**型と relaxed の有無は型引数で渡す**（`blockOf<XXS2, R>`）。ページの側は `PACKED` に 1 行（`blocks(BLOCK_TYPES.<名前>)`。`BLOCK_TYPES` は `SUPERBLOCKS` から書き出される: T628.3）、`Stored`。塊のカーネルは暖機しない。
 
@@ -365,7 +366,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 ### 標本抽出の規則を足す
 
 1. `engine/sampler.py` の `Sampling` に欄（名前は URL の名前。**既定は「その規則なし」**）。なれない値は `__post_init__` で断る。引く語を絞るだけの設定は `NARROWING` に。
-2. `NumpySampler.drawing()` と `KernelSampler.drawing()` に 1 行ずつ（順は top-k → top-p → min-p、どの段も前の段の確率を 1 に直してから）。カーネル `kernels/kernel/sample.ts`、`engine/kernels.py` の ctypes の署名、JavaScript の模型 `shaders/likecpu.ts`（**3 つは同じ形**: smoke が突き合わせる）。
+2. `NumpySampler.drawing()` と `KernelSampler.drawing()` に 1 行ずつ（順は top-k → top-p → min-p、どの段も前の段の確率を 1 に直してから）。カーネル `kernels/kernel/sample.ts`、`engine/kernels.py` の ctypes の署名（宣言との食い違いは `tests/kernel_signatures.py`）、JavaScript の模型 `shaders/likecpu.ts`（**3 つは同じ形**: smoke が突き合わせる）。
 3. `generate()`・`Llama`・worker は触らない。**GPU の SAMPLE に足さない限り、その設定のある生成は自動で CPU のステップになる**（足すなら `external.py` の `ON_GPU` と `gpu_steps()`、`generateMany` の引数（Python の代役 4 つも）、`contracts/gpu/protocol.ts` の `Sampling`、`samplingSettings()` と WGSL の `Sampling`（空きは無い: `SAMPLING_BYTES` を伸ばす）、シェーダ `SAMPLE`: 鍵が変わる。確かめは `/benchmark/` の `checkSampling()` と gpu-check の `narrowed`）。
 4. ページからは `src/page/settings.ts` と項目の `generation`。設定の欄を足すなら文面は持ち主。
 5. 試験: `tests/test_sampling.py` の `DEFAULTS`、カーネルの引数の位置、段の順。決めた順があるものはそのトークンそのものを求める。

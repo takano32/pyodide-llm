@@ -43,6 +43,9 @@ part() {
 part "unit tests of the engine" python -m pytest tests -q
 # the ledger: TASKS.md keeps the tasks still moving and a table of contents made from their headings, docs/tasks/ the done ones
 part "the ledger's tables of contents" python tests/ledger.py --check
+# T639.11: the ctypes signatures Python gives the SIMD kernels (engine/kernels.py) against the kernels' AssemblyScript
+# declarations (and the built simdkernel.so's export types): an argument's type, their number, a kernel that is not there
+part "the kernels' ctypes signatures" python tests/kernel_signatures.py
 # T401 (1): an entry's bos and its format go together (no fetch: the entries' text and a second copy of the token in
 # front of each format; the real apply_chat_template is tests/format_check.py's, by hand)
 part "the entries' bos and formats" node tests/bos-check.ts
