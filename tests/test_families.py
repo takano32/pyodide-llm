@@ -501,3 +501,18 @@ def test_a_neox_that_rotates_none_of_a_head_is_refused():
         neox_check({**config, "rotary_pct": 0.0})
     with pytest.raises(ValueError, match="it rotates none of each head"):
         neox_check({**config, "rotary_pct": 0.05})  # (0.8 of a value: none)
+
+
+def test_the_local_layers_of_a_gguf_agree_with_config_json_through_float32():
+    """T640.15: a GGUF holds the local layers' base of RoPE as a float32 (rope.freq_base_swa), so local_agrees() (the
+    families of convert/families/local.py) compares config.json's number rounded so: 10000.1 is no float32, and the
+    GGUF's is the float32 nearest it. A base one float32 apart is still told apart."""
+    from convert.families.local import local_agrees
+    said = lambda base: {"layer_types": ["sliding_attention", "full_attention"], "sliding_window": 512,
+                         "rope_local_base_freq": base}
+    assert float(np.float32(10000.1)) != 10000.1
+    what, here, there = local_agrees(said(float(np.float32(10000.1))), said(10000.1))
+    assert what == "sliding-attention layers" and here == there
+    apart = float(np.nextafter(np.float32(10000.1), np.float32(np.inf)))
+    _, here, there = local_agrees(said(apart), said(10000.1))
+    assert here != there
