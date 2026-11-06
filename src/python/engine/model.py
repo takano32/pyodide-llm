@@ -36,7 +36,7 @@ from engine.layers import (RMS_EPS, delta_rule, gelu, gelu_erf, head_norm, l2_he
 from engine.kernels import load_kernels
 from engine.dtypes import QUANTIZED, dtype_of
 from engine.tensors import local_tables, read_rows, rope_tables
-from engine.sampler import KernelSampler, NumpySampler, greedy
+from engine.sampler import KernelSampler, NumpySampler
 from engine.external import STEPS, ExternalForward
 from engine.plan import ATTENTION, Settings, forward_plan, layer_facts
 from engine import generation
@@ -184,7 +184,6 @@ class Llama:
     # the reference sampler, NumPy's (it keeps nothing, so one is every model's): an instance with the kernels has a
     # KernelSampler in its place. A generation asks it once how it draws (drawing(), by the settings: a Sampling)
     sampler = NumpySampler()
-    greedy = staticmethod(greedy)
     external_forward = None  # the ExternalForward of a model whose weights are outside Python
     _external = None  # (its engine and the array it fills, until release(): tools read the engine off it)
     forward_many = None  # T108: forward.js's forwardMany(tokens, pos) for a prompt, where there is one
@@ -196,7 +195,6 @@ class Llama:
     # faster (or there is no GPU)
     gpu_steps = None
     token_block = staticmethod(lambda: 0)
-    tiled = False  # T363: FORM's "tiled", of a model made with it
 
     def __init__(self, checkpoint, tokenizer, **options):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights. options: the settings below, by
@@ -333,8 +331,7 @@ class Llama:
         self.rotary = int(rotary) if rotary else self.head_size
         self.slots = dims.slots
         self.wide = dims.wide  # (T331: the wide heads' form, None of a model without)
-        if form["tiled"]:
-            self.tiled = True
+        self.tiled = bool(form["tiled"])  # T363: FORM's "tiled", of a model made with it
         self.softcap = float(softcap or 0.0)
         # the settings of the plan, but the RoPE tables (made below, once the rows are read)
         settings = Settings(int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,

@@ -327,7 +327,7 @@ def test_the_class_has_the_reference_and_a_model_is_given_its_parts_once(monkeyp
     unwrapped()
     checkpoint, tokenizer = files()
     assert isinstance(Llama.sampler, NumpySampler)
-    assert Llama.generate is generation.generate and Llama.greedy is greedy
+    assert Llama.generate is generation.generate
     reference = Llama(checkpoint, tokenizer)
     assert reference.sampler is Llama.sampler
     assert not {"forward", "sampler", "generate", "forward_many", "gpu_steps"} & set(vars(reference))

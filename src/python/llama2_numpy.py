@@ -31,22 +31,14 @@
 # it here.) A name set here is not the one the parts read: to change what the engine does (a test's KV_START, a
 # tool's Tokenizer), set it in the part that reads it (engine.model).
 
-import math  # noqa: F401
-import re  # noqa: F401
-import struct  # noqa: F401
-import time  # noqa: F401
-import unicodedata  # noqa: F401
-import numpy as np  # noqa: F401
-
-from engine.tokenizer import (BOS, BYTE_CHARS, CharClasses, Charsmap, SPACES, STAGED, Tokenizer,  # noqa: F401
-                              letter, mark, number, pretokenize)
-from engine.packing import (BINARY_GROUP, NOT_BINARY, NOT_TERNARY, TERNARY_GROUP, binary, group32, pack6,  # noqa: F401
-                            pack_binary, pack_ternary, quantize, quantize6, six, ternary, unpack6, unpack_binary,
-                            unpack_ternary)
+from engine.tokenizer import (BOS, BYTE_CHARS, CharClasses, Charsmap, SPACES, Tokenizer, letter, mark,  # noqa: F401
+                              number, pretokenize)
+from engine.packing import (NOT_BINARY, NOT_TERNARY, TERNARY_GROUP, binary, group32, pack6, pack_binary,  # noqa: F401
+                            pack_ternary, quantize, quantize6, six, ternary, unpack6, unpack_ternary)
 from engine.dtypes import (BLOCKS, CODEBOOKS, DTYPES, EITHER, KINDS, PACKED, QUANTIZED, Dtype,  # noqa: F401
                            dtype_of)
 from engine.layout import (ATTENDING, CODES, CONVOLUTION, EVERY, FORM, GELU, GELU_ERF, LAYOUTS, LINEAR, MATRIX, PARTLY,  # noqa: F401
-                           POSITIONS, SILU, STATEFUL, TABLE, VECTOR, WHOLE, Dims, Layout, Place, Row, Stateful,
+                           POSITIONS, SILU, STATEFUL, TABLE, VECTOR, WHOLE, Dims, Layout, Row, Stateful,
                            after, convolution_form, file_size, form_of, kind_of, layout_of, linear_form,
                            linear_widths, local_layers, placed, slots_of, stateful_form, stateful_kinds, suited,
                            tensor_rows, unturned_layers)

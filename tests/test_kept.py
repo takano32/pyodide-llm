@@ -537,7 +537,7 @@ def test_the_plan_writes_the_codebooks_itself():
 
 
 def test_the_forms_default_is_not_tiled():
-    assert FORM["tiled"] is None and Llama.tiled is False
+    assert FORM["tiled"] is None  # (and a model made without it is not: wide.tiled, test_its_logits_are_the_...)
 
 
 # ---- the real model's sizes, without its weights
