@@ -15,7 +15,7 @@ from test_convert import converted, reader, safetensors_file, streamed
 from test_gguf import fed, metadata_value, q8_0_blocks, unigram, with_original
 
 import llama2_convert
-from llama2_convert import (Safetensors, check_config, checkpoint_form, checkpoint_size, family_of, head_size, layout,
+from llama2_convert import (Safetensors, check_config, checkpoint_form, checkpoint_size, family_of, head_size,
                             normalize)
 from llama2_numpy import FORM, Llama, checkpoint_dtype, convolution_form, form_of, slots_of
 from engine.layout import SHORT_CONVOLUTION
@@ -175,7 +175,7 @@ def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared, monk
     got, progress = streamed(file, config, dtype, 4096)
     assert got == expected and progress[-1][0] == progress[-1][1]
     assert checkpoint_dtype(struct.unpack_from("<7i", got, 0), len(got), options_of(config)) == dtype
-    # the three places the order of the tensors lives in agree on the size: layout() wrote it, checkpoint_dtype() named
+    # the three places the order of the tensors lives in agree on the size: the Writer wrote it, checkpoint_dtype() named
     # it, and the engine reads exactly that many bytes, and something like the float32 model's numbers
     llama = Llama(got, pack_tokenizer(tiny_vocab(320)), dtype=dtype, **options_of(config))
     want = naive_lfm2_logits(tensors, config, TOKENS)
@@ -187,22 +187,20 @@ def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared, monk
 
 
 def test_the_engine_reads_the_tensors_where_the_layout_puts_them():
-    """Places (what forward.js gets, external=) against layout(): the same shapes in the same order at the same
-    offsets, for every dtype."""
-    from llama2_numpy import tensor_rows
-    from llama2_convert import tensor_bytes
+    """Places (what forward.js gets, external=) against the rows' places (tensor_rows(), placed()): the same shapes in
+    the same order at the same offsets, for every dtype."""
+    from llama2_numpy import TABLE, placed as places_of, tensor_rows
     tensors, config = lfm2_model(shared=False)
     form = checkpoint_form(normalize(config), {})
     for dtype in ("float32", "float16", "int8", "int6"):
         checkpoint = converted(Safetensors(reader(safetensors_file(tensors))), config, dtype)
         header = struct.unpack_from("<7i", checkpoint, 0)
         offset, expected = 28, []
-        for shape, is_matrix in layout(*header, **form):
-            size = tensor_bytes(shape, is_matrix, dtype)
+        for place in places_of(tensor_rows(header, form), dtype):
             # (the RoPE tables are the file's in float32 alone: float16's are too coarse and the engine makes its own)
-            if size and (is_matrix is not None or dtype == "float32"):
-                expected.append((offset, tuple(shape)))
-            offset += size
+            if place.size and (place.row.role != TABLE or dtype == "float32"):
+                expected.append((offset, tuple(place.row.shape)))
+            offset += place.size
         assert offset == len(checkpoint)
 
         class External:

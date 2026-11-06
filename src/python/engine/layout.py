@@ -1,7 +1,8 @@
 # What a model's file holds: the tensors of a checkpoint as rows (name, role, shape, which layers a stack covers), for
 # each of the layouts, in the order of the file; the form a file does not say (FORM); how each row is stored in a file
-# of a dtype, and where. Everything that needs the order of the tensors reads it here (T359): the converter's layout()
-# and Writer, checkpoint_dtype(), the engine's attributes, external_tensors(), and conversion_plan() by the rows' names.
+# of a dtype, and where. Everything that needs the order of the tensors reads it here (T359): the converter's Writer
+# (and quantize.py through it, T640.8), checkpoint_dtype(), the engine's attributes, external_tensors(), and
+# conversion_plan() by the rows' names.
 # What a kind of storage is (its bytes, its groups) is engine/dtypes.py's, which this file reads, and nothing else of
 # the engine or of the converter: both read it.
 # The architectures are one table here too (LAYOUTS, T359.6): what the file of each holds and what its forward pass is,

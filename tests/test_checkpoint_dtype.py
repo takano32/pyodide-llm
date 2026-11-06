@@ -6,8 +6,7 @@ import sys
 import numpy as np
 import pytest
 from conftest import ROOT, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
-from llama2_numpy import Llama, check_tokenizer, checkpoint_dtype
-from quantize import layout
+from llama2_numpy import Llama, check_tokenizer, checkpoint_dtype, tensor_rows
 
 TOKENIZER = pack_tokenizer(tiny_vocab(320))
 CONFIGS = [dict(n_kv_heads=4), dict(n_kv_heads=2), dict(n_kv_heads=4, shared=False), dict(n_kv_heads=4, hidden_dim=48)]
@@ -34,7 +33,7 @@ def test_the_three_variants_are_told_apart(tmp_path, config):
 
 def test_the_sizes_follow_the_layout_of_quantize():
     header = (64, 172, 3, 8, 2, -300, 128)
-    floats = sum(int(np.prod(shape)) for shape, _ in layout(*header))
+    floats = sum(int(np.prod(row.shape)) for row in tensor_rows(header))
     assert checkpoint_dtype(header, 28 + 4 * floats) == "float32"
     assert checkpoint_dtype(list(header), 28 + 2 * floats) == "float16"
 

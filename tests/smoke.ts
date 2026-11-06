@@ -82,16 +82,16 @@ class Sized:
 
     def write(self, offset, array):
         self.writes.append((offset, array.size))
-# (where it begins, its shape, layout()'s "is a matrix") of every tensor a Writer places
-tensors_placed = lambda writer: [(place.offset, place.row.shape, llama2_convert.IS_MATRIX.get(place.row.role, True)) for place in writer.places]
+# (where it begins, its shape, whether it is a matrix: True for what int8 quantizes, False for the norm weights, None for the
+# RoPE tables) of every tensor a Writer places
+tensors_placed = lambda writer: [(place.offset, place.row.shape, {llama2_numpy.VECTOR: False, llama2_numpy.TABLE: None}.get(place.row.role, True)) for place in writer.places]
 big, big_form = [5120, 27648, 64, 40, 8, -152064, 4096], {"arch": "llama", "bias": True}
 for big_dtype, big_bytes in (("int8", 36862578716), ("int6", 28671889436)):
     sized = Sized()
     writer = llama2_convert.Writer(None, big, big_dtype, big_form, sink=sized)
     assert sized.size == big_bytes == llama2_convert.checkpoint_size(big, big_dtype, big_form), \\
         f"a 32B model in {big_dtype} is {sized.size} bytes, not {big_bytes} (NumPy's 32-bit integers?)"
-    last_offset, last_shape, last_is_matrix = tensors_placed(writer)[-1]
-    assert last_offset + llama2_convert.tensor_bytes(last_shape, last_is_matrix, big_dtype) == big_bytes, f"its tensors do not end at its size in {big_dtype}"
+    assert writer.places[-1].offset + writer.places[-1].size == big_bytes, f"its tensors do not end at its size in {big_dtype}"
     # (T233's review: and where the last row of its largest matrix, 9.06e9 values, is written, values and scales: the places the
     # converter's writer computes from the shape, which np.prod put back wrapped and the sizes above did not see)
     largest = max((i for i, (_, _, is_matrix) in enumerate(tensors_placed(writer)) if is_matrix), key=lambda i: math.prod(tensors_placed(writer)[i][1]))
@@ -121,7 +121,7 @@ placed = Placed()
 writer = llama2_convert.Writer(None, bonsai, "ternary", bonsai_form, sink=placed)
 assert placed.size == bonsai_bytes == llama2_convert.checkpoint_size(bonsai, "ternary", bonsai_form), \\
     f"the 27B as ternary is {placed.size} bytes, not {bonsai_bytes}"
-ends = [offset + llama2_convert.tensor_bytes(shape, is_matrix, "ternary") for offset, shape, is_matrix in tensors_placed(writer)]
+ends = [place.offset + place.size for place in writer.places]
 assert all(type(offset) is int for offset, _, _ in tensors_placed(writer)), "a tensor's place is no Python integer"
 assert [offset for offset, _, _ in tensors_placed(writer)][1:] == ends[:-1] and ends[-1] == bonsai_bytes, "the 27B's tensors do not follow one another to its size"
 # two matrices: the one that lies last (the classifier: 1.27e9 values, below 2^31) and the one with the most values (a stack of the

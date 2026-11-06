@@ -1,12 +1,12 @@
 # unchanged_layouts.py (T357)
 # What a tree says of a checkpoint's file, over a grid of made-up headers, forms and dtypes, as one JSON object: the
 # record tests/unchanged.ts compares between two trees (its kind "layouts"). The order of a file's tensors is written
-# down in four places that must agree (the converter's layout(), the engine's *_tensors(), conversion_plan() and
+# down in four places that must agree (the rows tensor_rows() makes, the engine's *_tensors(), conversion_plan() and
 # external_tensors(), which reads the engine's order), and its sizes in a fifth (checkpoint_dtype()); the unit tests
 # walk the branches of the models they make and no others. Here every one of them answers for the same grid, through
 # the two windows (llama2_convert, llama2_numpy) and Llama itself, so that a part moved behind them is asked the same:
 #
-#   layout    layout(): the shape and the kind of every tensor, in file order
+#   layout    tensor_rows(): the shape and the kind of every tensor, in file order (T640.8: what the converter's layout() said)
 #   places    Writer's: where each of them begins, and the checkpoint's size (checkpoint_size())
 #   dtype     checkpoint_dtype() of a file of that size
 #   engine    the plan Llama(external=) hands forward.js (tests/engine_plans.py): where every tensor is by the engine's own order (the
@@ -61,8 +61,14 @@ def signs(widths, block):
 
 
 def written(writer):
-    """[where it begins, its shape, layout()'s "is a matrix"] of every tensor a Writer places."""
-    return [[place.offset, place.row.shape, {L.VECTOR: False, L.TABLE: None}.get(place.row.role, True)] for place in writer.places]
+    """[where it begins, its shape, whether it is a matrix] of every tensor a Writer places."""
+    return [[place.offset, place.row.shape, matrix(place.row)] for place in writer.places]
+
+
+def matrix(row):
+    """True for what int8 quantizes, False for the norm weights, None for the RoPE tables (what layout() said of a row
+    before T640.8)."""
+    return {L.VECTOR: False, L.TABLE: None}.get(row.role, True)
 
 
 # ---- the grid. Every dimension of a header differs from the others (a tensor taken for another is another shape),
@@ -134,7 +140,7 @@ for name, headers, form, engine, source in FAMILIES:
             continue
         case = f"{name} {header}"
         whole = {**L.FORM, **form}
-        said(f"{case}: layout", lambda: [[list(shape), matrix] for shape, matrix in C.layout(*header, **whole)])
+        said(f"{case}: layout", lambda: [[list(row.shape), matrix(row)] for row in L.tensor_rows(header, whole)])
         if source is not None:
             said(f"{case}: source", lambda: C.conversion_plan(header, whole, **source))
         for dtype in DTYPES:

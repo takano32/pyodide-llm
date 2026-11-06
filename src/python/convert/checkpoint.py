@@ -7,29 +7,7 @@ import struct
 import numpy as np
 
 from engine.dtypes import KINDS, dtype_of
-from engine.layout import FORM, MATRIX, TABLE, VECTOR, Row, check_suited, file_size, form_of, placed, tensor_rows
-
-# what layout() says of a row: True for what int8 quantizes, False for the norm weights, None for the RoPE tables
-IS_MATRIX = {VECTOR: False, TABLE: None}
-
-
-def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, **form):
-    """(shape, is a matrix) of every tensor, in file order: the rows of engine/layout.py (tensor_rows(), which says
-    what each is and takes the same header and form, FORM's keys), as the pairs quantize.py and the tests read.
-
-    is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
-    """
-    if set(form) - set(FORM):
-        # (as when the form was keyword arguments: a key that is misspelt is no form, and form_of() would drop it unheard)
-        raise TypeError(f"layout() got an unexpected keyword argument {sorted(set(form) - set(FORM))[0]!r}")
-    header = (dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len)
-    return [(row.shape, IS_MATRIX.get(row.role, True)) for row in tensor_rows(header, form)]
-
-
-def tensor_bytes(shape, is_matrix, dtype):
-    """How many bytes a tensor of layout() takes in a checkpoint of that dtype."""
-    row = Row("", TABLE if is_matrix is None else MATRIX if is_matrix else VECTOR, tuple(shape))
-    return placed([row], dtype_of(dtype))[0].size
+from engine.layout import check_suited, file_size, form_of, placed, tensor_rows
 
 
 def checkpoint_size(header, dtype, form=None):
@@ -38,7 +16,7 @@ def checkpoint_size(header, dtype, form=None):
 
 
 class Writer:
-    """Puts pieces of the tensors of layout(), in any order, where they belong in the checkpoint buffer."""
+    """Puts pieces of the tensors of tensor_rows(), in any order, where they belong in the checkpoint buffer."""
 
     def __init__(self, out, header, dtype, form=None, sink=None, quantize_rows=None):
         """out: a buffer of the checkpoint's size, or None with sink: an object with open(size, header, dtype,

@@ -16,7 +16,7 @@
 //            entry of the list (a builder moved to another file leaves both as they were)
 //   calls    tests/unchanged-calls.ts: the plan Python hands forward.js and every call of a kernel, 150 hashes
 //   layouts  (T357) tests/unchanged_layouts.py: what a tree says of a checkpoint's file over a grid of made-up headers, forms
-//            and dtypes (18 families of the four layouts, five dtypes): layout(), Writer's places and checkpoint_size(),
+//            and dtypes (18 families of the four layouts, five dtypes): tensor_rows(), Writer's places and checkpoint_size(),
 //            checkpoint_dtype(), the plan Llama(external=) hands forward.js (the engine's own order of the tensors),
 //            external_tensors() and conversion_plan(); what the converter reads of 23 made-up config.json files (the
 //            header, the form, an LFM2's FFN); and the repetition penalty's window. The order of a file's tensors is
