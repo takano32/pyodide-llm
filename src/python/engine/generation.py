@@ -105,43 +105,33 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     written = []  # what was sampled: the presence penalty counts these, not the prompt's (T274)
     start = sampling_start = time.perf_counter()
     first_token = None
-    first = 0
     try:
-        if model.forward_many is not None and len(prompt_tokens) > 1:
-            # T108: the tokens of the prompt that make no logits (all but the last) go through the layers
-            # prompt_block() at a time (T147: as many as the engine takes now); the text comes out as it would
-            # one by one, only a block at once
-            fed = [model.bos] + prompt_tokens[:-1]
-            at = 0
-            while at < len(fed):
-                # asked again every block: where the GPU gives up, the CPU's blocks are short again (T108)
-                block = fed[at:at + model.prompt_block()]
-                model.forward_many(block, at)
-                for pos in range(at, at + len(block)):
-                    next_token = prompt_tokens[pos]
-                    text = utf8.decode(model.tokenizer.decode(token, next_token, model.bos))
-                    token = next_token
-                    history.append(token)
-                    count += 1
-                    forced += 1
-                    if text and echo:
-                        yield text
-                at += len(block)
-            first = len(fed)
-            sampling_start = time.perf_counter()
-        # T152: a step on the GPU (gpu_steps()'s) samples there with the random numbers drawn here, several at
-        # once (token_block()), where the GPU's sampler has all these settings; a step on the CPU is the forward
-        # pass and the sampler's draw here. Both are made once, by the settings: no step reads one
-        draw = model.sampler.drawing(sampling, rng)
-        on_gpu = model.gpu_steps(sampling, rng) if model.gpu_steps is not None else None
-        stops = sorted(model.stop_tokens)
-        pos = first
+        # T108: the tokens of the prompt that make no logits (all but the last) go through the layers prompt_block()
+        # at a time (T147: as many as the engine takes now), where the engine takes several; the text comes out as it
+        # would one by one, only a block at once
+        fed = [model.bos] + prompt_tokens[:-1] if model.forward_many is not None and len(prompt_tokens) > 1 else []
+        blocks = len(fed)  # (the position after the blocks, where the steps begin)
+        pos = 0
         while pos < steps:
-            if pos < len(prompt_tokens):
+            if pos == blocks:
+                if blocks:
+                    sampling_start = time.perf_counter()  # (the prompt's blocks are through, their text out)
+                # T152: a step on the GPU (gpu_steps()'s) samples there with the random numbers drawn here, several at
+                # once (token_block()), where the GPU's sampler has all these settings; a step on the CPU is the
+                # forward pass and the sampler's draw here. Both are made once, by the settings, after the prompt's
+                # blocks: no step reads one. (Once: every step takes a token or more, so pos is here once.)
+                draw = model.sampler.drawing(sampling, rng)
+                on_gpu = model.gpu_steps(sampling, rng) if model.gpu_steps is not None else None
+                stops = sorted(model.stop_tokens)
+            if pos < blocks:
+                # asked again every block: where the GPU gives up, the CPU's blocks are short again (T108)
+                block = fed[pos:pos + model.prompt_block()]
+                model.forward_many(block, pos)
+                chosen = prompt_tokens[pos:pos + len(block)]
+            elif pos < len(prompt_tokens):
                 # Still processing the prompt: force the next token, and the logits are not needed
                 model.forward(token, pos, need_logits=False)
                 chosen = [prompt_tokens[pos]]
-                forced += 1
                 sampling_start = time.perf_counter()
             elif thinking and inside and thought >= thinking:
                 # T520: the thought is as long as the budget: its closing mark in place of a draw
@@ -158,9 +148,12 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 # (T390: no tokens are no answer either: the loop would ask for the same step for ever)
                 if not chosen:
                     chosen = [draw(model.forward(token, pos), history, written)]
+            # T639.12: the ledger of the run, in one place for the prompt's tokens (a block of them or one) and the
+            # drawn ones: the text of each, the history, and the counts of the stats
             ended = False
             for next_token in chosen:
-                if pos >= len(prompt_tokens):
+                drawn = pos >= len(prompt_tokens)
+                if drawn:
                     sampled += 1
                     if first_token is None:
                         first_token = time.perf_counter()
@@ -171,7 +164,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 text = utf8.decode(model.tokenizer.decode(token, next_token, model.bos))
                 token = next_token
                 history.append(token)
-                if pos >= len(prompt_tokens):
+                if drawn:
                     written.append(token)
                     if inside and token == closes:
                         inside = False
@@ -179,8 +172,10 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                         thought += 1
                     elif opens is not None and token == opens:
                         inside, thought = True, thought or 0
+                else:
+                    forced += 1
                 count += 1
-                if text and (echo or pos >= len(prompt_tokens)):
+                if text and (echo or drawn):
                     yield text
                 pos += 1
             if ended:
