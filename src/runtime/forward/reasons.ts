@@ -8,7 +8,7 @@
 //
 // Who reads this file: the GPU's side of the engine (gpuside.ts: what the model is, what stopped the GPU), alone.ts (a
 // model on the GPU alone), paths.ts (/benchmark/'s cells), the GPU's worker for what it finds as it opens the device
-// (gpu/device.ts), and the two pages' tables (src/bench/path.ts, src/benchmark/gpu.ts). It imports nothing, and each
+// (gpu/device.ts), and the two pages' tables (src/bench/path.ts, src/bench/gpusection.ts). It imports nothing, and each
 // bundle that reads it has its own copy. The model's worker does not read it (failure.ts says why a module of
 // forward.ts's chunk is not one of the worker's entry too): it asks the engine (engine.gpuWhyNot), and has two
 // reasons of its own for what it alone knows (worker/load.ts: the NumPy engine, the benchmark's page).

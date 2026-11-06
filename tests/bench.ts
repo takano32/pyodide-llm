@@ -1005,6 +1005,15 @@ assert.ok(hiddenWhole.markdown.endsWith("#### Model (failed)\n\nstopped: nothing
 assert.ok(hiddenWhole.summary.includes("- Model: failed: stopped: nothing \\| came"), hiddenWhole.summary);
 assert.deepEqual([hiddenWhole.long, hiddenWhole.longer], [false, false]);
 assert.deepEqual(reportOf({ results: {}, environment: android, hidden: "" }).markdown, benchMarkdown([], android));
+// longer is "the summary is too long as well" and only where the whole is too long (the `long &&` of reportOf()): a short
+// report just under the limit has a summary just over it (the summary is the head, a line a section and the request to
+// paste), and the page must not say its summary is too long while the link holds the whole report. The head is padded
+// by the model page's path until the whole fits and its summary does not.
+const padded = (pad: number) => reportOf({ results: { gpu: { status: "none", markdown: "no WebGPU in a worker here" } }, environment: android, hidden: "",
+  measured: { name: "tiny-lm 29M", rows, pyodide: "314.0.7", paths: "x".repeat(pad) } });
+const edge = Array.from({ length: 4000 }, (_, i) => 4000 + i).filter((pad) => { const w = padded(pad); return !reportTooLong(w.markdown, android) && reportTooLong(w.summary, android); });
+assert.ok(edge.length > 10, "there is a report that fits the link with a summary that does not");
+for (const pad of edge) assert.deepEqual([padded(pad).long, padded(pad).longer], [false, false], `a report that fits (padded by ${pad})`);
 assert.deepEqual(SECTIONS, ["device", "cpu", "model", "gpu", "storage", "line", "memory"]);
 assert.deepEqual(STATE, { ok: "done", none: "not in this browser", wrong: "WRONG", error: "failed" });
 // the page's wiring, which only a browser runs (and no runner makes anything WRONG: the --wrong of tests/bench-check.ts, a
