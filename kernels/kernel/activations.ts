@@ -97,7 +97,7 @@ export function geglu(out: usize, h1: usize, h3: usize, n: i32): void {
   }
 }
 
-// T342: a Spark-X2.5's gated FFN, gelu(h1) * h3 by the exact GELU: llama2_numpy's gelu_erf() has the steps (erf by
+// T342: a Spark-X2.5's gated FFN, gelu(h1) * h3 by the exact GELU: engine/layers.py's gelu_erf() has the steps (erf by
 // Abramowitz and Stegun's 7.1.26, z no more than 9 so that exp's argument stays above -87, where vexp is fexp to the
 // bit), taken in the same order four at a time and one at a time, so that the two are the same to the bit.
 export function geglu_erf(out: usize, h1: usize, h3: usize, n: i32): void {
@@ -131,9 +131,9 @@ export function add_inplace(x: usize, y: usize, n: i32): void {
   for (let j = 0; j < n; j++) { const o = <usize>j << 2; store<f32>(x + o, load<f32>(x + o) + load<f32>(y + o)); }
 }
 
-// T237: the rotated basis (llama2_numpy.py has the definition, above hadamard()). The normalized Walsh-Hadamard
+// T237: the rotated basis (engine/layers.py has the definition, above hadamard()). The normalized Walsh-Hadamard
 // transform of a block of values in place, after its values were multiplied by 1 / sqrt(block): sums and differences
-// of values 1, 2, 4, ... apart, the order of llama2_numpy.hadamard() and of the fork's ggml_compute_forward_fwht
+// of values 1, 2, 4, ... apart, the order of engine/layers.py's hadamard() and of the fork's ggml_compute_forward_fwht
 // (ggml/src/ggml-cpu/ops.cpp at 88c4bc60; the order, no line of it). Every number is one float32 sum or difference,
 // so the result is NumPy's to the bit. block: a power of two. Values 1 and 2 apart are one pass over fours of values
 // (the two sums and differences of a four), the rest four values a step.

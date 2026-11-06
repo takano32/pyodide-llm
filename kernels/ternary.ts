@@ -1,5 +1,5 @@
 // ternary.ts (T231): the weights of a ternary model, two bits each, as the dot products take them. kernel/matmul.ts
-// (matmul_t2) and relaxed/ternary.ts and relaxed/binary.ts (matmul_t2r, matmul_b1r) import it. The layout is llama2_numpy.pack_ternary's, which is
+// (matmul_t2) and relaxed/ternary.ts and relaxed/binary.ts (matmul_t2r, matmul_b1r) import it. The layout is engine/packing.py's pack_ternary's, which is
 // Prism ML's PQ2_0's: a group of 128 weights in 32 bytes, weight j as its code (the weight + 1: 0, 1 or 2) in byte
 // j >> 2 at bits 2 (j & 3), and one scale a group (a float16 from T533, below).
 //

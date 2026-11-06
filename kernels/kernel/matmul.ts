@@ -47,7 +47,7 @@ export function six_sums(out: usize, w: usize, groups: i32): void {
 }
 
 // T123: the same for int8 weights: the sums of groups of 32 int8 values (w), times -64 (T197), the corrections of
-// matmul_q8r. forward.js made them one value at a time in JavaScript (7B: 266 s of its construct)
+// matmul_q8r. forward.ts made them one value at a time in JavaScript (7B: 266 s of its construct)
 export function int8_sums(out: usize, w: usize, groups: i32): void {
   for (let g = 0; g < groups; g++) {
     const p = w + (<usize>g << 5);
@@ -253,7 +253,7 @@ export function matmul_q6(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
 }
 
 // y[j] += sum over c of a[c] * rows[c][j]: the outlier channels of the classifier's input, multiplied by their own
-// columns of the classifier in float32 (OUTLIER_CHANNELS in llama2_numpy.py). rows is (count, n) row-major.
+// columns of the classifier in float32 (OUTLIER_CHANNELS in engine/checkpoint.py). rows is (count, n) row-major.
 export function add_columns(y: usize, rows: usize, a: usize, count: i32, n: i32): void {
   const n4 = n & ~3;
   let j = 0;

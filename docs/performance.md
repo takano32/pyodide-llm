@@ -55,7 +55,7 @@ Firefox is as fast as the Chromium family (llm-jp-3-150m: 106 against 107 tok/s 
 measured in the Firefox that the runners have installed, through Selenium. The Firefox that Playwright drives looks
 8 to 15 times slower because Playwright drives it through the debugger, and a debugged page gets its WebAssembly
 from the baseline compiler only. WebKit has no relaxed SIMD, so int8 runs on the plain SIMD kernel there. Per
-browser and system: [kernels/README.md](../kernels/README.md).
+browser and system: [docs/notes/t644.9-kernels-measured-2026-09-19.md](notes/t644.9-kernels-measured-2026-09-19.md).
 
 ## Where a token goes
 

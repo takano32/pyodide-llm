@@ -124,7 +124,7 @@ export function widen_ptq1_0(out: usize, raw: usize, n: i32): void {
 export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): void {
   // SIMD, 32 values (one group) at a time. Every step is the scalar one lane by lane (abs, max, the division, the
   // product, round half to even), so the int8 and the scales are the same to the bit as before, and as NumPy's
-  // llama2_convert.quantize(), which the converter now hands to this (T89). Only a NaN in the input tells them
+  // engine/packing.py's quantize(), which the converter now hands to this (T89). Only a NaN in the input tells them
   // apart (SIMD max keeps it, the scalar compare skipped it), and a NaN in a checkpoint is broken on every path.
   const qmax: f32 = bias == 0 ? 127.0 : 63.0;
   const offset = i32x4.splat(bias);
@@ -150,7 +150,7 @@ export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): v
   }
 }
 
-// T98: the converter's six bits (llama2_numpy.quantize6 and pack6 in one pass, the same bytes): per group of 32,
+// T98: the converter's six bits (engine/packing.py's quantize6 and pack6 in one pass, the same bytes): per group of 32,
 // scale = the largest |value| / 31, v = round(value / scale) in -32..31, stored as the int8 4 v packed into 24 bytes
 // (six.ts reads them back) and the scale as scale / 4 (xs).
 // round(value / scale), clipped to six bits (-32..31), as NumPy's rint and clip
@@ -181,7 +181,7 @@ export function quantize6_x(out: usize, xs: usize, x: usize, n: i32): void {
   }
 }
 
-// T230: the converter's ternary() (llama2_numpy.py) in one pass, the same bytes: n float32 values (x), whole groups of
+// T230: the converter's ternary() (engine/packing.py) in one pass, the same bytes: n float32 values (x), whole groups of
 // 128, to two bits a value (out, 32 bytes a group: the code sign + 1 of value j in byte j >> 2 at bits 2 (j & 3)) and
 // the largest |value| of every group (xs). Returns 1 where a value is neither 0 nor plus or minus its group's largest
 // (the weights are not ternary, or not a number), else 0.
@@ -218,7 +218,7 @@ export function ternary_x(out: usize, xs: usize, x: usize, n: i32): i32 {
   return v128.any_true(bad) ? 1 : 0;
 }
 
-// T634: the converter's binary() (llama2_numpy.py) in one pass, the same bytes: n float32 values (x), whole groups of
+// T634: the converter's binary() (engine/packing.py) in one pass, the same bytes: n float32 values (x), whole groups of
 // 128, to one bit a value (out, 16 bytes a group: the bit of value 64 h + 4 c + p at bit 4 h + p of byte c, set where
 // the value is not below 0) and the largest |value| of every group (xs). Returns 1 where a value is not plus or minus
 // its group's largest (the weights are not binary, or not a number), else 0. A lane's mask of four values (bitmask)

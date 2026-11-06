@@ -435,7 +435,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 - **`navigator.deviceMemory`。** Chromium 系だけが言う。**頭打ちの 8 は今は Android だけ**（Chrome 152 以上の PC は 16 や 32 も言う）。近い 2 のべきに丸める（6 GB のスマホは 4）。コードは `>= 8` を「8GB 以上」と読む。言わないブラウザは 4 GB と見る。
 - **1 トークンの内訳（`tests/profile.ts`）。** llm-jp-3 150M は行列積 92%（分類器 46%）・attention 3%（位置 2000 で 48%、4000 で 65%）。
 - **最適化の寄与（T52）。** `?without=kernels,int8,relaxed,sampler` で 1 つずつ外せる（知らない名前は `ValueError`）。tiny-lm 48.6 → 187 → 248 → 315 → 416 tok/s。ステータス行は何が動いたかを必ず言う。
-- **OS 5 種 × ブラウザ 5 種で動く（`browsers.yml`、表は `kernels/README.md`）。** relaxed SIMD の無いブラウザ（本物の Safari）は `matmul_q8` で動く。Windows ARM の Playwright の Chromium と WebKit は x86-64 のエミュレーションで 3 分の 1。ランナーの速さは OS をまたいで比べない。
+- **OS 5 種 × ブラウザ 5 種で動く（`browsers.yml`、表は `docs/notes/t644.9-kernels-measured-2026-09-19.md`）。** relaxed SIMD の無いブラウザ（本物の Safari）は `matmul_q8` で動く。Windows ARM の Playwright の Chromium と WebKit は x86-64 のエミュレーションで 3 分の 1。ランナーの速さは OS をまたいで比べない。
 - **ダウンロード。** 分割並列は約 1.8 倍速い。モデルの取得は Pyodide の読み込みより先に始まる（T68）。**準備完了の内訳の秒数は、それぞれが実際に動いていた時間だけ**。NumPy の wheel は版を解決した直後に `pyodide-lock.json` から URL を組んで先読みする。
 - **SIMD カーネル。** Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込む（AssemblyScript の出力に `dylink.0` を付ける）。カーネルにアドレスを渡す配列は Python 側で必ず保持する。Python の `kernels=` はいまサンプリングのため（と変換器の詰め手・読み手）。**Python のサイドモジュールは `simdkernel.so` の 1 つで、relaxed のものは作らない**（T644.2: Python は relaxed のカーネルを呼ばない。relaxed は forward.ts が自分でコンパイルする `simdkernel_relaxed_*.wasm` で、`?without=relaxed` もそちらが読む）。
 

@@ -4,8 +4,8 @@
 import { fexp, vexp } from "./math";
 
 // ------------------------------------------------------------------------ Qwen3.5's hybrid attention (T229)
-// The three things of llama2_numpy.py's linear_attention() and of its gated full attention that no kernel of the
-// other files does. Everything else of those layers is a matmul, rmsnorm (the l2 norm of the heads of q and k too: public/forward/engine.js),
+// The three things of engine/model.py's linear_attention() and of its gated full attention that no kernel of the
+// other files does. Everything else of those layers is a matmul, rmsnorm (the l2 norm of the heads of q and k too: src/runtime/forward/engine.ts),
 // swiglu (the norm's gate) or add_inplace.
 
 // out[j] = x[j] * sigmoid(g[j]): what a full-attention layer read, through its gate
@@ -49,7 +49,7 @@ export function convolve(out: usize, taps: usize, rows: usize, n: i32, count: i3
   }
 }
 
-// T260, an LFM2's convolution layer: what llama2_numpy.py's short_convolution() does between its two matmuls. b: what
+// T260, an LFM2's convolution layer: what engine/model.py's short_convolution() does between its two matmuls. b: what
 // the matrix in gave, 3 n values (the gate B, the gate C, and z, one after another). rows: the layer's state, count rows
 // of n values, the oldest token's first; the last is this token's and is written here, B * z. Then
 // out[c] = C[c] * (taps[0][c] * rows[0][c] + ... + taps[count - 1][c] * rows[count - 1][c]), added in that order as
@@ -80,7 +80,7 @@ export function short_conv(out: usize, taps: usize, rows: usize, b: usize, n: i3
   }
 }
 
-// One token of the gated delta rule (llama2_numpy.delta_rule) for the value heads h0..h1 of vh: the software threads
+// One token of the gated delta rule (engine/layers.py's delta_rule) for the value heads h0..h1 of vh: the software threads
 // take heads as they take rows of a matmul, and every head is computed alone, the same whatever the range.
 //   S' = S * decay, delta = (v - k S') * beta, next = S' + k (outer) delta, out = q next
 // state, next: a matrix (kd, vd) a value head, row-major, the heads one after another. The new state is written at

@@ -164,7 +164,7 @@ function selectTop(probs: usize, index: usize, lo: i32, hi: i32, k: i32): void {
 // random: one number in [0, 1) from Python's generator, so that a seed reproduces. probs and index: scratch of n each.
 // -1 when the largest logit is no finite number (T195): a NaN anywhere makes it NaN (f32x4.max and max keep a NaN),
 // +inf makes it +inf, and all -inf make it -inf. Logits like these come of a broken model or an overflow; the engine
-// stops with an error on -1 (NumPy's sample() and shaders.js's sampleLikeCpu() stop on the same logits)
+// stops with an error on -1 (NumPy's sample() and shaders/likecpu.ts's walkLikeCpu() stop on the same logits)
 export function sample(logits: usize, n: i32, temperature: f32, topp: f32, random: f64, probs: usize, index: usize, topk: i32, minp: f32): i32 {
   const best = largest(logits, n, load<f32>(logits));
   if (!isFinite<f32>(best)) return -1;
