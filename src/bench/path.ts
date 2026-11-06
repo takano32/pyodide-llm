@@ -5,7 +5,7 @@ import { REASONS } from "../runtime/forward/reasons.ts";
 import type { PathCell, PathThreads, Paths } from "../runtime/contracts/messages.ts";
 
 // what the worker answered of the page path (worker/timing.ts's timedPaths()), without the message's own keys
-type PathsFound = Omit<Paths, "type" | "load">;
+export type PathsFound = Omit<Paths, "type" | "load">;
 
 /** T93: where the model page remembers the number of threads it found for a model on this device (localStorage).
  * T190: /benchmark/ reads the same, so that the page path is timed on the model page's count. nav: the navigator */

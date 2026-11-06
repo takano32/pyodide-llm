@@ -3,11 +3,13 @@
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import "./isolation.ts";
 import { MODELS } from "../models.ts";
+import type { Site } from "../models.ts";
 import { $ } from "./dom.ts";
+import { cellsOf } from "../bench.ts";
 import type { Name, Result } from "../bench.ts";
 import { current, runAt, runNames, sectionAt } from "./running.ts";
 import { unstarted } from "../runtime/updated.ts";
-import type { Answer, Asked, Said } from "../runtime/contracts/benchmark.ts";
+import type { Answer, Asked, Said, Staged } from "../runtime/contracts/benchmark.ts";
 import type { ModelWorker } from "../runtime/contracts/messages.ts";
 
 // ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T177), and what
@@ -50,11 +52,9 @@ export function rendered(markdown: string) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.startsWith("|")) {
-      // a \| in a cell is a | of its words, as GitHub reads it (T157's review: an error's words)
-      const cells = (row: string) => row.split(/(?<!\\)\|/).slice(1, -1).map((c) => c.trim().replace(/\\\|/g, "|"));
-      const head = cells(line);
+      const head = cellsOf(line);
       const rows: string[][] = [];
-      for (i += 2; i < lines.length && lines[i].startsWith("|"); i++) rows.push(cells(lines[i]));
+      for (i += 2; i < lines.length && lines[i].startsWith("|"); i++) rows.push(cellsOf(lines[i]));
       i--;
       html.push(`<table${head.length === 2 ? ' class="pairs"' : ""}><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr>${rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</table>`);
     } else if (line.startsWith("#")) {
@@ -66,14 +66,13 @@ export function rendered(markdown: string) {
   return html.join("");
 }
 
-// ---- T177: the stage the running section is at. at / of where the section knows how many stages it has (the bar
+// ---- T177: the stage the running section is at (contracts/benchmark.ts's Staged). at / of where the section knows how many stages it has (the bar
 // then fills stage by stage, and within a stage by part, 0 to 1, where that is known), else the stage's name only
-export type Stage = { stage: string; at?: number; of?: number; part?: number };
 export const clock = (ms: number) => {
   const s = Math.floor(ms / 1000);
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
 };
-export function staged(name: Name, { stage, at, of, part = 0 }: Stage) {
+export function staged(name: Name, { stage, at, of, part = 0 }: Staged) {
   const p = parts[name].progress;
   const counted = Boolean(at && of);
   p.bar.classList.toggle("unknown", !counted);
@@ -160,4 +159,4 @@ export function stalled(): { promise: Promise<Result>; stop: () => void } {
   });
   return { promise, stop: () => clearInterval(timer) };
 }
-export const model = () => MODELS.find((entry: any) => entry.id === ($("model") as HTMLSelectElement).value) as any;
+export const model = () => MODELS.find((entry): entry is Site => entry.checkpoint !== undefined && entry.id === ($("model") as HTMLSelectElement).value)!;

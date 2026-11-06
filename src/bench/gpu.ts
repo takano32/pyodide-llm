@@ -3,7 +3,9 @@
 import { number, threadsOf, times, noRatios, tableCell, unmeasured } from "./cells.ts";
 import type { Ratios, Step } from "./cells.ts";
 import type { Baseline } from "./cpu.ts";
-import type { Bandwidth, GpuCeilings, LayerFound, LayerRow, TokenFound, Verdict, Verdicts } from "../runtime/contracts/benchmark.ts";
+import { MODELS } from "../runtime/benchmark/gpu/models.ts";
+import type { ModelMatrix } from "../runtime/benchmark/gpu/models.ts";
+import type { Bandwidth, GpuCeilings, GpuModel, LayerFound, LayerRow, TokenFound, Verdict, Verdicts } from "../runtime/contracts/benchmark.ts";
 
 /** T186: the numbers under a layer's verdict in the check (T175), in one short line for the page and the report: its
  * quantized vectors held to quantize_x (quantized: [{point, wrong, scale, apart, of}]; the worst scale's relative
@@ -49,18 +51,24 @@ function tokenWrong(t: Pick<TokenFound, "kind" | "sample">, check: Verdicts | un
   return bad(t.kind === "packed" ? "packed" : "widen") || (Boolean(t.sample) && bad("argmax"));
 }
 
+/** Of a shape's matrix × vector rows, the fastest the check did not find WRONG (not one measured again, nor unsteady) */
+function fastestMatVec(s: Step<Bandwidth>, check: Verdicts | undefined) {
+  const wrong = (row: { check: string }) => Boolean(check && check[row.check] && !check[row.check].ok);
+  return (s.result?.rows ?? []).filter((row) => row.GBps && !row.again && !row.unsteady && !wrong(row)).sort((a, b) => b.GBps! - a.GBps!)[0];
+}
+// the bandwidth step's matrices (T149), in the order the section asks them: a model's w1 or its classifier (gpu/models.ts)
+export const BANDWIDTHS: [GpuModel, ModelMatrix][] = [["llm-jp-3 150M", "w1"], ["Llama 3.2 1B", "w1"], ["Llama 3.2 1B", "classifier"]];
+/** The name of the bandwidth step of a model's matrix: the page shows it as the step runs, and its table's column is
+ * the shape it names (the model and the matrix). */
+export const bandwidthName = (model: GpuModel, matrix: ModelMatrix) => `bandwidth: ${model} ${matrix}`;
+// the model whose quantizing of a token the table counts: q, o, gate and down a layer read an input of their own, and the classifier
+const QUANTIZED_MODEL: GpuModel = "Llama 3.2 1B";
 /** T149: the GPU section's table of an int8 matrix times a vector: a row a shader (T134's two and those of llama.cpp and
  * ONNX Runtime), a column a shape (bandwidths: the steps named "bandwidth: <shape>", {name, result: {rows, cpu,
  * quantize}} or {name, error}), with each GB/s's share of what a loop that only reads a buffer reads (ceilings: T168's).
  * No share where the device was lost (its later times are no GPU's, and too fast: past 100%), on a fallback adapter,
  * or where that read was unsteady. A shader the check found WRONG says so and is never the fastest, nor is a row
  * measured again at the end. gpu: { lost }. */
-/** Of a shape's matrix × vector rows, the fastest the check did not find WRONG (not one measured again, nor unsteady) */
-function fastestMatVec(s: Step<Bandwidth>, check: Verdicts | undefined) {
-  const wrong = (row: { check: string }) => Boolean(check && check[row.check] && !check[row.check].ok);
-  return (s.result?.rows ?? []).filter((row) => row.GBps && !row.again && !row.unsteady && !wrong(row)).sort((a, b) => b.GBps! - a.GBps!)[0];
-}
-const QUANTIZED_A_TOKEN = 16 * 4 + 1;  // Llama 3.2 1B: q, o, gate and down a layer read an input of their own, and the classifier
 export function matVecTable(bandwidths: Step<Bandwidth>[], check: Verdicts | undefined, ceilings: GpuCeilings | undefined, gpu: { lost?: string } = {}): string[] {
   const percent = (part: number, whole: number) => `${number((100 * part) / whole)}%`;
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
@@ -78,10 +86,11 @@ export function matVecTable(bandwidths: Step<Bandwidth>[], check: Verdicts | und
     return best ? `${shape(s)} ${best.shader}, ${number(best.GBps)} GB/s` : "";
   };
   const quantized = bandwidths.filter((s) => s.result?.quantize?.msEach);
-  const wide = quantized.find((s) => s.name.includes("1B"));
+  const wide = quantized.find((s) => BANDWIDTHS.some(([model, matrix]) => model === QUANTIZED_MODEL && s.name === bandwidthName(model, matrix)));
+  const { layers, hidden } = MODELS[QUANTIZED_MODEL], vectors = layers * 4 + 1;
   const quantizing = quantized.length ? "**Quantizing the vector** of a packed row (QUANTIZE, one dispatch; not in the packed rows): " +
     quantized.map((s) => `${shape(s)} ${number(s.result!.quantize!.msEach, 3)} ms`).join(", ") +
-    (wide ? `; a token of Llama 3.2 1B quantizes ${QUANTIZED_A_TOKEN} vectors (16 of them 8192 wide), ${number(QUANTIZED_A_TOKEN * wide.result!.quantize!.msEach!, 2)} ms or more` : "") : "";
+    (wide ? `; a token of ${QUANTIZED_MODEL} quantizes ${vectors} vectors (${layers} of them ${hidden} wide), ${number(vectors * wide.result!.quantize!.msEach!, 2)} ms or more` : "") : "";
   return ["**An int8 matrix × vector** (a generated token's). A shader's name says whose form it takes and the rows a workgroup takes. " +
     "Each is timed as a submission of 2n of it less one of n: what waiting for a submission costs is not in it (a token pays it once, in the table of what it costs besides the weights below), " +
     "and each matrix is read from copies of it that make 128 MiB in turn, as a token reads it once, not from the GPU's caches: not to be compared with reports from before T149. " +

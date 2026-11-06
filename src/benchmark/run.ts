@@ -2,7 +2,7 @@
 // loaded again by the page-memory section, and ?run=.
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { forgetMark, readMark, memoryResult } from "./page-memory.ts";
-import { cpuBaseline, CPU_SPEED_KEY, gpuMarkdown, STATE } from "../bench.ts";
+import { cpuSpeed, CPU_SPEED_KEY, gpuMarkdown, STATE } from "../bench.ts";
 import { $, parameters, ALL, told } from "./dom.ts";
 import { SECTIONS } from "../bench.ts";
 import type { Name, Result } from "../bench.ts";
@@ -15,13 +15,9 @@ import { storage, line } from "./storage.ts";
 import { tabStorage, pageMemory } from "./memory.ts";
 import { report, awake } from "./report.ts";
 
-// what src/bench/cpu.ts's cpuBaseline() answers: the CPU section's fastest token and prompt, or why there is none
-type Baseline = { why?: string; token?: { threads: number; msPerToken: number; GBps: number; isolated: boolean };
-  prompt?: { threads: number; msPerToken: number; isolated: boolean } };
-
 for (const name of SECTIONS) parts[name].run.onclick = () => runSections([name]);
 
-const RUN: Record<Name, () => Promise<Result>> = { device, cpu, model: modelSection, gpu, storage, line, memory: pageMemory };
+const RUN: { [Section in Name]: () => Promise<Result<Section>> } = { device, cpu, model: modelSection, gpu, storage, line, memory: pageMemory };
 async function runSections(names: readonly Name[]) {
   if (!runBegan(names, performance.now())) return;
   const buttons = [$("run-all"), ...Object.values(parts).map((p) => p.run)] as HTMLButtonElement[];
@@ -54,20 +50,17 @@ async function runSections(names: readonly Name[]) {
     }
     sectionEnded(name, result);
     // T156: the CPU's reading of the weights here, for the model page (a model on the GPU alone is held against it)
-    const speed = name === "cpu" ? (cpuBaseline(result) as Baseline).token : undefined;
-    if (speed?.isolated) {
+    const speed = name === "cpu" ? cpuSpeed(results.cpu) : undefined;
+    if (speed) {
       try {
-        // (and a prompt's G MAC/s at its fastest: its model's layers' multiply-adds a token, over its ms)
-        const prompt = (cpuBaseline(result) as Baseline).prompt, layerWeights = result.data?.layerWeights;
-        const promptGMACs = prompt && layerWeights ? layerWeights / (prompt.msPerToken / 1000) / 1e9 : undefined;
-        localStorage.setItem(CPU_SPEED_KEY, JSON.stringify({ GBps: speed.GBps, threads: speed.threads, promptGMACs }));
+        localStorage.setItem(CPU_SPEED_KEY, JSON.stringify(speed));
       } catch {
         // no storage here: a model on the GPU alone stays there
       }
     }
     progress.box.hidden = true;
     state.className = `state ${result.status}`;
-    state.textContent = `${STATE[result.status]} · ${clock(performance.now() - sectionAt)}`;
+    state.textContent = `${STATE[result.status].shown} · ${clock(performance.now() - sectionAt)}`;
     out.innerHTML = rendered(result.markdown);
     // T157: the GPU section's tables hold the GPU against the CPU section; a CPU section run after it (on its own
     // button) writes them again, and the report with them
@@ -115,10 +108,10 @@ $("issue").addEventListener("click", () => {
 // section is not run again by the ?run= below (a ?run=memory would end the tab over and over)
 const ended = readMark(tabStorage);
 if (ended) {
-  const result = memoryResult(ended) as Result;
+  const result = memoryResult(ended);
   sectionEnded("memory", result);
   parts.memory.state.className = `state ${result.status}`;
-  parts.memory.state.textContent = `${STATE[result.status]} · the page was loaded again`;
+  parts.memory.state.textContent = `${STATE[result.status].shown} · the page was loaded again`;
   parts.memory.out.innerHTML = rendered(result.markdown);
   report();
 }

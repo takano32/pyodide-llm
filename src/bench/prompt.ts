@@ -55,7 +55,7 @@ function ceilingOf(row: PromptRow, c?: GpuCeilings) {
  * the GFLOPS of each (a multiply and an add for each weight and token) and the CPU's GOPS from the same count; and
  * how many times faster each is than the CPU's fastest count of threads (T157). cpu: the CPU section's result, whose
  * rows give its prompt's times. */
-export function promptMarkdown(s?: Step<PromptFound>, check?: Verdicts, ceilings?: GpuCeilings, baseline?: Baseline, gpu?: Ratios, cpu?: Result): string[] {
+export function promptMarkdown(s?: Step<PromptFound>, check?: Verdicts, ceilings?: GpuCeilings, baseline?: Baseline, gpu?: Ratios, cpu?: Result<"cpu">): string[] {
   if (!s || s.error) return [`**A prompt all at once**: ${unmeasured(s?.error)}`];
   const r = s.result!, cpuPrompt = baseline?.prompt, none = noRatios(gpu);
   const cpuRows = (cpu?.data?.rows ?? []).filter((row: CpuRow) => row.promptMsPerToken);

@@ -38,6 +38,10 @@ export function noRatios({ fallback, lost }: Ratios = {}): string | undefined {
  * \| as a | in a cell). */
 export const tableCell = (text: unknown): string => String(text).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 
+/** The cells of a row of a table, as the page (src/benchmark/section.ts's rendered()) and GitHub read it: a \\| that
+ * tableCell() escaped is a | of its cell's words (T157's review: an error's words; T214: a skipped round's reason). */
+export const cellsOf = (row: string): string[] => row.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim().replace(/\\\|/g, "|"));
+
 /** Why a step of the GPU section has no table: it failed (T227: in that word, as the rows say it, so that warnings()
  * lists it), or it was not run. */
 export const unmeasured = (error: string | undefined): string => (error ? `failed: ${error}` : "not measured");

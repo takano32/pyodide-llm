@@ -12,7 +12,7 @@ import type { GpuModel, ToBenchGpu, ToWaiter, Waited } from "../runtime/contract
 
 // T643.12: the steps are src/bench/'s gpuPlan(), counted before the first is asked, and what each answers is kept by
 // the step's key (gpuKept()) under the name the page shows as it runs
-export async function gpu(): Promise<Result> {
+export async function gpu(): Promise<Result<"gpu">> {
   const w = worker("benchmark/gpu.js");
   const found: GpuFound = { bandwidth: [], token: [] };
   let lost: string | undefined;

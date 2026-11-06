@@ -2,19 +2,23 @@
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable, drift } from "../bench.ts";
 import { BASE, $, parameters } from "./dom.ts";
-import type { Result } from "../bench.ts";
+import type { Measured, Result } from "../bench.ts";
 import { staged, worker, model, workerFailed } from "./section.ts";
 import { UPDATED } from "../runtime/updated.ts";
-import type { BenchRow, ModelWorker, Progress, Round, ToWorker } from "../runtime/contracts/messages.ts";
+import type { Bench, ModelWorker, Paths, Progress, Ready, Round, ToWorker } from "../runtime/contracts/messages.ts";
 
 // the model page's worker itself (src/runtime/worker.js): the model loads as the model page loads it (the GPU too), the
 // model page's own path is timed on it (T184: prompts and writing as the page chooses between the GPU and the CPU,
 // and on each alone), then the rounds of ?bench=1 (T45), which load it again each, on the CPU alone
+// what a request of the section is answered with (T643.15): the worker's message of its kind, or why there is none
+type Answered = { init: Ready; paths: Paths; bench: Bench };
+type Unanswered = { error: string };
+type Heard = Answered[keyof Answered] | Unanswered;
 // what the model section measured, under the name of the model it ran (the choice may change after)
 // said (T227's review): what the page's path says went wrong in its first line (src/bench.ts's pathWarnings()), for the warnings
 // (a round of ?bench=1 as src/bench/rounds.ts lists it: the contract's Round)
-export let measured: { name: string; rows: BenchRow[]; pyodide: string; paths?: string; said?: string[] } | undefined;
-export async function modelSection(): Promise<Result> {
+export let measured: Measured | undefined;
+export async function modelSection(): Promise<Result<"model">> {
   const entry = model();
   const w: ModelWorker = worker("worker.js");
   // T214: where the browser does not say its memory, the round without the kernels is a row that says why
@@ -28,7 +32,7 @@ export async function modelSection(): Promise<Result> {
   const prompt = entry.prompt || "Once upon a time";
   const megabytes = (data: Progress) => `the model: ${(data.received / 1e6 || 0).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
   try {
-    const listen = (resolve: (value: any) => void) => {
+    const listen = (resolve: (value: Heard) => void) => {
       w.onmessage = ({ data }) => {
         // T205's review: a round's words and MB are of its load (the first load's ready counted, readies - 1 is the
         // round being loaded), and its ready begins its writing: the stage names the round of either (it said the
@@ -61,10 +65,11 @@ export async function modelSection(): Promise<Result> {
       };
       w.onerror = async (event) => resolve({ error: await workerFailed(event) });
     };
-    const request = (message: ToWorker) => new Promise<any>((resolve) => {
+    // (the worker answers a request with the message of its own kind: ready an init, paths the page's path, bench the rounds)
+    const request = <Asked extends Extract<ToWorker, { type: keyof Answered }>>(message: Asked) => new Promise<Heard>((resolve) => {
       listen(resolve);
       w.postMessage(message);
-    });
+    }) as Promise<Answered[Asked["type"]] | Unanswered>;
     // ?gpuTest=on (tests only, as on the model page: T148): CI's fallback adapter taken as a GPU, to see the GPU's side
     // T190: the number of threads the model page remembers for this model here (it reads it the same way), else a
     // search from the logical cores that the page path lets end (worker/timing.ts); nothing is remembered from here
@@ -78,14 +83,14 @@ export async function modelSection(): Promise<Result> {
     // made for the largest of them, and not for a next model as well (that gigabyte took down Windows' WebKit here)
     const loaded = await request({ type: "init", root: new URL(BASE, location.href).href, search: parameters.get("gpuTest") === "on" ? "?gpuTest=on" : "", model: entry, load: 1,
       threads: { remembered, hint: navigator.hardwareConcurrency || 1 }, ahead: rounds.map((round) => round.without) });
-    if (loaded.error) return { status: "error", markdown: loaded.error };
+    if ("error" in loaded) return { status: "error", markdown: loaded.error };
     pathing = true;
     staged("model", { stage: "the page's path", at: 2, of: stages });
     const paths = await request({ type: "paths", load: 1, prompt, counts: PATH_PROMPTS, sampled: PATH_WRITES });
     pathing = false;
     if (siteUpdated) return { status: "error", markdown: UPDATED };
     const answer = await request({ type: "bench", model: entry, load: 1, rounds: asked, prompt, steps: 64 });
-    if (answer.error) return { status: "error", markdown: answer.error };
+    if ("error" in answer) return { status: "error", markdown: answer.error };
     if (siteUpdated) return { status: "error", markdown: UPDATED };
     const table = pathTable(paths, entry.name);
     measured = { name: entry.name, rows: answer.rows, pyodide: answer.pyodide, paths: table, said: pathWarnings(paths) };

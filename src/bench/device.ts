@@ -5,7 +5,7 @@ import type { Result } from "./sections.ts";
 import type { Answer, DeviceFound } from "../runtime/contracts/benchmark.ts";
 
 /** The section "This browser" from its worker's answer: the features, or what failed. */
-export function deviceResult(answer: Answer<DeviceFound>): Result {
+export function deviceResult(answer: Answer<DeviceFound>): Result<"device"> {
   if (answer.error) return { status: "error", markdown: answer.error };
   const r = answer.result!;
   const gb = (bytes: number | undefined) => (typeof bytes === "number" ? `${(bytes / 1e9).toFixed(1)} GB` : "?");
