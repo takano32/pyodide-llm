@@ -386,7 +386,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 1. 型の 1 か所: 知らせは `contracts/messages.ts`、計画は `contracts/plan.ts`、GPU の Worker とは `contracts/gpu/protocol.ts`、`/benchmark/` の節は `contracts/benchmark.ts`。
 2. 投げる所は `postMessage({ … } satisfies 型)`、ページは `receiver.ts` の表 `HEARD` に 1 行（T643.2: 知らせの種類で閉じた表。読まない知らせも `() => {}` の行で「読まない」と言う。行が `"away"` を返すとページは去る: 後は何もしない）と、`heard.ts` の `ENDS`（**含む一覧**: 仕事の終わりの知らせかを決める）。`/benchmark/` の Worker に答えでない知らせを足すときは `ask()` の除く条件に。
    **ページが worker に頼む知らせ（`ToWorker`）は、`worker.ts` の表 `REPLIES` に 1 行**（T641.14: 知らせの種類で閉じた表で、行は知らせと `heard`（始めた読み込みの `signal` を置く: 取り消された読み込みは catch が黙る）を受ける。表に無い種類が来たら error で言う）。書き忘れは tsc、表の鍵と `ToWorker` の突き合わせは `worker-modules-check`（`tests/contracts.ts` の `tabled()`）。
-3. 忘れると: 型・書く側 → `worker-modules-check`・`plan-keys-check`、綴り → tsc、`satisfies` → `*-modules-check`。ページが行を書かない・知らない行を書く → tsc（`HEARD` の型）と `page-parts-check`（表の鍵を `FromWorker` と）。知らせの鍵をどのページも読まない・ページが読む鍵が型に無い → `page-parts-check`（T641.15: `HEARD` の行から `src/page/` の関数へ渡る先をたどり、`paths` は `src/bench/path.ts` の 2 つへ。たどるのは `tests/contracts.ts` の `heardOff()`。ページの外（試験が `window.__ready` から読むなど）だけが読む鍵は `ELSEWHERE` に訳を、たどれない渡し方は `HANDED` に）。**`ENDS` に入れ忘れることは誰も教えない**。読まない鍵をわざと足すときは `plan-keys-check` の `held()` の `unread` に訳を。
+3. 忘れると: 型・書く側 → `worker-modules-check`・`plan-keys-check`、綴り → tsc、`satisfies` → `*-modules-check`。ページが行を書かない・知らない行を書く → tsc（`HEARD` の型）と `page-parts-check`（表の鍵を `FromWorker` と）。知らせの鍵をどのページも読まない・ページが読む鍵が型に無い → `page-parts-check`（T641.15: `HEARD` の行から `src/page/` の関数へ渡る先をたどり、`paths` は `src/bench/path.ts` の 2 つへ。たどるのは `tests/contracts.ts` の `heardOff()`。ページの外（試験が `window.__ready` から読むなど）だけが読む鍵は `ELSEWHERE` に訳を、たどれない渡し方は `HANDED` に）。新しい種類を `ENDS` に入れるかどうかは `page-parts-check` が教える（T641.18: 終わりの知らせ `ENDS` と途中の知らせ `MIDDLE` の 2 つ目の写しを持ち、合わせて `FromWorker` の全種類で重ならないこと、`heard.ts` の `endsWork()` が `ENDS` だけを終わりと読むことを見る: 種類を足したらどちらかに 1 つ）。読まない鍵をわざと足すときは `plan-keys-check` の `held()` の `unread` に訳を。
 4. worker が Python の新しい欄を呼ぶなら `contracts/python.ts`（`contracts-check`）。
 
 ### 失敗の種類・GPU の訳・黙った catch・後から取るファイル
@@ -566,7 +566,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 - **ロードを中止しても、その後始末は数ターン後に走る。** Worker は前のロードの完了（`unloaded`）を待ってから次を始める（縮まないメモリがモデル 1 個ぶん膨らむ）。中止で reject される Promise には `catch` を付ける。
 - **準備完了のステータス行は何が動いたかを言う**（SIMD kernels・relaxed SIMD・64-bit memory・llama.cpp's blocks・GPU の訳）: 文面は持ち主のもの。
 - **`stats` の `prompt_tokens` は `tokens - sampled` では求まらない**（停止トークンは数えないので 1 ずれる。専用のカウンタで数える）。
-- **Worker の知らせで「空いた」と読むのは仕事の終わりの知らせだけ**（除く一覧で読んでいたとき、文の途中のスレッドの知らせで 2 本目の文が走った）。**知らせを足すときは含む一覧に入れるかだけを決める**。`tests/e2e.ts` は答えの間のスレッドの知らせの数を出す（**0 なら見張りは空振り**）。
+- **Worker の知らせで「空いた」と読むのは仕事の終わりの知らせだけ**（除く一覧で読んでいたとき、文の途中のスレッドの知らせで 2 本目の文が走った）。**知らせを足すときは含む一覧に入れるかだけを決める**（決めないと `page-parts-check` が落ちる: T641.18）。`tests/e2e.ts` は答えの間のスレッドの知らせの数を出す（**0 なら見張りは空振り**）。
 - **Worker は生成中にメッセージを受け取れない**ので、`generate()` は 50ms ごとに `MessageChannel` で 1 回イベントループに返す（`setTimeout` は 4ms の下限で速いモデルが約 5% 遅くなった）。
 - **チャットテンプレートの中の特殊トークンは、文字として渡すと壊れる**（`</s>` がばらばらになる）。エンジンの `specials` で「書かれていたらそのトークン」にし、特殊トークンの直後にはダミーの空白を付けない（`prefixed` が別に言わない限り）。
 - **Playwright で huggingface.co の応答を差し替えても、範囲取得の経路はテストできない**（Worker からの要求では 206 の `Content-Range` が消える）。HF から取る経路は実物のモデルで確かめる（塊のモデルの `blocks-in-browser.ts` は自分で全部に答えるので通る）。

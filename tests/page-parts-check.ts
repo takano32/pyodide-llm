@@ -512,8 +512,15 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   assert.deepEqual([ofThisLoad({ type: "status", load: 3 }, 3), ofThisLoad({ type: "status", load: 2 }, 3), ofThisLoad({ type: "threads" }, 3)],
     [true, false, true], "a report of this load is read, one of a load before it is not, and one of no load is");
   const kinds = [...contract("messages.ts").membersOf("FromWorker").keys()].sort();
-  assert.deepEqual(kinds.filter((type) => endsWork({ type })), ["bench", "done", "error", "paths", "ready"],
-    `of the reports (${kinds.join(", ")}), the ends of a piece of work`);
+  // T641.18: the second copy of heard.ts's ENDS, and of the reports that come in the middle of a piece of work. A kind
+  // added to FromWorker is in neither and fails here: whoever adds it says which it is (an end read as the middle keeps
+  // the buttons off for good, and the middle read as an end gives them back while the worker is busy)
+  const ENDS = ["bench", "done", "error", "paths", "ready"];
+  const MIDDLE = ["gpu", "gpu-alone", "progress", "status", "threads", "threads-compared", "token", "updated"];
+  assert.deepEqual(ENDS.filter((type) => MIDDLE.includes(type)), [], "no report is both an end of a piece of work and in the middle of one");
+  assert.deepEqual([...ENDS, ...MIDDLE].sort(), kinds,
+    `every report of contracts/messages.ts's FromWorker (${kinds.join(", ")}) is in ENDS or MIDDLE of this check, and no other`);
+  assert.deepEqual(kinds.filter((type) => endsWork({ type })), ENDS, "heard.ts's ENDS are the ends of a piece of work of this check");
   // (receiver.ts reads elements at its top, and Node cannot import it: its text asks the two, first and last, and the
   // row of the report's type between them)
   const { literalKeys, treeOf, walk } = await import("./contracts.ts");
