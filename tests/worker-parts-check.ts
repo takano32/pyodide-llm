@@ -509,6 +509,32 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
       "a model of Hugging Face on the GPU alone whose GPU failed was not loaded again: converted twice, its GPU's worker ended, one ready, the engine of the second");
   }
 
+  // T641.17: a model of Hugging Face whose table of every layer's inputs was not all kept as it came (weights.js's
+  // rowsReady() false: the kept file stopped taking its bytes) is loaded again, with the table in the memory from now on
+  {
+    let converts = 0;
+    const apart = [];
+    context.stand.convert = async () => {
+      converts += 1;
+      apart.push(run("tableApart()"));
+      const made = { n: 200 + converts, backend: "a stand-in's backend", seq_len: HEADER[6], destroy() {} };
+      context.stand.made = { llama: made, outside: { engine: { n: 200 + converts, gpu: Promise.resolve("a stand-in"), gpuStatus: "stand-in", threads: 1 } } };
+      run("adopted(stand.made)");
+      // (as the place of its weights leaves it: weights.js's rowsWhole, said by the file kept as it came)
+      context.stand.whole = converts === 1 ? () => false : undefined;
+      run("rowsWhole = stand.whole");
+      return {};
+    };
+    run("convert = stand.convert");
+    const warned = said.length;
+    await load({ load: 8, model: { ...model("rows"), hf: { repo: "someone/rows", revision: "1".repeat(40) } } });
+    assert.deepEqual(of("error"), []);
+    assert.deepEqual([converts, apart, of("ready").map((r) => r.load), run("engineNow().n")], [2, [true, false], [8], 202],
+      "a model of Hugging Face whose table was not all kept was not loaded again with its table in the memory: converted twice, one ready, the engine of the second");
+    assert.ok(said.slice(warned).some((line) => /loaded again with the table in the memory/.test(line)), "the console did not say why the model is loaded again");
+    run("rowsWhole = undefined");
+  }
+
   // ---- timing.js with stand-ins: the page's path (T184) on the model loaded now. What it tells request.js: the count
   // the search ended on, which the rounds that follow load the model on (T190)
   const generator = () => ({ next: () => ({ done: true }), destroy() {} });
