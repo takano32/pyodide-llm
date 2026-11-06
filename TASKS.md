@@ -140,7 +140,6 @@
 - T619 [追加][モデル] LFM3（lfm3） — 候補
 - T649 [追加][モデル] PLaMo 3 Translate（0.8B・2B・8B）を動かす — 未着手
 - T650 [性能][モデル] Firefox の翻訳にショートリストを使って速くする — 未着手
-- T651 [バグ][遠隔試験] e2e は頼んだモデルと違うモデルが答えても通す — 反映済み
 - T639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T638.1 の案） — 未着手
 - T640 [リファクタリング][変換] 変換器のリファクタリング（T638.2 の案） — 未着手
 - T641 [リファクタリング][CPU] worker と CPU の forwardのリファクタリング（T638.3 の案） — 未着手
@@ -1369,10 +1368,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - ショートリスト（`lex.50.50.*.s2t.bin`）はサイトに置いてある（T648.5）。読み手は `engine/marian.py` の `read_shortlist()`（T648.1）。出力の層を、原文の語から引いた訳文の語（firstNum 50 + bestNum 50 の和と `</s>`）の行だけで掛ける。Firefox はいつも使い、使うと 100 文のうち 38 文（en-ja 33・ja-en 5）の訳が変わる（T648 の調べ）。
 - 正しさの基準は、ショートリストを使う形の fxtranslate の `translate()` の訳（3 本 × 100 文、`tests/fixtures/translations.json` の隣に）で 100/100。速さは 1 文あたりの秒をショートリストなしと並べる（出力の層は語彙 32,000〜64,000 行で、1 ステップのいちばん大きな行列）。
 - ページで使うかを項目の設定にするか、いつも使うかは、速さと訳の違いを見て持ち主に。
-
-### T651 [バグ][遠隔試験] e2e は頼んだモデルと違うモデルが答えても通す — 状態: 反映済み（2026-11-06、Opus medium、`t651-e2e-model` の 1 コミット: `tests/e2e.ts` が頼んだ id から答えるはずの名前を `nameOf()` で決め（一覧の `name`、`default` は `DEFAULT_MODEL.name`、`hf:<owner>/<repo>@<rev>` はリポジトリの名前で `address.ts` の `hfEntry()` と同じ、`local`・`url` は `stories260K.bin`、`hf` は fixture の名前）、準備完了のステータス行と答えの下の行がその名前と「 · 」で始まらなければ両方の名前を言って落とす。`E2E_THEN` の各モデルと `E2E_OFFLINE` の答えも。`E2E_THEN` の一覧に無い id もブラウザの前に落とす（「… a deployed site is to be checked with the e2e of its own commit」）。壊し方 3 つ（一覧に無い id・期待の名前を 1 字変える・dist の一覧から id を消してページに既定のモデルを開かせる: run 42157507542 と同じ形）が落ちた。手元の Chrome 156 で tiny-lm・default・local・hf・url・`E2E_THEN=stories260K` が通った。CI: `tests.yml` 42159982797（軽い組 539 秒、`E2E_OFFLINE=1` の stories260K と `hf:HuggingFaceTB/SmolLM2-135M-Instruct@12fd25f7…` が通った）。 レビュー（Sonnet low、2026-11-06）: OK、must-fix なし、直しなし。一覧 218 項目の名前に「 · 」を含むものも、ほかの名前の頭と重なるものも 0（比べは末尾の「 · 」まで見るので「A」と「A B」の重なりにも強い）。期待は一覧の `name` と `hfEntry()` で、ページが描く `readyStatus()`・`answerMeta()` と同じ源（`local`・`hf` だけ e2e の固定の文字: ずれたら両方の名前を言って落ちる）。e2e を使う全部の呼び出し（`browsers.yml` の 104 の id ほか・`fetch.yml`・`preview.yml` の `E2E_OFFLINE`・`models.yml` の `models` と `then`・`*_in_browser.sh`）で期待の名前が決まる。本番とずれた版は、一覧に無い id ならブラウザの前に、本番に無い id なら「says the model named X, not Y」で落ちる。）
-- `models.yml` で本番にまだ無い id（デプロイの前の `hf-plamo-3-translate-8b-en-ja`）を頼むと、ページは既定のモデル（Shisa V2.1c LFM2 350M）を開いて答え、e2e は「ok」で終わった（run 42157507542、1.0 分）。e2e は準備完了の行のモデルの名前を、頼んだ id の項目の名前と比べていない。
-- 直す形: e2e が頼んだ id を一覧（`src/models.ts`）で引いて名前を取り、準備完了のステータス行か答えの下の行の名前がそれと違えば落とす。一覧に無い id（`local`・`hf:` の形・`default`）はそれぞれの決まりで（`default` は `DEFAULT_MODEL`）。本番を見るときはデプロイ済みのページと同じ版の e2e を使う（落とし穴: 古い一覧なら id が無いと言って落ちる）。
 
 ### T639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T638.1 の案） — 状態: 未着手（2026-11-04、T638.1 のレビュー（Fable max）から。子タスク 12。取りかかる順は持ち主）
 - 案の場所・どの決まりに反するか・規模・形・費用・証明・覆す条件は [docs/notes/t638.1-review-engine-2026-11-04.md](docs/notes/t638.1-review-engine-2026-11-04.md) の同じ題の節。番号は報告の順（得 ÷ 費用の順、動きを変えない案が先）。
