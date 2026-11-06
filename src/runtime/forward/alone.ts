@@ -190,6 +190,12 @@ export function aloneVerdict({ size, layerWeights, cpu = {}, gpu = {}, usage = U
   const onCpu = parts.reduce((sum, [n, ms]) => sum + n * ms, 0), onGpu = parts.reduce((sum, [n, , ms]) => sum + n * ms, 0);
   return { cpuFaster: parts.length > 0 && onCpu < BETTER * onGpu, cpu: onCpu, gpu: onGpu };
 }
+/** T641.9: which of the device's keys (the worker's gpuAdapter.keys) a verdict of a model on the GPU alone is kept by:
+ * the key of the shaders the GPU's worker multiplies the model's weights with, its ownOf(). A dtype whose packing goes
+ * up as ternary's codes (PACKED's gpu.as: ternary, T232, and binary, T634.3) by the ternary key; a model of llama.cpp's
+ * blocks (blocksForm) by the blocks' (T547.3.7); any other by the plain one */
+export const keyKindOf = (dtype: Dtype, blocks = false): "plain" | "ternary" | "blocks" =>
+  packingOf(dtype)?.gpu?.as === "ternary" ? "ternary" : blocks ? "blocks" : "plain";
 /** T156: whether a verdict the page kept (alone: { key, cpu }, the device's key and /benchmark/'s CPU then) still holds:
  * the same device, browser and shaders (the key, T148's), and the same CPU reading of /benchmark/ (a new run of its
  * CPU section, or none now, asks again) */

@@ -22,7 +22,7 @@ import { GPU_END_MS, GPU_BLOCK } from "./forward/choice.ts";
 import { timePrompts, timedCell, SEARCH_SECONDS, endSearch } from "./forward/paths.ts";
 import { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, growMemory, weightsMemory, takesBlocks } from "./forward/memory.ts";
 import { aloneTakes, gpuBytes, gpuHoles, placer, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, aloneVerdict, aloneHolds,
-  gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, blocksForm, GPU_ALONE } from "./forward/alone.ts";
+  keyKindOf, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, blocksForm, GPU_ALONE } from "./forward/alone.ts";
 import { createForward } from "./forward/engine.ts";
 import { LAYER_KINDS } from "./forward/kinds.ts";
 import { tableHole } from "./forward/perlayer.ts";
@@ -47,7 +47,7 @@ type Handed = Plan & { toJs?(options: { dict_converter: typeof Object.fromEntrie
 // the part, forward/choice.ts, paths.ts, memory.ts, alone.ts)
 export { GPU_END_MS, GPU_BLOCK, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf,
   aloneTakes, gpuBytes, gpuHoles, placer, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, aloneVerdict, aloneHolds,
-  gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, blocksForm, needsWide, pastWide, automaticDtype, growMemory, weightsMemory,
+  keyKindOf, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, blocksForm, needsWide, pastWide, automaticDtype, growMemory, weightsMemory,
   createForward, LAYER_KINDS, takesBlocks, tableHole };
 // T329.2.2: a model whose table of every layer's inputs is not in the memory (tableHole(): one stretch of the
 // checkpoint), which holds the rest packed without it (stored bytes), a tensor at place(its offset in the checkpoint);

@@ -25,7 +25,7 @@ import { leave } from "./leave.ts";
 
 const J = await import(runtimeUrl("jobs.ts"));
 const { WORK, KIND, PACKED, ADDRESSES, SCRATCH, CONTROL_BYTES, BLOCK_TYPES, BLOCK_TABLES, SPREAD_THREADS, spreadBytes, packingOf, weightBytes, runner, warmUp, addressed } = J;
-const { gpuWeightBytes, aloneTakes, cpuReadBytes } = await import(runtimeUrl("forward/alone.js"));
+const { gpuWeightBytes, aloneTakes, cpuReadBytes, keyKindOf } = await import(runtimeUrl("forward/alone.js"));
 
 // kernels that write down their calls: [module, name, arguments]
 const standIn = (module, said) => new Proxy({}, {
@@ -332,6 +332,13 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   assert.deepEqual(["int8", "int6", "ternary", "binary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 0.28125, 1.125, 1.125, 1.125, 1.125],
     "on the GPU: int6 widened to int8, ternary as it is (T533: its scales widened to float32), binary spread to ternary (T634.3); what the GPU does not take is counted as int8");
   assert.deepEqual(["int8", "int6", "ternary", "binary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, true, false, false, false], "the dtypes a model on the GPU alone may be of");
+  // (T641.9: the device's key a verdict of the GPU alone is kept by, the shaders the GPU's worker multiplies with, a
+  // second copy: ternary's codes for ternary and binary (gpu.as), the blocks' for a model of llama.cpp's blocks)
+  const DTYPES = ["float32", "float16", "int8", "int6", "ternary", "binary"];
+  assert.deepEqual([false, true].map((blocks) => DTYPES.map((dtype) => keyKindOf(dtype, blocks))),
+    [["plain", "plain", "plain", "plain", "ternary", "ternary"], ["blocks", "blocks", "blocks", "blocks", "ternary", "ternary"]],
+    "the device's key of a model on the GPU alone, by its dtype (and whether it is of llama.cpp's blocks)");
+  assert.equal(keyKindOf("toString"), "plain", "a name PACKED has not is no packing of its own");
   assert.deepEqual(["int8", "int6", "ternary", "binary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 36e6 * (1.125 / 0.265625), 36e6 * (1.125 / 0.140625), 36e6],
     "what a CPU reads of a token, as int8 of the same weights (what /benchmark/'s CPU section measured the reading of)");
   // (the page's own copies, read on the main thread before the runtime is there: src/models/memory.ts)
