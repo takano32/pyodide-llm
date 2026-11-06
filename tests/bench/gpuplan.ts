@@ -18,6 +18,9 @@ assert.deepEqual(planned.map(({ message }) => message.step), ["check", "bandwidt
 assert.deepEqual(planned.filter(({ message }) => message.step === "token").map(({ message }) => [message.model, message.kind, message.sample]),
   [["llm-jp-3 150M", "widen", undefined], ["llm-jp-3 150M", "packed", undefined], ["Llama 3.2 1B", "widen", undefined], ["Llama 3.2 1B", "packed", undefined], ["Llama 3.2 1B", "widen", true]]);
 assert.deepEqual(planned[1].message, { step: "bandwidth", shape: [2048, 512] });
+// (T643.15: the shapes of gpu/models.ts's table, whose numbers are the models' own: Llama 3.2 1B's w1 [hidden, dim] and its classifier [vocab, dim])
+assert.deepEqual(planned[2].message, { step: "bandwidth", shape: [8192, 2048] });
+assert.deepEqual(planned[3].message, { step: "bandwidth", shape: [128256, 2048] });
 assert.deepEqual(planned.at(-1).message, { step: "prompt", counts: [1, 16, 64] });
 assert.equal(gpuPlan({ packed: false, fallback: false }, [...MODELS2, "Llama 3.2 3B"]).length, 15 - 2 + 1, "without the packed dot a token of each model once, and the 3B where it is asked for");
 // a step kept by its key in its place is kept once: no other step of the plan has its key (gpuKept() would write over it)
