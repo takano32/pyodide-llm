@@ -1,12 +1,13 @@
 // From Hugging Face, converted in the browser: the families that come as one that thinks and one that answers at
 // once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3, Spark-X2.5), MiniCPM5, LFM2, Gemma 3 and Ternary Bonsai.
 import {
-  AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASK_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
+  AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASKED_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
   QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, QWEN3_THINKING_2507,
   QWEN3_THINKING_AFTER_START, SPARK26_THINKING, SPARK_AT_ONCE, SPARK_THINKING, granite, lfm2Old, qwen35, spark,
 } from "./formats.ts";
 import {
-  AGENTS_A1_SAMPLING, BONSAI_27B_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
+  AGENTS_A1_SAMPLING, BONSAI_27B_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING,
+  SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.ts";
 import { binaryBonsai, gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
@@ -52,12 +53,12 @@ export const HF_FAMILIES: Entry[] = [
   { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Alibaba Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB", japanese: true, converted: 4.5e9,
     ...ggufOf("unsloth/Qwen3-4B-Instruct-2507-GGUF", "a06e946bb6b655725eafa393f4a9745d460374c9", "Qwen3-4B-Instruct-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Instruct-2507", "cdbee75f17c01a7cc42f958dc650907174af0554"), download: 4280405600,
-    conversion: {}, options: QWEN3_OWN_BOS, template: CHATML, generation: atOnce, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    conversion: {}, options: QWEN3_OWN_BOS, template: CHATML, generation: atOnce, ...ASKED_JAPANESE },
   // its chat_template begins the answer with <think> itself
   { group: "hf", id: "hf-qwen3-4b-thinking-2507", name: "Alibaba Qwen3 4B Thinking 2507", note: "thinks before it answers · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB", japanese: true, thinks: true, converted: 4.5e9,
     ...ggufOf("unsloth/Qwen3-4B-Thinking-2507-GGUF", "f40adb104d4d44aee52f398b60597c5866a973a3", "Qwen3-4B-Thinking-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Thinking-2507", "768f209d9ea81521153ed38c47d515654e938aea"), download: 4280405632,
-    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN3_THINKING_2507, generation: thinking, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN3_THINKING_2507, generation: thinking, ...ASKED_JAPANESE },
   // T235: Prism ML's ternary Qwen3 1.7B, every weight -1, 0 or 1 times a scale of its 128. Its PQ2_0 GGUF holds two
   // bits a weight, which the converter keeps as they are (T230: the ternary dtype, a quarter of int8's bytes, on kernels
   // of its own, T231; ?bits=8 widens them to int8 without loss of the values, as T235 did), with the vocabulary, config.json and
@@ -265,7 +266,7 @@ export const HF_FAMILIES: Entry[] = [
       "LiquidAI/LFM2.5-2.6B", "b212e75975bbda9676a94d3cb7b2ca25b65fed48"), download: 2874779648,
     conversion: {}, options: {}, template: `${CHATML}<think>`,
     generation: { steps: 0, temperature: 0.1, topp: 1.0, top_k: 50, repetition_penalty: 1.1 },
-    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    ...ASKED_JAPANESE },
   // T596.1: Liquid AI's LFM2 350M that translates English into Japanese and back. Its card says it works only with one
   // of two system messages, which name the direction: so two entries, one for each, with the same weights (shares).
   // The template is written out (Liquid AI's calls no macro, but the system message is the card's); the BOS
@@ -359,5 +360,5 @@ export const HF_FAMILIES: Entry[] = [
     ...ggufOf("Takenoko12345678/Spark-X2.5-4B-Japanese-GGUF", "79fd825680c88ba3b4f823202f0ef94aa90ba006", "Spark-X2.5-4B-Japanese-Q8_0.gguf",
       "Takenoko12345678/Spark-X2.5-4B-Japanese", "bfb70f0adf24aa4fb155f2a8481e1fa5c63766c1"), download: 4375021120,
     conversion: {}, options: spark, template: SPARK_AT_ONCE, generation: SPARK_SAMPLING.atOnce,
-    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    ...ASKED_JAPANESE },
 ];

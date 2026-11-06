@@ -5,6 +5,8 @@ import type { Sampled } from "../runtime/contracts/messages.ts";
 // steps: 0 is as many tokens as the context of the model holds. Nothing here holds a model back by default.
 export const sampled = (repetition_penalty: number) => ({ steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty });
 export const greedy = { steps: 0, temperature: 0.0 };
+// T643.19: the set of most of the Japanese entries (and some English ones): a light penalty on repetition
+export const JAPANESE_SAMPLING = sampled(1.1);
 
 // the sampling of Qwen3's model card for either form, without its top-k of 20: the engine has one since T274, on the
 // CPU alone, and these models' answers are the GPU's where it is faster (and the GPU's alone from 3B up)

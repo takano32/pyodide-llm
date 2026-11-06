@@ -53,6 +53,14 @@ export const QWEN3_THINKING_2507 = `${CHATML}<think>\n`;
 export const SARASHINA = "{prompt}</s><|assistant|>";
 export const sarashina = { bos: 9, specials: ["<|assistant|>", "<|user|>", "</s>"], stop_tokens: [1, 2, 7, 8, 9] } satisfies ListOptions;
 export const TRANSLATE = "Translate the following Japanese text into English.\n\n{日本語の文} (or English into Japanese)";
+// T643.19: an entry's first prompt and the placeholder of its box, the pairs that many entries share (spread last in
+// an entry, so that its keys keep their order)
+export const ASKED_JAPANESE = { prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE };
+export const CONTINUES_JAPANESE = { prompt: "これからの流行りは", placeholder: JAPANESE };
+export const STORY_ENGLISH = { prompt: "Once upon a time", placeholder: STORY };
+export const ASKED_ENGLISH = { prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" };
+export const ASKS_CODE = { prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" };
+export const TRANSLATES = { prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE };
 // llm-jp-4's chat_template is OpenAI's harmony (T132), with a system message of the model's name, its knowledge cutoff
 // and the date ({date}: filled() writes today's). The template ends at "<|start|>assistant" and leaves the channel to
 // the model; this one asks for the final channel, the answer, and so skips the analysis a harmony model may write
