@@ -1448,7 +1448,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - T643.13 [リファクタリング][計測実行] `tests/bench.ts` を `src/bench/` の部品ごとに分ける — 未着手
   - T643.14 [リファクタリング][計測実行] `/benchmark/` の `results`・`parts`・`live`・`__benchmark` に持ち主を置く — 未着手
   - T643.15 [リファクタリング][計測実行] `/benchmark/` と `src/bench/` の二重の型・関数・表と、名前で比べる所を 1 つに — 未着手
-  - T643.16 [リファクタリング][計測実行] `benchmark.astro` の節の markup を `SECTIONS`・`TITLES` と突き合わせる — 未着手
+  - T643.16 [リファクタリング][計測実行] `benchmark.astro` の節の markup を `SECTIONS`・`TITLES` と突き合わせる — 反映済み（2026-11-06、Opus medium、`t643.16-refactor` の 1 コミット: `tests/bench.ts` が `benchmark.astro` の `<section data-section>` とその `<h2>` を読み、名前と順を `SECTIONS`、題を `TITLES` と突き合わせる（どの `<section>` もこの形であることも、開き札の数との突き合わせで）。表から markup を作る案 (b) は `about` の文（持ち主のもの）を `.ts` に移すので取らなかった。製品のコードは変えていない（予定した違いは無し）。AGENTS.md の `/benchmark/` の項に節を足す時の 1 文。壊し方 3 つ（題の取り違え・節の要素の消し忘れ・形の違う `<section>`）が落ちた。CI を省いた。訳: 触ったのは試験と文書だけで、手元の `tests/bench.ts` が全部を踏む。レビュー（Sonnet low、2026-11-06）: OK、直しなし。開き札 `<section\b[^>]*>` の数と決まった形に合った数を突き合わせるので、属性の順・余分な空白・`data-section` の無い節・コメントの中の `<section>`・`<h2>` の中の要素は件数のずれで落ちる（余分な空白とコメントの節の壊し方 2 つを入れて落ちた）。残る穴は Astro の式 `{…}` が作る節で、今のページには無い。ページの部品（`run.ts` の `section[data-section]`・`section.ts` の `section[data-section="…"] h2`）より厳しい側。(b) を取らない訳は筋が通る。）
   - T643.17 [リファクタリング][モデル] note を事実の置き場にしない: 大きさ・日本語・考える形を項目の欄に — 未着手
   - T643.18 [リファクタリング][モデル] 一覧の型を閉じる: 種類の合併・`Dtype` の戻り・options の 6 つの鍵 — 未着手
   - T643.19 [リファクタリング][モデル] 項目の繰り返しを builder と定数に畳む（網の `models` が「同じ」と言う形で） — 未着手
