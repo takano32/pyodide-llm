@@ -70,20 +70,26 @@ export function weightsFor(entry: Weighed, asked: string | null | undefined, dev
   const int8 = modelBytes({ ...entry, conversion: { ...entry.conversion, dtype: "int8" } });
   return int8 && int8 + PAGE_MEMORY > deviceMemory * 2 ** 30 / 2 ? "int6" : undefined;
 }
+/** Whether memoryWarning() keeps quiet (T643.21): a device that does not say its memory (nothing is guessed), a model
+ * of unknown size, or a model that needs at most half of what the device says (all of it at the cap). */
+export function fits(entry: Weighed, deviceMemory: number | undefined): boolean {
+  const bytes = modelBytes(entry);
+  if (!deviceMemory || !bytes) return true;
+  return bytes + PAGE_MEMORY <= deviceMemory * 2 ** 30 / (deviceMemory >= DEVICE_MEMORY_CAP ? 1 : 2);
+}
 /** A sentence for a device that says it has less memory than twice what the model needs, or "". deviceMemory is
  * navigator.deviceMemory (GB; only Chromium tells, and at most 8): without it nothing is guessed. A device at the cap
  * has 8 GB or more, so it is warned only of a model that needs more than 8 GB (T133). */
 export function memoryWarning(entry: Weighed, deviceMemory: number | undefined): string {
-  const bytes = modelBytes(entry);
-  if (!deviceMemory || !bytes) return "";
-  const capped = deviceMemory >= DEVICE_MEMORY_CAP;
-  if (bytes + PAGE_MEMORY <= deviceMemory * 2 ** 30 / (capped ? 1 : 2)) return "";
+  if (fits(entry, deviceMemory)) return "";
+  const bytes = modelBytes(entry)!;
+  const capped = deviceMemory! >= DEVICE_MEMORY_CAP;
   return `${entry.name} needs about ${megabytes(bytes + PAGE_MEMORY)} of memory, and this device has ` +
     `${capped ? `${DEVICE_MEMORY_CAP} GB or more` : `${deviceMemory} GB`}: it may run out of memory.`;
 }
 /** T511.4: what the note of an entry of the list says of the devices it is for, by the page's own rules and not by
  * hand (the owner's choice of 2026-10-15): "desktop only" where a device that says 4 GB (a phone's) would be warned
- * by memoryWarning() (loaded, the model and PAGE_MEMORY pass 2 GiB: about 1.85 GB), and "Chrome and Firefox" where
+ * by fits() (loaded, the model and PAGE_MEMORY pass 2 GiB: about 1.85 GB), and "Chrome and Firefox" where
  * what it loads passes 4 GiB, which only a 64-bit memory holds (Safari has none and refuses it). Safari would take
  * six bits there (weightsFor()), and six bits with what the forward pass keeps after them (the keys and values, the
  * corrections of relaxed SIMD) pass 4 GiB about where eight bits alone do; the list has no header to count it
@@ -91,7 +97,10 @@ export function memoryWarning(entry: Weighed, deviceMemory: number | undefined):
 export function devicesOf(entry: Weighed) {
   const bytes = modelBytes(entry);
   // (T634.2: or an entry whose forward pass at the context passes it, its weights alone within: wide)
-  return [memoryWarning(entry, 4) && "desktop only", (entry.wide || bytes! > 2 ** 32) && "Chrome and Firefox"].filter(Boolean);
+  const words: string[] = [];
+  if (!fits(entry, 4)) words.push("desktop only");
+  if (entry.wide || bytes! > 2 ** 32) words.push("Chrome and Firefox");
+  return words;
 }
 /** What the page says when the worker ran out of memory (heap: the size of its WebAssembly memory then). */
 export function memoryFailure(entry: Weighed, heap: number | undefined, detail: string | undefined): string {
