@@ -44,13 +44,14 @@ const KEEP = 5, TIMED = 2, BETTER = 0.95;
 // (T368.4) a block the GPU's worker timed as it started; and either side's ms with whether the GPU takes it
 export type Block = { count: number; ms: number };
 export type Times = { cpu: number; gpu: number; faster: boolean };
+// (T641.11) a time kept on a list of the last KEEP, promptTimes()'s and tokenTimes()'s
+function lastKept(list: number[], value: number) {
+  list.push(value);
+  if (list.length > KEEP) list.shift();
+}
 export function promptTimes() {
   const cpu = new Map<number, number[]>(), ratios: number[] = [];
   let line: { fixed: number; perToken: number } | null = null;
-  const keep = (list: number[], value: number) => {
-    list.push(value);
-    if (list.length > KEEP) list.shift();
-  };
   const onLine = (count: number) => line!.fixed + line!.perToken * count;
   return {
     /** gpu/start.ts's blocks timed as it started: [{ count, ms }], the smaller first */
@@ -62,11 +63,11 @@ export function promptTimes() {
     /** a block of BATCH the CPU ran on threads threads: ms a token */
     cpu(threads: number, msPerToken: number) {
       if (!cpu.has(threads)) cpu.set(threads, []);
-      keep(cpu.get(threads)!, msPerToken);
+      lastKept(cpu.get(threads)!, msPerToken);
     },
     /** a block of count tokens the GPU ran, in ms */
     gpu(count: number, ms: number) {
-      if (line && onLine(count) > 0) keep(ratios, ms / onLine(count));
+      if (line && onLine(count) > 0) lastKept(ratios, ms / onLine(count));
     },
     /** { cpu, gpu, faster }: the ms of count tokens on either, on threads threads, and whether the GPU takes them;
      * null where the CPU is not timed yet (or the GPU has not started) */
@@ -96,19 +97,15 @@ export function promptTimes() {
 // The steps go to the GPU where a step takes less than BETTER of the CPU's.
 export function tokenTimes() {
   const cpu = new Map<number, number[]>(), gpu: number[] = [];
-  const keep = (list: number[], value: number) => {
-    list.push(value);
-    if (list.length > KEEP) list.shift();
-  };
   return {
     /** a token's forward pass on the CPU on threads threads, in ms */
     cpu(threads: number, ms: number) {
       if (!cpu.has(threads)) cpu.set(threads, []);
-      keep(cpu.get(threads)!, ms);
+      lastKept(cpu.get(threads)!, ms);
     },
     /** ms a step of a run on the GPU */
     gpu(ms: number) {
-      keep(gpu, ms);
+      lastKept(gpu, ms);
     },
     /** { cpu, gpu, faster }: ms a step on either, on threads threads, and whether the GPU takes the steps; null where
      * either is not timed yet */
