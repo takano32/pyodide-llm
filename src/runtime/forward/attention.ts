@@ -23,7 +23,25 @@
 // output value by value then gates every value of a head by the same one.
 import { BATCH, KIND } from "../jobs.ts";
 import type { Core, Kind, Layers, Product } from "./kinds.ts";
+import type { Footprint } from "./memory.ts";
+import type { Sizes } from "./sizes.ts";
 import type { Layer } from "../contracts/plan.ts";
+
+// T641.6: where a layer keeps its keys and values in the cache (cache.ts's hold()), of what the plan says of it: the
+// values of a position's key, as many as of its value (T331: its own heads' kvHeads times; T330, 0: it reads another
+// layer's and keeps none), and how many of the last positions it attends (T510.1, 0: all of them; a ring holds them
+// where the context is long enough, memory.ts's ringPositions()). make() holds its places by it, of the plan's facts,
+// and footprint() counts it (cached() below), of the facts the form says
+const placeOf = ({ window, head, kept }: Pick<Layer, "window" | "head" | "kept">, kvHeads: number) => ({ width: kept < 0 ? 0 : kvHeads * head, window });
+// what the form says of a layer that attends, as the plan would (Python's engine/plan.py's layer_facts()): its window,
+// one of the local layers' (T510.1); the size of its heads, the wide ones' (T331) or the form's (T124: dim / heads where
+// it says none); whether it reads another's keys and values (T330: kept is -1 then, and any other number here)
+export type CacheForm = Pick<Footprint, "head_dim" | "local" | "wide" | "kv_shared">;
+const factOf = ({ head_dim, local, wide, kv_shared }: CacheForm, { dim, heads }: Sizes, l: number) => ({
+  window: local?.layers.includes(l) ? local.window : 0,
+  head: wide?.layers.includes(l) ? wide.head_dim : head_dim || dim / heads,
+  kept: kv_shared?.layers.includes(l) ? -1 : 0,
+});
 
 export const attention: Kind = {
   // T568.4: on the GPU (gpu/attention.ts): its matrices and vectors are an attending layer's (an LFM2's and a Qwen3.5's
@@ -34,7 +52,11 @@ export const attention: Kind = {
   // a Qwen3.5's gate of the output beside q; and the scores of one token's attention, apart from its frame (tokens run
   // at once, each with scores of its own)
   frame: ({ gate, widths, seqLen, heads }) => ({ arrays: gate ? [["gate", widths.q * 4]] : [], apart: [["att", seqLen * heads * 4]] }),
-  cached: true,
+  // the places of its layers (l: every one's number among the model's layers) in the cache, as the form says them
+  cached: (sizes, form, layers) => {
+    const places = layers.map((l) => placeOf(factOf(form, sizes, l), sizes.kvHeads));
+    return { widths: places.map(({ width }) => width), windows: places.map(({ window }) => window) };
+  },
   make({ plan, eps, k, room, floats, matrix, at, S, matmuls, phase, cache }: Core, count: number, facts: Layer[] = []): Layers {
     const { n_heads: heads, n_kv_heads: kvHeads, seq_len: seqLen } = plan, { q: qDim, kv: kvDim } = plan.widths;
     // kNow, vNow: this token's key and value in float32, before they go into the cache
@@ -62,9 +84,10 @@ export const attention: Kind = {
     // with each one's window, which a ring may hold)
     // (T331: and with each one's width of keys and values)
     const windows: number[] = [], widths: number[] = [];
-    for (const { place, window, head, kept } of facts) {
-      windows[place] = window;
-      widths[place] = kept < 0 ? 0 : kvHeads * head;
+    for (const fact of facts) {
+      const { window, width } = placeOf(fact, kvHeads);
+      windows[fact.place] = window;
+      widths[fact.place] = width;
     }
     const first = cache.hold(count, windows, widths);
     // the job (jobs.ts) of the attention of token t of a run, at position pos (T110: over float16 keys and values, or float32)

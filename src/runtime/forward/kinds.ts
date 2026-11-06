@@ -13,6 +13,7 @@ import { linear } from "./linear.ts";
 import { convolution } from "./convolution.ts";
 import type { Kernels, Packed, Ready } from "../jobs.ts";
 import type { Cache } from "./cache.ts";
+import type { CacheForm } from "./attention.ts";
 import type { Framed, KindFrame } from "./memory.ts";
 import type { Sizes } from "./sizes.ts";
 import type { Stateful } from "../contracts/form.ts";
@@ -69,7 +70,12 @@ export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void; 
 //             its frame, BATCH of each by themselves)
 //   state()   the bytes of what its count layers keep besides, a number for each thing it takes of the memory, in
 //             the order make() takes them (make() takes these, and footprint() counts them)
-//   cached    its layers keep keys and values in the cache (cache.ts), which grows to the whole context
+//   cached()  its layers keep keys and values in the cache (cache.ts), which grows to the whole context. T641.6: where
+//             each of them does, of what the form says (form: the options of a model; layers: the numbers of its
+//             layers of this kind among the model's): the values of a position's key (as many of its value; 0: none,
+//             it reads another layer's) and how many of the last positions it attends (0: all of them; a ring holds
+//             them where the context is long enough, memory.ts's ringPositions()), as cache.ts's hold() is told them
+//             by make() of the plan's facts. footprint() counts the cache by these
 //   staged()  T545: the GPU's worker has its layers too, and their state goes up to it and comes back from it with the
 //             keys and values: the bytes of that state of count layers (make()'s staging)
 // What only a form can be asked, where there is no plan (Python's plan says both: its layers, its widths):
@@ -100,7 +106,8 @@ export type OnGpu = {
   plan?(sizes: Sizes): Partial<KindNumbers>; alone?: AloneLayers;
 };
 export type Kind = {
-  frame(sizes: Sizes): KindFrame & { apart?: Framed[] }; state?(sizes: Sizes, count: number): number[]; cached?: boolean; staged?(sizes: Sizes, count: number): number;
+  frame(sizes: Sizes): KindFrame & { apart?: Framed[] }; state?(sizes: Sizes, count: number): number[];
+  cached?(sizes: Sizes, form: CacheForm, layers: number[]): { widths: number[]; windows: number[] }; staged?(sizes: Sizes, count: number): number;
   layers?(form: Stateful, count: number): boolean[] | null; widths?(form: Stateful): Partial<Widths>;
   make(core: Core, count: number, facts?: Layer[]): Layers;
   gpu?: OnGpu;

@@ -174,7 +174,13 @@ const S = 100000;
   assert.deepEqual(attention.frame({ ...sizes, gate: true }).arrays, [["gate", 64 * 4]], "and a gate where the layers gate their output");
   // (T375.5) what footprint() reads of the kind: its layers keep keys and values, and nothing besides; and it says no
   // layer of a form is its own (a layer that no kind claims attends)
-  assert.deepEqual([attention.cached, attention.state, attention.layers, attention.widths], [true, undefined, undefined, undefined]);
+  assert.deepEqual([typeof attention.cached, attention.state, attention.layers, attention.widths], ["function", undefined, undefined, undefined]);
+  // T641.6: where its layers keep keys and values, of the form: of their own heads, none where a layer reads another's,
+  // and the window of a local one (the layers' numbers among the model's)
+  const formSizes = { ...sizes, kvHeads: 2 };
+  assert.deepEqual(attention.cached(formSizes, {}, [0, 1]), { widths: [32, 32], windows: [0, 0] }, "every layer of the model's heads, over every position");
+  assert.deepEqual(attention.cached(formSizes, { head_dim: 8, local: { layers: [1, 3], window: 24 }, wide: { layers: [2], head_dim: 64 }, kv_shared: { layers: [3], from: [1] } }, [0, 1, 2, 3]),
+    { widths: [16, 16, 128, 0], windows: [0, 24, 0, 24] }, "the form's heads, the wide ones', none of a layer that reads another's, and the local layers' window");
   const stand = (has, half = false) => {
     const room = memoryOf(), cacheSaid = [];
     const cache = keyValueCache({ room, k: new Proxy({}, { get: (_, name) => (...args) => cacheSaid.push([name, ...args]) }), kvDim: 32, half, start: 16, seqLen: 48 });

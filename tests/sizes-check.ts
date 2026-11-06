@@ -42,7 +42,7 @@ const HEADER = [64, 192, 6, 4, 2, 1000, 128];
 // a layer that no kind says is its own); "echo" keeps a state, says which layers of a form are its own by a key of its
 // own, has a width of its own, an array apart from the frame and two things it keeps
 const asked = [];
-const plain = { frame: (sizes) => { asked.push(["plain", sizes]); return { arrays: sizes.gate ? [["gate", 40]] : [], apart: [["scores", 1000]] }; }, cached: true, make() {} };
+const plain = { frame: (sizes) => { asked.push(["plain", sizes]); return { arrays: sizes.gate ? [["gate", 40]] : [], apart: [["scores", 1000]] }; }, cached: (sizes, form, layers) => ({ widths: layers.map(() => sizes.widths.kv), windows: layers.map(() => 0) }), make() {} };
 const echo = {
   layers: ({ echo: numbers }, count) => (numbers ? Array.from({ length: count }, (_, l) => l % numbers.every === 0) : null),
   widths: ({ echo: numbers }) => (numbers ? { echo: { wide: numbers.wide } } : {}),
@@ -55,7 +55,7 @@ const KINDS = { attention: plain, echo };
 // ---- a model's sizes of its header and its form
 {
   const none = sizesOfForm(HEADER, {}, KINDS);
-  assert.deepEqual(none, { dim: 64, hidden: 192, heads: 4, seqLen: 128, kinds: Array(6).fill("attention"), widths: { q: 64, kv: 32, linear: null, rotated: [64, 192] }, gate: false, numbers: {} });
+  assert.deepEqual(none, { dim: 64, hidden: 192, heads: 4, kvHeads: 2, seqLen: 128, kinds: Array(6).fill("attention"), widths: { q: 64, kv: 32, linear: null, rotated: [64, 192] }, gate: false, numbers: {} });
   const form = { head_dim: 32, echo: { every: 3, wide: 256 } }, some = sizesOfForm(HEADER, form, KINDS);
   assert.deepEqual(some.kinds, ["echo", "attention", "attention", "echo", "attention", "attention"], "a layer is of the kind that says so of the form, and attends where none does");
   assert.deepEqual(some.widths, { q: 128, kv: 64, linear: null, echo: { wide: 256 }, rotated: [64, 128, 192, 256] },
@@ -70,8 +70,8 @@ const KINDS = { attention: plain, echo };
   // the gate is the architecture's line, nothing of the form's
   assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2", undefined, "no such"].map((arch) => sizesOfForm(HEADER, { arch }, KINDS).gate), [false, false, false, true, false, false, false]);
   // and of a plan: what the plan says, said again
-  const plan = { dim: 1, hidden_dim: 2, n_heads: 3, seq_len: 4, layers: [{ kind: "a" }, { kind: "b" }], widths: { q: 5 }, tensors: { wg: {} } };
-  assert.deepEqual(sizesOfPlan(plan), { dim: 1, hidden: 2, heads: 3, seqLen: 4, kinds: ["a", "b"], widths: plan.widths, gate: true, numbers: plan });
+  const plan = { dim: 1, hidden_dim: 2, n_heads: 3, n_kv_heads: 6, seq_len: 4, layers: [{ kind: "a" }, { kind: "b" }], widths: { q: 5 }, tensors: { wg: {} } };
+  assert.deepEqual(sizesOfPlan(plan), { dim: 1, hidden: 2, heads: 3, kvHeads: 6, seqLen: 4, kinds: ["a", "b"], widths: plan.widths, gate: true, numbers: plan });
   assert.equal(sizesOfPlan({ ...plan, tensors: {} }).gate, false);
   console.log("ok: a model's sizes of its header and form: every layer's kind by the kinds' own word, the widths, the kinds had in the table's order; and of a plan as the plan says");
 }
@@ -98,7 +98,13 @@ const KINDS = { attention: plain, echo };
   // a kind that says nothing of what it keeps, and caches nothing, adds its frame alone
   const quiet = { ...echo, state: undefined };
   assert.equal(count(form, { attention: plain, echo: quiet }), count(form) - align(2000) - align(20));
-  assert.equal(count(form, { attention: plain, echo: { ...echo, cached: true } }), count(form) + seqLen * 2 * 2 * kv * 4, "keys and values for the layers of a kind that caches them");
+  assert.equal(count(form, { attention: plain, echo: { ...echo, cached: plain.cached } }), count(form) + seqLen * 2 * 2 * kv * 4, "keys and values for the layers of a kind that caches them");
+  // T641.6: each layer where its kind says it keeps them: of its own width (none: it keeps none), and the ring of its
+  // window's positions where the context is long enough (ringPositions(): 2 * (24 + BATCH) of 128 here)
+  const placed = (widths, windows) => ({ attention: plain, echo: { ...echo, cached: (sizes, form, layers) => ({ widths: layers.map((_, at) => widths[at]), windows: layers.map((_, at) => windows[at]) }) } });
+  assert.equal(count(form, placed([3 * kv, 0], [0, 0])), count(form) + seqLen * 2 * 3 * kv * 4, "a layer's own width, and none for one that keeps none");
+  assert.equal(count(form, placed([kv, kv], [24, 64 - BATCH])), count(form) + (2 * (24 + BATCH) + seqLen) * 2 * kv * 4, "a ring where it is shorter than the context");
+  assert.equal(count({ ...form, direct: true }, placed([kv, kv], [24, 64 - BATCH])), count({ ...form, direct: true }), "(none on the GPU alone)");
   // the gate, by the architecture's line alone
   assert.equal(count({ arch: "qwen35" }) - count({ arch: "llama" }), BATCH * align(40));
   // (the product's table is the default)

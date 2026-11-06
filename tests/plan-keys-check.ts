@@ -253,6 +253,16 @@ const returned = (fn) => {
     for (const kind of Object.keys(LAYER_KINDS)) {
       assert.deepEqual(formed.numbers[kind] ?? null, planned.numbers[kind] ?? null, `${which}: the numbers of the layers of the kind ${kind}, under the kind's name in the form and in the plan`);
     }
+    // T641.6: where the kinds that cache say their layers keep keys and values, of the form (footprint() counts the
+    // cache by it), is where the engine holds their places, of the plan's facts (attention.ts's make(): the values of a
+    // position's key, 0 for a layer that reads another's, and the window)
+    for (const [kind, { cached }] of Object.entries(LAYER_KINDS)) {
+      if (!cached) continue;
+      const facts = plan.layers.filter((layer) => layer.kind === kind);
+      assert.deepEqual(cached(formed, { ...form, local: cases[index].more.local ?? null }, facts.map((_, at) => plan.layers.indexOf(facts[at]))),
+        { widths: facts.map(({ head, kept }) => (kept < 0 ? 0 : plan.n_kv_heads * head)), windows: facts.map(({ window }) => window) },
+        `${which}: the places in the cache of the layers of the kind ${kind}, as its cached() says of the form and as the plan's facts say (${fix})`);
+    }
     // a layer's place is its place among the layers of its kind
     const places = {};
     // T375.5: the architecture's line of the copy, against what this plan says of each of its facts

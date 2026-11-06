@@ -204,18 +204,16 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // what the kinds' layers keep besides, whatever the context (T229: a linear-attention layer's state; T260: a
   // convolution layer's rows), each as the engine takes it of the memory
   bytes += had.flatMap(({ kind, count }) => kinds[kind].state?.(sizes, count) ?? []).reduce((sum, each) => sum + align(each), 0);
-  // the layers that keep keys and values (all of them where none keeps a state in their place). T510.1: those of them
-  // that attend a window keep a ring of its positions, taken whole at once (the local layers of the options, which are
-  // layers that attend: the plan gives no other a window)
-  // T331: each with the width of its own heads' keys and values (the form's wide ones, or the others')
-  const ring = direct ? 0 : ringPositions(options.local?.window ?? 0, seqLen), ringed = new Set(ring ? options.local!.layers : []);
-  // (the positions of every width there is: one, kvDim, but where some layers' heads are wider)
-  const wideLayers = new Set(options.wide?.layers ?? []), widths = new Map<number, number>(), reading = new Set(options.kv_shared?.layers ?? []);
-  sizes.kinds.forEach((kind, l) => {
-    if (!kinds[kind].cached || reading.has(l)) return;
-    const width = wideLayers.has(l) ? kvHeads * options.wide!.head_dim : kvHeads * (head_dim || dim / heads);
-    widths.set(width, (widths.get(width) ?? 0) + (ringed.has(l) ? ring : seqLen));
-  });
+  // the layers that keep keys and values (all of them where none keeps a state in their place), each where its kind
+  // says it does (T641.6: the kind's cached(), of the form: the width of its own heads' keys and values, T331, and none
+  // where it reads another's, T330), the whole context or (T510.1) the ring of its window's positions, taken whole at once
+  // (the positions of every width there is: one, kvDim, but where some layers' heads are wider; summed by the width, so
+  // that a width that is no whole number, of a header whose heads do not divide dim, comes out as it did to the bit)
+  const widths = new Map<number, number>();
+  for (const { kind } of had) {
+    const { widths: own = [], windows = [] } = kinds[kind].cached?.(sizes, options, sizes.kinds.flatMap((its, l) => (its === kind ? [l] : []))) ?? {};
+    own.forEach((width, place) => width && widths.set(width, (widths.get(width) ?? 0) + (ringPositions(windows[place], seqLen) || seqLen)));
+  }
   // the KV cache, doubled in place up to the whole context (T130: createForward's grow() moves the blocks up into the
   // room it adds; before, the smaller blocks were still there next to the larger ones at each step, 1.5 times the
   // context at the last), and a megabyte for the alignment of every array (T210, direct: the keys and values are the
