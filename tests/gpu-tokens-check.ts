@@ -365,6 +365,11 @@ console.log("ok: a wide Llama of int8 and of llama.cpp's blocks on every matrix 
     assert.equal(m.tokenAttention.attention.name, taken, `the fastest attention of a token taken: ${taken}`);
     const lengths = new Set([128, 2048].map((n) => Math.min(n, m.plan.seqLen))).size;
     assert.equal(clock.reads - before, m.tokenAttention.attentions.length * lengths * 3 * 2, "a fallback adapter: one pass to warm up and one pair a form and length");
+    // (and the difference of the submission of n and 2n, not a submission's time: the fast one has a submission cost of 100000 ms)
+    const { m: costly } = await opened({ costs: ({ code }) => (code === tiles) === fast ? 1 : 10, overhead: ({ code }) => (code === tiles) === fast ? 100000 : 0 });
+    await forms_.chooseAttention(costly);
+    await tokenAttention_.chooseTokenAttention(costly);
+    assert.equal(costly.tokenAttention.attention.name, taken, `the difference of n and 2n passes taken, not a submission's time: ${taken}`);
   }
   const { m: first } = await opened({ features: ["subgroups"] });
   const forms = tokens_.tokenCandidates(first), shape = tokens_.tokenShape(first);

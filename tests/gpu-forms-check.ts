@@ -164,6 +164,17 @@ console.log(`ok: llama.cpp's blocks: each of the ten types' texts checked right 
     assert.ok(right.every(({ name }) => name === target.name || ms[name] > ms[target.name]), `${target.name}: the least ms (${JSON.stringify(ms)})`);
     assert.equal(clock.reads - before, right.length * 3 * 2, "a fallback adapter: one pass to warm up and one pair a form");
   }
+  // (the difference of a pass of n and one of 2n: the form asked for costs 1000 ms a submission and 1 a dispatch, another form
+  // 0 and 2: a time of one submission alone would take the other, the difference (the cost of n passes) takes the one asked for)
+  for (const fallback of [true, false]) {
+    for (const target of [right[0], right.at(-1)]) {
+      const own = costsOf(target, fallback ? 1 : 20);
+      const { m } = await opened({ fallback, costs: own, overhead: (pipeline) => (formOf(pipeline, target) ? 100000 : 0) });
+      await forms_.chooseAttention(m);
+      await forms_.chooseMatrices(m);
+      assert.equal(m.forms.form.name, target.name, `${fallback ? "a fallback adapter" : "no fallback"}: the difference of n and 2n passes taken, not a submission's time (${target.name})`);
+    }
+  }
   const { m, clock } = await opened({ fallback: false, costs: costsOf(right[0], 20) });
   await forms_.chooseAttention(m);
   const before = clock.reads;
