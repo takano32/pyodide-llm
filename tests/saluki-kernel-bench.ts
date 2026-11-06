@@ -1,10 +1,12 @@
 // T363.1: the matrix product on the weights of Underdog Saluki 27B as its GGUF holds them (llama.cpp's blocks of 256
-// weights), in the forms of tests/saluki-forms.ts, beside the kernels of kernels/ on the same shapes (t2r: matmul_t2r
-// on ternary weights, which is how Ternary Bonsai 2 27B runs; q8r: matmul_q8r on int8) and a loop that only reads
-// (kernels/ceilings.ts's read: the memory's ceiling). One process, the forms taking turns in an order that changes
-// every turn, on 1 and 4 threads of one shared memory, the rows in chunks taken in turn as forward/threads.ts's
-// phase() cuts them. docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md has what each form is, the table and the
-// choice. Nothing here is of the page.
+// weights), on the page's kernels of kernels/blocks.ts and blocks_relaxed.ts (T363.4: "p.<TYPE>" matmul_sbr,
+// "pp.<TYPE>" matmul_sb), beside the kernels of kernels/ on the same shapes (t2r: matmul_t2r on ternary weights, which
+// is how Ternary Bonsai 2 27B runs; q8r: matmul_q8r on int8) and a loop that only reads (kernels/ceilings.ts's read:
+// the memory's ceiling). One process, the forms taking turns in an order that changes every turn, on 1 and 4 threads
+// of one shared memory, the rows in chunks taken in turn as forward/threads.ts's phase() cuts them. The candidates of
+// T363.1 (tests/saluki-forms.ts) went with T644.10; docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md has them, the
+// table and the choice. Nothing here is of the page. Kept as the one tool that times the blocks' kernels
+// (kernels/README.md's table): run it before and after a change to them.
 //
 // The matrices are read from memory, as a model's are (each read once a token): copies of each past every cache
 // (--megabytes a kind of weights, default 512), a call on each in turn (T159's review: one matrix timed again and
@@ -16,12 +18,11 @@
 // to itself on 1 and 4 threads to the bit. A form that differs stops the run.
 //
 //   node tests/saluki-kernel-bench.ts [--rounds 2] [--turns 5] [--megabytes 512] [--shapes 17408x5120,5120x17408]
-//        [--forms rb,ra,t2r] [--no-prompt]
+//        [--forms p.IQ2_XXS,t2r] [--no-prompt]
 //
-// Then a prompt of 16 tokens through the same matrices: IQ2_XXS's tile (a group's weights in registers for four
-// tokens), its rows widened to int8 for int8's tile, and the token's kernel for every token; beside the ternary and
-// the int8 tiles. And at the end what the speeds make of a token of the 27B (an estimate: the types that have no
-// form here are counted at the speed of the nearest that has).
+// Then a prompt of 16 tokens through the same matrices: the page's tiles (matmul_sbr_tile, and matmul_sbw_tile where
+// the engine multiplies signed by signed) against their type's token's kernel for every token; beside the ternary and
+// the int8 tiles. And at the end what the speeds make of a token of the 27B (an estimate).
 //
 // G weights/s is rows x n a second; GB/s counts what a row reads of the weights. The shapes are the 27B's (5120 wide,
 // its FFN 17408). Needs `npm ci` (AssemblyScript; compiles into .tmp/saluki-kernel-bench/) and a python3 with NumPy
@@ -34,18 +35,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Worker, isMainThread, workerData } from "node:worker_threads";
+import { blocksModel } from "./blocks-model.ts";
 import { leave } from "./leave.ts";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..") + "/";
 const work = root + ".tmp/saluki-kernel-bench/";
 // the numbers every thread reads
 const FORM = 0, FIRST = 1, STRIDE = 2, COPIES = 3, START = 4, N = 5, ROWS = 6, THREADS = 7, OUT = 8, XQ = 9, XS = 10, CALLS = 11,
-  COUNT = 12, FRAME = 13, OUT_FRAME = 14, TAB = 15, SCRATCH = 16, AREA = 17;
+  COUNT = 12, FRAME = 13, OUT_FRAME = 14, SCRATCH = 16, AREA = 17;
 const GO = 0, DONE = 1, NEXT = 2;
 const SCRATCH_BYTES = 131072;  // a thread's own: four rows widened to int8 with their scales and corrections at most
 
 // The bytes 256 weights take in each kind of weights (values, scales and corrections)
-const BYTES = { IQ2_XXS: 66, IQ3_S: 110, Q2_K: 84, IQ1_M: 56, IQ2_XS: 74, IQ2_S: 82, IQ3_XXS: 98, IQ1_S: 50, IQ4_XS: 136, Q4_K: 144, ternary: 72, int8: 320 };
+const BYTES = { IQ2_XXS: 66, IQ3_S: 110, Q2_K: 84, IQ1_M: 56, IQ2_XS: 74, IQ2_S: 82, IQ3_XXS: 98, IQ1_S: 50, IQ4_XS: 136, Q4_K: 144, ternary: 68, int8: 320 };
 const KINDS = Object.keys(BYTES), BLOCKS = KINDS.filter((kind) => kind !== "ternary" && kind !== "int8");
 // T363.4: the kernels of the page (kernels/blocks.ts, blocks_relaxed.ts), by the type's number in a GGUF: "p.<TYPE>" is
 // matmul_sbr on rows of the type, "pp.<TYPE>" matmul_sb (no relaxed SIMD). Their tables are sb_tables's, at c[AREA]
@@ -53,21 +55,7 @@ const TYPE = { Q2_K: 10, Q4_K: 12, IQ2_XXS: 16, IQ2_XS: 17, IQ3_XXS: 18, IQ1_S: 
 const product = (kernel, module, of) => ({ module, of, activations: "eight",
   run: (k, c, w, r0, r1) => k[kernel](c[OUT], c[XQ], c[XS], w, c[AREA], c[N], r0, r1, TYPE[of]) });
 const g128 = (c) => (c[ROWS] * c[N]) / 128;
-// a form of tests/saluki-forms.ts: (xout, xq, xs, w, tab, n, r0, r1, ...more)
-const block = (kernel, of, activations, more = () => []) => ({ module: "forms", of, activations,
-  run: (k, c, w, r0, r1, scratch) => k[kernel](c[OUT], c[XQ], c[XS], w, c[TAB], c[N], r0, r1, ...more(scratch)) });
 const FORMS = {
-  rb: block("matmul_iq2xxs", "IQ2_XXS", "eight"),
-  rbp: block("matmul_iq2xxs_plain", "IQ2_XXS", "eight"),
-  rb2: block("matmul_iq2xxs_once", "IQ2_XXS", "eight"),
-  rb3: block("matmul_iq2xxs_lanes", "IQ2_XXS", "eight"),
-  any: block("matmul_any", "IQ2_XXS", "eight", () => [0]),
-  ra: block("matmul_iq2xxs_ra", "IQ2_XXS", "seven"),
-  sb: block("matmul_iq2xxs_sb", "IQ2_XXS", "eight", (scratch) => [scratch]),
-  sa: block("matmul_iq2xxs_sa", "IQ2_XXS", "seven", (scratch) => [scratch]),
-  iq3s: block("matmul_iq3s", "IQ3_S", "eight"),
-  q2k: block("matmul_q2k", "Q2_K", "eight"),
-  iq1m: block("matmul_iq1m", "IQ1_M", "eight"),
   t2r: { module: "tree", of: "ternary", activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   q8r: { module: "tree", of: "int8", activations: "seven",
@@ -82,8 +70,7 @@ const FORMS = {
   } },
 };
 // the forms that are one arithmetic: the same numbers to the bit
-const SAME = [["rb", "rbp"], ["rb", "any"], ["rb", "rb2"], ["rb", "rb3"], ["rb", "p.IQ2_XXS"], ["rb", "pp.IQ2_XXS"], ["iq3s", "p.IQ3_S"],
-  ["p.IQ3_S", "pp.IQ3_S"], ["q2k", "p.Q2_K"], ["iq1m", "p.IQ1_M"]];
+const SAME = [["p.IQ2_XXS", "pp.IQ2_XXS"], ["p.IQ3_S", "pp.IQ3_S"]];
 // A prompt's tokens (T108) through the same matrix. A kernel without a tile takes the rows in blocks that stay in
 // the first cache, every token on each (jobs.ts's way)
 const blockOf = (n, bytes) => Math.max(1, Math.floor(16384 / ((n / 256) * bytes)));
@@ -98,16 +85,6 @@ const byToken = (form) => (k, c, w, r0, r1, scratch) => {
   [c[OUT], c[XQ], c[XS]] = saved;
 };
 const PROMPTS = {
-  "rb, token by token": { module: "forms", of: "IQ2_XXS", activations: "eight", run: byToken("rb") },
-  "rb tile": { module: "forms", of: "IQ2_XXS", activations: "eight",
-    run: (k, c, w, r0, r1) => k.matmul_iq2xxs_tile(c[OUT], c[XQ], c[XS], w, c[TAB], c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]) },
-  // (rw and sw: only where the engine's relaxed dot product is of signed bytes by signed bytes, arm64)
-  "rw tile": { module: "forms", of: "IQ2_XXS", activations: "eight", signed: true,
-    run: (k, c, w, r0, r1) => k.matmul_iq2xxs_tile_signed(c[OUT], c[XQ], c[XS], w, c[TAB], c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]) },
-  "sb tile": { module: "forms", of: "IQ2_XXS", activations: "eight",
-    run: (k, c, w, r0, r1, scratch) => k.matmul_iq2xxs_sb_tile(c[OUT], c[XQ], c[XS], w, c[TAB], c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], scratch) },
-  "sw tile": { module: "forms", of: "IQ2_XXS", activations: "eight", signed: true,
-    run: (k, c, w, r0, r1, scratch) => k.matmul_iq2xxs_sw_tile(c[OUT], c[XQ], c[XS], w, c[TAB], c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], scratch) },
   // T363.4: the page's tiles: matmul_sbr_tile, and matmul_sbw_tile where the engine multiplies signed by signed
   ...Object.fromEntries(["IQ2_XXS", "IQ3_S", "IQ2_S", "IQ1_M", "Q2_K"].flatMap((of) => [
     [`p.${of}, token by token`, { module: "blocksr", of, activations: "eight", run: byToken(`p.${of}`), base: true }],
@@ -116,16 +93,13 @@ const PROMPTS = {
     ...(of === "Q2_K" ? [] : [[`pw.${of} tile`, { module: "blocksr", of, activations: "eight", signed: true, by: `p.${of}, token by token`,
       run: (k, c, w, r0, r1, scratch) => k.matmul_sbw_tile(c[OUT], c[XQ], c[XS], w, c[AREA], c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], TYPE[of], scratch) }]]),
   ])),
-  "sa, token by token": { module: "forms", of: "IQ2_XXS", activations: "seven", run: byToken("sa"), untimed: true },
-  "sa tile": { module: "forms", of: "IQ2_XXS", activations: "seven",
-    run: (k, c, w, r0, r1, scratch) => k.matmul_iq2xxs_sa_tile(c[OUT], c[XQ], c[XS], w, c[TAB], c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], scratch) },
   "t2r tile": { module: "tree", of: "ternary", activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 3) },
   "q8r tile": { module: "tree", of: "int8", activations: "seven",
     run: (k, c, w, r0, r1) => k.matmul_q8r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, w + g128(c) * 144, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]) },
 };
 const NAMES = Object.keys(FORMS), ALL = { ...FORMS, ...PROMPTS }, EVERY = Object.keys(ALL);
-const modules = { forms: "forms.wasm", tree: "relaxed.wasm", plain: "plain.wasm", ceilings: "ceilings.wasm", blocks: "blocks.wasm", blocksr: "blocksr.wasm" };
+const modules = { tree: "relaxed.wasm", plain: "plain.wasm", ceilings: "ceilings.wasm", blocks: "blocks.wasm", blocksr: "blocksr.wasm" };
 const instances = (memory) => Object.fromEntries(Object.entries(modules).map(([name, file]) =>
   [name, new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(work + file)), { env: { memory } }).exports]));
 // forward/threads.ts's phase(): chunks of a quarter of a thread's share (T93), taken in turn; one thread the whole matrix
@@ -173,8 +147,7 @@ for (const form of timed) if (!FORMS[form]) throw new Error(`no form called ${fo
 fs.mkdirSync(work, { recursive: true });
 const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
   "--sharedMemory", "--maximumMemory", "65536"];
-for (const [source, out, features] of [["tests/saluki-forms.ts", "forms.wasm", "simd,relaxed-simd,threads"],
-  ["kernels/kernel_relaxed.ts", "relaxed.wasm", "simd,relaxed-simd,threads"], ["kernels/kernel.ts", "plain.wasm", "simd,threads"],
+for (const [source, out, features] of [["kernels/kernel_relaxed.ts", "relaxed.wasm", "simd,relaxed-simd,threads"], ["kernels/kernel.ts", "plain.wasm", "simd,threads"],
   ["kernels/ceilings.ts", "ceilings.wasm", "simd,threads"], ["kernels/blocks.ts", "blocks.wasm", "simd,threads"],
   ["kernels/blocks_relaxed.ts", "blocksr.wasm", "simd,relaxed-simd,threads"]]) {
   execFileSync("npx", [...asc, root + source, "-o", work + out, "--enable", features], { cwd: root, stdio: "inherit" });
@@ -201,8 +174,8 @@ const memory = new WebAssembly.Memory({ initial: Math.ceil(total / PAGE), maximu
 const control = new SharedArrayBuffer(16), sync = new Int32Array(control);
 const numbers = new SharedArrayBuffer(32 * 8), c = new Float64Array(numbers);
 const kernels = instances(memory);
-const signedDot = kernels.forms.signedDot() === 1;
-console.log(`saluki-kernel-bench: this engine's relaxed dot product ${signedDot ? "multiplies signed bytes by signed bytes: the rw and sw tiles are timed" : "takes its second operand as unsigned: no rw or sw tile"}`);
+const signedDot = blocksModel().signedDots(kernels.blocksr.signed_dots, new Int8Array(memory.buffer), new Int32Array(memory.buffer), 0);
+console.log(`saluki-kernel-bench: this engine's relaxed dot product ${signedDot ? "multiplies signed bytes by signed bytes: the pw.<TYPE> tiles are timed" : "does not multiply signed bytes by signed bytes: no pw.<TYPE> tile"}`);
 const workers = Array.from({ length: 4 }, (_, index) => new Worker(new URL(import.meta.url), { workerData: { memory, control, numbers, index } }));
 let gen = 0;
 function go() {
@@ -228,51 +201,24 @@ const shuffled = (list) => {
 const python = process.env.PYTHON ?? "python3";
 const CHECKED = 24;  // the rows held to the converter's reading
 
-// ---- the tables (tests/saluki-forms.ts has the layout)
-const TABLES = 21504 + 160;
-function tables(at) {
-  for (const kind of BLOCKS) fs.rmSync(`${work}${kind}.blocks`, { force: true });
-  execFileSync(python, [root + "tests/saluki_blocks.py", work], { stdio: "inherit" });
-  const grids = new Int8Array(fs.readFileSync(work + "grids.bin"));
-  if (grids.length !== 2048 + 2048 + 16384) throw new Error("grids.bin is not the three grids");
-  U.set(grids.subarray(0, 2048), at);
-  for (let i = 0; i < 128; i++) {
-    let bits = i, ones = 0;
-    for (let b = 0; b < 7; b++) ones += (i >> b) & 1;
-    bits |= (ones & 1) << 7;
-    for (let j = 0; j < 8; j++) U[at + 2048 + 8 * i + j] = (bits >> j) & 1 ? 255 : 0;
-  }
-  U.set(grids.subarray(2048, 4096), at + 3072);
-  for (let i = 0; i < 16384; i++) U[at + 5120 + i] = grids[4096 + i] + 1;
-  const v = at + 21504;
-  for (let j = 0; j < 16; j++) {
-    U[v + j] = 1 << (j & 7);
-    U[v + 16 + j] = j >> 3;
-    U[v + 32 + j] = 2 + (j >> 3);
-    U[v + 48 + j] = 3;
-    U[v + 64 + j] = 15;
-    U[v + 80 + j] = j >> 2;
-  }
-  for (let j = 0; j < 8; j++) { N16[(v + 96) / 2 + j] = j & 1 ? 0x80 : 0x08; N16[(v + 112) / 2 + j] = -7; }
-  N32.set([512, 64, 8, 1, 7, 7, 7, 7], (v + 128) / 4);
-}
-
 const table = [], promptTable = [];
 for (const [rows, n] of shapes) {
   if (n % 256) throw new Error(`rows of ${n} are not whole blocks of 256`);
   const groups = (rows * n) / 128, ng = n / 32, blocks = (rows * n) / 256;
   let top = PAGE;
   const take = (bytes) => { const at = top; top = align(at + bytes, 64); return at; };
-  const tab = take(TABLES), scratch = take(4 * SCRATCH_BYTES), area = take(34992), booksAt = take(33808);
-  tables(tab);
+  const scratch = take(4 * SCRATCH_BYTES), area = take(34992), booksAt = take(33808);
+  for (const kind of BLOCKS) fs.rmSync(`${work}${kind}.blocks`, { force: true });
+  execFileSync(python, [root + "tests/saluki_blocks.py", work], { stdio: "inherit" });
   U.set(fs.readFileSync(work + "codebooks.bin"), booksAt);
   if (kernels.blocks.sb_tables(area, booksAt) !== 34992) throw new Error("sb_tables wrote another number of bytes than 34992");
   // ---- each kind's first copy. A block of the four types is random bytes with a finite float16 d (and dmin)
   const half = () => 0x2800 + (next() & 0x3ff);
-  const d = new Float32Array(groups), tw = used.includes("ternary") || used.includes("int8") ? new Int8Array(rows * n) : null;
+  // (the ternary scales are float16s, T533: d is drawn as one, dh its bits)
+  const d = new Float32Array(groups), dh = new Uint16Array(groups), tw = used.includes("ternary") || used.includes("int8") ? new Int8Array(rows * n) : null;
   if (tw) {
     for (let i = 0; i < tw.length; i++) tw[i] = (next() % 3) - 1;
-    for (let g = 0; g < groups; g++) d[g] = Math.fround(0.005 + (next() % 4096) / 163840);
+    for (let g = 0; g < groups; g++) { dh[g] = 0x1d00 + (next() % 0x500); d[g] = Math.fround(2 ** ((dh[g] >> 10) - 15) * (1 + (dh[g] & 0x3ff) / 1024)); }
   }
   const random = (at, bytes) => {
     let x = (seed | 1) >>> 0;
@@ -301,7 +247,7 @@ for (const [rows, n] of shapes) {
       const scales = at + groups * 32;
       U.fill(0, at, scales);
       for (let j = 0; j < tw.length; j++) U[at + (j >> 2)] |= (tw[j] + 1) << (2 * (j & 3));
-      F.set(d, scales / 4);
+      N16.set(dh, scales / 2);
     },
     int8(at) {  // -127, 0, 127 and float32(d / 127) a group of 32
       const scales = at + groups * 128, corrections = scales + groups * 16;
@@ -382,7 +328,7 @@ for (const [rows, n] of shapes) {
     }
     return out;
   };
-  Object.assign(c, { [N]: n, [ROWS]: rows, [TAB]: tab, [SCRATCH]: scratch, [AREA]: area });
+  Object.assign(c, { [N]: n, [ROWS]: rows, [SCRATCH]: scratch, [AREA]: area });
   const set = (form) => Object.assign(c, { [FORM]: EVERY.indexOf(form), [FIRST]: firsts[FORMS[form].of], [STRIDE]: bytesOf(FORMS[form].of, rows, n),
     [COPIES]: copies[FORMS[form].of], [XQ]: places[FORMS[form].activations].xq, [XS]: places[FORMS[form].activations].xs, [COUNT]: 1 });
   const once = (form, threads, out) => {
@@ -458,9 +404,7 @@ for (const [rows, n] of shapes) {
         [XQ]: tokens[activations], [XS]: tokens[activations] + n, [COUNT]: count, [FRAME]: frame, [OUT_FRAME]: outFrame });
     };
     // a tile's numbers are its token's kernel's, to the bit
-    for (const [by, tile] of [["rb, token by token", "rb tile"], ["rb, token by token", "sb tile"], ["sa, token by token", "sa tile"],
-      ...(signedDot ? [["rb, token by token", "rw tile"], ["rb, token by token", "sw tile"]] : []), ["rb, token by token", "p.IQ2_XXS, token by token"],
-      ...Object.entries(PROMPTS).filter(([, prompt]) => prompt.by && (signedDot || !prompt.signed)).map(([name, prompt]) => [prompt.by, name])]) {
+    for (const [by, tile] of [...Object.entries(PROMPTS).filter(([, prompt]) => prompt.by && (signedDot || !prompt.signed)).map(([name, prompt]) => [prompt.by, name])]) {
       for (const [slot, name] of [[0, by], [1, tile]]) {
         setPrompt(name);
         Object.assign(c, { [THREADS]: 4, [CALLS]: 1, [START]: 0, [OUT]: tokenOuts[slot] });
@@ -473,8 +417,8 @@ for (const [rows, n] of shapes) {
         }
       }
     }
-    console.log(`saluki-kernel-bench: ${rows} x ${n}: the rb and sb tiles${signedDot ? ", the rw and sw tiles" : ""} give rb's numbers and the sa tile sa's to the bit, ${count} tokens, every row; ` +
-      `and the page's tiles (p.<TYPE> tile${signedDot ? ", pw.<TYPE> tile" : ""}) its token's kernel's`);
+    console.log(`saluki-kernel-bench: ${rows} x ${n}: the page's tiles (p.<TYPE> tile${signedDot ? ", pw.<TYPE> tile" : ""}) give ` +
+      `their token's kernel's numbers to the bit, ${count} tokens, every row`);
     const names = Object.keys(PROMPTS).filter((name) => !PROMPTS[name].untimed && (signedDot || !PROMPTS[name].signed));
     for (const threads of [1, 4]) {
       const calls = Math.max(2, Math.round((threads === 1 ? 6e8 : 18e8) / (rows * n * count)));
@@ -502,11 +446,11 @@ for (const [rows, n] of shapes) {
     }
   }
 }
-// ---- every form against rb, the geometric mean over the shapes
+// ---- every form against the first, the geometric mean over the shapes
 const geo = (list) => Math.exp(list.reduce((a, b) => a + Math.log(b), 0) / list.length);
 for (const threads of [1, 4]) {
   const of = (form) => table.filter((row) => row.threads === threads && row.form === form);
-  const base = of(timed.includes("rb") ? "rb" : timed[0]);
+  const base = of(timed[0]);
   console.log(`saluki-kernel-bench: ${threads} thread${threads > 1 ? "s" : ""}, all the shapes, G weights/s (against ${base[0].form}): ` +
     timed.map((form) => `${form} ${geo(of(form).map((row) => row.g)).toFixed(2)} (${geo(of(form).map((row, i) => row.g / base[i].g)).toFixed(2)}x)`).join(" | "));
 }
@@ -517,23 +461,10 @@ for (const threads of prompts ? [1, 4] : []) {
   console.log(`saluki-kernel-bench: a prompt of 16 tokens, ${threads} thread${threads > 1 ? "s" : ""}, all the shapes, G weights/s (against the token's kernel): ` +
     names.map((name) => `${name} ${geo(of(name)).toFixed(2)} (${geo(of(name).map((g, i) => g / base(name)[i])).toFixed(2)}x)`).join(" | "));
 }
-// ---- a token of the 27B from these speeds. The weights a token reads, by type (docs/notes/t361-saluki-2026-10-13.md:
-// every matrix but the embedding); a type with no form here goes at the speed of the nearest that has one. 21.2% of a
-// token's weights are in rows of 17408 (ffn_down), the rest in rows of 5120 or 6144
-const VALUES = { rb: 9201254400 + 2715811840 + 2160066560, iq3s: 2901934080 + 1399848960, q2k: 2721054720 + 230686720 + 104857600, iq1m: 1572864000 + 2589982720 };
-const WIDE = 0.212, ALL_VALUES = 25598361600;
-if (["rb", "iq3s", "q2k", "iq1m"].every((form) => timed.includes(form)) && shapes.some(([, n]) => n === 17408) && shapes.some(([, n]) => n === 5120)) {
-  for (const threads of [1, 4]) {
-    const speed = (form, wide) => geo(table.filter((row) => row.threads === threads && row.form === form && (row.n === 17408) === wide).map((row) => row.g)) * 1e9;
-    const seconds = (form, values) => values * (WIDE / speed(form, true) + (1 - WIDE) / speed(form, false));
-    const saluki = Object.entries(VALUES).reduce((sum, [form, values]) => sum + seconds(form, values), 0);
-    const others = ["t2r", "q8r"].filter((form) => timed.includes(form)).map((form) => `all of them as ${form} ${seconds(form, ALL_VALUES).toFixed(2)} s (${(1 / seconds(form, ALL_VALUES)).toFixed(2)} a second)`);
-    console.log(`saluki-kernel-bench: the matrix products of a token of the 27B (${(ALL_VALUES / 1e9).toFixed(1)} G weights), ${threads} thread${threads > 1 ? "s" : ""}, an estimate: ` +
-      `Saluki's types ${saluki.toFixed(2)} s (${(1 / saluki).toFixed(2)} a second: IQ2 ${seconds("rb", VALUES.rb).toFixed(2)}, IQ3 ${seconds("iq3s", VALUES.iq3s).toFixed(2)}, ` +
-      `K ${seconds("q2k", VALUES.q2k).toFixed(2)}, IQ1 ${seconds("iq1m", VALUES.iq1m).toFixed(2)})${others.length ? `; ${others.join("; ")}` : ""}`);
-  }
-}
-// T363.4: the same from the page's kernels, every type at its own speed (a token reads every matrix but the embedding:
+// ---- a token of the 27B from these speeds. 21.2% of a token's weights are in rows of 17408 (ffn_down), the rest in
+// rows of 5120 or 6144 (docs/notes/t361-saluki-2026-10-13.md)
+const WIDE = 0.212;
+// T363.4: on the page's kernels, every type at its own speed (a token reads every matrix but the embedding:
 // IQ1_M's 2,844,262,400 less the embedding's 1,271,398,400)
 const READ = { IQ2_XXS: 9201254400, IQ3_S: 2901934080, Q2_K: 2721054720, IQ2_S: 2715811840, IQ2_XS: 2160066560, IQ1_M: 1572864000, IQ3_XXS: 1399848960,
   IQ1_S: 2589982720, IQ4_XS: 230686720, Q4_K: 104857600 };
