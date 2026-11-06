@@ -6,6 +6,11 @@
 # a type the page has no kernel for is widened whole: Q6_K, Q5_K, Q8_0 and the blocks of 32 are read, not kept).
 #
 #   python tests/quant_sizes.py <entry id> [<a GGUF of the entry's repository> ...] [--work <directory = .tmp/quant-sizes>]
+#                               [--repository <owner/name>@<revision>]
+#
+# --repository (T649.4): the GGUFs are of that repository, and the entry's (safetensors) one is their vocabulary and
+# configuration, as an entry of such a GGUF names it (hf.vocabulary): PFN's plamo-3-translate-*-GGUF beside the entry's
+# plamo-3-translate-*.
 #
 # The heads are fetched by Range and kept in the work directory (tests/conducting.py's Heads): a second run asks
 # the network nothing. For a development machine (NumPy and the network).
@@ -39,7 +44,7 @@ def made(hf, work, dtype, blocks):
 def kinds_of(form):
     """{row of the checkpoint: its type, or its layers' types joined} of a form's kinds: the rows that stay blocks"""
     return {row: kind if isinstance(kind, str) else ",".join(f"{one}x{count}" for one, count in collections.Counter(kind).items())
-            for row, kind in (form or {}).get("kinds", {}).items()}
+            for row, kind in ((form or {}).get("kinds") or {}).items()}
 
 
 def main():
@@ -47,6 +52,7 @@ def main():
     parser.add_argument("entry")
     parser.add_argument("ggufs", nargs="*")
     parser.add_argument("--work", default=str(HERE.parent / ".tmp" / "quant-sizes"))
+    parser.add_argument("--repository")
     asked = parser.parse_args()
     entry = next(entry for entry in format_check.entries() if entry["id"] == asked.entry)
     hf = entry["hf"]
@@ -56,6 +62,10 @@ def main():
         rows.append({"form": dtype, "file": hf["weights"], "fetched": entry.get("download"), "checkpoint": sink.size})
     for name in asked.ggufs:
         other = {**hf, "weights": name}
+        if asked.repository:
+            repo, revision = asked.repository.split("@")
+            other = {"repo": repo, "revision": revision, "weights": name,
+                     "vocabulary": {key: value for key, value in hf.items() if key not in ("weights", "config")}}
         sizes = conducting.Heads.of(other, asked.work, between="__", remember=True)
         fetched = sizes.size("weights", name)
         try:

@@ -234,14 +234,14 @@ def listed(path, **more):
     path = Path(path)
     if path.suffix == ".gguf":
         return {"weights": path.name}, Directory(path.parent, **more)
+    # (T649.3: PLaMo's tokenizer.jsonl, which the conduct's candidates leave out and the list's entries name, is named
+    # where the folder has it; T649.4: beside a GGUF too, as the vocabulary's)
+    named = {"tokenizer": "tokenizer.jsonl"} if (path / "tokenizer.jsonl").exists() else {}
     ggufs = sorted(file.name for file in path.glob("*.gguf"))
     if ggufs:
         # (any vocabulary that is not empty: the conduct then asks "vocabulary" for all but the weights, and the one
         # folder is both places)
-        return {"weights": ggufs[0], "vocabulary": {"folder": path.name}}, Directory(path, **more)
-    # (T649.3: PLaMo's tokenizer.jsonl, which the conduct's candidates leave out and the list's entries name, is named
-    # where the folder has it)
-    named = {"tokenizer": "tokenizer.jsonl"} if (path / "tokenizer.jsonl").exists() else {}
+        return {"weights": ggufs[0], "vocabulary": {"folder": path.name, **named}}, Directory(path, **more)
     return {"weights": "model.safetensors", **named}, Directory(path, **more)
 
 

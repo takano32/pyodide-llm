@@ -71,7 +71,9 @@ TRANSFORMS = {
     "heads": Transform(heads_of, lambda shape, step: (shape[0] * step[1], *shape[1:]), moves_rows=True),
     "part": Transform(part_of, lambda shape, step: (shape[1], shape[0] * step[2]), turns_back=True),
     "row": Transform(row_of, lambda shape, step: (shape[0] * step[2],)),
-    "rows": Transform(rows_of, lambda shape, step: (step[3], *shape[1:])),
+    # (T649.4: a run of whole rows, the values as they are: a PLaMo 3's q, k and v of its qkv_proj, or the gate and the
+    # up of its gate_up_proj, stay in a GGUF's blocks)
+    "rows": Transform(rows_of, lambda shape, step: (step[3], *shape[1:]), moves_rows=True),
     # T253: a Granite's q by query_scale(), in float32 whatever the tensor was stored as
     "scale": Transform(lambda values, step, head_size: np.asarray(values, dtype=np.float32) * np.float32(step[1]),
                        same_shape, piecewise=True),

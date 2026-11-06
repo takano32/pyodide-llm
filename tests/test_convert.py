@@ -199,7 +199,7 @@ TRANSFORM_FACTS = [
     (("heads", 3, 1, 2, 2), (12,), (4,), False, True, False),
     (("part", 1, 3), (4, 9), (3, 4), False, False, True),
     (("row", 1, 3), (9,), (3,), False, False, False),
-    (("rows", 1, 4, 6), (6, 2), (3, 2), False, False, False),
+    (("rows", 1, 4, 6), (6, 2), (3, 2), False, True, False),
     (("scale", 0.5), (4, 3), (4, 3), True, False, False),
     (("one",), (4,), (4,), False, False, False),
     (("plus", 0.2), (4,), (4,), False, False, False),

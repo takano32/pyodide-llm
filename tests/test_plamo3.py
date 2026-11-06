@@ -325,3 +325,134 @@ def test_the_engine_reads_the_tensors_where_the_layout_puts_them():
                 assert np.allclose(getattr(llama, ours)[layer], tensors[at + theirs + ".weight"] + np.float32(offset),
                                    atol=max(tolerance, 1e-7) if dtype == "float16" else 1e-7), (dtype, ours)
         assert np.allclose(llama.rms_final_weight, tensors["model.norm.weight"] + 1, atol=1e-7 if dtype != "float16" else 2e-3)
+
+
+# ---- a GGUF of a PLaMo 3 (T649.4)
+# llama.cpp's names of a PLaMo 3's tensors (conversion/plamo.py's Plamo3Model, gguf-py's tensor_mapping.py and
+# src/models/plamo3.cpp at 67107ac3: the norms behind the attention and the FFN without a ".weight"), written a second
+# time on purpose, and what it adds to each norm (the model's offsets)
+GGUF_NAMES = {"model.embed_tokens.weight": "token_embd.weight", "model.norm.weight": "output_norm.weight",
+              "lm_head.weight": "output.weight"}
+GGUF_LAYER = {"pre_mixer_norm.weight": "attn_norm.weight", "mixer.qkv_proj.weight": "attn_qkv.weight",
+              "mixer.q_norm.weight": "attn_q_norm.weight", "mixer.k_norm.weight": "attn_k_norm.weight",
+              "mixer.o_proj.weight": "attn_output.weight", "post_mixer_norm.weight": "post_attention_norm",
+              "pre_mlp_norm.weight": "ffn_norm.weight", "mlp.gate_up_proj.weight": "ffn_up.weight",
+              "mlp.down_proj.weight": "ffn_down.weight", "post_mlp_norm.weight": "post_ffw_norm"}
+GGUF_ADDED = {"post_mixer_norm.weight": 1 / 5, "post_mlp_norm.weight": 1 / 5 ** 1.5}
+
+
+def plamo3_gguf(tensors, config, matrices=None, more=()):
+    """A GGUF v3 of a PLaMo 3's Hugging Face tensors the way llama.cpp writes one (pfnet/plamo-3-translate-0.8b-GGUF's
+    header, read by Range): q, k and v one matrix and the gate and the up one, in Hugging Face's order; every norm with
+    what the model adds to it, F32; the yarn, the window and its pattern as llama.cpp says them. matrices: what makes a
+    matrix's blocks and their ggml type (None: F32). more: metadata (key, kind, value) over these. Returns the file
+    and, under the Hugging Face names, the values it stands for."""
+    string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
+    arch = "plamo3"
+    said = {f"{arch}.block_count": (4, config["num_hidden_layers"]), f"{arch}.context_length": (4, config["max_position_embeddings"]),
+            f"{arch}.embedding_length": (4, config["hidden_size"]), f"{arch}.feed_forward_length": (4, config["intermediate_size"]),
+            f"{arch}.attention.head_count": (4, config["num_attention_heads"]),
+            f"{arch}.attention.head_count_kv": (4, config["num_key_value_heads"]),
+            f"{arch}.attention.key_length": (4, config["head_dim"]), f"{arch}.attention.value_length": (4, config["head_dim"]),
+            f"{arch}.attention.layer_norm_rms_epsilon": (6, config["rms_norm_eps"]),
+            f"{arch}.rope.freq_base": (6, config["rope_theta"]), f"{arch}.rope.freq_base_swa": (6, config["rope_local_theta"]),
+            f"{arch}.attention.sliding_window": (4, config["window_size"]),
+            f"{arch}.attention.sliding_window_pattern": (4, config["sliding_window_pattern"])}
+    if config["rope_scaling_factor"] != 1:
+        said.update({f"{arch}.rope.scaling.type": (8, "yarn"), f"{arch}.rope.scaling.factor": (6, config["rope_scaling_factor"]),
+                     f"{arch}.rope.scaling.original_context_length": (4, config["initial_context_length"]),
+                     f"{arch}.rope.scaling.yarn_beta_fast": (6, 32.0), f"{arch}.rope.scaling.yarn_beta_slow": (6, 1.0),
+                     f"{arch}.rope.scaling.yarn_truncate": (7, False)})
+    said.update({key: (kind, value) for key, kind, value in more})
+    metadata = [("general.architecture", 8, arch), *((key, kind, value) for key, (kind, value) in said.items() if value is not None)]
+    stored = {}
+    for name, tensor in tensors.items():
+        if name in GGUF_NAMES:
+            gguf = GGUF_NAMES[name]
+        else:
+            layer, rest = name.removeprefix("model.layers.layers.").split(".", 1)
+            gguf = f"blk.{layer}.{GGUF_LAYER[rest]}"
+        added = 0.0 if tensor.ndim != 1 else next((c for end, c in GGUF_ADDED.items() if name.endswith(end)), 1.0)
+        stored[gguf] = (name, tensor.astype(np.float32) + np.float32(added), added)
+    out = [b"GGUF", struct.pack("<IQQ", 3, len(stored), len(metadata))]
+    for key, kind, value in metadata:
+        out.append(string(key) + struct.pack("<I", kind) + metadata_value(kind, value))
+    blobs, offset, same = [], 0, {}
+    for gguf, (name, value, added) in stored.items():
+        if value.ndim == 2 and matrices is not None:
+            make, type_ = matrices
+            blob, held = make(np.ascontiguousarray(value))
+        else:
+            blob, held, type_ = np.ascontiguousarray(value, np.float32).tobytes(), value, 0
+        same[name] = (held - np.float32(added)).astype(np.float32) if added else held
+        out.append(string(gguf) + struct.pack("<I", value.ndim) + struct.pack(f"<{value.ndim}Q", *reversed(value.shape))
+                   + struct.pack("<IQ", type_, offset))
+        blobs.append(blob + b"\0" * (-len(blob) % 32))
+        offset += len(blobs[-1])
+    head = b"".join(out)
+    head += b"\0" * (-len(head) % 32)
+    return head + b"".join(blobs), same
+
+
+def metadata_value(kind, value):
+    from test_gguf import metadata_value as of
+    return of(kind, value)
+
+
+def gguf_converted(file, config, dtype, blocks=False):
+    vocabulary = unigram(config["vocab_size"])
+    header, base = llama2_convert.gguf_weights(file, json.dumps(config))
+    made = llama2_convert.Conversion(header, base, json.dumps(config), vocabulary, "tokenizer.json", dtype=dtype,
+                                     max_seq_len=config["max_position_embeddings"], start=base, blocks=blocks)
+    for start in range(base, len(file), 5000):
+        made.feed(file[start:start + 5000])
+    made.finish()
+    return made
+
+
+@pytest.mark.parametrize("dtype", ["float32", "int8"])
+def test_a_gguf_with_the_originals_files_is_the_safetensors_conversion(dtype):
+    """llama.cpp's names of a PLaMo 3, its norms with what the model adds (the plan leaves that step out: the "done"
+    marks), q, k and v and the gate and the up as Hugging Face has them: the checkpoint, tokenizer.bin and options of
+    the safetensors of the same values, to the byte."""
+    tensors, config = plamo3_model()
+    file, same = plamo3_gguf(tensors, config)
+    got, expected = gguf_converted(file, config, dtype), conversion(same, config, dtype)
+    assert bytes(got.checkpoint) == bytes(expected.checkpoint)
+    assert bytes(got.tokenizer) == bytes(expected.tokenizer)
+    assert got.options == expected.options and got.options["local"]["layers"] == [0, 1, 2]
+
+
+@pytest.mark.parametrize("more, what", [
+    ([("plamo3.attention.sliding_window", 4, 8)], "sliding-attention layers"),
+    ([("plamo3.attention.sliding_window_pattern", 4, 2)], "sliding-attention layers"),
+    ([("plamo3.rope.freq_base_swa", 6, 1000.0)], "sliding-attention layers"),
+    ([("plamo3.rope.scaling.factor", 6, 8.0)], "yarn RoPE scaling"),
+    ([("plamo3.rope.scaling.yarn_beta_fast", 6, 16.0)], "otherwise than a PLaMo 3"),
+    ([("plamo3.rope.scaling.yarn_truncate", 7, True)], "otherwise than a PLaMo 3"),
+    ([("plamo3.attention.head_count_kv", 4, 2)], "number of key-value heads"),
+])
+def test_a_gguf_that_is_not_the_originals_is_refused(more, what):
+    """What no tensor says: which layers attend a window, the window, its base, yarn (and the bounds a PLaMo 3's
+    config.json does not say, which the converter takes as the model's own)."""
+    tensors, config = plamo3_model()
+    llama2_convert.gguf_weights(plamo3_gguf(tensors, config)[0], json.dumps(config))  # its own config goes through
+    with pytest.raises(ValueError, match=what):
+        llama2_convert.gguf_weights(plamo3_gguf(tensors, config, more=more)[0], json.dumps(config))
+
+
+def test_its_blocks_are_kept_q_k_and_v_and_the_gate_and_the_up_cut_as_bytes():
+    """Conversion(blocks=True): every matrix of a GGUF in llama.cpp's blocks stays as it is, q, k and v and the gate and
+    the up of the FFN a run of the rows of one tensor each (the plan's "rows", moved as bytes), and the logits are those
+    of the conversion that widens the same file, to the bit (float32 both). On rows of whole blocks of 256."""
+    from test_superblocks import blocks_of
+    tensors, config = plamo3_model(dim=256, hidden_dim=512, head_dim=64, n_heads=4, n_kv_heads=1, spread=0.05)
+    file, _ = plamo3_gguf(tensors, config, matrices=blocks_of("IQ2_XS", scale=0x1400))
+    kept, wide = gguf_converted(file, config, "float32", blocks=True), gguf_converted(file, config, "float32")
+    assert kept.options["kinds"] == dict.fromkeys(
+        ("token_embedding_table", "wq", "wk", "wv", "wo", "w1", "w2", "w3", "wcls"), "IQ2_XS")
+    moved = {name.split(".")[-2] for name, orders in kept.stream.stay.items() if orders is not None}
+    assert moved == {"qkv_proj", "gate_up_proj"}, moved
+    read = lambda made: Llama(bytes(made.checkpoint), bytes(made.tokenizer), **made.options)
+    ours, theirs = (np.stack([read(made).forward(token, at) for at, token in enumerate(TOKENS)]) for made in (kept, wide))
+    assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))

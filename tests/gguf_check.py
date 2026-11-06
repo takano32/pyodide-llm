@@ -325,6 +325,19 @@ NAMES["gemma4"] = ({**NAMES["gemma3"][0], "per_layer_token_embd.weight": "model.
                    {**NAMES["gemma3"][2], "inp_gate": "per_layer_input_gate", "proj": "per_layer_projection",
                     "post_norm": "post_per_layer_input_norm"})
 WHOLE["gemma4"] = {"layer_output_scale.weight": "layer_scalar"}
+# T649.4: a PLaMo 3's (llama.cpp's conversion/plamo.py's Plamo3Model, gguf-py's tensor_mapping.py and
+# src/models/plamo3.cpp at 67107ac3): q, k and v one matrix as the original's (attn_qkv), the gate and the up of the FFN
+# one too (ffn_up: the original's gate_up_proj), the norms behind the attention and the FFN named without a ".weight"
+# (post_attention_norm, post_ffw_norm). The layers are model.layers.layers. Written out here rather than taken from the
+# converter's family
+NAMES["plamo3"] = ({"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",
+                    "output.weight": "lm_head.weight"}, "model.layers.layers.{}.",
+                   {"attn_norm": "pre_mixer_norm", "attn_qkv": "mixer.qkv_proj", "attn_q_norm": "mixer.q_norm",
+                    "attn_k_norm": "mixer.k_norm", "attn_output": "mixer.o_proj", "ffn_norm": "pre_mlp_norm",
+                    "ffn_up": "mlp.gate_up_proj", "ffn_down": "mlp.down_proj"})
+WHOLE["plamo3"] = {"post_attention_norm": "post_mixer_norm.weight", "post_ffw_norm": "post_mlp_norm.weight"}
+# what llama.cpp adds to each norm of a PLaMo 3 (Plamo3Model.modify_tensors: the model's offsets), by the original's name
+PLAMO3_ADDED = {"post_mixer_norm.weight": 1.0 / 5, "post_mlp_norm.weight": 1.0 / 5 ** 1.5}
 
 
 def hugging_face_name(name, arch="llama"):
@@ -360,6 +373,10 @@ def as_llama_cpp_writes(target, original, arch):
         # gemma.py's Gemma3Model.norm_shift: a tensor whose name ends in norm.weight). The embedding is stored as it is
         # (llama.cpp multiplies the row by sqrt(dim) at run time)
         return original.astype(np.float32) + np.float32(1), "1 + weight"
+    if arch == "plamo3" and target.endswith("norm.weight"):
+        # T649.4: every norm of a PLaMo 3 with what the model adds to it, 1 but behind the attention and the FFN
+        added = next((c for name, c in PLAMO3_ADDED.items() if target.endswith(name)), 1.0)
+        return (original.astype(np.float32) + np.float32(added)).astype(np.float32), f"{added:.4g} + weight"
     if arch != "qwen35":
         return original, ""
     if target.endswith(".A_log"):
@@ -810,7 +827,7 @@ def config_pairs(config, arch="llama"):
         pairs[4] = ("attention.head_count_kv", "num_key_value_heads of the attention layers, 0 of the others",
                     [groups if kind == "full_attention" else 0 for kind in kinds], True)
         pairs.append(("shortconv.l_cache", "conv_L_cache", config.get("conv_L_cache", 3), True))
-    if arch == "gemma3":
+    if arch in ("gemma3", "plamo3"):
         # T261.3: which layers attend a window, the window and their base of RoPE, which are no tensor. llama.cpp
         # writes the layers as attention.sliding_window_pattern, a yes or no a layer (conversion/gemma.py at 4413a192:
         # set_swa_pattern); config.json says layer_types, or a pattern of every sixth layer attending them all
@@ -819,8 +836,11 @@ def config_pairs(config, arch="llama"):
         kinds = config.get("layer_types") or [
             "full_attention" if (layer + 1) % config.get("sliding_window_pattern", config.get("_sliding_window_pattern", 6)) == 0
             else "sliding_attention" for layer in range(layers)]
-        pairs += [("attention.sliding_window_pattern", "layer_types (sliding_attention)",
-                   [kind == "sliding_attention" for kind in kinds], True),
+        # (T649.4: a PLaMo 3's GGUF writes the pattern as the number its config.json says, sliding_window_pattern)
+        pattern = (("attention.sliding_window_pattern", "sliding_window_pattern", config.get("sliding_window_pattern", 8), True)
+                   if arch == "plamo3" else ("attention.sliding_window_pattern", "layer_types (sliding_attention)",
+                                             [kind == "sliding_attention" for kind in kinds], True))
+        pairs += [pattern,
                   ("attention.sliding_window", "sliding_window", config.get("sliding_window"), True),
                   ("rope.freq_base_swa", "rope_local_base_freq", config.get("rope_local_base_freq", 10000.0), True)]
     if arch == "gemma4":
@@ -933,7 +953,9 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                  # T532: as families/llama.py reads them (the bounds by transformers' names, the rest by llama.cpp's)
                  "yarn_beta_fast": "beta_fast", "yarn_beta_slow": "beta_slow", "attn_factor": "attn_factor",
                  "yarn_attn_factor": "yarn_attn_factor", "yarn_log_multiplier": "yarn_log_multiplier",
-                 "yarn_ext_factor": "yarn_ext_factor"}
+                 "yarn_ext_factor": "yarn_ext_factor",
+                 # T649.4: a PLaMo 3's config.json (normalized) says truncate as false, and its GGUF yarn_truncate
+                 "yarn_truncate": "truncate"}
         ours = {name: metadata[f"{arch}.rope.scaling.{key}"] for key, name in names.items()
                 if metadata.get(f"{arch}.rope.scaling.{key}") is not None} if said else None
         same = ours is not None and theirs is not None and set(ours) == set(theirs) \

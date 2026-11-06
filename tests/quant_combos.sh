@@ -14,7 +14,8 @@
 #   speed (forward.js and its software threads on a shared memory): a token at a time on THREADS (1,4), POSITIONS (64)
 #   positions from the BOS, and a prompt of PROMPT tokens (256) in blocks of 16 on the most threads. One process a
 #   form a round (a process holds one model): the forms are read against each other within the job, on its one CPU.
-# STEPS="text answers speed" (the default): which of 2 to 4 to run.
+# STEPS="text answers speed" (the default): which of 2 to 4 to run. GGUF_REPO=<owner/name>@<revision> (T649.4): the
+# GGUFs named are of that repository, not the entry's (PROMPTS='[…]' goes on to tests/answers.ts: a translator's texts).
 #
 #   node tests/ci.ts run tests.yml only_extra=true extra="npm ci && make kernels python && bash tests/quant_combos.sh hf-shisa-v2.1c-lfm2-350m int8 int6 shisa-v2.1c-lfm2-350m.Q4_K_M.gguf" --grep "quant_combos|start_check|answers|page:" --ref <branch>
 #
@@ -59,7 +60,13 @@ for form in "$@"; do
         # takes the first .gguf of a folder)
         place="$room/blocks-${form%.gguf}"
         mkdir -p "$place"
-        repo=$(node -e 'import("./src/models.ts").then(({ MODELS }) => { const m = MODELS.find((m) => m.id === process.argv[1]); console.log(`${m.hf.repo}/resolve/${m.hf.revision}`); })' "$id")
+        # (T649.4: GGUF_REPO=<owner/name>@<revision>, a GGUF of another repository than the entry's: PFN's
+        # plamo-3-translate-*-GGUF beside the entry's safetensors, whose files are its vocabulary and configuration)
+        if [ -n "${GGUF_REPO:-}" ]; then
+          repo="${GGUF_REPO%@*}/resolve/${GGUF_REPO#*@}"
+        else
+          repo=$(node -e 'import("./src/models.ts").then(({ MODELS }) => { const m = MODELS.find((m) => m.id === process.argv[1]); console.log(`${m.hf.repo}/resolve/${m.hf.revision}`); })' "$id")
+        fi
         python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "tests"); from fetching import download; download(sys.argv[1], Path(sys.argv[2]))' \
           "https://huggingface.co/$repo/$form" "$place/$form"
         dir=$( [ -d "$folder" ] && echo "$folder" || dirname "$folder" )

@@ -445,6 +445,7 @@ CASES = {
     "nothing": (dict(), None, 8),
     "a GPT-2's c_proj, transposed in the file and by the plan": (dict(transposed=True), ("transpose",), 8),
     "a GPT-2's k, a part of c_attn": (dict(transposed=True), ("part", 1, 3), 8, 48),
+    "a PLaMo 3's k, a run of the rows of its qkv_proj, turned by the plan": (dict(), (("rows", 32, 40, 48), ("permute", 1)), 8, 48),
 }
 
 
