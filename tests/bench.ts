@@ -1068,6 +1068,9 @@ assert.deepEqual(planned.filter(({ message }) => message.step === "token").map((
 assert.deepEqual(planned[1].message, { step: "bandwidth", shape: [2048, 512] });
 assert.deepEqual(planned.at(-1).message, { step: "prompt", counts: [1, 16, 64] });
 assert.equal(gpuPlan({ packed: false, fallback: false }, [...MODELS2, "Llama 3.2 3B"]).length, 15 - 2 + 1, "without the packed dot a token of each model once, and the 3B where it is asked for");
+// a step kept by its key in its place is kept once: no other step of the plan has its key (gpuKept() would write over it)
+const onceKeys = planned.map(({ message }) => message.step).filter((key) => key !== "bandwidth" && key !== "token");
+assert.equal(new Set(onceKeys).size, onceKeys.length, `a step asked twice is kept once: ${onceKeys}`);
 const keptFound = { bandwidth: [], token: [] };
 for (const [i, { name, message }] of planned.entries()) gpuKept(keptFound, message.step, { name, result: i });
 assert.deepEqual(keptFound.bandwidth.map(({ result }) => result), [1, 2, 3]);
