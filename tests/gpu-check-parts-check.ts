@@ -559,10 +559,10 @@ check("the harness is a module, and the runtime's files it names are in this tre
   // what it takes from the runtime: by the server's paths, each a file of this tree; engines.ts rewrites the imports
   // for Dawn's worker thread by their beginning, and the GPU's worker is a Worker of the same path
   const named = [...text.matchAll(/"\/runtime\/([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual([...new Set(named)].sort(), ["forward.ts", "gpu.ts", "jobs.ts", "shaders.ts"]);
+  assert.deepEqual([...new Set(named)].sort(), ["forward.ts", "forward/memory.ts", "gpu.ts", "jobs.ts", "shaders.ts"]);
   for (const name of named) assert.ok(fs.statSync(runtime(name)).isFile(), name);
   const imports = [...text.matchAll(/import\("\/runtime\/([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(imports.sort(), ["forward.ts", "jobs.ts", "shaders.ts"]);
+  assert.deepEqual(imports.sort(), ["forward.ts", "forward/memory.ts", "jobs.ts", "shaders.ts"]);
   assert.equal(text.split('import("/runtime/').length - 1, imports.length);
   assert.equal(text.split("/runtime/").length - 1, named.length, "a file of the runtime named in another way than by a string of its path");
   const engines = fs.readFileSync(new URL("./gpu-check/engines.ts", import.meta.url), "utf8");

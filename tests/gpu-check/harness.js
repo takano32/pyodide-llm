@@ -1,5 +1,6 @@
 const search = "?v=gpu-check";
-const { compileKernels, compileBlocks, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf, ringPositions } = await import("/runtime/forward.ts" + search);
+const { compileKernels, compileBlocks, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.ts" + search);
+const { ringPositions } = await import("/runtime/forward/memory.ts" + search);  // (T641.10: the part; forward.ts no longer hands it out)
 const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.ts" + search);
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 const b64 = (floats) => {
