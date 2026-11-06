@@ -122,3 +122,27 @@ def test_a_candidate_added_to_the_list_is_one_the_build_reads(tmp_path, monkeypa
     (tmp_path / "vocab.model").write_bytes(model)
     convert_hf.convert_tokenizer(tmp_path, tmp_path / "out", vocab_size)
     assert (tmp_path / "out").read_bytes() == convert_hf.tokenizer_of("vocab.model", model, vocab_size)
+
+
+# ---- T640.7: the build's tokenizer.bin is the page's, of every kind of tokenizer file the two read
+def page_and_build(tmp_path, name, data, vocab_size):
+    from conftest import vocabulary_conversion
+    (tmp_path / name).write_bytes(data)
+    convert_hf.convert_tokenizer(tmp_path, tmp_path / "out", vocab_size)
+    (tmp_path / name).unlink()
+    return vocabulary_conversion(data, name, vocab_size).tokenizer, (tmp_path / "out").read_bytes()
+
+
+def test_the_builds_tokenizer_is_the_pages(tmp_path):
+    from made_up_tokenizers import byte_level
+    from test_spelled_bpe import model, written_out
+    json_file, sentencepiece_model, vocab_size = tokenizers()
+    bare, _ = written_out(False, True)
+    made = [("tokenizer.json", json_file, vocab_size), ("tokenizer.model", sentencepiece_model, vocab_size),
+            ("spiece.model", sentencepiece_model, vocab_size),
+            ("tokenizer.json", json.dumps(byte_level(("<|im_end|>",))[0]).encode(), 320),
+            ("tokenizer.json", json.dumps(bare).encode(), len(bare["model"]["vocab"])),
+            ("tokenizer.model", model(True), len(written_out(True)[0]["model"]["vocab"]))]
+    for name, data, size in made:
+        page, build = page_and_build(tmp_path, name, data, size)
+        assert build == page, name
