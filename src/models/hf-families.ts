@@ -66,22 +66,22 @@ export const HF_FAMILIES: Entry[] = [
   // 4B's heads are not dim / heads wide and the 8B has a classifier of its own, as the Qwen3 4B and 8B they are built
   // from; as ternary they fit a 32-bit memory with their forward pass (2.2 and 3.3 GiB at 4096 positions; widened to
   // int8 they were 5.3 and 10.1 GiB, on a 64-bit one)
-  ternaryBonsai("1.7B", "983b5dec2ff16aab79990711ba0f828a499a7e6a", "3aca840085293d026ce6f6b80fafdae937fd2eeb", 463290464,
+  ternaryBonsai("1.7B", { gguf: "983b5dec2ff16aab79990711ba0f828a499a7e6a", original: "3aca840085293d026ce6f6b80fafdae937fd2eeb" }, 463290464,
     "fetches 463 MB (GGUF) → ternary 457 MB", 457e6),
-  ternaryBonsai("4B", "a3eb42bafe873f9686bc97486c43b72ef7d75ec8", "4485fae7a00129467b9329b738110d88b2942a1a", 1074969344,
+  ternaryBonsai("4B", { gguf: "a3eb42bafe873f9686bc97486c43b72ef7d75ec8", original: "4485fae7a00129467b9329b738110d88b2942a1a" }, 1074969344,
     "fetches 1.1 GB (GGUF) → ternary 1.1 GB", 1.1e9),
-  ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
+  ternaryBonsai("8B", { gguf: "c2aefbeb4b24469cd11579c3384b990404c17a30", original: "ac20f03fc62e872399218b659c8e949dfca05769" }, 2182184672,
     "fetches 2.2 GB (GGUF) → ternary 2.2 GB", 2.2e9, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T286.2: and the 1-bit Bonsai 1.7B, the same Qwen3 1.7B with every weight a sign (Q1_0): fetched as 1.125 bits a
   // weight, held as binary (T634.2: the same 1.125 bits; ternary before, twice that)
-  binaryBonsai("1.7B", "210a9e99f79cb184909d49595906526eb2b3dd9a", "a7f720bd688d7563714f3118edd97b83d06f0615", 248302272,
+  binaryBonsai("1.7B", { gguf: "210a9e99f79cb184909d49595906526eb2b3dd9a", original: "a7f720bd688d7563714f3118edd97b83d06f0615" }, 248302272,
     "fetches 248 MB (GGUF) → 1-bit 242 MB", 242e6, false),
   // T286.3: the 1-bit Bonsai 4B, the Qwen3 4B's shape as the ternary 4B (heads wider than dim / heads); it answers
   // Japanese, unlike the 1.7B
-  binaryBonsai("4B", "78f2c2bacd0904ffaba24b4873ed975e5818354a", "b2529e9641629dce5e6be5fa44492bc249f1a58a", 572270624,
+  binaryBonsai("4B", { gguf: "78f2c2bacd0904ffaba24b4873ed975e5818354a", original: "b2529e9641629dce5e6be5fa44492bc249f1a58a" }, 572270624,
     "fetches 572 MB (GGUF) → 1-bit 566 MB", 566e6, true),
   // T286.4: the 1-bit Bonsai 8B, a Qwen3 8B: it begins at <|im_start|> as the ternary 8B does, and answers Japanese
-  binaryBonsai("8B", "48516770dd04643643e9f9019a2a349cf26c5dbd", "376f381570d6115bc03f82adcfa4af0c7672ae54", 1158654496,
+  binaryBonsai("8B", { gguf: "48516770dd04643643e9f9019a2a349cf26c5dbd", original: "376f381570d6115bc03f82adcfa4af0c7672ae54" }, 1158654496,
     "fetches 1.2 GB (GGUF) → 1-bit 1.2 GB", 1.2e9, true, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
@@ -220,13 +220,13 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-granite-4.2-3b", "IBM Granite 4.2 3B",
     ggufOf("ibm-granite/granite-4.2-3b-GGUF", "c40945d71cd90f249a56985e8155551a9188dc30", "granite-4.2-3b-Q8_0.gguf",
       "ibm-granite/granite-4.2-3b", "e459acceac81e5fe67c07d9cfc72329a332e7eb1"), 3892651552,
-    "fetches 3.9 GB (GGUF) → int8 4.1 GB", { converted: 4.1e9, options: granite },
-    { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }).map((entry) => ({ ...entry, generation: graniteSampling })),
+    "fetches 3.9 GB (GGUF) → int8 4.1 GB", { converted: 4.1e9, options: granite, generation: graniteSampling },
+    { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }),
   ...thinkingAndNot("hf-granite-4.2-8b", "IBM Granite 4.2 8B",
     ggufOf("ibm-granite/granite-4.2-8b-GGUF", "93f3f6a8938ee922b784cf4e5b4203cd3428df8f", "granite-4.2-8b-Q8_0.gguf",
       "ibm-granite/granite-4.2-8b", "f8de16cdcdbc6c779ca517604e050d82cc119e44"), 9345613952,
-    "fetches 9.3 GB (GGUF) → int8 9.9 GB", { converted: 9.9e9, options: granite },
-    { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }).map((entry) => ({ ...entry, generation: graniteSampling })),
+    "fetches 9.3 GB (GGUF) → int8 9.9 GB", { converted: 9.9e9, options: granite, generation: graniteSampling },
+    { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }),
   // T254: MiniCPM5, whose tokenizer.json cuts the numbers off before Llama 3's pattern runs (the engine's "minicpm5").
   // OpenBMB's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals; the vocabulary is the
   // original's (the 1B's GGUF calls its pre-tokenizer llama-bpe, which is not what its tokenizer.json does). The
@@ -246,17 +246,16 @@ export const HF_FAMILIES: Entry[] = [
   // to the bit, and its Q8_0 matrices were rounded from the float32 too: 1.5e-3 from the Q8_0 of the original, where
   // the check allows 1e-3): since T307 the check holds every value of it to what such weights can give, and it is
   // taken (until then the 230M came from the original's safetensors, 459 MB)
-  lfm2("hf-lfm2.5-230m", "Liquid AI LFM2.5 230M", "LFM2.5-230M", "03502067c64ce32ac4fe87b0cec0310a1a13d3e9",
-    "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 246598496, "fetches 247 MB (GGUF) → int8 259 MB", 259e6),
-  lfm2("hf-lfm2.5-350m", "Liquid AI LFM2.5 350M", "LFM2.5-350M", "657e078c94084481950a2d555a941481f715536b",
-    "9e6c6ccf47cd318696e137d381a7ded8fe4df09f", 379217632, "fetches 379 MB (GGUF) → int8 399 MB", 399e6),
-  lfm2("hf-lfm2-700m", "Liquid AI LFM2 700M", "LFM2-700M", "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02",
-    "86f49fc9a3800c3a325b7320bde179c318062583", 791565248, "fetches 792 MB (GGUF) → int8 836 MB", 836e6,
-    { options: lfm2Old, template: CHATML }, 0.3),
-  lfm2("hf-lfm2.5-1.2b-instruct", "Liquid AI LFM2.5 1.2B Instruct", "LFM2.5-1.2B-Instruct", "8ed288026e23958ad9dfa92d53ed773a8eee7125",
-    "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB", 1.3e9),
-  lfm2("hf-lfm2.5-1.2b-jp", "Liquid AI LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
-    "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB", 1.3e9, {}),
+  lfm2("hf-lfm2.5-230m", "Liquid AI LFM2.5 230M", "LFM2.5-230M", { gguf: "03502067c64ce32ac4fe87b0cec0310a1a13d3e9",
+    original: "40cb2ad3b3044d5a41eee083a6103c8b523afa45" }, 246598496, "fetches 247 MB (GGUF) → int8 259 MB", 259e6, "lfm2.5"),
+  lfm2("hf-lfm2.5-350m", "Liquid AI LFM2.5 350M", "LFM2.5-350M", { gguf: "657e078c94084481950a2d555a941481f715536b",
+    original: "9e6c6ccf47cd318696e137d381a7ded8fe4df09f" }, 379217632, "fetches 379 MB (GGUF) → int8 399 MB", 399e6, "lfm2.5"),
+  lfm2("hf-lfm2-700m", "Liquid AI LFM2 700M", "LFM2-700M", { gguf: "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02",
+    original: "86f49fc9a3800c3a325b7320bde179c318062583" }, 791565248, "fetches 792 MB (GGUF) → int8 836 MB", 836e6, "lfm2", 0.3),
+  lfm2("hf-lfm2.5-1.2b-instruct", "Liquid AI LFM2.5 1.2B Instruct", "LFM2.5-1.2B-Instruct", { gguf: "8ed288026e23958ad9dfa92d53ed773a8eee7125",
+    original: "0f604ada3f766f9f257460c4c9f0b5d6f69d431b" }, 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB", 1.3e9, "lfm2.5"),
+  lfm2("hf-lfm2.5-1.2b-jp", "Liquid AI LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", { gguf: "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
+    original: "52b8b4475311a63bf839c6494f78f8ad59d13515" }, 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB", 1.3e9, "converter's"),
   // T596.2: Liquid AI's LFM2.5 2.6B, the step above the 1.2B, which its card says always thinks before it answers (its
   // template begins the answer with <think>). Another vocabulary than the smaller LFM2's (byte-level BPE of 124,894
   // pieces, Llama 3's pattern): the BOS (<|startoftext|>), the stops and the specials are the converter's; the template
@@ -287,7 +286,7 @@ export const HF_FAMILIES: Entry[] = [
   // T511.1: Shisa.AI's LFM2 350M for Japanese chat (trained from Liquid AI's LFM2-350M-ENJP-MT, the translating one);
   // its card says it is the best at Japanese chat under 1B (Shaberi 4.51, the LFM2-350M's 3.76)
   shisaLfm2("hf-shisa-v2.1c-lfm2-350m", "Shisa V2.1c LFM2 350M", "shisa-v2.1c-lfm2-350m",
-    "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 379216512,
+    { original: "a902123e67f297bfce7e1961104ebb4fee2ba538", gguf: "38445ae70be89a0d3d870707696a8f967eb08d5e" }, 379216512,
     "fetches 379 MB (GGUF) → int8 399 MB", 399e6),
   // T528: and the same model lighter, beside it (the owner: "どっちも配ればいいんじゃないの？"): the same repository's
   // Q4_K_M, llama.cpp's blocks kept as they are (conversion.blocks, as Underdog Saluki 27B's) where the page has kernels
@@ -298,28 +297,28 @@ export const HF_FAMILIES: Entry[] = [
   // rebuilt: tests/gguf_check.py tensors holds a Q8_0 to its original within 1e-3, which 4 bits are not (gguf.yml skips
   // it); what holds it is TASKS.md's T528: that check read for its orders and errors, and T513's measures
   shisaLfm2("hf-shisa-v2.1c-lfm2-350m-q4", "Shisa V2.1c LFM2 350M (4-bit)", "shisa-v2.1c-lfm2-350m",
-    "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 229311104,
+    { original: "a902123e67f297bfce7e1961104ebb4fee2ba538", gguf: "38445ae70be89a0d3d870707696a8f967eb08d5e" }, 229311104,
     "4-bit weights · fetches 229 MB (GGUF), kept mostly as it is: 282 MB", undefined, "Q4_K_M",
     { conversion: { dtype: "int8", blocks: true }, loaded: 281641004, rebuilt: true }),
   // T511.3: and its 1.2B (from LFM2-1.2B), the 1B class's best at Japanese chat as Shisa's card measures (Shaberi 5.35)
   shisaLfm2("hf-shisa-v2.1-lfm2-1.2b", "Shisa V2.1 LFM2 1.2B", "shisa-v2.1-lfm2-1.2b",
-    "292863c4c1d3b63357027b384f336a52498252b2", "4a433b919681b37f43088cf2c57cbe92a8d859d5", 1246254048,
+    { original: "292863c4c1d3b63357027b384f336a52498252b2", gguf: "4a433b919681b37f43088cf2c57cbe92a8d859d5" }, 1246254048,
     "fetches 1.2 GB (GGUF) → int8 1.3 GB", 1.3e9),
   // T261.3: Gemma 3's two smallest (the text models), on the CPU alone (no shader has their norms behind the layers, a
   // GELU in the gate or the window yet: T261.4). unsloth's Q8_0 GGUFs, which tests/gguf_check.py tensors held to
   // unsloth's copies of the originals
-  gemma3("270M", "c90975dbd40c0c7b275fefaae758c3415c906238", "23cf460f6bb16954176b3ddcc8d4f250501458a9", 291546144,
+  gemma3("270M", { gguf: "c90975dbd40c0c7b275fefaae758c3415c906238", original: "23cf460f6bb16954176b3ddcc8d4f250501458a9" }, 291546144,
     "fetches 292 MB (GGUF) → int8 302 MB", 302e6),
-  gemma3("1B", "f0b45be0aac41bd6a100a4b5734cad5f67255bfb", "5b11413a10db4e486ef16a20101fd028f8f2499c", 1069306400,
+  gemma3("1B", { gguf: "f0b45be0aac41bd6a100a4b5734cad5f67255bfb", original: "5b11413a10db4e486ef16a20101fd028f8f2499c" }, 1069306400,
     "fetches 1.1 GB (GGUF) → int8 1.1 GB", 1.1e9),
   // T333: Gemma 4's two smallest (E2B, E4B), on the CPU alone (no shader has their layers yet: T334). T329.3 held the
   // E2B to transformers (logits 1.10e-4, the most likely token 96 of 96) and ran it in three browsers from ?hf=. loaded:
   // the int8 checkpoint without the table of every layer's inputs, which stays in the kept file (the converter's sizes
   // of the real headers and forward.ts's tableHole()): E2B 5,207,962,792 bytes less 2,642,411,520, E4B 8,397,500,612 less 3,170,893,824
   // T529: the weights from ggml-org's Q8_0 GGUFs (llama.cpp's own), which tests/gguf_check.py tensors held to the originals
-  gemma4("E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", "b4243c156154b6dca9324415f8c7ccc098b4aed1", 4967497152, 2565551272,
+  gemma4("E2B", { original: "3e22461f65e89153144f8adb70e3b8c2cc9845a7", gguf: "b4243c156154b6dca9324415f8c7ccc098b4aed1" }, 4967497152, 2565551272,
     "fetches 5.0 GB (GGUF) → int8 5.2 GB (2.6 GB in memory)", 5.2e9),
-  gemma4("E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", "b8093469224f83f5c38f691eb906c380e9e63114", 8031242688, 5226606788,
+  gemma4("E4B", { original: "ee0ef6023621cff504d758262d4e04895a5af4a2", gguf: "b8093469224f83f5c38f691eb906c380e9e63114" }, 8031242688, 5226606788,
     "fetches 8.0 GB (GGUF) → int8 8.4 GB (5.2 GB in memory)", 8.4e9),
   // T343: XHToken's Spark-X2.5 (T339 to T342: a Llama with a gate a head after the attention, an erf GELU in the FFN, and
   // three layers of four that see the last 512 positions alone, with a RoPE of their own; on the CPU alone, T344).

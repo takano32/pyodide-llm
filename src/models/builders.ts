@@ -1,6 +1,6 @@
 // The entries of the list that come in families: one function a family, which writes its entries from what differs.
 import type { ListOptions } from "./formats.ts";
-import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25, plamo, plamoTranslate } from "./formats.ts";
+import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25, lfm2Old, plamo, plamoTranslate } from "./formats.ts";
 import { atOnce, greedy, sampled, thinking } from "./sampling.ts";
 import type { Hf, OfHuggingFace, Sampled, Translation } from "../runtime/contracts/messages.ts";
 import type { Dtype } from "../runtime/contracts/form.ts";
@@ -118,12 +118,17 @@ export type Entry = Site | Remote | Translating | Linked;
 type Common = Omit<Remote, "id" | "name" | "note" | "generation">;
 // the weights a function below is given: a GGUF's with its original's vocabulary (ggufOf()), or a repository's (hf())
 type Source = Pick<Remote, "original" | "hf">;
+// the two revisions a function below pins, by name: two hashes side by side were swapped unseen (gemma3() took the
+// GGUF's first and gemma4() the original's), which no type tells apart
+export type Revisions = { gguf: string; original: string };
 
 /** A Qwen3 twice (T124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
  * share their weights, and so a conversion kept in the browser; only the format differs. shares: both ids, for
  * kept.ts's replaced() (what either kept before its source changed goes, whichever form is opened first). sampling:
  * the two forms' generation settings where they are not Qwen3's. chat.languages: the note's languages where the card's
- * are not Japanese and English (T537), with 日本語 where it answered Japanese questions in Japanese here (T539) */
+ * are not Japanese and English (T537), with 日本語 where it answered Japanese questions in Japanese here (T539).
+ * chat.generation: both forms' generation settings (T643.22: it was the at-once form's alone), where sampling names
+ * neither form's */
 export function thinkingAndNot(id: string, name: string, source: Source, download: number, sizes: string, { languages = "日本語 / English", ...chat }: { languages?: string } & Partial<Remote> = {},
   formats: { thinking?: string; atOnce?: string } = {}, sampling: { thinking?: Generation; atOnce?: Generation } = {}): Entry[] {
   // T369: where nothing else is said, a Qwen3 as the list has had it: <|endoftext|> in front of ChatML (QWEN3_OWN_BOS and
@@ -133,7 +138,7 @@ export function thinkingAndNot(id: string, name: string, source: Source, downloa
   return [
     // formats.thinking: where the model's format is not Qwen3's (T236)
     { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · ${languages} · ${sizes}`,
-      thinks: true, generation: sampling.thinking ?? thinking, template: formats.thinking ?? CHATML },
+      thinks: true, generation: sampling.thinking ?? chat.generation ?? thinking, template: formats.thinking ?? CHATML },
     { ...common, id, name: `${name} (no thinking)`, note: `answers at once · ${languages} · ${sizes}`,
       generation: sampling.atOnce ?? chat.generation ?? atOnce, template: formats.atOnce ?? QWEN3_AT_ONCE },
   ];
@@ -157,14 +162,21 @@ export function miniCpm5(id: string, name: string, source: Source, download: num
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
 export const ggufOf = (repo: string, revision: string, weights: string, original: string, originalRevision: string, tokenizer = "tokenizer.json"): Source =>
   ({ original, hf: { repo, revision, weights, vocabulary: { repo: original, revision: originalRevision, tokenizer } } });
-/** an LFM2 of the list: the maker's own Q8_0 GGUF's weights with the vocabulary and config.json of its original, or
- * (no revision of a GGUF: null) the original's safetensors */
-export const lfm2 = (id: string, name: string, repo: string, revision: string | null, originalRevision: string, download: number, sizes: string, converted: number,
-  format: Partial<Remote> = { options: lfm25, template: CHATML }, temperature = 0.1): Entry => ({
+// what lfm2() writes of an LFM2's format, by name: the converter's (nothing), or ChatML with the options of LFM2.5 or LFM2
+const LFM2_FORMATS = {
+  "lfm2.5": { options: lfm25, template: CHATML },
+  "lfm2": { options: lfm2Old, template: CHATML },
+  "converter's": {},
+} satisfies Record<string, Pick<Remote, "options" | "template"> | Record<string, never>>;
+/** an LFM2 of the list: the maker's own Q8_0 GGUF's weights with the vocabulary and config.json of its original.
+ * format (T643.22: named, where an empty object meant "the converter's" and leaving it out meant LFM2.5's): "lfm2.5"
+ * and "lfm2", the ChatML written here with that family's options; "converter's", the BOS, the format
+ * and the specials the converter reads from the original's template */
+export const lfm2 = (id: string, name: string, repo: string, revisions: Revisions, download: number, sizes: string, converted: number,
+  format: keyof typeof LFM2_FORMATS, temperature = 0.1): Entry => ({
   group: "hf", id, name, note: `answers instructions · 日本語 / English · ${sizes}`, japanese: true, converted,
-  ...(revision ? ggufOf(`LiquidAI/${repo}-GGUF`, revision, `${repo}-Q8_0.gguf`, `LiquidAI/${repo}`, originalRevision)
-    : { hf: hf(`LiquidAI/${repo}`, originalRevision) }), download,
-  conversion: {}, options: {}, ...format, generation: { steps: 0, temperature, topp: 1.0, repetition_penalty: 1.05 },
+  ...ggufOf(`LiquidAI/${repo}-GGUF`, revisions.gguf, `${repo}-Q8_0.gguf`, `LiquidAI/${repo}`, revisions.original), download,
+  conversion: {}, options: {}, ...LFM2_FORMATS[format], generation: { steps: 0, temperature, topp: 1.0, repetition_penalty: 1.05 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
 });
 /** T511.1, T511.3: a Shisa V2.1 of Shisa.AI (an LFM2 trained further for Japanese chat): mradermacher's Q8_0 GGUF's
@@ -174,10 +186,10 @@ export const lfm2 = (id: string, name: string, repo: string, revision: string | 
  * LFM2 700M's (temperature 0.3, Liquid AI's LFM2 cards; a choice of the coordinator, TASKS.md's T511).
  * T528: another GGUF of the same repository (quantization: the name's word, Q4_K_M) with what it takes besides (more:
  * conversion.blocks and loaded) */
-export const shisaLfm2 = (id: string, name: string, repo: string, revision: string, ggufRevision: string, download: number, sizes: string, converted: number | undefined, quantization = "Q8_0",
+export const shisaLfm2 = (id: string, name: string, repo: string, revisions: Revisions, download: number, sizes: string, converted: number | undefined, quantization = "Q8_0",
   more: Partial<Remote> = {}): Entry => ({
   group: "hf", id, name, note: `answers instructions · 日本語 / English · ${sizes}`, japanese: true, converted,
-  ...ggufOf(`mradermacher/${repo}-GGUF`, ggufRevision, `${repo}.${quantization}.gguf`, `shisa-ai/${repo}`, revision), download,
+  ...ggufOf(`mradermacher/${repo}-GGUF`, revisions.gguf, `${repo}.${quantization}.gguf`, `shisa-ai/${repo}`, revisions.original), download,
   conversion: {}, options: {}, generation: { steps: 0, temperature: 0.3, topp: 1.0, repetition_penalty: 1.05 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, ...more,
 });
@@ -189,11 +201,11 @@ export const shisaLfm2 = (id: string, name: string, repo: string, revision: stri
  * top-k of 64 and a top-p of 0.95, and transformers' temperature of 1.0 where it names none.
  * The notice the Gemma Terms of Use ask for is not in the note: at a phone's width the select never shows it (the
  * owner chooses where it goes, TASKS.md's T261.3) */
-export const gemma3 = (size: string, revision: string, originalRevision: string, download: number, sizes: string, converted: number): Entry => ({
+export const gemma3 = (size: string, revisions: Revisions, download: number, sizes: string, converted: number): Entry => ({
   group: "hf", id: `hf-gemma-3-${size.toLowerCase()}`, name: `Google Gemma 3 ${size}`,
   note: `answers instructions · 日本語 / English · ${sizes}`, japanese: true, converted,
-  ...ggufOf(`unsloth/gemma-3-${size.toLowerCase()}-it-GGUF`, revision, `gemma-3-${size.toLowerCase()}-it-Q8_0.gguf`,
-    `unsloth/gemma-3-${size.toLowerCase()}-it`, originalRevision), original: `google/gemma-3-${size.toLowerCase()}-it`, download,
+  ...ggufOf(`unsloth/gemma-3-${size.toLowerCase()}-it-GGUF`, revisions.gguf, `gemma-3-${size.toLowerCase()}-it-Q8_0.gguf`,
+    `unsloth/gemma-3-${size.toLowerCase()}-it`, revisions.original), original: `google/gemma-3-${size.toLowerCase()}-it`, download,
   conversion: {}, options: { stop_tokens: [1, 2, 106] },
   generation: { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
@@ -208,11 +220,11 @@ export const gemma3 = (size: string, revision: string, originalRevision: string,
  * apply_chat_template's without a thought) are the converter's. The stops are generation_config.json's eos_token_id,
  * <eos>, <turn|> and <|tool_response> (1, 106, 50): the converter names <bos> and <eos> alone (T524), and an answer
  * then went on past <turn|>. The sampling is generation_config.json's: a temperature of 1.0, top-k 64, top-p 0.95 */
-export const gemma4 = (size: string, revision: string, ggufRevision: string, download: number, loaded: number, sizes: string, converted: number): Entry => ({
+export const gemma4 = (size: string, revisions: Revisions, download: number, loaded: number, sizes: string, converted: number): Entry => ({
   group: "hf", id: `hf-gemma-4-${size.toLowerCase()}`, name: `Google Gemma 4 ${size}`,
   note: `answers instructions · 日本語 / English · ${sizes}`, japanese: true, converted,
-  ...ggufOf(`ggml-org/gemma-4-${size}-it-GGUF`, ggufRevision, `gemma-4-${size}-it-Q8_0.gguf`, `google/gemma-4-${size}-it`,
-    revision), download, loaded,
+  ...ggufOf(`ggml-org/gemma-4-${size}-it-GGUF`, revisions.gguf, `gemma-4-${size}-it-Q8_0.gguf`, `google/gemma-4-${size}-it`,
+    revisions.original), download, loaded,
   conversion: {}, options: { stop_tokens: [1, 106, 50] },
   generation: { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
@@ -230,9 +242,9 @@ export const gemma4 = (size: string, revision: string, ggufRevision: string, dow
  * on plain text; the 8B does not: 70% worse, as a Qwen3 8B is, and begins at QWEN3_FROM_IM_START: `start`, T250's review).
  * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
  * has not) */
-export const ternaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string, converted: number,
+export const ternaryBonsai = (size: string, revisions: Revisions, download: number, sizes: string, converted: number,
   start: Partial<Remote> = {}): Entry =>
-  bonsai("Ternary-Bonsai", "Ternary Bonsai", "PQ2_0", "ternary", "日本語 / English · ternary weights", size, revision, originalRevision, download, sizes, converted, start,
+  bonsai("Ternary-Bonsai", "Ternary Bonsai", "PQ2_0", "ternary", "日本語 / English · ternary weights", size, revisions, download, sizes, converted, start,
     { japanese: true, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
 /** T286: Prism ML's 1-bit Bonsai (1.7B ...), every weight -1 or +1 times a scale of its 128: a Q1_0 GGUF
  * (convert/readers.py's q1_0, T286.1), which the binary dtype holds as it is (T634.2: one bit a weight, Q1_0's 18
@@ -240,20 +252,20 @@ export const ternaryBonsai = (size: string, revision: string, originalRevision: 
  * from its own -unpacked original. The card says English alone; `japanese` is for a size that answered tests/answers.ts's
  * Japanese questions in Japanese without breaking (T539: the 4B, T286.3). The 1.7B's Japanese answers looped and
  * named mountains that are not there (T286.2) */
-export const binaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string, converted: number,
+export const binaryBonsai = (size: string, revisions: Revisions, download: number, sizes: string, converted: number,
   japanese: boolean, start: Partial<Remote> = {}): Entry =>
   japanese
-    ? bonsai("Bonsai", "Bonsai", "Q1_0", "binary", "日本語 / English · 1-bit weights", size, revision, originalRevision, download, sizes, converted, start,
+    ? bonsai("Bonsai", "Bonsai", "Q1_0", "binary", "日本語 / English · 1-bit weights", size, revisions, download, sizes, converted, start,
       { japanese, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE })
-    : bonsai("Bonsai", "Bonsai", "Q1_0", "binary", "English · 1-bit weights", size, revision, originalRevision, download, sizes, converted, start,
+    : bonsai("Bonsai", "Bonsai", "Q1_0", "binary", "English · 1-bit weights", size, revisions, download, sizes, converted, start,
       { japanese, prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" });
-const bonsai = (repo: string, name: string, quantization: string, dtype: Dtype, weights: string, size: string, revision: string,
-  originalRevision: string, download: number, sizes: string, converted: number, { options = QWEN3_OWN_BOS, ...start }: Partial<Remote>,
+const bonsai = (repo: string, name: string, quantization: string, dtype: Dtype, weights: string, size: string, revisions: Revisions,
+  download: number, sizes: string, converted: number, { options = QWEN3_OWN_BOS, ...start }: Partial<Remote>,
   asked: Pick<Remote, "japanese" | "prompt" | "placeholder">): Entry => ({
   group: "hf", id: `hf-${repo.toLowerCase()}-${size.toLowerCase()}`, name: `Prism ML ${name} ${size}`,
   note: `answers at once · ${weights} · ${sizes}`, converted,
-  ...ggufOf(`prism-ml/${repo}-${size}-gguf`, revision, `${repo}-${size}-${quantization}.gguf`,
-    `prism-ml/${repo}-${size}-unpacked`, originalRevision), download,
+  ...ggufOf(`prism-ml/${repo}-${size}-gguf`, revisions.gguf, `${repo}-${size}-${quantization}.gguf`,
+    `prism-ml/${repo}-${size}-unpacked`, revisions.original), download,
   weights: dtype, conversion: {}, options: { ...options, ...PLAIN_ROPE }, template: QWEN3_AT_ONCE, ...start,
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 }, ...asked });
 // Models that huggingface.co serves and this page converts itself (src/python/llama2_convert.py, the code that builds
