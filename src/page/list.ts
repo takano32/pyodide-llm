@@ -1,5 +1,5 @@
 // src/page/list.ts (T355): the list of models in the select, and what this browser kept of them.
-import { GROUPS, MODELS, type Remote } from "../models.ts";
+import { GROUPS, MODELS, asksBefore, type Remote } from "../models.ts";
 import { $, select } from "./dom.ts";
 import { fromUrl, weighed } from "./address.ts";
 import { remember } from "./remembered.ts";
@@ -55,9 +55,9 @@ export async function showKept() {
 // T116: a remembered model that would be fetched anew starts unasked only because it was kept (remembered()): it
 // must still be kept as it would be loaded now (its bits, this converter), or the default starts instead
 export async function stillKept(entry: Model) {
-  if ((entry.download ?? 0) <= 500e6) return true;
+  if (!asksBefore(entry)) return true;
   const models = await listed();
-  // (T643.1: a model of more than 500 MB to fetch is one of Hugging Face: of the list, or of a repository nobody listed)
+  // (T643.1: a model of more than UNASKED_BYTES to fetch is one of Hugging Face: of the list, or of a repository nobody listed)
   return models.some((one) => serves(one, weighed(entry as Remote | Unlisted)));
 }
 

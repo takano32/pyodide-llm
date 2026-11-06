@@ -26,7 +26,7 @@ import { fresh as made } from "./fresh.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_MODEL, MODELS } from "../src/models.ts";
+import { DEFAULT_MODEL, MODELS, asksBefore } from "../src/models.ts";
 
 let cases = 0;
 // (T584: tests/fresh.ts, on Node and on Bun)
@@ -302,8 +302,8 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
 // ---- src/page/opening.ts: a process for each visit (address.ts and remembered.ts read the address and the storage as
 // they load, and a module is made once)
 {
-  const large = MODELS.find((entry) => (entry.download ?? 0) > 500e6);
-  assert.ok(large && MODELS.length > 2, "the list has a model fetched from Hugging Face anew (more than 500 MB)");
+  const large = MODELS.find(asksBefore);
+  assert.ok(large && MODELS.length > 2, "the list has a model fetched from Hugging Face anew (past UNASKED_BYTES)");
   const opens = (search, stored) => {
     const script = `
       globalThis.location = { search: ${JSON.stringify(search)} };

@@ -2,7 +2,7 @@
 //
 //   node tests/models-check.ts
 import assert from "node:assert/strict";
-import { DEFAULT_MODEL, GROUPS, LICENSES, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
+import { DEFAULT_MODEL, GROUPS, LICENSES, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, UNASKED_BYTES, asksBefore, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
 import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
 import { BUILT } from "../src/models/built.ts";
@@ -300,10 +300,15 @@ for (const entry of MODELS.filter((entry) => entry.hf?.weights?.endsWith(".gguf"
 // T128: the list's order (the owner's): the groups as GROUPS has them, and within each the ones that write Japanese
 // from light to heavy, then the English-only ones from light to heavy. The first is tiny-lm, the lightest
 assert.equal(MODELS[0].id, "tiny-lm", "the lightest comes first");
+// T116, T643.6: the line past which the page asks before it fetches from Hugging Face anew is the owner's 500 MB
+// (a second copy: src/models/memory.ts's UNASKED_BYTES is the one the page reads), and only what is past it asks
+assert.equal(UNASKED_BYTES, 500e6, "the page asks before it fetches more than 500 MB from Hugging Face anew");
+assert.deepEqual([{}, { download: 0 }, { download: 500e6 }, { download: 500e6 + 1 }, { download: 9e9 }].map(asksBefore),
+  [false, false, false, true, true], "asksBefore() is the bytes fetched anew past UNASKED_BYTES");
 // T511.6: the default is one of the list, named in one place, and small enough to start unasked (remembered.ts and
-// list.ts start nothing past 500 MB that is not kept; index.astro falls back on the default)
+// list.ts start nothing past UNASKED_BYTES that is not kept; index.astro falls back on the default)
 assert.equal(DEFAULT_MODEL?.id, "hf-shisa-v2.1c-lfm2-350m", "the default is Shisa V2.1c LFM2 350M (the owner, 2026-10-15)");
-assert.ok((DEFAULT_MODEL.download ?? DEFAULT_MODEL.bytes) <= 500e6, "the default is started unasked: no more than 500 MB");
+assert.ok((DEFAULT_MODEL.download ?? DEFAULT_MODEL.bytes) <= UNASKED_BYTES, "the default is started unasked: no more than 500 MB");
 assert.equal(new Set(MODELS.map(({ id }) => id)).size, MODELS.length, "no model twice");
 const groupOf = (entry) => Object.keys(GROUPS).indexOf(entry.group ?? "site");
 MODELS.slice(1).forEach((entry, i) => {

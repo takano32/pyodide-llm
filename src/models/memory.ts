@@ -7,6 +7,14 @@ import type { Dtype } from "../runtime/contracts/form.ts";
 // (src/page/model.ts's Model), whose kinds say no more of these than an entry's do
 type Weighed = Pick<Entry, "name" | "note" | "options" | "weights" | "wide"> & { bytes?: number; loaded?: number; hf?: object; conversion?: { dtype?: Dtype } };
 
+// T116, T643.6: what a model fetches from Hugging Face anew (`download`) past this many bytes is asked for before the
+// page starts it: a choice says what will be fetched, and a model remembered from the last visit, or the large GGUF of
+// a repository nobody listed, starts unasked only when this browser kept its conversion (src/page/list.ts's stillKept)
+export const UNASKED_BYTES = 500e6;
+/** Whether the page asks before it starts the model: the bytes it would fetch anew are past UNASKED_BYTES (none said,
+ * none fetched). */
+export const asksBefore = (entry: { download?: number }) => (entry.download ?? 0) > UNASKED_BYTES;
+
 // T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it
 // loads a model that probably does not fit, and says what happened when it did not.
 /** What the page takes besides the model: Pyodide, NumPy and the engine (the margin T90 asked for; the heap of

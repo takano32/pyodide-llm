@@ -15,7 +15,7 @@ import type { Entry } from "./models/builders.ts";
 export { filled } from "./models/filled.ts";
 export type { Entry, Generation, Remote, Site, Translating } from "./models/builders.ts";
 export { LICENSES, LICENSE_TEXTS, NOTICES } from "./models/licenses.ts";
-export { PAGE_MEMORY, modelBytes, SIX_OF_EIGHT, TERNARY_OF_EIGHT, DEVICE_MEMORY_CAP, weightsFor, memoryWarning, memoryFailure } from "./models/memory.ts";
+export { UNASKED_BYTES, asksBefore, PAGE_MEMORY, modelBytes, SIX_OF_EIGHT, TERNARY_OF_EIGHT, DEVICE_MEMORY_CAP, weightsFor, memoryWarning, memoryFailure } from "./models/memory.ts";
 
 // a source of sources(): a repository, its license (and the notice it asks for), the names of the models taken from it
 type Source = { repo: string; license: string; notice?: string; names: string[] };
@@ -62,6 +62,6 @@ export const MODELS = LISTED.map((entry) => ({ entry, key: [Object.keys(GROUPS).
 
 /** T511.6 (the owner, 2026-10-15): the model a first visit opens, and the one the page falls back on. Shisa V2.1c LFM2
  * 350M answers questions (18 of T511.5's 21 facts, tiny-lm none), for a first visit's 379 MB fetched from Hugging Face
- * and converted in the browser (kept for the next visit). It stays where the list's order puts it. Under 500 MB, so it
- * is started unasked (tests/models-check.ts holds both). */
+ * and converted in the browser (kept for the next visit). It stays where the list's order puts it. Under UNASKED_BYTES, so
+ * it is started unasked (tests/models-check.ts holds both). */
 export const DEFAULT_MODEL = MODELS[MODELS.findIndex(({ id }) => id === "hf-shisa-v2.1c-lfm2-350m")];

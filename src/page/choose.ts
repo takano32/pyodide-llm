@@ -1,6 +1,6 @@
 // src/page/choose.ts (T355): choosing a model: the select, the files of the visitor's own disk, the sheet that asks
 // for a repository of Hugging Face, the buttons of the intro. Each ends in the select's change, which tells the worker.
-import { DEFAULT_MODEL, MODELS, memoryWarning } from "../models.ts";
+import { DEFAULT_MODEL, MODELS, UNASKED_BYTES, asksBefore, memoryWarning } from "../models.ts";
 import { $, files, progress, run, select, statusText } from "./dom.ts";
 import { FILE, REPOSITORY, REVISION, fromUrl, hfEntry, unlisted, weighed } from "./address.ts";
 import { looked, unnamed } from "./repository.ts";
@@ -157,7 +157,7 @@ fileField.pattern = FILE.source;
     return;
   }
   // a large GGUF is asked for before it is fetched, as a large model of the list is: not one this browser kept
-  if ((entry.download ?? 0) > 500e6 && await stillKept(entry)) {
+  if (asksBefore(entry) && await stillKept(entry)) {
     entry = { ...entry, download: 0 };
   }
   local = entry;
@@ -199,7 +199,7 @@ select.onchange = () => {
   // a large download is asked for first: what is fetched, from whom, and that the conversion happens here
   const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : (chosen.download ?? 0);
   // T90: and one that probably does not fit in a device that says how much memory it has (Chromium only)
-  const asks = [download > 500e6 && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
+  const asks = [download > UNASKED_BYTES && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
                 memoryWarning(weighed(chosen), (navigator as Navigator & { deviceMemory?: number }).deviceMemory)].filter(Boolean);
   if (asks.length && !confirm(`${asks.join(" ")} Go on?`)) {
     select.value = model.id;
