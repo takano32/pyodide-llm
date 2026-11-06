@@ -50,6 +50,8 @@
 //   E2E_THEN       model ids of the list, separated by spaces: after the answer they are chosen one after another
 //                  in the same page, as a visitor changes models, and each must answer too (the worker keeps one
 //                  memory from model to model, T96). They write what the page sets for them, not 256 tokens.
+//                  A model of Hugging Face says whether it was read from what was kept; one that shares a conversion
+//                  with the first model (shares: a Qwen3's two forms, T649.5) must be.
 //   E2E_QUOTA      a number of bytes (the review of T233; Chromium and the browsers of its channels): the quota of the site's
 //                  origin is set to that, through the DevTools protocol (Storage.overrideQuotaForOrigin), so that a
 //                  conversion larger than it must be refused where the page keeps it (T99: the origin private file
@@ -477,6 +479,12 @@ for (const next of (process.env.E2E_THEN ?? "").split(/\s+/).filter(Boolean)) {
   await idle();
   const answered = await page.evaluate(() => document.querySelectorAll(".model .meta").length);
   const readySeconds = (Date.now() - switched) / 1000;
+  // (T649.5: whether a model of Hugging Face was read from what this browser kept, and why not: the other entry of a
+  // conversion two entries share (shares) is read from what the first kept, and not fetched again)
+  const how = await page.evaluate(() => ({ fromCache: Boolean(window.__ready?.fromCache), keptIn: window.__ready?.keptIn ?? null, miss: window.__ready?.keptMiss ?? null }));
+  const shared = MODELS.find((entry) => entry.id === next)?.shares?.includes(id) ?? false;
+  if (/^hf[-:]/.test(next)) console.log(`then ${next}: ${how.fromCache ? `kept in ${how.keptIn}` : `not kept: ${how.miss}`}${shared ? ` (shares one conversion with ${id})` : ""}`);
+  if (shared && !how.fromCache) failures.push(`then ${next}: shares one conversion with ${id}, and was not read from what was kept: ${how.miss}`);
   // the URL names the model now open, and no other (a reload, or a switch of the panel, opens what it names)
   const named = await page.evaluate(() => Object.fromEntries(new URL(location.href).searchParams));
   if (named.model !== next || named.hf || named.checkpoint) failures.push(`then ${next}: the URL names ${named.hf ?? named.checkpoint ?? named.model}`);

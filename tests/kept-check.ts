@@ -278,6 +278,28 @@ const readBack = async (found) => {
   assert.deepEqual(names(await kept.replaced({ ...after, id: "q-thinking" })), ["a/q@1:int8:4096"]);
   assert.deepEqual(await kept.replaced({ ...after, shares: undefined }), [], "without shares only its own id's");
 }
+// T649.5: the two entries of shares (a Qwen3's two forms, PLaMo 3 Translate's two ways) are one conversion under one
+// name, which their source makes and not their id: what one form converted and kept, the other opens and reads as it
+// is, and neither replaces it. Its manifest says the id and name of the form that converted it (the engine takes the
+// entry's options over its options, the page the entry's template)
+{
+  browser();
+  const pair = ["p-en-ja", "p-ja-en"];
+  const source = { ...model, shares: pair, hf: { repo: "a/p", revision: "3" } };
+  const [first, second] = pair.map((id) => ({ ...source, id, name: id }));
+  assert.equal(kept.keptName(first), kept.keptName(second), "both forms name one conversion");
+  assert.deepEqual(kept.keptNames(first), kept.keptNames(second));
+  await kept.keep({ ...first, conversion: { dtype: "int8" } }, { ...manifest, id: first.id, name: first.name }, (a, b) => bytes.slice(a, b), vocabulary);
+  const [one] = await kept.keptModels();
+  assert.ok(kept.serves(one, first) && kept.serves(one, second), "what the first form kept serves the second (the list says kept for both)");
+  assert.deepEqual(await kept.replaced(second), [], "the second form replaces nothing of the first's");
+  assert.deepEqual(await kept.replaced(first), []);
+  const found = await kept.openKept(second);
+  assert.equal(found.manifest.id, first.id);
+  assert.deepEqual(await readBack(found), bytes, "the second form reads the first's conversion");
+  // and with no bits asked for (the worker chooses, T115), the same
+  assert.ok(await kept.openKept({ ...second, conversion: {} }));
+}
 // T329.2.2: a conversion kept as it comes whose table of every layer's inputs the engine reads from the file: the file
 // stays open past finish() and is read from at once; let go of, a kept one opened again (one handle at a time); one that
 // ran out of room after the table was whole is read on and removed once let go of, one that ran out before is not whole

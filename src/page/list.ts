@@ -41,8 +41,9 @@ export async function showKept() {
     remove.type = "button";
     remove.textContent = "delete";
     remove.onclick = async () => {
-      // (its review: where it is still kept, the model is not remembered as one kept no more)
-      if ((await forgotten(one)) && model.id === one.manifest.id) {
+      // (its review: where it is still kept, the model is not remembered as one kept no more. T649.5: nor where
+      // the model open is the other entry of the same conversion, shares: either form's conversion is both's)
+      if ((await forgotten(one)) && (("shares" in model ? model.shares : undefined) ?? [model.id]).includes(one.manifest.id)) {
         remember(model, false);
       }
       showKept();

@@ -69,8 +69,9 @@ export const outdated = (kept: Pick<Kept, "manifest">) => converterOf(kept.manif
 /** The conversions kept for a model of the list under a name it has no more, of either bits (T136: its weights come
  * from another repository now, or its vocabulary): never served again, and in the way of the new one (a 7B's 8 GB
  * each). The worker deletes them before it keeps the new one. Not those of ?hf= and of folders, which all have the
- * id "local". shares: the ids of the list that share one conversion (a Qwen3's two forms, T124), kept under the id of
- * whichever converted it (the review of T203: the other form's left its 9 GB behind). */
+ * id "local". shares: the ids of the list that share one conversion (a Qwen3's two forms, T124): one name, which the
+ * source makes (keptName() reads no id), so either form reads what the other kept (T649.5); its manifest says the id of
+ * whichever converted it, and so these are both ids' (the review of T203: the other form's left its 9 GB behind). */
 export async function replaced(model: Converted) {
   if (model.id === "local") return [];
   // its own conversions of every bits stay, whichever one is asked for: the ternary one too (the review of T230: a
