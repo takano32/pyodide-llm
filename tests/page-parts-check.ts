@@ -554,7 +554,16 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
     if (node.type === "VariableDeclarator" && node.id.name === "HEARD") rows = literalKeys(node.init);
   });
   assert.deepEqual([[...rows.keys].sort(), rows.unknown], [kinds, 0], "receiver.ts's HEARD has a row for every kind of report, and no other");
-  cases += 3;
+  // T643.26: the error row's branch that takes the service worker away (only where Pyodide did not load under it:
+  // no e2e steps there) tries again only once its mark is written (T643.3), and says "away": a page that reloads
+  // must not go on to the error's bubble nor to endsWork (the row's type, void | "away", lets a missing return by)
+  const error = receiver.slice(receiver.indexOf("function heardError("), receiver.indexOf("\n}\n", receiver.indexOf("function heardError(")));
+  assert.ok(/\n  const fallback = data\.pyodide && self\.crossOriginIsolated && !recall\("coi-fallback", [^\n]*\) && keep\("coi-fallback", "1", SESSION\);\n  if \(fallback\) \{\n/.test(error),
+    "receiver.ts's error row takes the service worker away only once, where its mark could be written");
+  const branch = error.slice(error.indexOf("  if (fallback) {\n"));
+  assert.ok(/\n    return "away";\n  \}\n/.test(branch.slice(0, branch.indexOf("\n  }\n") + 5)) && branch.indexOf("message(") > branch.indexOf('return "away";'),
+    "receiver.ts's error row says \"away\" where it takes the service worker away, before the error's bubble");
+  cases += 5;
 }
 {
   // T641.15: the keys of each report against what the pages read of it. worker-modules-check holds the type's keys to
