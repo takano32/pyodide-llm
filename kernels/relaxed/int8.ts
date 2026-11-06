@@ -86,7 +86,7 @@ export function matmul_q8r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
 }
 
 // the tile of rows i..i+3 and the four tokens at xq, xs (frame apart), writing xout (os apart)
-function tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, wc: usize, n: i32, i: i32, os: usize, frame: usize): void {
+function q8rTile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, wc: usize, n: i32, i: i32, os: usize, frame: usize): void {
   const ng = n / GS;
   const ng4 = ng & ~3;
   const w0 = wq + <usize>i * <usize>n, w1 = w0 + <usize>n, w2 = w1 + <usize>n, w3 = w2 + <usize>n;
@@ -156,7 +156,7 @@ export function matmul_q8r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws
     }
     let t = 0;
     for (; t < count4; t += 4) {
-      tile(xout + <usize>t * outStride, xq + <usize>t * frameStride, xs + <usize>t * frameStride, wq, ws, wc, n, i, outStride, frameStride);
+      q8rTile(xout + <usize>t * outStride, xq + <usize>t * frameStride, xs + <usize>t * frameStride, wq, ws, wc, n, i, outStride, frameStride);
     }
     for (; t < count; t++) matmul_q8r(xout + <usize>t * outStride, xq + <usize>t * frameStride, xs + <usize>t * frameStride, wq, ws, wc, n, i, i + 4);
   }

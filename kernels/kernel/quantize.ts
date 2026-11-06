@@ -181,6 +181,15 @@ export function quantize6_x(out: usize, xs: usize, x: usize, n: i32): void {
   }
 }
 
+// The largest |value| of the group of 128 float32 values at p, in every lane: ternary_x()'s and binary_x()'s scale
+// @ts-ignore: decorator
+@inline function groupLargest(p: usize): v128 {
+  let largest = f32x4.splat(0);
+  for (let j: usize = 0; j < 512; j += 16) largest = f32x4.max(largest, f32x4.abs(v128.load(p + j)));
+  return f32x4.splat(max<f32>(max<f32>(f32x4.extract_lane(largest, 0), f32x4.extract_lane(largest, 1)),
+                              max<f32>(f32x4.extract_lane(largest, 2), f32x4.extract_lane(largest, 3))));
+}
+
 // T230: the converter's ternary() (engine/packing.py) in one pass, the same bytes: n float32 values (x), whole groups of
 // 128, to two bits a value (out, 32 bytes a group: the code sign + 1 of value j in byte j >> 2 at bits 2 (j & 3)) and
 // the largest |value| of every group (xs). Returns 1 where a value is neither 0 nor plus or minus its group's largest
@@ -190,10 +199,7 @@ export function ternary_x(out: usize, xs: usize, x: usize, n: i32): i32 {
   const one = i32x4.splat(1), zero = f32x4.splat(0);
   for (let g = 0; g < n; g += 128) {
     const p = x + (<usize>g << 2);
-    let largest = f32x4.splat(0);
-    for (let j: usize = 0; j < 512; j += 16) largest = f32x4.max(largest, f32x4.abs(v128.load(p + j)));
-    const scale = f32x4.splat(max<f32>(max<f32>(f32x4.extract_lane(largest, 0), f32x4.extract_lane(largest, 1)),
-                                      max<f32>(f32x4.extract_lane(largest, 2), f32x4.extract_lane(largest, 3))));
+    const scale = groupLargest(p);
     v128.store32_lane(xs + (<usize>(g >> 7) << 2), scale, 0);
     const to = out + <usize>(g >> 2);
     for (let j: usize = 0; j < 8; j++) {  // sixteen values, four bytes
@@ -228,10 +234,7 @@ export function binary_x(out: usize, xs: usize, x: usize, n: i32): i32 {
   const zero = f32x4.splat(0);
   for (let g = 0; g < n; g += 128) {
     const p = x + (<usize>g << 2);
-    let largest = f32x4.splat(0);
-    for (let j: usize = 0; j < 512; j += 16) largest = f32x4.max(largest, f32x4.abs(v128.load(p + j)));
-    const scale = f32x4.splat(max<f32>(max<f32>(f32x4.extract_lane(largest, 0), f32x4.extract_lane(largest, 1)),
-                                      max<f32>(f32x4.extract_lane(largest, 2), f32x4.extract_lane(largest, 3))));
+    const scale = groupLargest(p);
     v128.store32_lane(xs + (<usize>(g >> 7) << 2), scale, 0);
     const to = out + <usize>(g >> 3);
     for (let c: usize = 0; c < 16; c++) {

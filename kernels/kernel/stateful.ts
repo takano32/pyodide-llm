@@ -22,6 +22,27 @@ export function gate(out: usize, x: usize, g: usize, n: i32): void {
   }
 }
 
+// taps[0][c] * rows[0][c] + ... + taps[count - 1][c] * rows[count - 1][c] for the four channels at byte o and for the
+// one, added in that order as NumPy adds them: the causal convolution of convolve() and short_conv()
+// @ts-ignore: decorator
+@inline function tapsOf(taps: usize, rows: usize, o: usize, stride: usize, count: i32): v128 {
+  let acc = f32x4.mul(v128.load(taps + o), v128.load(rows + o));
+  for (let j = 1; j < count; j++) {
+    const at = <usize>j * stride + o;
+    acc = f32x4.add(acc, f32x4.mul(v128.load(taps + at), v128.load(rows + at)));
+  }
+  return acc;
+}
+// @ts-ignore: decorator
+@inline function tapOne(taps: usize, rows: usize, o: usize, stride: usize, count: i32): f32 {
+  let acc = load<f32>(taps + o) * load<f32>(rows + o);
+  for (let j = 1; j < count; j++) {
+    const at = <usize>j * stride + o;
+    acc += load<f32>(taps + at) * load<f32>(rows + at);
+  }
+  return acc;
+}
+
 // out[c] = silu(taps[0][c] * rows[0][c] + ... + taps[count - 1][c] * rows[count - 1][c]): the causal convolution of a
 // Gated DeltaNet layer, each of the n channels with its own taps over the last count tokens (rows: the oldest first,
 // this token's last; both (count, n) row-major), added in that order as NumPy adds them, and SiLU after it
@@ -31,20 +52,12 @@ export function convolve(out: usize, taps: usize, rows: usize, n: i32, count: i3
   let c = 0;
   for (; c + 4 <= n; c += 4) {
     const o = <usize>c << 2;
-    let acc = f32x4.mul(v128.load(taps + o), v128.load(rows + o));
-    for (let j = 1; j < count; j++) {
-      const at = <usize>j * stride + o;
-      acc = f32x4.add(acc, f32x4.mul(v128.load(taps + at), v128.load(rows + at)));
-    }
+    const acc = tapsOf(taps, rows, o, stride, count);
     v128.store(out + o, f32x4.div(acc, f32x4.add(one, vexp(f32x4.neg(acc)))));
   }
   for (; c < n; c++) {
     const o = <usize>c << 2;
-    let acc = load<f32>(taps + o) * load<f32>(rows + o);
-    for (let j = 1; j < count; j++) {
-      const at = <usize>j * stride + o;
-      acc += load<f32>(taps + at) * load<f32>(rows + at);
-    }
+    const acc = tapOne(taps, rows, o, stride, count);
     store<f32>(out + o, acc / (<f32>1.0 + fexp(-acc)));
   }
 }
@@ -61,21 +74,13 @@ export function short_conv(out: usize, taps: usize, rows: usize, b: usize, n: i3
   for (; c + 4 <= n; c += 4) {
     const o = <usize>c << 2;
     v128.store(newest + o, f32x4.mul(v128.load(b + o), v128.load(z + o)));
-    let acc = f32x4.mul(v128.load(taps + o), v128.load(rows + o));
-    for (let j = 1; j < count; j++) {
-      const at = <usize>j * stride + o;
-      acc = f32x4.add(acc, f32x4.mul(v128.load(taps + at), v128.load(rows + at)));
-    }
+    const acc = tapsOf(taps, rows, o, stride, count);
     v128.store(out + o, f32x4.mul(v128.load(gate + o), acc));
   }
   for (; c < n; c++) {
     const o = <usize>c << 2;
     store<f32>(newest + o, load<f32>(b + o) * load<f32>(z + o));
-    let acc = load<f32>(taps + o) * load<f32>(rows + o);
-    for (let j = 1; j < count; j++) {
-      const at = <usize>j * stride + o;
-      acc += load<f32>(taps + at) * load<f32>(rows + at);
-    }
+    const acc = tapOne(taps, rows, o, stride, count);
     store<f32>(out + o, load<f32>(gate + o) * acc);
   }
 }

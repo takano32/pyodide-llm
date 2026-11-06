@@ -37,12 +37,12 @@ if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRA
 // is, then the size of its chunks and the number of its first chunk. The kind is the number of a line of WORK below,
 // which says what the eight arguments are to it and how its rows are run.
 // count > 1 (T108): the same rows for count tokens, whose out, a and b are that many bytes apart. The rows then go in
-// blocks small enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it
+// chunks small enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it
 // is for a single token, so the numbers are the same as one token at a time. A kind that has a tile takes the count
 // tokens in one call instead (a and b are then one frame apart, the same stride). Attention is always one token a
 // job, and so is the delta rule (a Gated DeltaNet layer's state after a token is what the next token reads).
 export const ROWS = 9, COUNT = 10, SIZE = 14, FIRST = 15;
-const BLOCK_BYTES = 16384;
+const CHUNK_BYTES = 16384;
 // T231: the mask the ternary kernels take as an argument (kernels/ternary.ts: a constant written there would be made
 // again at every use)
 const THREE = 3;
@@ -449,7 +449,7 @@ export function runner(k: Kernels, r: Kernels | null, thread = 0) {
     if (count === 1) return one(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
     const tile = tiles[kind];
     if (tile) return tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as, a8);
-    const step = Math.max(1, Math.floor(BLOCK_BYTES / bytes[kind]!(a7, a6)));
+    const step = Math.max(1, Math.floor(CHUNK_BYTES / bytes[kind]!(a7, a6)));
     for (let r = r0; r < r1; r += step) {
       const end = Math.min(r + step, r1);
       for (let t = 0; t < count; t++) one(out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end);

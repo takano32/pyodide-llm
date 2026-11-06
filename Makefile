@@ -57,7 +57,7 @@ src/runtime/built/facts/.made:	python_facts.py $(MODEL_PYTHON)
 # (every source of kernels/ is a prerequisite, read off the folder: a file the rule did not name left the old kernels in
 # src/runtime/built/ when it changed, and the checks then tested those, and nothing said so; T644.4. kernel.ts is the
 # window over kernel/*.ts, T356; blocks.ts and blocks_relaxed.ts over blocks/*.ts, T363.4)
-KERNEL_SOURCES = $(wildcard kernels/*.ts kernels/*/*.ts kernels/*.mjs) kernels/build.py
+KERNEL_SOURCES = $(wildcard kernels/*.ts kernels/*/*.ts) kernels/build.py
 src/runtime/built/simdkernel.so:	$(KERNEL_SOURCES) node_modules
 	python3 kernels/build.py src/runtime/built
 

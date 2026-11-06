@@ -43,6 +43,19 @@ export function layernorm(out: usize, x: usize, w: usize, b: usize, n: i32): voi
   }
 }
 
+// gelu_new of four (the constants made by the caller, out of the loop) and of one, the same steps in the same order:
+// gelu's and geglu's
+// @ts-ignore: decorator
+@inline function geluOf(v: v128, one: v128, c: v128, cube: v128, two: v128): v128 {
+  const inner = f32x4.mul(c, f32x4.add(v, f32x4.mul(f32x4.mul(f32x4.mul(cube, v), v), v)));
+  return f32x4.div(v, f32x4.add(one, vexp(f32x4.mul(two, inner))));
+}
+// @ts-ignore: decorator
+@inline function geluOne(v: f32): f32 {
+  const inner = <f32>0.7978845608028654 * (v + <f32>0.044715 * v * v * v);
+  return v / (<f32>1.0 + fexp(<f32>-2.0 * inner));
+}
+
 // T162: gelu and swiglu four at a time by vexp. Their results are fexp's bit for bit: where vexp and fexp differ (below
 // -87), 1 + exp(x) is 1 either way.
 export function gelu(out: usize, x: usize, b: usize, n: i32): void {
@@ -52,14 +65,12 @@ export function gelu(out: usize, x: usize, b: usize, n: i32): void {
   for (; j + 4 <= n; j += 4) {
     const o = <usize>j << 2;
     const v = f32x4.add(v128.load(x + o), v128.load(b + o));
-    const inner = f32x4.mul(c, f32x4.add(v, f32x4.mul(f32x4.mul(f32x4.mul(cube, v), v), v)));
-    v128.store(out + o, f32x4.div(v, f32x4.add(one, vexp(f32x4.mul(two, inner)))));
+    v128.store(out + o, geluOf(v, one, c, cube, two));
   }
   for (; j < n; j++) {
     const o = <usize>j << 2;
     const v = load<f32>(x + o) + load<f32>(b + o);
-    const inner = <f32>0.7978845608028654 * (v + <f32>0.044715 * v * v * v);
-    store<f32>(out + o, v / (<f32>1.0 + fexp(<f32>-2.0 * inner)));
+    store<f32>(out + o, geluOne(v));
   }
 }
 
@@ -86,14 +97,12 @@ export function geglu(out: usize, h1: usize, h3: usize, n: i32): void {
   for (; j + 4 <= n; j += 4) {
     const o = <usize>j << 2;
     const v = v128.load(h1 + o);
-    const inner = f32x4.mul(c, f32x4.add(v, f32x4.mul(f32x4.mul(f32x4.mul(cube, v), v), v)));
-    v128.store(out + o, f32x4.mul(f32x4.div(v, f32x4.add(one, vexp(f32x4.mul(two, inner)))), v128.load(h3 + o)));
+    v128.store(out + o, f32x4.mul(geluOf(v, one, c, cube, two), v128.load(h3 + o)));
   }
   for (; j < n; j++) {
     const o = <usize>j << 2;
     const v = load<f32>(h1 + o);
-    const inner = <f32>0.7978845608028654 * (v + <f32>0.044715 * v * v * v);
-    store<f32>(out + o, v / (<f32>1.0 + fexp(<f32>-2.0 * inner)) * load<f32>(h3 + o));
+    store<f32>(out + o, geluOne(v) * load<f32>(h3 + o));
   }
 }
 

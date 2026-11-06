@@ -42,10 +42,10 @@ def side_module(source, out, features):
 def plain_module(source, out, features, shared=False, wasm64=False):
     """T93: the same kernels as plain WebAssembly, instantiated by src/runtime/forward.js on the memory that holds the
     weights (not Pyodide's). No dylink.0. shared: on a shared memory, for threads that share the weights (stage 2,
-    and tests/threads-check.ts). wasm64 (T101): on a 64-bit memory (kernels/wasm64.mjs), for models past 4 GiB."""
+    and tests/threads-check.ts). wasm64 (T101): on a 64-bit memory (kernels/wasm64.ts), for models past 4 GiB."""
     flags = ["--sharedMemory", "--maximumMemory", "65536"] if shared else []
     if wasm64:
-        flags += ["--transform", str(Path(__file__).parent / "wasm64.mjs")]
+        flags += ["--transform", str(Path(__file__).parent / "wasm64.ts")]
     subprocess.run(["npx", "asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory",
                     "--initialMemory", "1", *flags, str(source), "-o", str(out),
                     "--enable", features + (",threads" if shared else "") + (",memory64" if wasm64 else "")], check=True)
