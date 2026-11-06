@@ -14,6 +14,8 @@ import type { Options } from "../runtime/contracts/python.ts";
 // &tokenizer=, address.ts). What one kind has, the others say they have not (?: undefined), so that each is read by the
 // same names
 type Unread = { file?: undefined; tokenizerFile?: undefined; url?: undefined };
+// (T653: an entry of the list may have an address, a checkpoint of Hugging Face's)
+type UnreadListed = Omit<Unread, "url">;
 // what a model of a visitor's files or a link has besides the worker's kind of it
 type Made = { note: string; options: Options; generation: Generation; prompt: string; placeholder: string; template?: string; group?: undefined;
   download?: undefined; conversion?: undefined; weights?: undefined; converted?: undefined; loaded?: undefined; wide?: undefined;
@@ -22,7 +24,7 @@ type Made = { note: string; options: Options; generation: Generation; prompt: st
 type Unsorted = { japanese?: undefined };
 export type Unlisted = Omit<Remote, "download" | "hf" | "japanese"> & Unread & Unsorted & { download?: number; hf: { repo: string; revision: string; weights: string; config: string } };
 export type Folder = Omit<Remote, "download" | "hf" | "japanese"> & Unread & Unsorted & { download?: undefined; hf: Omit<Hf, "repo" | "revision"> & { repo?: undefined; revision?: undefined; files: File[]; weights: string } };
-export type Model = (typeof MODELS[number] & Unread) | Unlisted | Folder | (OfTwoFiles & Made) | (OfTwoUrls & Made & { tokenizerFile?: undefined });
+export type Model = (typeof MODELS[number] & UnreadListed) | Unlisted | Folder | (OfTwoFiles & Made) | (OfTwoUrls & Made & { tokenizerFile?: undefined });
 /** T553: what the reports of a fetch say so far: when the first came and its bytes, when the last came and its bytes,
  * when the bytes last grew (ms of the page's clock), and the speed in bytes a second (none before two reports). */
 export type Arriving = { began: number; first: number; at: number; bytes: number; moved: number; speed?: number };

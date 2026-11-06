@@ -29,7 +29,8 @@ type Named = { id: string; name: string; options?: Options };
 export type OfThisSite = Named & { checkpoint: string; tokenizer: string; bytes: number; options: Options; hf?: undefined; file?: undefined; url?: undefined; translation?: undefined };
 // two files of the visitor's disk, a llama2.c checkpoint (bytes: its size) and its tokenizer.bin, read where they are
 export type OfTwoFiles = Named & { file: File; tokenizerFile: File; bytes: number; hf?: undefined; url?: undefined; translation?: undefined };
-// the same at two URLs (?checkpoint=&tokenizer=); bytes: the worker's own, what the server says the checkpoint's size is
+// the same at two URLs (?checkpoint=&tokenizer=; T653: or an entry of the list, whose tokenizer is a name of this
+// site's models/); bytes: the worker's own, what the server says the checkpoint's size is
 export type OfTwoUrls = Named & { url: { checkpoint: string; tokenizer: string }; bytes?: number; tokenizer?: undefined; hf?: undefined; file?: undefined; translation?: undefined };
 // A Hugging Face model, converted in the worker. hf: the names of its files, which Python's conduct reads
 // (src/python/convert/conduct.py), and where they are: huggingface.co's repository and revision (vocabulary: another

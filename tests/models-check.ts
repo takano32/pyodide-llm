@@ -2,6 +2,7 @@
 //
 //   node tests/models-check.ts
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { DEFAULT_MODEL, GROUPS, LICENSES, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, UNASKED_BYTES, asksBefore, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
 import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
@@ -28,6 +29,16 @@ for (const entry of MODELS.filter((entry) => entry.hf?.vocabulary)) {
 for (const entry of MODELS.filter((entry) => entry.hf)) {
   for (const { revision } of [entry.hf, entry.hf.vocabulary].filter(Boolean)) {
     assert.match(revision, /^[0-9a-f]{40}$/, `${entry.id}: a revision is a full commit hash, not ${revision}`);
+  }
+}
+// T653: and an entry of a checkpoint fetched at its address names it at a revision of huggingface.co, read with a
+// tokenizer.bin of this site's models/ (a name, which the Makefile serves)
+{
+  const linked = MODELS.filter((entry) => entry.url);
+  assert.deepEqual(linked.map(({ id }) => id), ["stories42M-f32"]);
+  for (const entry of linked) {
+    assert.match(entry.url.checkpoint, new RegExp(`^https://huggingface\\.co/${entry.source}/resolve/[0-9a-f]{40}/[^/]+$`), `${entry.id}: its checkpoint at a full commit hash of its source`);
+    assert.ok(/^TOKENIZERS = .*\b/m.exec(fs.readFileSync(new URL("../Makefile", import.meta.url), "utf8"))?.[0].split(/\s+/).includes(entry.url.tokenizer), `${entry.id}: ${entry.url.tokenizer} is a tokenizer of this site`);
   }
 }
 // T274's review: an entry's generation reaches Llama.generate() as keyword arguments, so a misspelt key (topk for top_k)
@@ -201,7 +212,7 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
   // loaded: read before converted, of an entry that says it, and nothing of any other entry changed by it: each still
   // says its size by its file or by converted (T643.17: the note's words before)
   // (T333: and Gemma 4's two, whose table of every layer's inputs stays in the kept file: below)
-  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-qwen3-14b-thinking", "hf-qwen3-14b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-llm-jp-3.1-13b-instruct4", thinks.id, answers.id].sort());
+  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-qwen3-14b-thinking", "hf-qwen3-14b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-llm-jp-3.1-13b-instruct4", "llm-jp-3-150m-f16", thinks.id, answers.id].sort());
   for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.ok(entry.converted > 0, `${entry.id}: its size is converted`);
 }
 // T333: Gemma 4's E2B and E4B, Google's originals (not gated, Apache 2.0) converted in the page. What they take is the

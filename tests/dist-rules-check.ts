@@ -46,8 +46,9 @@ const family = familyOf(coi);
   const NOTICE = "/*! Copyright (c) 2023 The authors of something\n *\n * Permission is hereby granted, to any person,\n * to deal in the Software.\n */\n";
   const BUNDLED = "//#region src/runtime/worker/part.js\n\t/*! Copyright (c) 2023 The authors of something\n\t*\n\t* Permission is hereby granted, to any person,\n\t* to deal in the Software.\n\t*/\nconst P = 2;\n//#endregion\n";
   const sources = { "src/runtime/forward.js": 'import { J } from "./jobs.js";\nexport const F = J;\n', "src/runtime/jobs.js": "export const J = 1;\n", "src/runtime/worker/part.js": `${NOTICE}export const P = 2;\n`,
-    "src/runtime/built/simdkernel.so": "so", "src/runtime/built/simdkernel_plain.wasm": "wasm", "src/runtime/built/engine.zip": "zip", "src/python/llama2_numpy.py": "", "public/coi.js": coi, "public/coi-test/sw.js": "" };
-  const good = { "index.html": "", "benchmark/index.html": "", "coi.js": coi, "coi-test/sw.js": "", "models/t.bin": "",
+    "src/runtime/built/simdkernel.so": "so", "src/runtime/built/simdkernel_plain.wasm": "wasm", "src/runtime/built/engine.zip": "zip", "src/python/llama2_numpy.py": "", "public/coi.js": coi, "public/coi-test/sw.js": "",
+    "Makefile": "CHECKPOINTS = t.bin \\\n              t.f32\nTOKENIZERS = t.tokenizer.bin\n" };
+  const good = { "index.html": "", "benchmark/index.html": "", "coi.js": coi, "coi-test/sw.js": "", "models/t.bin.000": "", "models/t.f32.000": "", "models/t.f32.001": "", "models/t.tokenizer.bin": "",
     "_astro/worker.DR4U5U7O.js": BUNDLED, "_astro/forward.Dqke8pTt.js": "export const F = 1;\n", "_astro/kept.BDa9_jbn.js": "export const k = 1;\n", "_astro/key.XnxXfX1x.js": "export const k = 2;\n", "_astro/gpu.BxCYF6dr.js": "export const g = 1;\n", "_astro/shaders.B-nxB-d4.js": "export const s = 1;\n", "_astro/simdkernel.DtNlNAG4.so": "so", "_astro/simdkernel_plain.DfCGpm7G.wasm": "wasm", "_astro/engine.D5queIE0.zip": "zip", "_astro/index.ChJdR91r.css": "" };
   const build = (name, change = {}) => {
     const tree = written(name, { ...sources, ...Object.fromEntries(Object.entries({ ...good, ...change }).filter(([, text]) => text !== null).map(([file, text]) => [`dist/${file}`, text])) });
@@ -55,7 +56,7 @@ const family = familyOf(coi);
   };
   const right = build("right");
   assert.deepEqual(right.said, []);
-  assert.match(right.looked, /^10 files of _astro\/, each a family of its own; 3 built files in it once each; none of 3 sources as it is; 1 notices where their code is; the root holds nothing else, and no bytecode; 0\.0 MiB in all$/);
+  assert.match(right.looked, /^10 files of _astro\/, each a family of its own; 3 built files in it once each; none of 3 sources as it is; 1 notices where their code is; the root holds nothing else, and no bytecode; models\/ the Makefile's checkpoints; 0\.0 MiB in all$/);
   const wrong = (name, change, ...patterns) => {
     const { said } = build(name, change);
     assert.equal(said.length, patterns.length, `${name}: ${said.join(" | ")}`);
@@ -100,6 +101,9 @@ const family = familyOf(coi);
   wrong("a module of Node's asked for by its bare name", { "_astro/helper.CZLQh-ea.js": 'import { parentPort } from "worker_threads";\nexport const port = parentPort;\n' }, /^_astro\/helper\.CZLQh-ea\.js asks for worker_threads: a module of Node's in a browser's file/);
   wrong("the bundler's stand-in for a module of Node's", { "_astro/__vite-browser-external.CnCWOxrk.js": "export default {};\n", "_astro/rolldown-runtime.DBMA93yC.js": "export {};\n" },
     /^_astro\/__vite-browser-external\.CnCWOxrk\.js: the bundler's stand-in for a module of Node's/, /^_astro\/rolldown-runtime\.DBMA93yC\.js: the bundler's stand-in/);
+  // (T653) a checkpoint's parts left in public/models/ after the Makefile let it go, and one of the Makefile's not served
+  wrong("a checkpoint left over", { "models/gone.f16.000": "", "models/gone.f16.001": "" }, /^dist\/models\/gone\.f16\.000…: no checkpoint of the Makefile's CHECKPOINTS \(a part left in public\/models\/: make models again\)$/);
+  wrong("a checkpoint not served", { "models/t.f32.000": null, "models/t.f32.001": null }, /^dist\/models\/t\.f32\.000 is not there, a checkpoint of the Makefile's CHECKPOINTS$/);
   wrong("a runtime file at the root", { "worker.js": "as it was" }, /^dist\/worker\.js: nothing asks for it there \(the root holds _astro, index\.html, benchmark, coi\.js, coi-test, models\)/);
   wrong("an archive at the root", { "engine.zip": "zip" }, /^dist\/engine\.zip: nothing asks for it there/);
   wrong("an emptied folder at the root", { "worker/.keep": "" }, /^dist\/worker: nothing asks for it there/);
@@ -115,7 +119,7 @@ const family = familyOf(coi);
   assert.match(heavy[0], new RegExp(`^dist/ is ${weight.toLocaleString("en")} bytes \\(0\\.0 MiB\\), more than GitHub Pages's 0\\.0 MiB: something served has to go before a model comes in$`));
   assert.deepEqual(distSaid(path.join(scratch, "right", "dist"), treeOf(path.join(scratch, "right"), { ...RULE }), weight).said, [], "a site of the line's weight is not too heavy");
   assert.equal(SITE_BYTES, 1024 ** 3);
-  ok("a bundled tree's build: right, and wrong in twenty-one ways, each said in a line of its own");
+  ok("a bundled tree's build: right, and wrong in twenty-three ways, each said in a line of its own");
 
   // ---- a module as a build wrote it
   const dist = path.join(scratch, "right", "dist");

@@ -423,6 +423,16 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
       "two URLs: the header first, by a range request, then the tokenizer and the checkpoint's bytes in range requests");
     assert.deepEqual(of("progress").at(-1), { type: "progress", load: 65, received: BYTES, total: BYTES }, "the download of two URLs tells its progress to the end");
     assert.ok(headerHanded(), "the header of two URLs was not the first range request's bytes");
+    // T653: an entry of the list, whose tokenizer is a name: the tokenizer.bin of the site's models/, under the root the
+    // load hands
+    {
+      const SITE_TOKENIZER = "https://site.test/app/models/tokenizer.bin";
+      fresh((url, init) => url === SITE_TOKENIZER ? new Response(new Uint8Array(8), { status: 200 }) : url === TOKENIZER ? new Response(null, { status: 404 }) : ranged(url, init));
+      await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 67, model: { id: "stories42M-f32", name: "Listed", options: {}, bytes: BYTES, url: { checkpoint: CHECKPOINT, tokenizer: "tokenizer.bin" } } } });
+      await sleep(50);
+      assert.deepEqual([of("error"), of("ready").at(-1)?.load, requests.filter((r) => !r.range).map((r) => r.url)], [[], 67, [SITE_TOKENIZER]],
+        "an entry of the list at a URL: its tokenizer.bin is the site's, under the root");
+    }
     // a server whose answer to the range request says a size no checkpoint has: the load fails before anything else is asked
     fresh(() => new Response(new Uint8Array(20), { status: 206, headers: { "Content-Range": "bytes 0-19/20" } }));
     await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 66, model: { ...urls, url: { ...urls.url } } } });

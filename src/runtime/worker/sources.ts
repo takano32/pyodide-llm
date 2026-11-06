@@ -306,8 +306,9 @@ export const SOURCES = {
     }),
     misread: (reason) => `${model.tokenizerFile.name} does not work as the tokenizer.bin of ${model.file.name} (${reason})`,
   }),
-  // two URLs: the size of a file somewhere else is what its server says to the first range request, which brings
-  // the header too
+  // two URLs (?checkpoint=&tokenizer=, or T653: an entry of the list, a checkpoint of Hugging Face read with a
+  // tokenizer.bin of this site's): the size of a file somewhere else is what its server says to the first range
+  // request, which brings the header too
   url: (model: OfTwoUrls): SourceKind => ({
     verb: "Downloading",
     async opened(signal, load) {
@@ -316,7 +317,9 @@ export const SOURCES = {
       if (!(model.bytes > 28)) {
         throw new Error(`${model.url.checkpoint} does not answer range requests, so its size is unknown.`);
       }
-      return { checkpoint: readUrl(model as Sized, signal, load), tokenizer: tokenizerAt(model.url.tokenizer, model.url.tokenizer, signal), header: async () => first.bytes };
+      // (T653: a tokenizer that is a name and no address, an entry of the list's, is the one of this site's models/)
+      const tokenizer = new URL(model.url.tokenizer, new URL("models/", root));
+      return { checkpoint: readUrl(model as Sized, signal, load), tokenizer: tokenizerAt(tokenizer, model.url.tokenizer, signal), header: async () => first.bytes };
     },
   }),
 };

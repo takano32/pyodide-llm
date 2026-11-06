@@ -17,7 +17,7 @@ import type { Dtype } from "../runtime/contracts/form.ts";
 // original's; T634.2, wide: its forward pass at the context passes a 32-bit memory where its weights alone do not),
 // the engine's options, the template and the sampling of an answer, the prompt and the placeholder it
 // opens with
-// T643.1: the kinds are types (T648.4: three, with a translation model's), and an entry is one of them: what one kind has, the other says it has not
+// T643.1: the kinds are types (T648.4: three, with a translation model's; T653: four, with a checkpoint of Hugging Face's at its address), and an entry is one of them: what one kind has, the other says it has not
 // (?: undefined), so that either is read by the same names. generation: steps and temperature, which every entry says
 // (the page's settings start from them)
 export type Generation = Sampled & { steps: number; temperature: number };
@@ -51,6 +51,7 @@ export type Site = Shared & {
   loaded?: undefined;
   rebuilt?: undefined;
   translation?: undefined;
+  url?: undefined;
 };
 // an entry of a model of Hugging Face, converted in the page: its repository, revision and file are named
 export type Remote = Shared & {
@@ -68,6 +69,7 @@ export type Remote = Shared & {
   tokenizer?: undefined;
   bytes?: undefined;
   translation?: undefined;
+  url?: undefined;
 };
 // T648.4: an entry of a translation model of this site (Firefox Translations', `make models`): its files under
 // models/translations/ and its languages (translation), the bytes of its model's file, and the source of the list's
@@ -88,8 +90,30 @@ export type Translating = Shared & {
   converted?: undefined;
   loaded?: undefined;
   rebuilt?: undefined;
+  url?: undefined;
 };
-export type Entry = Site | Remote | Translating;
+// T653: an entry of a llama2.c checkpoint of Hugging Face, fetched at its address as it is (the worker's kind of two
+// URLs, sources.ts): the repository it is of (source), the checkpoint's address at a pinned revision and the name of
+// the tokenizer.bin of this site's models/ it is read with (url), and the checkpoint's bytes
+export type Linked = Shared & {
+  source: string;
+  url: { checkpoint: string; tokenizer: string };
+  bytes: number;
+  template?: undefined;
+  checkpoint?: undefined;
+  tokenizer?: undefined;
+  hf?: undefined;
+  original?: undefined;
+  download?: undefined;
+  conversion?: undefined;
+  shares?: undefined;
+  weights?: undefined;
+  converted?: undefined;
+  loaded?: undefined;
+  rebuilt?: undefined;
+  translation?: undefined;
+};
+export type Entry = Site | Remote | Translating | Linked;
 // what the entries a function below writes share, before their own id, name, note and sampling
 type Common = Omit<Remote, "id" | "name" | "note" | "generation">;
 // the weights a function below is given: a GGUF's with its original's vocabulary (ggufOf()), or a repository's (hf())

@@ -1,8 +1,9 @@
 // The models built with the site (`make models`) and their unquantized originals.
-// Every file of these two groups is fetched when the site is built (see the Makefile): llm-jp-3 and tiny-lm are
+// Every file of these two groups but two originals' (T653, below) is fetched when the site is built (see the Makefile): llm-jp-3 and tiny-lm are
 // converted from their Hugging Face checkpoints by convert_hf.py, and the larger models are quantized to int8. bytes
 // is the checkpoint size: it sizes the download buffer and the progress bar.
-import { JAPANESE, STORY, unigram } from "./formats.ts";
+import { JAPANESE, STORY, llmJp, unigram } from "./formats.ts";
+import { hf } from "./builders.ts";
 import { greedy, sampled } from "./sampling.ts";
 import type { Entry } from "./builders.ts";
 
@@ -32,14 +33,18 @@ export const BUILT: Entry[] = [
     source: "sbintuitions/tiny-lm", checkpoint: "tiny-lm.f16", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",
     options: { dtype: "float16", ...unigram, stop_tokens: [1, 2] },
     generation: sampled(1.3), prompt: "これからの流行りは", placeholder: JAPANESE },
-  { group: "original", id: "llm-jp-3-150m-f16", name: "llm-jp-3 150M (original)", note: "日本語 / English · float16 · 305 MB", japanese: true,
-    source: "llm-jp/llm-jp-3-150m", checkpoint: "llm-jp-3-150m.f16", bytes: 305161244, tokenizer: "llm-jp-3-150m.tokenizer.bin",
-    options: { dtype: "float16", ...unigram, stop_tokens: [1, 2, 7] },
-    generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  // T653: llm-jp-3 150M's original and stories42M's are not files of this site any more (it is smaller by 450 MiB): the
+  // first is converted to float16 in the page from its repository, as the site's was by convert_hf.py (the same
+  // tokenizer.bin; its options the site's, which the converter's are but stop_tokens: 7 is the converter's no stop),
+  // and the second is fetched at its address as it is, a llama2.c checkpoint, read with this site's tokenizer.bin.
+  // loaded: float16 is widened when loaded, three times the file as the site's was (src/models/memory.ts)
+  { group: "original", id: "llm-jp-3-150m-f16", name: "llm-jp-3 150M (original)", note: "日本語 / English · fetches 305 MB → float16 305 MB", japanese: true,
+    hf: hf("llm-jp/llm-jp-3-150m", "b112feef602fff752e4dac4c30af6a2c2fa41c7a"), download: 304649360, conversion: { dtype: "float16" }, loaded: 305161244 * 3,
+    options: llmJp, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "original", id: "stories15M-f32", name: "Andrej Karpathy TinyStories 15M (original)", note: "English · float32 · 61 MB", japanese: false,
     source: "karpathy/tinyllamas", checkpoint: "stories15M.f32", bytes: 60816028, tokenizer: "tokenizer.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
-  { group: "original", id: "stories42M-f32", name: "Andrej Karpathy TinyStories 42M (original)", note: "English · float32 · 167 MB", japanese: false,
-    source: "karpathy/tinyllamas", checkpoint: "stories42M.f32", bytes: 167020572, tokenizer: "tokenizer.bin", options: {},
-    generation: greedy, prompt: "Once upon a time", placeholder: STORY },
+  { group: "original", id: "stories42M-f32", name: "Andrej Karpathy TinyStories 42M (original)", note: "English · float32 · fetches 167 MB", japanese: false,
+    source: "karpathy/tinyllamas", url: { checkpoint: "https://huggingface.co/karpathy/tinyllamas/resolve/0bd21da7698eaf29a0d7de3992de8a46ef624add/stories42M.bin", tokenizer: "tokenizer.bin" },
+    bytes: 167020572, options: {}, generation: greedy, prompt: "Once upon a time", placeholder: STORY },
 ];
