@@ -5,6 +5,9 @@
 // of int8 rows, ternary rows (in the shared memory with float16 scales, and read back with float32 ones) and Q4_K's
 // blocks; RMSNorm, LayerNorm and GELU. The reference is float64 and NumPy's answer float32: within 1e-6 of the largest.
 // And the parts of no shader: the check's rows of the vocabulary, the largest and how far, heldFloats().
+// T642.12: and the answer a prompt's attention is checked against (gpu/forms.ts's checkAttention()), by itself too:
+// shaders/attention.ts's promptAttentionOff() of promptAttentionData()'s numbers, against gpu_answers.py's flash_tile
+// (with a window and without), and that one head of another's, a token of another's and a NaN are past the check's line.
 //
 //   node tests/gpu-reference-check.ts        (Node and Pyodide, about 10 seconds)
 import assert from "node:assert/strict";
@@ -14,6 +17,7 @@ const { product, rms, norm, gelu, largest, off, checkCandidates, checkRows, held
 const { quantizedLikeCpu } = await import(runtimeUrl("shaders/prompt.ts"));
 const { SUPERBLOCKS } = await import(runtimeUrl("shaders/superblocks.ts"));
 const { halvesOf } = await import(runtimeUrl("shaders/halves.ts"));
+const { promptAttentionData, promptAttentionOff } = await import(runtimeUrl("shaders/attention.ts"));
 
 const { called } = await gpuAnswers();
 let passed = 0;
@@ -130,6 +134,32 @@ const x = floats(n);
     assert.deepEqual([...heldFloats(values, far)], [...values].map(Math.f16round));
   }
   ok("the check's rows, the largest and how far, heldFloats");
+}
+
+// ---- T642.12: a prompt's attention (the check's sizes: 9 tokens at 61, 4 heads of q on 2, a window of 13 or none)
+{
+  for (const window of [0, 13]) {
+    const sizes = { heads: 4, kvHeads: 2, size: 64, tokens: 9, pos: 61, window }, { heads, kvHeads, size, tokens, pos } = sizes;
+    const data = promptAttentionData(sizes), qDim = heads * size;
+    assert.equal(data.q.length, tokens * qDim);
+    assert.equal(data.keys.length, (pos + tokens) * kvHeads * size);
+    assert.equal(data.values.length, data.keys.length);
+    const [out] = called("flash_tile", bytesOf(data.q), bytesOf(data.keys), bytesOf(data.values), heads, kvHeads, Math.fround(1 / Math.sqrt(size)), window, tokens, pos, size);
+    const got = asFloats(out);
+    const far = promptAttentionOff(got, data, sizes);
+    assert.ok(far <= 1e-6, `the prompt's attention${window ? ", a window" : ""}: ${far} of the largest from NumPy's flash_tile`);
+    // (the check's line is 4e-3: a head that reads another's, a token another's, a NaN, are past it)
+    const head = got.slice(), at = 5 * qDim;
+    head.copyWithin(at, at + size, at + 2 * size);
+    assert.ok(promptAttentionOff(head, data, sizes) > 4e-3, "a head of another's");
+    const token = got.slice();
+    token.copyWithin(3 * qDim, 4 * qDim, 5 * qDim);
+    assert.ok(promptAttentionOff(token, data, sizes) > 4e-3, "a token of another's");
+    const nan = got.slice();
+    nan[tokens * qDim - 1] = NaN;
+    assert.ok(!(promptAttentionOff(nan, data, sizes) <= 4e-3), "a NaN");
+  }
+  ok("a prompt's attention: against flash_tile, with a window and without");
 }
 
 console.log(`${passed} passed`);
