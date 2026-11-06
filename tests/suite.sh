@@ -187,6 +187,9 @@ page_modules() {
   # imports, every field of the object the steps share used, every message posted says its type, a message as the
   # window's onmessage is set answered once; and the names the tables' modules (src/bench/, JavaScript) use
   node tests/bench-modules-check.ts
+  # T642.17's review: which shaders /benchmark/'s GPU worker offers by what a device has (shader-f16, subgroups, WGSL's
+  # subgroup_id and packed dot), its steps run on a WebGPU that computes nothing, each of 8 cases in a process of its own
+  node tests/bench-features-check.ts
   # T352, T378.4: what tsc does not hold of the model's GPU worker (src/runtime/gpu.ts) and its modules (src/runtime/gpu/):
   # its state's owners (model, stopping and lost are hidden nowhere and read where a function runs; every field of the
   # model's record is set in its owner's file and read somewhere), every message posted says its type, and messages as
