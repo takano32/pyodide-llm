@@ -21,7 +21,7 @@ class Writer:
     def __init__(self, out, header, dtype, form=None, sink=None, quantize_rows=None):
         """out: a buffer of the checkpoint's size, or None with sink: an object with open(size, header, dtype,
         form) and write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly
-        memory of public/forward.js, which the header and the rest size, T115). Pyodide's own memory never shrinks,
+        memory of src/runtime/forward.ts, which the header and the rest size, T115). Pyodide's own memory never shrinks,
         so a converted model that went through a Python buffer on its way there would keep taking its size twice.
         form (llama2_numpy.FORM, see checkpoint_form()): what the file does not say, which lays out its tensors and
         sizes the forward pass besides the header; the sink gets it whole."""
