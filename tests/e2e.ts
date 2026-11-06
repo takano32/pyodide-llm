@@ -73,11 +73,31 @@ import { serving } from "./serving.ts";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
 // an id the list does not have opens the page's default model, and the run passed on it (T144: models.yml with a
-// misspelt id answered with tiny-lm): such an id fails before a browser starts
-if (!/^(local|hf|url|default|hf:.+)$/.test(model) && !MODELS.some((entry) => entry.id === model)) {
-  console.error(`FAILED\n- no model ${model} in src/models.ts (the page would open its default model instead)`);
-  process.exit(1);
+// misspelt id answered with tiny-lm): such an id fails before a browser starts. So does one of E2E_THEN's.
+for (const asked of [model, ...(process.env.E2E_THEN ?? "").split(/\s+/).filter(Boolean)]) {
+  if (asked === model && /^(local|hf|url|default|hf:.+)$/.test(asked)) continue;
+  if (!MODELS.some((entry) => entry.id === asked)) {
+    console.error(`FAILED\n- no model ${asked} in this e2e's list, src/models.ts (the page would open its default model instead; a deployed site is to be checked with the e2e of its own commit)`);
+    process.exit(1);
+  }
 }
+// T651: the name of the model that is to answer, which the status line once ready and the line under an answer begin
+// with (src/page/lines.ts: "<name> · "). An id of the list that a deployed page does not have yet (one added after
+// its build) opens the page's default model, which answered, and the run passed (run 42157507542): the names tell them
+// apart. "default" is the list's DEFAULT_MODEL; "local" and "url" open stories260K.bin, named by the file (a folder of
+// a checkpoint and a tokenizer, as folder.ts names one without a settings file; ?checkpoint=, as address.ts names it by
+// the last part of its path); "hf" is named by its settings file (tests/make_hf_fixture.py); hf:<owner>/<repository>
+// by the repository, as address.ts's hfEntry() names one nobody listed.
+const nameOf = (asked) => asked === "default" ? DEFAULT_MODEL.name
+  : asked === "local" || asked === "url" ? "stories260K.bin"
+  : asked === "hf" ? "stories260K from Hugging Face files"
+  : asked.startsWith("hf:") ? asked.slice(3).split("@")[0]
+  : MODELS.find((entry) => entry.id === asked).name;
+// what a line says where it does not begin with the name asked for (the name it begins with: the part before " · ")
+const namedOtherwise = (line, asked) => {
+  const want = nameOf(asked);
+  return line.startsWith(`${want} · `) ? null : `the model named ${JSON.stringify(line.split(" · ")[0])}, not ${JSON.stringify(want)}`;
+};
 // expected beginning of the greedy text, where the model is deterministic
 const expected = {
   stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
@@ -420,6 +440,12 @@ recovered.push(...missing);
 const unexplained = errors.filter((text) => !recovered.includes(text) || (recovered.splice(recovered.indexOf(text), 1), false));
 if (unexplained.length) failures.push(`console errors: ${unexplained.join(" | ")}`);
 if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
+// T651: the model that got ready and answered is the one asked for (a page without it opens its default)
+// (the status line once the answer is there is the ready one again, its GPU's verdict and all: the name begins it)
+for (const [where, line] of [["the status line", result.status], ["the line under the answer", result.meta]]) {
+  const otherwise = !result.error && line && namedOtherwise(line, model);
+  if (otherwise) failures.push(`${where} says ${otherwise} (${line})`);
+}
 if (result.pageScrolls) failures.push("the page itself scrolls");
 // (T577: an answer the query cut short with steps= is the start of the expected text, which it does not reach)
 const begins = (text, want) => text.startsWith(want) || (stepsSaid && want.startsWith(text.trim()) && text.trim().length > 0);
@@ -501,6 +527,10 @@ for (const next of (process.env.E2E_THEN ?? "").split(/\s+/).filter(Boolean)) {
   then.push({ model: next, readySeconds, ...last, threadReports: await watched(`then ${next}: `) });
   console.log(last.text.slice(0, 160).replace(/\n/g, " / "));
   if (last.error || !/tok\/s/.test(last.meta)) failures.push(`then ${next}: ${last.error || "no answer"}`);
+  for (const [where, line] of [["the status line", last.status], ["the line under the answer", last.meta]]) {
+    const otherwise = !last.error && line && namedOtherwise(line, next);
+    if (otherwise) failures.push(`then ${next}: ${where} says ${otherwise} (${line})`);
+  }
 }
 let again = null;
 if (process.env.E2E_TWICE && !failures.length) {
@@ -550,6 +580,8 @@ if (process.env.E2E_OFFLINE && !failures.length) {
     console.log(`offline: ready in ${readyOffline.toFixed(1)}s, ${offline.meta || offline.error}`);
     offline.threadReports = await watched("offline: ");
     if (offline.error || !/tok\/s/.test(offline.meta)) failures.push(`offline: ${offline.error || "no answer"}`);
+    const otherwise = !offline.error && offline.meta && namedOtherwise(offline.meta, then.at(-1)?.model ?? model);
+    if (otherwise) failures.push(`offline: the line under the answer says ${otherwise} (${offline.meta})`);
   }
   await page.context().setOffline(false);
   serverOffline = false;
