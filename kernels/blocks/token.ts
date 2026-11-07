@@ -1,7 +1,7 @@
 // blocks/token.ts (T363.4): one token's rows of llama.cpp's blocks, matmul_sb and matmul_sbr (the same numbers, with
 // relaxed SIMD and without), and sums_x, what its activations need. blocks/types.ts has what a type is and the
 // arithmetic; T363.1's form "rb3" (docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md).
-import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, V_POWERS4, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, bySixteen, hasSigns, hasMinimums, vectorAt, pairSums, four, signedBy, dotAdd, magnitudes, minuses, weights, scaleOf, minimumOf, blockScale, blockMinimum } from "./types";
+import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, V_POWERS4, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, sizeOf, bySixteen, hasSigns, hasMinimums, vectorAt, pairSums, four, signedBy, dotAdd, magnitudes, minuses, weights, scaleOf, minimumOf, blockScale, blockMinimum } from "./types";
 import { hsum, groupSums } from "../kernel/math";
 
 // ---- one token. S of the four units from 16 weights h on, a lane each (h a multiple of 4 where a unit is 16 weights,
@@ -116,30 +116,33 @@ import { hsum, groupSums } from "../kernel/math";
   return f32x4.sub(part, f32x4.mul(scaled(minimums4<K>(p, 0, sums16, fifteen), minimums4<K>(p, 8, sums16, fifteen), xs), f32x4.splat(blockMinimum<K>(p))));
 }
 // @ts-ignore: decorator
-@inline function rowsOf<R>(xout: usize, xq: usize, xs: usize, w: usize, tab: usize, n: i32, r0: i32, r1: i32, kind: i32): void {
-  const blocks = n >> 8, size = bytesOf(kind);
+@inline function rowsOfKind<K, R>(xout: usize, xq: usize, xs: usize, w: usize, tab: usize, n: i32, r0: i32, r1: i32, bits: v128, first: v128, three: v128, fifteen: v128): void {
+  const blocks = n >> 8, size = sizeOf<K>();
   const sums16 = xs + (<usize>(n >> 5) << 2), sums8 = sums16 + (<usize>(n >> 4) << 1);
-  const bits = vectorAt(tab, V_BITS), first = vectorAt(tab, V_FIRST), three = vectorAt(tab, V_THREE), fifteen = vectorAt(tab, V_FIFTEEN);
   for (let i = r0; i < r1; i++) {
     const row = w + <usize>i * <usize>blocks * size;
     let facc = f32x4.splat(0);
     for (let b = 0; b < blocks; b++) {
       const p = row + <usize>b * size, x = xq + (<usize>b << 8), s = xs + (<usize>b << 5), s16 = sums16 + (<usize>b << 5), s8 = sums8 + (<usize>b << 6);
-      let part = f32x4.splat(0);
-      if (kind == IQ2_XXS) part = blockOf<XXS2, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == IQ3_S) part = blockOf<S3, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == IQ2_XS) part = blockOf<XS2, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == IQ2_S) part = blockOf<S2, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == IQ3_XXS) part = blockOf<XXS3, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == IQ1_M) part = blockOf<M1, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == IQ1_S) part = blockOf<S1, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == Q2_K) part = blockOf<K2, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == IQ4_XS) part = blockOf<XS4, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      else if (kind == Q4_K) part = blockOf<K4, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen);
-      facc = f32x4.add(facc, part);
+      facc = f32x4.add(facc, blockOf<K, R>(p, x, s, s16, s8, tab, bits, first, three, fifteen));
     }
     store<f32>(xout + (<usize>i << 2), hsum(facc));
   }
+}
+// the type is chosen once, outside the loops: each type has its own loops (an unknown type writes nothing)
+// @ts-ignore: decorator
+@inline function rowsOf<R>(xout: usize, xq: usize, xs: usize, w: usize, tab: usize, n: i32, r0: i32, r1: i32, kind: i32): void {
+  const bits = vectorAt(tab, V_BITS), first = vectorAt(tab, V_FIRST), three = vectorAt(tab, V_THREE), fifteen = vectorAt(tab, V_FIFTEEN);
+  if (kind == IQ2_XXS) rowsOfKind<XXS2, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == IQ3_S) rowsOfKind<S3, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == IQ2_XS) rowsOfKind<XS2, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == IQ2_S) rowsOfKind<S2, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == IQ3_XXS) rowsOfKind<XXS3, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == IQ1_M) rowsOfKind<M1, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == IQ1_S) rowsOfKind<S1, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == Q2_K) rowsOfKind<K2, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == IQ4_XS) rowsOfKind<XS4, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
+  else if (kind == Q4_K) rowsOfKind<K4, R>(xout, xq, xs, w, tab, n, r0, r1, bits, first, three, fifteen);
 }
 /** One token: xout[i] = the dot product of row i of w (n weights in blocks of `type`) and the activations at xq, xs,
  * for rows r0 to r1. Without relaxed SIMD; matmul_sbr's numbers to the bit. */

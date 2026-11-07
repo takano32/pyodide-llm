@@ -103,10 +103,9 @@ import { matmul_sbr } from "./token";
   store<f32>(out + 3 * os, f32x4.extract_lane(sums, 3));
 }
 // @ts-ignore: decorator
-@inline function tileOf<R>(xout: usize, xq: usize, xs: usize, w: usize, tab: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, kind: i32): void {
-  const blocks = n >> 8, size = bytesOf(kind), f = <usize>frame, count4 = count & ~3;
+@inline function tileOfKind<K, R>(xout: usize, xq: usize, xs: usize, w: usize, tab: usize, n: i32, r0: i32, r1: i32, count4: i32, os: i32, frame: i32, bits: v128, first: v128, three: v128, fifteen: v128): void {
+  const blocks = n >> 8, size = sizeOf<K>(), f = <usize>frame;
   const sums16 = <usize>(n >> 5) << 2, sums8 = sums16 + (<usize>(n >> 4) << 1);
-  const bits = vectorAt(tab, V_BITS), first = vectorAt(tab, V_FIRST), three = vectorAt(tab, V_THREE), fifteen = vectorAt(tab, V_FIFTEEN);
   for (let i = r0; i < r1; i++) {
     const row = w + <usize>i * <usize>blocks * size;
     for (let t = 0; t < count4; t += 4) {
@@ -114,61 +113,30 @@ import { matmul_sbr } from "./token";
       let a0 = f32x4.splat(0), a1 = a0, a2 = a0, a3 = a0;
       for (let b = 0; b < blocks; b++) {
         const p = row + <usize>b * size, x = xt + (<usize>b << 8), s = st + (<usize>b << 5), s16 = st + sums16 + (<usize>b << 5), s8 = st + sums8 + (<usize>b << 6);
-        if (kind == IQ2_XXS) {
-          a0 = f32x4.add(a0, lane4<XXS2, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<XXS2, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<XXS2, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<XXS2, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == IQ3_S) {
-          a0 = f32x4.add(a0, lane4<S3, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<S3, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<S3, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<S3, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == IQ2_XS) {
-          a0 = f32x4.add(a0, lane4<XS2, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<XS2, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<XS2, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<XS2, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == IQ2_S) {
-          a0 = f32x4.add(a0, lane4<S2, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<S2, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<S2, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<S2, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == IQ3_XXS) {
-          a0 = f32x4.add(a0, lane4<XXS3, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<XXS3, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<XXS3, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<XXS3, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == IQ1_M) {
-          a0 = f32x4.add(a0, lane4<M1, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<M1, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<M1, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<M1, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == IQ1_S) {
-          a0 = f32x4.add(a0, lane4<S1, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<S1, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<S1, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<S1, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == Q2_K) {
-          a0 = f32x4.add(a0, lane4<K2, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<K2, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<K2, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<K2, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == IQ4_XS) {
-          a0 = f32x4.add(a0, lane4<XS4, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<XS4, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<XS4, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<XS4, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        } else if (kind == Q4_K) {
-          a0 = f32x4.add(a0, lane4<K4, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a1 = f32x4.add(a1, lane4<K4, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a2 = f32x4.add(a2, lane4<K4, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-          a3 = f32x4.add(a3, lane4<K4, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
-        }
+        a0 = f32x4.add(a0, lane4<K, R>(p, 0, x, s, s16, s8, f, tab, bits, first, three, fifteen));
+        a1 = f32x4.add(a1, lane4<K, R>(p, 1, x, s, s16, s8, f, tab, bits, first, three, fifteen));
+        a2 = f32x4.add(a2, lane4<K, R>(p, 2, x, s, s16, s8, f, tab, bits, first, three, fifteen));
+        a3 = f32x4.add(a3, lane4<K, R>(p, 3, x, s, s16, s8, f, tab, bits, first, three, fifteen));
       }
       put4(xout + <usize>t * <usize>os + (<usize>i << 2), <usize>os, a0, a1, a2, a3);
     }
   }
+}
+// the type is chosen once, outside the loops: each type has its own loops (an unknown type writes nothing)
+// @ts-ignore: decorator
+@inline function tileOf<R>(xout: usize, xq: usize, xs: usize, w: usize, tab: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, kind: i32): void {
+  const count4 = count & ~3;
+  const bits = vectorAt(tab, V_BITS), first = vectorAt(tab, V_FIRST), three = vectorAt(tab, V_THREE), fifteen = vectorAt(tab, V_FIFTEEN);
+  if (kind == IQ2_XXS) tileOfKind<XXS2, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == IQ3_S) tileOfKind<S3, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == IQ2_XS) tileOfKind<XS2, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == IQ2_S) tileOfKind<S2, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == IQ3_XXS) tileOfKind<XXS3, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == IQ1_M) tileOfKind<M1, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == IQ1_S) tileOfKind<S1, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == Q2_K) tileOfKind<K2, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == IQ4_XS) tileOfKind<XS4, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
+  else if (kind == Q4_K) tileOfKind<K4, R>(xout, xq, xs, w, tab, n, r0, r1, count4, os, frame, bits, first, three, fifteen);
 }
 /** count tokens of a prompt: matmul_sbr for each, four at a time against one reading of a row. Token t's activations
  * and their xs frame bytes apart, its outputs os bytes apart. (No tile without relaxed SIMD: a browser that lacks it
