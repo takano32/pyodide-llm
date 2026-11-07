@@ -251,6 +251,7 @@
 - **行の順も文の 1 字も鍵**: 変わると全部の端末が形を選び直す。だから今あるシェーダの文は要らない限り変えず、**鍵を動かす直しは 1 回のデプロイにまとめる**。いまは訪問者が少ないので、鍵が 1 回変わることは止める理由にしない（2026-10-09、持ち主。増えたかは持ち主が言う）。**同じ文の写しを断片にまとめるのは、同じ文を出す限りいつでもよい**。
 - **作る関数の行は「枝を選ぶ引数の全部の組 × 数は 1 組」**。枝の名前は文字の合併型（`FusedOutput`・`FusedInput`・`Packing`）で、既定の引数は持たない。**`@compute` の行は作る関数の自分の文に残す**。断片は部品の末尾の `export { … }` で隣に渡し、窓口からは出さない。**断片の名前はどの export とも、ほかの部品の最上位の名前とも違うものに**。テンプレート文字列の中には型もコメントも足さない。
 - **見張り**: `shaders-catalogue-check`（順 `ORDER`、枝の組、宣言）、`device-key-check`（どの切れ端に 1 字足しても鍵が動く）、網の `shaders`、`gpu-worker-parts-check`、束の鍵は `dist-check`。
+- **一様バッファ（WGSL の `struct Params`・`Norm`）のバイトは、その構造体を持つ部品の作り手で**（T642.6）: flash のタイルの `Params` は `shaders/attention.ts` の `flashParams()`（vec の形は `flashVecParams()`）、ステップの融合の `Params` は `shaders/fused.ts` の `fusedParams()`、`Norm` は `shaders/steps.ts` の `normParams()`（GPU の Worker は `gpu/device.ts` の `normShape()` 越し）。GPU の Worker で `new ArrayBuffer` に構造体の欄を手で並べない（並びの誤りは tsc も名前も言わない。網の `gpusteps` が書き込みのバイトで落とす）。
 - **形（タイル・attention・ステップの層）は読み込みの時に JavaScript と比べて測って選ぶ**。検査の比べは「線の内なら通す」の形に書く（NaN は線を越えても越えなくてもいない）。
 
 ### 失敗の運び方

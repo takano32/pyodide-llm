@@ -7,7 +7,7 @@
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
 import { COPY_DST, STORAGE, turnedAt, within, buffer, uniform, normShape, copyIn, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { attentionPasses } from "./tokenattention.ts";
-import { FLASH_Q_TILE } from "../shaders/attention.ts";
+import { FLASH_Q_TILE, flashParams } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import type { GpuKind, Added } from "./kinds.ts";
 import type { Entry } from "./tokens.ts";
@@ -71,11 +71,7 @@ export const attention: GpuKind = {
         const flashes = new Map<number, GPUBuffer>();
         const flashOf = (window: number) => {
           if (!flashes.has(window)) {
-            const flash = new ArrayBuffer(16);
-            new Uint32Array(flash, 0, 2).set([plan.heads, plan.kvHeads]);
-            new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
-            new Uint32Array(flash, 12, 1)[0] = window;
-            flashes.set(window, uniform(m, flash));
+            flashes.set(window, uniform(m, flashParams(plan.heads, plan.kvHeads, plan.headSize, window)));
           }
           return flashes.get(window)!;
         };

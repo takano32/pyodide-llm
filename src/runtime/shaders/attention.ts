@@ -76,6 +76,14 @@ export const flashShape = ({ headSize, half, subgroups, memory, threads, subgrou
 const HALVES = /* wgsl */ `fn halves(pair: vec2<u32>) -> vec4<f32> {
   return vec4<f32>(unpack2x16float(pair.x), unpack2x16float(pair.y));
 }`;
+// T642.6: the tiles' Params (the struct below: heads, kvHeads, the scale of a score, the window the layer attends, 0:
+// every position), made here beside the struct and nowhere else
+export function flashParams(heads: number, kvHeads: number, headSize: number, window = 0) {
+  const bytes = new ArrayBuffer(16);
+  new Uint32Array(bytes).set([heads, kvHeads, 0, window]);
+  new Float32Array(bytes, 8, 1)[0] = 1 / Math.sqrt(headSize);
+  return new Uint8Array(bytes);
+}
 export const flashTile = ({ headSize, half, subgroups, wgSize, kvTile, minSubgroup }: Omit<FlashShape, "none">): string => /* wgsl */ `${half ? "enable f16;\n" : ""}${subgroups ? "enable subgroups;\n" : ""}
 struct Params { heads: u32, kvHeads: u32, scale: f32, window: u32 }
 ${STEP}

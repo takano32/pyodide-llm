@@ -104,6 +104,14 @@ export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBits
 // (the rows of the CPU's table: the model's own, Llama 3's scaling too).
 const FUSED_PARAMS = /* wgsl */ `struct Params { rows: u32, words: u32, perRow: u32, second: u32, eps: f32, normAt: u32, qRows: u32, kvRows: u32,
                 headSize: u32, turned: u32, unused0: u32, unused1: u32 }`;
+// T642.6: FUSED_PARAMS's bytes, made here beside the struct and nowhere else (words and perRow from the width n)
+export function fusedParams({ rows, n, second = 0, eps = 0, normAt = 0, qRows = 0, kvRows = 0, headSize = 0, turned = 0 }:
+  { rows: number; n: number; second?: number; eps?: number; normAt?: number; qRows?: number; kvRows?: number; headSize?: number; turned?: number }) {
+  const bytes = new ArrayBuffer(48);
+  new Uint32Array(bytes).set([rows, n / 4, n / GROUP, second, 0, normAt, qRows, kvRows, headSize, turned, 0, 0]);
+  new Float32Array(bytes, 16, 1)[0] = eps;
+  return new Uint8Array(bytes);
+}
 // where the write of an output goes (bindings 5 on): T150's, and T175's DP4A form's alike. T226: the write of a pair
 // is a function (write_pair), which TOKEN_ROPE below calls too: the same lines where the matrix's write cannot turn
 // the pair yet (a bias or a head's norm comes between)

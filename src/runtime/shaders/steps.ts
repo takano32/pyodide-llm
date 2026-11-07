@@ -238,6 +238,13 @@ ${PARTIAL_SUM}
   let s = 1.0 / sqrt(partial[0] / f32(norm.size) + norm.eps);`;
 // the Norm of LAYER_NORM and NORM_QUANTIZE (RMSNORM's has the rows before the dispatch's first as its fourth word)
 const NORM_STRUCT = /* wgsl */ `struct Norm { size: u32, at: u32, eps: f32, unused: u32 }`;
+// T642.6: a Norm's bytes (both structs: size, at, eps, and first or unused), made here beside them and nowhere else
+export function normParams(size: number, at: number, eps: number, first = 0) {
+  const bytes = new ArrayBuffer(16);
+  new Uint32Array(bytes).set([size, at, 0, first]);
+  new Float32Array(bytes, 8, 1)[0] = eps;
+  return new Uint8Array(bytes);
+}
 // T261.4: add, the norm added to out where it is (a Gemma 3's norms behind the attention and behind the FFN: the
 // stream x += the norm of what joins it), as llama.cpp's Metal fuses RMS_NORM, MUL and ADD (kernel_rms_norm_mul_add_f32,
 // F == 3: f1 is the residual there; the notice above), where its WebGPU runs rms_norm_mul.wgsl and then binary.wgsl's

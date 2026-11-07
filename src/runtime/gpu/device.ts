@@ -9,6 +9,7 @@
 // (T379.1: the shaders themselves, the texts and their makers, are taken from one catalogue, shaders/engine.ts's
 // ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
 import { halvesOf, floatOfHalf } from "../shaders/halves.ts";
+import { normParams } from "../shaders/steps.ts";
 import { deviceKey, deviceFeatures } from "../shaders/key.ts";
 import { Failure, kindOf } from "../failure.ts";
 import { REASONS } from "../forward/reasons.ts";
@@ -328,10 +329,7 @@ const pipelineOf = (m: Model, code: string, constants?: Record<string, number>) 
 // RMSNORM's, HEAD_NORM's and NORM_QUANTIZE's Norm: the size of what it norms, at (of its weights), eps, and first (HEAD_NORM's:
 // the rows before its first)
 function normShape(m: Model, size: number, at: number, eps: number, first = 0) {
-  const shape = new ArrayBuffer(16);
-  new Uint32Array(shape).set([size, at, 0, first]);
-  new Float32Array(shape, 8, 1)[0] = eps;
-  return uniform(m, shape);
+  return uniform(m, normParams(size, at, eps, first));
 }
 // (a buffer, or { buffer, offset, size }: a part of one, T155's pieces of a matrix writing into their rows of the output)
 // (a buffer's binding is its place among them; T547.2.3: null, none there: the scales of a matrix whose blocks hold them)

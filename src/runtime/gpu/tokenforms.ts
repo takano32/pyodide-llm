@@ -12,7 +12,7 @@ import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, token
 import { GROUP } from "../shaders/common.ts";
 import { quantizedLikeCpu } from "../shaders/prompt.ts";
 import { CODEBOOK_BYTES, SUPERBLOCKS } from "../shaders/superblocks.ts";
-import { ORT_DP4A_MATVEC_ROWS } from "../shaders/fused.ts";
+import { ORT_DP4A_MATVEC_ROWS, fusedParams } from "../shaders/fused.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
@@ -203,10 +203,8 @@ async function checkTokenBlocks(m: Model) {
       for (let at = 0; at < blocks.length; at += bytes) scale(blocks, at, ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0));
       const w = weights(blocks, codebooks ?? undefined), x = Float32Array.from({ length: n }, () => Math.random() * 2 - 1), { xq, xs } = quantizedLikeCpu(x);
       const pipeline = await validated(m, () => pipelineOf(m, ENGINE.fusedDp4aMatVec({ output: "write", weights: type })));
-      const params = new ArrayBuffer(48);
-      new Uint32Array(params).set([rows, n / 4, n / GROUP, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
       const y = buffer(m, rows * 4, STORAGE | COPY_SRC, owned);
-      const group = await validated(m, () => bind(m, pipeline, [make(blocks), PACKINGS[type].grid ? make(codebooks!) : null, make(xq), uniform(m, params, owned), make(xs), y]));
+      const group = await validated(m, () => bind(m, pipeline, [make(blocks), PACKINGS[type].grid ? make(codebooks!) : null, make(xq), uniform(m, fusedParams({ rows, n }), owned), make(xs), y]));
       const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
       dispatch(pass, pipeline, group, Math.ceil(rows / ORT_DP4A_MATVEC_ROWS), 1);
       pass.end();

@@ -7,7 +7,7 @@ import { pairedMs } from "./timing.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
 import { SUPERBLOCKS, CODEBOOK_BYTES } from "../shaders/superblocks.ts";
-import { FLASH_Q_TILE, flashShape, promptAttentionData, promptAttentionOff } from "../shaders/attention.ts";
+import { FLASH_Q_TILE, flashShape, flashParams, promptAttentionData, promptAttentionOff } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, packingAt, isBlock, blocksOf } from "./packings.ts";
 import { devicePromptForms } from "../shaders/key.ts";
@@ -100,11 +100,7 @@ async function checkAttention(m: Model, pipeline: GPUComputePipeline) {
   };
   try {
     const out = buffer(m, tokens * qDim * 4, STORAGE | COPY_SRC, owned);
-    const params = new ArrayBuffer(16);
-    new Uint32Array(params, 0, 2).set([heads, kvHeads]);
-    new Float32Array(params, 8, 1)[0] = 1 / Math.sqrt(size);
-    new Uint32Array(params, 12, 1)[0] = window;
-    const group = bind(m, pipeline, [make(data.q), make(data.keys), make(data.values), out, uniform(m, params, owned),
+    const group = bind(m, pipeline, [make(data.q), make(data.keys), make(data.values), out, uniform(m, flashParams(heads, kvHeads, size, window), owned),
       uniform(m, new Uint32Array([tokens, pos, 0, 0]), owned)]);
     const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
     dispatch(pass, pipeline, group, heads * Math.ceil(tokens / FLASH_Q_TILE));

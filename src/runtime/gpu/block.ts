@@ -3,12 +3,13 @@
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within, buffer, uniform, copyIn, narrowIn, validated, pipelineOf, bind,
-  dispatch } from "./device.ts";
+  dispatch, normShape } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { productGroups, multiply } from "./forms.ts";
 import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ENGINE } from "../shaders/engine.ts";
+import { flashParams } from "../shaders/attention.ts";
 import { isBlock, asTernary } from "./packings.ts";
 import { roundsMs } from "./timing.ts";
 import type { Model } from "./device.ts";
@@ -203,18 +204,15 @@ function bindLayers(m: Model) {
     const index = (of: string | undefined) => (of ? place : l);
     // (a piece each, T155)
     const product = (name: TensorName, from: GPUBuffer, to: GPUBuffer, add = false) => productGroups(m, form, name, index(plan.matrices[name]?.of), from, to, add);
-    const norm = new ArrayBuffer(16);
-    new Uint32Array(norm, 0, 2).set([plan.dim, l * plan.dim]);
-    new Float32Array(norm, 8, 1)[0] = plan.eps;
-    const normShape = uniform(m, norm);
+    const normBound = normShape(m, plan.dim, l * plan.dim, plan.eps);
     const added = (to: GPUBuffer, name: keyof Vectors) => V[name] && { group: bind(m, b.add, [to, V[name], uniform(m, new Uint32Array([plan.vectors[name]!.size, index(plan.vectors[name]!.of) * plan.vectors[name]!.size, 0, 0])), b.step]),
       x: Math.ceil(plan.vectors[name]!.size / 64) };
     // T154: LayerNorm reads its bias from the same place in its own buffer
-    const normed = (weight: "attention" | "ffn", bias: "attentionBias" | "ffnBias", out: GPUBuffer) => bind(m, b.norm, plan.layerNorm ? [b.x, V[weight], V[bias]!, out, normShape, b.step]
-      : [b.x, V[weight], out, normShape, b.step]);
+    const normed = (weight: "attention" | "ffn", bias: "attentionBias" | "ffnBias", out: GPUBuffer) => bind(m, b.norm, plan.layerNorm ? [b.x, V[weight], V[bias]!, out, normBound, b.step]
+      : [b.x, V[weight], out, normBound, b.step]);
     // T261.4: the norm of what joins the stream (from), added to it (a Gemma 3's: the output of the step's matrix out,
     // and of w2, written apart into gate and xb, which nothing reads by then)
-    const post = (name: keyof Vectors, from: GPUBuffer) => (V[name] ? bind(m, b.normAdd!, [from, V[name], b.x, normShape, b.step]) : null);
+    const post = (name: keyof Vectors, from: GPUBuffer) => (V[name] ? bind(m, b.normAdd!, [from, V[name], b.x, normBound, b.step]) : null);
     // (the step's matrix out: added to the stream, or written into gate for the norm behind it)
     const out = (name: TensorName, from: GPUBuffer) => (V.attentionPost ? product(name, from, b.gate) : product(name, from, b.x, true));
     layers.push({
@@ -256,11 +254,7 @@ function grow(m: Model, needed: number) {
   const windows = new Map<number, GPUBuffer>();
   const attentionParams = (window: number) => {
     if (!windows.has(window)) {
-      const params = new ArrayBuffer(16);
-      new Uint32Array(params, 0, 2).set([plan.heads, plan.kvHeads]);
-      new Float32Array(params, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
-      new Uint32Array(params, 12, 1)[0] = window;
-      windows.set(window, uniform(m, params, cache.owned));
+      windows.set(window, uniform(m, flashParams(plan.heads, plan.kvHeads, plan.headSize, window), cache.owned));
     }
     return windows.get(window)!;
   };

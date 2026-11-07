@@ -5,7 +5,7 @@
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch, whyOf } from "./device.ts";
 import { LINE, threadsOf } from "./forms.ts";
 import { MOST_PASSES, pairedMs } from "./timing.ts";
-import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, tokenAttentionData,
+import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flashParams, tokenAttentionData,
   tokenAttentionOff } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import type { Model, Pass } from "./device.ts";
@@ -109,12 +109,8 @@ function attentionIo(m: Model, a: TokenAttention, { heads, kvHeads, positions, s
     m.device.queue.writeBuffer(made, 0, data);
     return made;
   };
-  const flash = new ArrayBuffer(16);
-  new Uint32Array(flash, 0, 2).set([heads, kvHeads]);
-  new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(size);
-  new Uint32Array(flash, 12, 1)[0] = window;
   return { data: { q, keys, values }, window, q: make(q), keys: make(keys), values: make(values), out: buffer(m, heads * size * 4, STORAGE | COPY_SRC, owned),
-    step: uniform(m, new Uint32Array([1, positions - 1, 0, 0]), owned), flash: uniform(m, flash, owned),
+    step: uniform(m, new Uint32Array([1, positions - 1, 0, 0]), owned), flash: uniform(m, flashParams(heads, kvHeads, size, window), owned),
     ...(a.tiles ? {} : { parts: buffer(m, flashVecPartsBytes(a.shape, heads), STORAGE, owned), params: paramsOf(m, a.shape, heads, kvHeads, owned) }) };
 }
 // The check of an attention of a token, on made-up numbers against JavaScript's (shaders/attention.ts's tokenAttentionData and

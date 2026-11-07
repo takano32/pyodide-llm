@@ -7,7 +7,7 @@ import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, within, buffer, uniform
 import { tablesOf } from "./weights.ts";
 import { GROUP, BLOCK_PACKINGS } from "../shaders/common.ts";
 import { flashVecSplits } from "../shaders/attention.ts";
-import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/fused.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, fusedParams } from "../shaders/fused.ts";
 import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, OUTLIERS_MOST, outliersOf } from "../shaders/run.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { isBlock, packingsOf, asTernary } from "./packings.ts";
@@ -249,13 +249,9 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     readback: buffer(m, most * 4 + STATE_BYTES + 2 * attending * most * kvDim * 2 + stateBytes, MAP_READ | COPY_DST),
     // (below: the uniforms, and what only some models have)
     u: null, take: null, columns: null, picked: null, kinds: {} };
-  // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned
-  const params = (rows: number, n: number, second = 0, normAt = 0, turned = plan.turned) => {
-    const bytes = new ArrayBuffer(48);
-    new Uint32Array(bytes).set([rows, n / 4, n / GROUP, second, 0, normAt, qDim, kvDim, plan.headSize, turned, 0, 0]);
-    new Float32Array(bytes, 16, 1)[0] = plan.eps;
-    return uniform(m, bytes);
-  };
+  // fusedMatVec's Params (shaders/fused.ts's fusedParams)
+  const params = (rows: number, n: number, second = 0, normAt = 0, turned = plan.turned) =>
+    uniform(m, fusedParams({ rows, n, second, eps: plan.eps, normAt, qRows: qDim, kvRows: kvDim, headSize: plan.headSize, turned }));
   // RMSNORM's, HEAD_NORM's and NORM_QUANTIZE's Norm with the model's epsilon (device.ts's normShape)
   const norm = (at: number, size = plan.dim, first = 0) => normShape(m, size, at, plan.eps, first);
   const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim);
