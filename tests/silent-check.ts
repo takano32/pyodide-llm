@@ -136,19 +136,22 @@ const SILENT = {
     ["memory64", "catch { return false; }", "the question itself: a browser that makes no 64-bit memory throws, and false is the answer"],
     ["weightsMemory", "catch {}", "too much address space for this browser: less is asked for, and the last refusal is thrown by the loop's end"],
   ],
-  "src/runtime/kept.ts": [
-    ["folders", "catch { return undefined; }", "no origin private file system here (or its folder not made yet): the Cache API is looked in, and keep() says why nothing was kept"],
+  // (T641.7: the two places a conversion is kept in, kept.ts's PLACES)
+  "src/runtime/kept/cache.ts": [
     ["openCache", "globalThis.caches?.open(CACHE_NAME).catch(() => undefined)", "a Cache API that will not open (storage turned off, a private window): as none, and keep() says why nothing was kept"],
-    ["keptModels", "catch {}", "a folder without a manifest is a conversion that did not finish: it is none of the kept models"],
-    ["openNamed", "directory?.getDirectoryHandle(name).catch(() => undefined)", "no folder of that name is the ordinary answer for a model that was never kept: NotFoundError"],
-    ["openNamed", "catch {}", "half there (a conversion that was cut off): the Cache API is looked in, then the model is converted again, which the visitor sees as a download"],
+  ],
+  "src/runtime/kept/opfs.ts": [
+    ["folders", "catch { return undefined; }", "no origin private file system here (or its folder not made yet): the Cache API is looked in, and keep() says why nothing was kept"],
+    ["list", "catch {}", "a folder without a manifest is a conversion that did not finish: it is none of the kept models"],
+    ["open", "directory?.getDirectoryHandle(name).catch(() => undefined)", "no folder of that name is the ordinary answer for a model that was never kept: NotFoundError"],
+    ["open", "catch { return undefined; }", "half there (a conversion that was cut off): the Cache API is looked in, then the model is converted again, which the visitor sees as a download"],
     ["keep", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "the cleaning after a write that failed: that failure is what keep() returns, and the page shows it"],
+    ["forget", "(await folders())?.removeEntry(name, { recursive: true }).catch(() => {})", "a kept model that is already gone, or held open by a load: the list is read again after it and shows what is there"],
     ["keeper", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "nothing kept under the name before is the ordinary case: NotFoundError"],
     ["drop", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "letting go of a file that is not kept: what is left has no manifest and is none of the kept models, and the next keeper() removes it"],
     ["finish", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "T329.2.2: a conversion not kept whose table is read on from its file: the folder, open still, may refuse to go now; close() removes it once the file is let go of, and what is left has no manifest meanwhile"],
     ["close", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "T329.2.2: the file of a conversion that was not kept, let go of: what is left has no manifest and is none of the kept models, and the next keeper() removes it"],
     ["openRows", "catch { return undefined; }", "T329.2.2: no handle of the kept file here (another tab of this site holds it, or it is gone): the worker says so and reads the table into the memory"],
-    ["forget", "(await folders())?.removeEntry(name, { recursive: true }).catch(() => {})", "a kept model that is already gone, or held open by a load: the list is read again after it and shows what is there"],
   ],
   "src/runtime/updated.ts": [
     ["ofThisBuild", "catch { return false; }", "the question itself: what is no address is no file of this build"],

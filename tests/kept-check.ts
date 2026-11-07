@@ -112,6 +112,18 @@ const readBack = async (found) => {
   await kept.forget(list[0]);
   assert.equal(cache.map.size, 0);
 }
+// T641.7: OPFS with sync access handles whose folder will not open (storage turned off): the Cache API keeps it; with
+// neither, keep() says so and keeps nothing
+{
+  const { cache } = browser();
+  globalThis.navigator.storage.getDirectory = async () => { throw new Error("SecurityError"); };
+  assert.equal(await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary), undefined);
+  assert.deepEqual((await kept.keptModels()).map(({ where }) => where), ["cache"]);
+  assert.equal(cache.map.size, 3 + 2);
+  assert.equal(await kept.keeper(model), undefined, "nothing kept as it comes where OPFS will not open");
+  globalThis.caches = undefined;
+  assert.match(await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary), /neither the origin private file system nor the Cache API/);
+}
 // a model kept in the Cache API before T99 is still found where OPFS is now, and not moved
 {
   const { cache } = browser({ opfs: false });
@@ -121,6 +133,22 @@ const readBack = async (found) => {
   entries.forEach(([key, value]) => later.map.set(key, value));
   assert.deepEqual((await kept.keptModels()).map(({ where }) => where), ["cache"]);
   assert.deepEqual(await readBack(await kept.openKept(model)), bytes);
+}
+// T641.7: one name in both places: listed once, as OPFS's; where OPFS holds it cut off (a model.bin short of the
+// manifest's bytes), the Cache API's whole one is read
+{
+  const { cache } = browser({ opfs: false });
+  await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary);
+  const entries = [...cache.map];
+  const { root, cache: later } = browser();
+  entries.forEach(([key, value]) => later.map.set(key, value));
+  assert.equal(await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary), undefined);
+  assert.deepEqual((await kept.keptModels()).map(({ where }) => where), ["opfs"], "a name in both places is listed once, as OPFS's");
+  const folder = (await root.getDirectoryHandle("converted-v1")).children.get(kept.keptName(model));
+  folder.children.get("model.bin").bytes = bytes.slice(0, 100);
+  const found = await kept.openKept(model);
+  assert.equal(found.where, "cache", "OPFS's cut off, the Cache API's is read");
+  assert.deepEqual(await readBack(found), bytes);
 }
 // a write that runs out of room leaves nothing, and says why
 {

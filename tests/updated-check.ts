@@ -384,7 +384,7 @@ for (const name of ["src/runtime/worker/alone.ts", "src/runtime/gpu.ts", "src/ru
 }
 // and neither does anything on a token's, a block's or a submit's path: the engine, its threads, the GPU's worker, the
 // shaders, what is kept (the kernels and the Python are not JavaScript)
-const path_ = sources.filter((name) => /^src\/runtime\/(forward|gpu|shaders)\/|^src\/runtime\/(forward|gpu|shaders|helper|jobs|kept)\.(js|ts)$/.test(name));
+const path_ = sources.filter((name) => /^src\/runtime\/(forward|gpu|shaders|kept)\/|^src\/runtime\/(forward|gpu|shaders|helper|jobs|kept)\.(js|ts)$/.test(name));
 assert.ok(path_.length > 30, "the files of the token's path were found");
 for (const name of path_) assert.ok(!knows(name), `${name} is on the token's path and knows of updated.js`);
 // both pages hold a worker's error to it, and the model's worker reports it by its message alone (an Error by name)
