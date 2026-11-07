@@ -490,7 +490,7 @@ const SCALE_LANES = "      let own_scale_b: f32 = scale_B[base_B + sg_id];\n";
 // T232, weights "ternary": the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED above, and what
 // is changed for them there). (T379.2: the packing by its name, as fused.ts's fusedDp4aMatVec takes it; a boolean
 // `ternary` until then.)
-const TILE_WEIGHTS: Record<"int8" | "ternary", TileWeights> = {
+const TILE_WEIGHTS: Record<Exclude<Packing, BlockPacking>, TileWeights> = {
   int8: {
     bindings: "@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>\n" + SCALES_B,
     helpers: sdp8ai,
@@ -538,7 +538,7 @@ const tileBlocks = (blocks: (typeof SUPERBLOCKS)[BlockPacking]): TileWeights => 
   lines: blockLines,
 });
 const tileWeights = (weights: Packing): TileWeights => Object.hasOwn(SUPERBLOCKS, weights)
-  ? tileBlocks(SUPERBLOCKS[weights as BlockPacking]) : TILE_WEIGHTS[weights as "int8" | "ternary"];
+  ? tileBlocks(SUPERBLOCKS[weights as BlockPacking]) : TILE_WEIGHTS[weights as Exclude<Packing, BlockPacking>];
 export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
   const w = tileWeights(weights);
   return /* wgsl */ `requires packed_4x8_integer_dot_product;

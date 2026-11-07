@@ -8,9 +8,13 @@
 // A BRANCH ADDED TO ONE OF THESE MAKERS IS TO BE ADDED HERE (nothing else walks them: the catalogue's makers are
 // walked by its rows, which tests/shaders-catalogue-check.ts and tests/device-key-check.ts hold).
 const EITHER = [false, true];
+// (T642.9's review: the types of llama.cpp's blocks that the GPU reads, a second copy of shaders/common.ts's
+// BLOCK_PACKINGS, held to it by tests/shaders-catalogue-check.ts: the tiles of a model with blocks are in no key the
+// net hashes, so the net walked none of them until then)
+export const BLOCK_PACKINGS = ["Q4_K", "Q2_K", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"];
 export const MAKERS_APART = {
   regTile: EITHER.map((half) => [half]),
-  dp4a: EITHER.flatMap((subgroups) => ["int8", "ternary"].map((weights) => [{ subgroups, weights }])),
+  dp4a: EITHER.flatMap((subgroups) => ["int8", "ternary", ...BLOCK_PACKINGS].map((weights) => [{ subgroups, weights }])),
   fmaCeiling: EITHER.flatMap((half) => ["square", "affine"].map((shape) => [half, shape])),
   mulMatVec: EITHER.map((subgroups) => [{ subgroups }]),
 };

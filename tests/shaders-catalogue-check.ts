@@ -26,7 +26,7 @@
 // each piece of the shaders' source by a character; that the worker takes shaders nowhere else, too.
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.ts";
-import { MAKERS_APART, makersOfWgsl } from "./shader-makers.ts";
+import { BLOCK_PACKINGS, MAKERS_APART, makersOfWgsl } from "./shader-makers.ts";
 
 const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS, deviceKey, deviceFeatures, devicePromptForms, ...window } = await import(runtimeUrl("shaders.js"));
 // (T642.16: a device's tiles by its features, as the key takes them)
@@ -107,6 +107,8 @@ console.log(`shaders-catalogue-check: ${[...makers].map(([name, givens]) => `${n
 const shadersModule = await import(runtimeUrl("shaders.js"));
 assert.deepEqual(makersOfWgsl(shadersModule), [...new Set([...makers.keys(), ...Object.keys(MAKERS_APART)])].sort(),
   "the makers of WGSL that shaders.ts exports are the catalogue's and tests/shader-makers.ts's: a new one is to have rows in shaders/engine.ts (the engine's) or arguments in that list");
+assert.deepEqual(BLOCK_PACKINGS, [...shadersModule.BLOCK_PACKINGS],
+  "tests/shader-makers.ts's BLOCK_PACKINGS is shaders/common.ts's: a type of blocks the GPU reads is to be walked by the prompt's tile (dp4a) too");
 for (const name of Object.keys(MAKERS_APART)) assert.ok(!makers.has(name), `${name} has rows in the catalogue: tests/shader-makers.ts is for the makers that have none`);
 for (const [name, givens] of Object.entries(MAKERS_APART)) {
   const made = givens.map((given) => shadersModule[name](...given));
