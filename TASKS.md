@@ -116,7 +116,7 @@
 - T513 [性能][モデル] 量子化を組み合わせて、スマホ向けのモデルをもっと軽くする — 調べまで済み
 - T519 [調査][変換] wllama から取り込める設計を見る — 調べは完了
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 持ち主の判断待ち
-- T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 進行中
+- T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 反映済み
 - T545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 進行中
 - T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 反映済み
 - T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
@@ -139,7 +139,7 @@
 - T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T619 [追加][モデル] LFM3（lfm3） — 候補
 - T650 [性能][モデル] Firefox の翻訳にショートリストを使って速くする — 未着手
-- T635 [バグ][解析分割] 「▁」をどこにも足さない tokenizer.json で、エンジンが最初の文にダミーの空白を付ける — 未着手
+- T635 [バグ][解析分割] 「▁」をどこにも足さない tokenizer.json で、エンジンが最初の文にダミーの空白を付ける — 反映済み
 - T654 [バグ][計測実行] `tests/compare-builds.sh` が作る物のフォルダ `built/facts` を写せずに落ちる — 反映済み
 <!-- 目次ここまで -->
 
@@ -1208,7 +1208,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **調べ（2026-10-25）**: 警告（`src/models/memory.js` の `memoryWarning()`）は項目を選んだときにページが出し、そのときページは保存が使えるか（worker の `opfsWritable()`: 同期のアクセスハンドル）を知らない。数も、項目が持つのは表を引いた `loaded` だけ。だから直すには (a) ページが保存を使えるかを見積もる、(b) 項目に表を入れた大きさを持たせる、の 2 つが要る。案: (1) **勧め**: 今ある文（「… needs about N of memory, and this device has …」）を使い回し、保存の使えない訪問（ページの `navigator.storage.getDirectory` が無いか断る）では N に表を足す。新しい文は要らない。(2) 何もしない（保存の使えない訪問は Firefox の private のような少ない場合で、そのときは読み込みが落ちてメモリ不足の文が出る）。(3) 保存できない訪問だけに別の 1 文を足す（文面は持ち主）。
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
 
-### T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 進行中（2026-11-07、**持ち主の決め（選択肢で）: T635 の `CONVERTER` 13 の回に「同じ回に入れる」**。T635 は T541 と一緒に本線に入れる。前の状態: 持ち主の判断待ち、2026-10-25。その前: 未着手、2026-10-15、T532 のレビューの気づき）
+### T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 反映済み（2026-11-07。前の状態: 進行中、2026-11-07、**持ち主の決め（選択肢で）: T635 の `CONVERTER` 13 の回に「同じ回に入れる」**。T635 は T541 と一緒に本線に入れる。前の状態: 持ち主の判断待ち、2026-10-25。その前: 未着手、2026-10-15、T532 のレビューの気づき）
+- **結果（2026-11-07、Opus medium、1 コミット）**: **台帳の前提は違っていた**: transformers 5.16.1 は書いてある factor を作り直さない（比と食い違えば警告して factor のまま）。作り直すのは factor が null のときだけで、元の文脈が無ければモデルの `max_position_embeddings` を当てる。変換器もこの形にした（`convert/config.py` の `yarn_contexts()`、`normalize()` が家族の `after()` の前に呼ぶ。前は factor が null・元の文脈が無いと断っていた）。上の階の `original_max_position_embeddings` は読まない（`LlamaConfig` では効かない。Phi-3 系だけ）。PLaMo 3 の yarn には当てない。一覧は `conversions_compare.py` で 206/206 同じ。試験は `test_llama3.py` の `YARN_CONTEXTS`（壊し方 2 つで落ちる）と、CI の `reference_yarn.py` の `CONTEXTS`。`CONVERTER` は T635 の 13 のまま。CI: `tests.yml` 42359825704（軽い組 579 秒と `reference_qwen35.sh --only=real`: logits 1.78e-04・最尤 96/96・同じ文）、42359868491（`reference_yarn.py`: エンジンの yarn の表が transformers の表と全部の場合で線の 0.1 以下）。レビュー（Sonnet low、2026-11-07）: OK、must-fix も should も無し。transformers 5.16.1 を入れて読み、`yarn_contexts()` の 4 つの扱いが `standardize_rope_params` の `setdefault`・`_compute_yarn_parameters`（factor を鍵で引き、null のときだけ作り直す: 「null」と「鍵が無い」は別）・`_validate_yarn_rope_parameters`（食い違いは警告だけ）と一致、元の文脈が null は transformers も落ちるので断るのは同じ。呼ぶ順（家族の `after()` の前）は Qwen3.5 の `text_config`・Gemma の層の種類ごとの入れ子・PLaMo 3 の `after()`・GGUF の道を壊さない。上の階の `original_max_position_embeddings` を読まないのも `LlamaConfig` と同じ。台帳の前提（transformers が factor を作り直す）は違っていたが、直した向きは「transformers に合わせる」持ち主の決めに沿う。AGENTS.md と `version.py` のコメントも合う。pytest の `test_llama3.py` 101 件。
 - transformers 5 は config に `original_max_position_embeddings` があると factor を `max_position_embeddings / original` で作り直す。こちらは config の factor をそのまま使う（前から）。一覧の 4 つ（Ternary Bonsai）には効かない。一覧の外の yarn のモデルで差が出るかは未計測。
 - **取りまとめ役の読み（2026-10-25）**: transformers に合わせるなら変換器の config の読み（`convert/config.py`）で factor を作り直すので、変換器の出す options が変わる: `CONVERTER` を上げる回になる（上げると全部の訪問者の保存が変換し直し: 既定の Shisa で 379 MB の取り直し）。一覧の項目には効かない（Ternary Bonsai の 3 つは項目の options の `PLAIN_ROPE`、27B は yarn でない）ので、急がず、**次に `CONVERTER` を上げる回にまとめて入れる**のが勧め。その回まで止めておく（区切りのまとめで持ち主に聞く）。
 
@@ -1347,7 +1348,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 正しさの基準は、ショートリストを使う形の fxtranslate の `translate()` の訳（3 本 × 100 文、`tests/fixtures/translations.json` の隣に）で 100/100。速さは 1 文あたりの秒をショートリストなしと並べる（出力の層は語彙 32,000〜64,000 行で、1 ステップのいちばん大きな行列）。
 - ページで使うかを項目の設定にするか、いつも使うかは、速さと訳の違いを見て持ち主に。
 
-### T635 [バグ][解析分割] 「▁」をどこにも足さない tokenizer.json で、エンジンが最初の文にダミーの空白を付ける — 状態: 未着手（2026-11-04、T400 (3) の気づきとレビューから。規模 小）
+### T635 [バグ][解析分割] 「▁」をどこにも足さない tokenizer.json で、エンジンが最初の文にダミーの空白を付ける — 状態: 反映済み（2026-11-07、T541 と同じ `CONVERTER` 13 の回。前の状態: 未着手、2026-11-04、T400 (3) の気づきとレビューから。規模 小）
+- **結果（2026-11-07、Opus medium、1 コミット）**: unigram の tokenizer.json のうち、空白を「▁」と書くのに最初の文にも「▁」を足さないもの（Metaspace の `prepend_scheme: never`、空白を「▁」に替えるだけの normalizer）は、変換器が `prefixed: "never"` を言う（`convert/tokenizer.py` の `spaces_written()`）。空白を「▁」と書かない形（{}）は前のまま。`tests/test_prefixed.py` が外していた 2 つの場合を、本物の tokenizers と文の全体の ID 列で比べるように戻した（直す前の読みは "hello world" を [3, 5]、本物は [4, 5]）。**`CONVERTER` 12 → 13**（`?hf=` の道だけが変わり、一覧の項目には当たらない: `conversions_compare.py` は 206 項目の全部が同じ、`format_check.py` も通った）。手元で pytest・smoke・`worker-fetches-check`・`test_converter_version.py`。CI: `tests.yml` 42357085034（軽い組と `reference_qwen35.sh --only=real`）と、T541 を重ねた 42359825704。レビュー（Sonnet low、2026-11-07）: OK、must-fix なし、直しなし。`spaces_written()`・`prefixed: "never"` の判定は Metaspace の 3 つの scheme（always は "wanting"、first は `spaced`、never と古い `add_prefix_space: false` は "never"）と Sequence の入れ子で本物と一致し、`Prepend("▁")` の "every" が先に勝つ。エンジンの "never" は最初の文と BOS の後の 2 か所で効き、"every"・"wanting" とは同時に出ない。BPE の道（`written_out()`・byte-level）は触っていない。`CONVERTER` 13 と AGENTS.md の書き直しも合う。should（急がない、採番しない）: Replace の pattern は String と Regex の " " だけを拾うので、`\s` や " +" の書き方が実物にあるかを `tokenizer_json_check.py` で 1〜2 個の never の実物に当てて見る。
 - Metaspace の `prepend_scheme: never` や、空白を「▁」に替えるだけの normalizer の tokenizer.json は、本物は最初の文に「▁」を足さないのに、エンジンは足す。エンジンには `prefixed="never"` があり、`prefixed_texts()` は never の Metaspace を偽にしているので、変換器がそのとき `prefixed: "never"` を言えばほぼ同じ形で直る。一覧に当たる項目は無い（`?hf=` だけ）。`tests/test_prefixed.py` が今は 2 つの場合を本物との比べから外しているので、それを戻して本物と ID 列で比べる。変換器の出す options が変わるので、次に `CONVERTER` を上げる回に。
 
 ### T654 [バグ][計測実行] `tests/compare-builds.sh` が作る物のフォルダ `built/facts` を写せずに落ちる — 状態: 反映済み（2026-11-07、T641.12 の担当が見つけた。規模 小）
