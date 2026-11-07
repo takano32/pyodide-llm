@@ -629,6 +629,8 @@ def original_name(name, arch, hf):
         target = f"transformer.{target}"  # a GPT-2 of the other spelling (rinna's)
     if target is not None and target not in hf and target.replace("model.", "model.language_model.", 1) in hf:
         target = target.replace("model.", "model.language_model.", 1)  # a Qwen3.5 with its vision model (T236)
+    if target is not None and target not in hf and f"language_model.{target}" in hf:
+        target = f"language_model.{target}"  # a whole Gemma 3 as transformers 4.51 wrote it (T613)
     return target if target in hf else None
 
 
