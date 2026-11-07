@@ -137,54 +137,46 @@ export const attention: Kind = {
             if (own) k.rope(kt, cos, sin, kvHeads, headSize, rotary);
           }
         };
-        if (ring) {
-          // T510.1: the positions of the ring: position p at p mod size and at p mod size + size. A run may begin at 0,
-          // or where the window of its first token is still in the ring: no further back than a block before the last
-          // position written (what came after it has written over the ones before). T261.4: the last one the ring's own
-          // (ring.latest), which the GPU's blocks write as well
-          const { size } = ring, twice = size * KV;
-          return (count, pos0) => {
-            if (pos0 !== 0 && pos0 < ring.latest - BATCH) {
-              throw new Error(`A layer of this model keeps the keys and values of its last ${window} positions alone: position ${pos0} is too far back after ${ring.latest}.`);
-            }
-            ring.latest = pos0 === 0 ? pos0 + count - 1 : Math.max(ring.latest, pos0 + count - 1);
-            const { keys, values } = ring;
-            matmuls(xb, count, into);
-            for (let t = 0; t < count; t++) {
-              const pos = pos0 + t, slot = (pos % size) * KV;
-              ready(t, pos);
-              if (!own) continue;
-              cache.put(pos, keys + slot, values + slot, kNow + t * S, vNow + t * S, kvWidth);
-              cache.put(pos, keys + slot + twice, values + slot + twice, kNow + t * S, vNow + t * S, kvWidth);
-            }
-            // every token's window is in the ring now, from where its first position is
-            const jobs = [];
-            for (let t = 0; t < count; t++) {
-              const from = Math.max(0, pos0 + t + 1 - window), slot = (from % size) * KV;
-              jobs.push([scores, xb + t * S, q + t * S, keys + slot, values + slot, att + t * A, pos0 + t - from, kvHeads, headSize, heads, 1, 0, 0, 0]);
-            }
-            phase(jobs);
-            if (wg) for (let t = 0; t < count; t++) k.gate(xb + t * S, xb + t * S, gate + t * S, qDim);
-            if (headGate) gateHeads(count);
-            matmuls(xb, count, out);
-          };
-        }
-        const offset = cache.offset(index);
+        // T641.12: where a run's keys and values are, the one thing a ring and a block of the cache differ in. begun():
+        // the first bytes of the keys and of the values (a ring's, which the cache places after make(), or the
+        // block's, which moves as the cache grows); slotOf(): the bytes from them to position pos's; twice: the bytes
+        // from that to its second place, where a ring holds every position twice (0: a block holds it once).
+        // T510.1: the positions of the ring: position p at p mod size and at p mod size + size. A run may begin at 0,
+        // or where the window of its first token is still in the ring: no further back than a block before the last
+        // position written (what came after it has written over the ones before). T261.4: the last one the ring's own
+        // (ring.latest), which the GPU's blocks write as well
+        const size = ring ? ring.size : 0, twice = size * KV, offset = ring ? 0 : cache.offset(index);
+        const slotOf = ring ? (pos: number) => (pos % size) * KV : (pos: number) => pos * KV;
+        const begun = ring ? (count: number, pos0: number) => {
+          if (pos0 !== 0 && pos0 < ring.latest - BATCH) {
+            throw new Error(`A layer of this model keeps the keys and values of its last ${window} positions alone: position ${pos0} is too far back after ${ring.latest}.`);
+          }
+          ring.latest = pos0 === 0 ? pos0 + count - 1 : Math.max(ring.latest, pos0 + count - 1);
+          return ring;
+        } : () => {
+          const { capacity } = cache;
+          return { keys: cache.keys + capacity * offset, values: cache.values + capacity * offset };
+        };
         return (count, pos0) => {
-          const { capacity } = cache, layerKeys = cache.keys + capacity * offset, layerValues = cache.values + capacity * offset;
-          const kp = layerKeys + pos0 * KV, vp = layerValues + pos0 * KV;
+          const { keys, values } = begun(count, pos0);
           matmuls(xb, count, into);
           for (let t = 0; t < count; t++) {
-            ready(t, pos0 + t);
-            if (own) cache.put(pos0 + t, kp + t * KV, vp + t * KV, kNow + t * S, vNow + t * S, kvWidth);  // into the cache, at this token's position
+            const pos = pos0 + t;
+            ready(t, pos);
+            if (!own) continue;
+            // into the cache, at this token's position (and a ring's second place of it)
+            const slot = slotOf(pos);
+            cache.put(pos, keys + slot, values + slot, kNow + t * S, vNow + t * S, kvWidth);
+            if (twice) cache.put(pos, keys + slot + twice, values + slot + twice, kNow + t * S, vNow + t * S, kvWidth);
           }
-          // the keys and values of positions up to each token's are all there now: its own and the ones before it.
-          // The heads of every token go out as one phase (T109).
+          // the keys and values of positions up to each token's are all there now: its own and the ones before it (a
+          // ring's: every token's window, from where its first position is). The heads of every token go out as one
+          // phase (T109).
           const jobs = [];
           for (let t = 0; t < count; t++) {
-            // (the first position this token attends: 0, or where its window begins)
-            const from = window ? Math.max(0, pos0 + t + 1 - window) : 0;
-            jobs.push([scores, xb + t * S, q + t * S, layerKeys + from * KV, layerValues + from * KV, att + t * A, pos0 + t - from, kvHeads, headSize, heads, 1, 0, 0, 0]);
+            // (the first position this token attends: 0, or where its window begins; a ring's layers have a window)
+            const from = window ? Math.max(0, pos0 + t + 1 - window) : 0, slot = slotOf(from);
+            jobs.push([scores, xb + t * S, q + t * S, keys + slot, values + slot, att + t * A, pos0 + t - from, kvHeads, headSize, heads, 1, 0, 0, 0]);
           }
           phase(jobs);
           if (wg) for (let t = 0; t < count; t++) k.gate(xb + t * S, xb + t * S, gate + t * S, qDim);
