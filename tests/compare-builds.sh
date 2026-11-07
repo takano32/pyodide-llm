@@ -29,7 +29,7 @@ other=$(node -e "import('./tests/other-tree.ts').then((m) => process.stdout.writ
 # the other commit's build: its sources, this tree's packages and built files (kernels, archives: not what is measured;
 # a commit with T433's plugin makes its archives again of its own sources as its build starts)
 [ -e "$other/node_modules" ] || ln -s "$PWD/node_modules" "$other/node_modules"
-mkdir -p "$other/src/runtime/built" && cp src/runtime/built/* "$other/src/runtime/built/"
+mkdir -p "$other/src/runtime/built" && cp -r src/runtime/built/* "$other/src/runtime/built/"
 (cd "$other" && rm -rf dist && npx astro build > build.txt 2>&1) || { tail -20 "$other/build.txt"; echo "compare-builds: the build of $ref failed"; exit 1; }
 again=.tmp/compare-builds/again
 rm -rf "$again" && mkdir -p .tmp/compare-builds && npx astro build --outDir "$again" > .tmp/compare-builds/build.txt 2>&1 || { tail -20 .tmp/compare-builds/build.txt; echo "compare-builds: the second build of this tree failed"; exit 1; }
