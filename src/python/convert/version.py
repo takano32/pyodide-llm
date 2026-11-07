@@ -23,6 +23,7 @@
 # tokenizer.json's Metaspace puts no dummy prefix before a first text that begins with a space, options' spaced).
 # 13: a tokenizer.json (a unigram's) that puts "▁" before no text, the first either (a Metaspace that never prepends,
 # a normalizer that only writes the spaces as "▁"), says prefixed "never" (T635: the engine put "▁" before the first
-# text, which the tokenizers library does not; no entry of the list reads one, only ?hf=).
+# text, which the tokenizers library does not; no entry of the list reads one, only ?hf=). T541 rides with it: a yarn
+# RoPE scaling with no original context takes the model's, and a factor of null the ratio of the two (transformers 5's).
 # (the page reads it before any Python runs, src/runtime/kept.ts's CONVERTER: python_facts.py writes it there)
 CONVERTER = 13

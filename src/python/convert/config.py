@@ -1,7 +1,7 @@
 # config.json as the converter reads it: the flow every family shares. What a family reads and refuses of its own is
 # in convert/families/ (T359), looked up here by the config's model_type.
 from convert.families import FAMILIES, family_of, named
-from convert.families.family import head_size, refuse, rotary_dim, yarn  # noqa: F401
+from convert.families.family import head_size, positive, refuse, rotary_dim, yarn  # noqa: F401
 
 
 def normalize(config):
@@ -20,7 +20,27 @@ def normalize(config):
         if "partial_rotary_factor" in rope:
             config["rotary_pct"] = rope["partial_rotary_factor"]
     # (the family again: before() may have given the config the model_type of what it holds, a Qwen3.5's text_config)
-    return family_of(config).after(config)
+    return family_of(config).after(yarn_contexts(config))
+
+
+def yarn_contexts(config):
+    """T541: config.json's own yarn RoPE scaling (not one a family makes of names of its own after(): a PLaMo 3's
+    model reads its flat keys, not transformers') with its original context and factor as transformers 5.16.1 makes
+    them (standardize_rope_params(), _compute_yarn_parameters()): the model's context where the scaling has no
+    original context, and a factor of null made the ratio of the model's context to the original one. A factor
+    config.json says is the factor, whatever that ratio (transformers warns, and turns by it); a factor left out, or an
+    original context of null, is refused (check_config(): transformers' KeyError, or its division by None). An original
+    context at the config's top level is not read: transformers puts it over the scaling's own only for a config that
+    has it as a field of its own (Phi-3's), which no family here is (LlamaConfig sets it after the standardizing).
+    Twice is once."""
+    scaling = config.get("rope_scaling")
+    if not isinstance(scaling, dict) or scaling.get("rope_type", scaling.get("type")) != "yarn":
+        return config
+    scaling, context = dict(scaling), config.get("max_position_embeddings")
+    original = scaling.setdefault("original_max_position_embeddings", context)
+    if "factor" in scaling and scaling["factor"] is None and positive(original) and positive(context):
+        scaling["factor"] = context / original
+    return {**config, "rope_scaling": scaling}
 
 
 def check_config(config):

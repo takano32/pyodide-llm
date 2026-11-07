@@ -14,7 +14,7 @@ from test_convert import converted, hugging_face, reader, safetensors_file
 from test_gguf import gguf_file
 
 import llama2_convert
-from llama2_convert import Arrays, Conversion, check_config, gguf_model, gguf_read, rope_table, tokenizer_json_options
+from llama2_convert import Arrays, Conversion, check_config, gguf_model, gguf_read, normalize, rope_table, tokenizer_json_options
 from llama2_numpy import Llama, Tokenizer, pretokenize, rope_frequencies, rope_magnitude
 
 LLAMA3_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*"
@@ -213,9 +213,60 @@ def test_only_the_kinds_of_scaling_the_tables_know_are_let_through():
     for key, value in (("truncate", 0), ("beta_fast", "16"), ("attention_factor", -1.0), ("mscale", True)):
         with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key} to"):
             check_config({**published, "rope_scaling": {**YARN, key: value}})
-    for missing in ("factor", "original_max_position_embeddings"):
+    # a factor left out is refused (transformers' KeyError), and so is an original context of null; T541: an original
+    # context left out is the model's (normalize(): transformers' standardize_rope_params())
+    for scaling in ({key: value for key, value in YARN.items() if key != "factor"},
+                    {**YARN, "original_max_position_embeddings": None}):
         with pytest.raises(ValueError, match="names no factor or no original context"):
-            check_config({**published, "rope_scaling": {key: value for key, value in YARN.items() if key != missing}})
+            check_config(normalize({**published, "rope_scaling": scaling}))
+    without = {key: value for key, value in YARN.items() if key != "original_max_position_embeddings"}
+    check_config(normalize({**published, "rope_scaling": without}))
+
+
+# T541: what transformers 5.16.1 makes of a yarn's factor and original context (standardize_rope_params() and
+# _compute_yarn_parameters()), written out: (what config.json says, besides max_position_embeddings 32768) -> (the
+# factor, the original context) the tables are made of
+YARN_CONTEXTS = [
+    ({"rope_scaling": YARN}, (4.0, 8192)),  # as said
+    ({"rope_scaling": {**YARN, "factor": 2.0}}, (2.0, 8192)),  # the factor said wins over 32768 / 8192 (a warning)
+    ({"rope_scaling": {**YARN, "factor": None}}, (4.0, 8192)),  # a factor of null: 32768 / 8192
+    ({"rope_scaling": {**YARN, "factor": None, "original_max_position_embeddings": 4096}}, (8.0, 4096)),
+    # an original context at the top level is not read (LlamaConfig sets it after the standardizing; only Phi-3's
+    # config, which no family here is, puts it over the scaling's own)
+    ({"rope_scaling": {**YARN, "factor": None}, "original_max_position_embeddings": 2048}, (4.0, 8192)),
+    ({"rope_scaling": YARN, "original_max_position_embeddings": 2048}, (4.0, 8192)),
+    # no original context: the model's, which makes a factor of null 1
+    ({"rope_scaling": {"rope_type": "yarn", "factor": 4.0}}, (4.0, 32768)),
+    ({"rope_scaling": {"type": "yarn", "factor": None}}, (1.0, 32768)),
+    # transformers 5's rope_parameters
+    ({"rope_parameters": {"rope_type": "yarn", "rope_theta": 1e6, "factor": None, "original_max_position_embeddings": 8192}},
+     (4.0, 8192)),
+]
+
+
+@pytest.mark.parametrize("said, made", YARN_CONTEXTS)
+def test_a_yarns_factor_and_original_context_are_those_transformers_makes(said, made):
+    config, weights = synthetic_weights()
+    _, published = hugging_face(config, weights, True)
+    published = {**published, "max_position_embeddings": 32768, **said}
+    normalized = normalize(published)
+    scaling = normalized["rope_scaling"]
+    assert (scaling["factor"], scaling["original_max_position_embeddings"]) == made
+    assert normalize(normalized) == normalized  # twice is once
+    check_config(normalized)
+    # the tables are those of the factor and the original context written out
+    written = {"rope_type": "yarn", "factor": made[0], "original_max_position_embeddings": made[1]}
+    assert np.array_equal(rope_frequencies(64, 1e4, scaling), rope_frequencies(64, 1e4, written))
+    assert rope_magnitude(scaling) == rope_magnitude(written)
+
+
+def test_a_yarn_a_family_makes_of_its_own_names_is_left_as_it_makes_it():
+    """T541: a PLaMo 3's model reads its own flat keys, not transformers' rope_parameters: no original context is
+    put in where its initial_context_length is null (tests/test_plamo3.py's REFUSED refuses it)."""
+    from test_plamo3 import plamo3_model
+    _, config = plamo3_model()
+    scaling = normalize({**config, "rope_scaling_factor": 4.0, "initial_context_length": None})["rope_scaling"]
+    assert scaling["original_max_position_embeddings"] is None and scaling["factor"] == 4.0
 
 
 def llama3(max_seq_len=64, scaling=None):
