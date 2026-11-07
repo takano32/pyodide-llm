@@ -367,14 +367,14 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
     const checkpoint = random(size + 96 * 64 + 96 * 2 * 2 + 64);
     const a = await openDevice({ ...direct, tokens: true });
     const layersUp = await uploadLayers(a), tablesUp = tablesOn(a, direct.tables);
-    const halved = a.weights.routes.filter(([, , , , halves]) => halves);
+    const halved = a.weights.routes.filter(([, , , , way]) => way === "halves");
     assert.equal(halved.length, Object.keys(TERNARY).length * LAYERS + 1, "a route of halves for each ternary matrix of each layer, and the table's");
     assert.equal(tablesUp, 96 * 64 + 96 * 2 * 4, "the table: its codes, and its scales as the GPU holds them (float32)");
-    assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , halves]) => sum + (stop - start) * (halves ? 2 : 1), 0), "every byte put up has a route, a half's twice");
+    assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , way]) => sum + (stop - start) * (way === "halves" ? 2 : 1), 0), "every byte put up has a route, a half's twice");
     const steps = [1, 2, 3, 5, 7, 250, 1001, 4, 6, 4099, 1, 1];
     // (T299: and a byte at a time where the first byte of the first route of codes and of the first of halves comes
     // twice, before the rest of its word or half: counted, its word or half was written a byte short)
-    const plainAt = a.weights.routes.find(([, , , , halves]) => !halves)[0], halfAt = a.weights.routes.find(([, , , , halves]) => halves)[0];
+    const plainAt = a.weights.routes.find(([, , , , way]) => way !== "halves")[0], halfAt = a.weights.routes.find(([, , , , way]) => way === "halves")[0];
     for (const [step, twice] of [[steps, []], [[1], []], [[2], []], [[3], []], [[1], [plainAt, halfAt]]]) {
       for (const [, , target] of a.weights.routes) target.data.fill(0);
       a.weights.partial.clear();
@@ -385,8 +385,8 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
         offset += length;
       }
       assert.equal(unwritten(a), false, `every half is whole once the checkpoint has come (stretches of ${step.slice(0, 3)}...)`);
-      for (const [start, stop, target, at, halves] of a.weights.routes) {
-        if (!halves) {
+      for (const [start, stop, target, at, way] of a.weights.routes) {
+        if (way !== "halves") {
           assert.ok(same(target.data.subarray(at, at + stop - start), checkpoint.subarray(start, stop)), `the codes at ${start} are on the GPU as they came`);
           continue;
         }
@@ -400,7 +400,7 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
     // (T299: a byte that comes again after its word was written is written nowhere: it waits as a word of one byte, which
     // the start reads as the checkpoint not all come, rather than a word written a byte short)
     {
-      const [again, , target, at] = a.weights.routes.find(([, , , , halves]) => !halves), word = at - (at % 4);
+      const [again, , target, at] = a.weights.routes.find(([, , , , way]) => way !== "halves"), word = at - (at % 4);
       const before = target.data.slice(word, word + 4);
       routed(a, again, checkpoint.subarray(again, again + 1));
       assert.ok(same(target.data.subarray(word, word + 4), before) && unwritten(a), "a byte again after its word was written: nothing written, and the checkpoint is not all there");
@@ -471,10 +471,10 @@ console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as f
     const checkpoint = random(size + 96 * 32 + 96 * 2 * 2 + 64);
     const a = await openDevice({ ...direct, tokens: true });
     const layersUp = await uploadLayers(a), tablesUp = tablesOn(a, direct.tables);
-    const bits = a.weights.routes.filter(([, , , , kind]) => kind === "bits");
+    const bits = a.weights.routes.filter(([, , , , kind]) => kind === "spread");
     assert.equal(bits.length, Object.keys(BINARY).reduce((sum, name) => sum + placesOf(name), 0) + 1, "a route of bits for each binary matrix of each layer of its kind, and the table's");
     assert.equal(tablesUp, 96 * 64 + 96 * 2 * 4, "the table: its codes, twice its bits, and its scales as the GPU holds them (float32)");
-    assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , kind]) => sum + (stop - start) * (kind ? 2 : 1), 0), "every byte put up has a route, a bit's byte and a half's twice");
+    assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , kind]) => sum + (stop - start) * (kind === "copy" ? 1 : 2), 0), "every byte put up has a route, a bit's byte and a half's twice");
     for (const step of [[1, 2, 3, 5, 7, 250, 1001, 4, 6, 4099, 1, 1], [1], [15], [17], [16]]) {
       for (const [, , target] of a.weights.routes) target.data.fill(0);
       a.weights.partial.clear();

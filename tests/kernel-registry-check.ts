@@ -322,7 +322,10 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     // (T634.3's review: the packing on the GPU is PACKED's gpu.as, and a packing is spread on the CPU as it goes up where
     // its bytes there are other than the checkpoint's and the GPU does not widen it: binary's, and no other)
     assert.equal(held.on, PACKED[name].gpu.as ?? name, `${name}: the packing it is on the GPU`);
-    assert.equal(held.spread, held.stored(1024) !== held.row(1024) && !held.widened, `${name}: spread on the CPU as it goes up`);
+    // (T642.8: and how its values and its scales go up: int6's widened on the GPU, those whose bytes are otherwise
+    // the checkpoint's as they are, a float16 scale widened to a float32)
+    assert.equal(held.up, name === "int6" ? "widen" : held.stored(1024) !== held.row(1024) ? "spread" : "copy", `${name}: how its values go up`);
+    assert.equal(held.scaleUp, held.scale === 2 ? "halves" : "copy", `${name}: how its scales go up`);
   }
   assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.265625, 0.140625, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
   // (the names the packings take the activations by: those of one name read what one ready() made)

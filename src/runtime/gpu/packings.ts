@@ -20,7 +20,6 @@ import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 //   stored()  the bytes of the row in the checkpoint (int6: 24 a group of 32)
 //   scale     the bytes of a group's scale in the checkpoint: a float32, or (T533: ternary's) a float16, which goes up
 //             widened to a float32; 0: none apart from the values (Q4_K)
-//   widened   whether its values are widened to int8 as they go up (int6, T155: WIDEN_SIX)
 //   dot       whether its shaders need WGSL's packed int8 dot (PACKED's gpu.dot: a device without it keeps the model on
 //             the CPU)
 //   values()  the bytes of a row as the checkpoint holds them, as its int8 values (the checks' answer), which a group's
@@ -30,14 +29,19 @@ import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 //   on        (T634.3) the packing it is on the GPU (jobs.ts's PACKED's gpu.as), whose shaders multiply it and whose
 //             bytes a read back is in: its own, but int6's, widened to int8 (WIDEN_SIX: no model of it is on the GPU
 //             alone, which alone reads back), and binary's, which goes up as ternary's codes (spread)
-//   spread    (T634.3) whether its bytes are spread on the CPU as they go up (binary's bits to ternary's codes: spreadBits())
-export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
-  grid: boolean; values(bytes: Uint8Array, codebooks?: Uint8Array): ArrayLike<number>; on: GpuPacking; spread: boolean };
+//   up        (T642.8) how its values go up (weights.ts's UPLOADS): "copy", the checkpoint's bytes as they are; "widen",
+//             int6's widened to int8 on the GPU (T155: WIDEN_SIX); "spread", binary's bits spread on the CPU to
+//             ternary's codes (T634.3: spreadBits())
+//   scaleUp   (T642.8) how its scales go up: "copy", float32s as they are; "halves", ternary's float16s widened to
+//             float32 (T533)
+export type Up = "copy" | "widen" | "spread";
+export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; dot: boolean;
+  grid: boolean; values(bytes: Uint8Array, codebooks?: Uint8Array): ArrayLike<number>; on: GpuPacking; up: Up; scaleUp: "copy" | "halves" };
 const asBytes = (bytes: Uint8Array) => new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
 // (T547.3.3: llama.cpp's blocks of a type of superblocks.ts's SUPERBLOCKS, as the checkpoint holds them)
 const blocks = (packing: BlockPacking): HeldAs => {
   const { bytes, codebooks, weights } = SUPERBLOCKS[packing], row = (n: number) => (n / 256) * bytes;
-  return { row, scales: () => 0, stored: row, scale: 0, widened: false, dot: true, grid: codebooks, values: weights, on: packing, spread: false };
+  return { row, scales: () => 0, stored: row, scale: 0, dot: true, grid: codebooks, values: weights, on: packing, up: "copy", scaleUp: "copy" };
 };
 // T634.3: binary (jobs.ts's PACKED's binary, llama2_numpy.pack_binary): a group of 128 weights in 16 bytes, weight
 // 64 h + 4 c + p at bit 4 h + p of byte c, set for +1. On the GPU it is ternary's codes (PQ2_0's order: weight j's code,
@@ -59,10 +63,10 @@ export function spreadBits(bits: Uint8Array, out = new Uint8Array(bits.length * 
 // (the bytes of a binary row as its int8 values, -1 and +1: the checks' answer)
 const binaryValues = (bytes: Uint8Array) => Int8Array.from({ length: bytes.length * 8 }, (_, i) => (((bytes[((i >> 7) << 4) + ((i >> 2) & 15)] >> ((((i >> 6) & 1) << 2) | (i & 3))) & 1) << 1) - 1);
 export const PACKINGS: Record<GpuPacking, HeldAs> = {
-  int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, dot: false, grid: false, values: asBytes, on: "int8", spread: false },
-  int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, grid: false, values: sixValues, on: "int8", spread: false },
-  ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, grid: false, values: ternaryValues, on: "ternary", spread: false },
-  binary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 8, scale: 2, widened: false, dot: true, grid: false, values: binaryValues, on: "ternary", spread: true },
+  int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, dot: false, grid: false, values: asBytes, on: "int8", up: "copy", scaleUp: "copy" },
+  int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, dot: false, grid: false, values: sixValues, on: "int8", up: "widen", scaleUp: "copy" },
+  ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, dot: true, grid: false, values: ternaryValues, on: "ternary", up: "copy", scaleUp: "halves" },
+  binary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 8, scale: 2, dot: true, grid: false, values: binaryValues, on: "ternary", up: "spread", scaleUp: "halves" },
   ...(Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blocks(packing)] as const)) as Record<BlockPacking, HeldAs>),
 };
 // T547.3.1: the packing of a matrix's layer by its place (a stack whose layers are each of a packing of its own, packing
