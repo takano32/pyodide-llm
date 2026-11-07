@@ -26,11 +26,13 @@ const formsOf = (own) => (!adapter ? [] : wgsl.promptForms({ half: adapter.featu
   memory: adapter.limits.maxComputeWorkgroupStorageSize, threads: adapter.limits.maxComputeInvocationsPerWorkgroup, own })
   .filter((form) => !form.none).map((form) => form.name).filter((name) => own || !ONLY.length || ONLY.some((part) => name.includes(part))));
 // T152: the forms of a token's layer this adapter can make (gpu.js's TOKEN_FORMS), each forced in a run of its own
-// (T271.1: a model in a rotated basis takes those with the norms apart alone, gpu/tokens.ts's tokenCandidates())
+// (T271.1: a model in a rotated basis takes those with the norms apart alone, gpu/tokens.ts's tokenCandidates();
+// T642.14: a ternary model's are the DP4A ones under int8's names, its matrices taken by their roles' keys, and of
+// every arch: the plain DP4A form's leaving out of the archs but Llama's below is int8's)
 const features = navigator.gpu?.wgslLanguageFeatures;
 const tokenFormsOf = (ternary, rotated) => tokenFormsAll(ternary).filter((name) => !rotated || name.endsWith("the norms apart"));
 const tokenFormsAll = (ternary) => (!adapter ? [] : ternary
-  ? (features?.has("packed_4x8_integer_dot_product") ? ["DP4A, fused (T175), ternary", "DP4A, fused (T175), ternary, the norms apart"] : [])
+  ? (features?.has("packed_4x8_integer_dot_product") ? ["DP4A, fused (T175)", "DP4A, fused (T175), the norms apart"] : [])
   : ["llama.cpp, fused (T150)",
     ...(adapter.features.has("subgroups") && features?.has("subgroup_id") ? ["llama.cpp, fused (T150), subgroups"] : []),
     ...(features?.has("packed_4x8_integer_dot_product") ? ["DP4A, fused (T175)", "DP4A, fused (T175), the norms apart"] : [])]);
@@ -575,7 +577,7 @@ try {
     // T209: the classifier and the embedding in pieces of about a third of the table (as a table past what the device
     // binds: Llama 3.2 3B's on the owner's Android), so that EMBED's and the classifier's pieces are what the steps read
     if (gpu[0].steps?.planned !== false) {
-      for (const form of tokenForms.filter((name) => c.arch === "llama" || name !== "DP4A, fused (T175)")) gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: form, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
+      for (const form of tokenForms.filter((name) => ternary || c.arch === "llama" || name !== "DP4A, fused (T175)")) gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: form, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
       for (const attention of tokenAttentions) {
         gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: tokenForms[0], tokenAttention: attention, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
       }
@@ -586,7 +588,7 @@ try {
     // (T232: and the ternary one, whose matrices multiply the same quantized vectors: T241's NaN scales carry on there too)
     if (NAN_ROUNDS.weights && gpu[0].steps?.planned !== false && ["synthetic", "synthetic-qwen3", "synthetic-gpt2", "synthetic-ternary"].includes(c.id)) {
       const force = { matrices: forms[0], quick: true, pieceBytes: Infinity }, weightsBegan = performance.now();
-      for (const form of tokenForms.filter((name) => /DP4A/.test(name) && (c.arch === "llama" || name !== "DP4A, fused (T175)"))) {
+      for (const form of tokenForms.filter((name) => /DP4A/.test(name) && (ternary || c.arch === "llama" || name !== "DP4A, fused (T175)"))) {
         for (const place of brokenPlaces()) for (const value of [NaN, Infinity]) broken.push(await brokenWeight(form, place, value, force));
       }
       nanSeconds.weights = (performance.now() - weightsBegan) / 1000;
