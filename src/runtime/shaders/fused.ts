@@ -608,7 +608,7 @@ const tile_size = ${ORT_DP4A_MATVEC_ROWS}u;
 const tile_size_k_vec = 32u;
 const sub_tile_count = workgroup_size_x / tile_size_k_vec;
 const MATRICES = ${matrices}u;
-// fusedWrite's name for the rows of a workgroup
+// the writes' name (FUSED_WRITES) for the rows of a workgroup
 const OUTPUTS_PER_WG = tile_size;
 
 const double_tile_size_k_vec = 2 * tile_size_k_vec;

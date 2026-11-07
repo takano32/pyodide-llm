@@ -253,7 +253,10 @@ async function tokensOf(options) {
   const { m, answers } = await tokensOf({ model: "llama (8 heads)", weights: "ternary" });
   assert.equal(m.thrown, undefined, "a ternary model's token");
   assert.deepEqual(m.tokenForm.forms.filter(({ none }) => none), [], "ternary: no form wrong");
-  assert.ok(m.tokenForm.forms.every(({ name }) => name.includes("ternary")), "its own forms");
+  // (T642.14: the int8 model's forms of DP4A, its matrices by the roles' keys of ternary)
+  assert.deepEqual(m.tokenForm.forms.map(({ name }) => name), ["DP4A, fused (T175)", "DP4A, fused (T175), the norms apart"], "the forms of DP4A");
+  const keys = Object.keys(m.tokenForm.form.pipes);
+  assert.ok(keys.some((key) => key.endsWith(":ternary")) && !keys.some((key) => ["qkv", "add", "glu", "classifier"].includes(key)), `the matrices' keys of ternary, and none of int8: ${keys}`);
   assert.deepEqual(answers.missed, [], "ternary: every dispatch answered");
   const off = await tokensOf({ model: "llama (8 heads)", weights: "ternary", spoil: { dp4a: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] += 0.3 * peak(out); }) : right) } });
   assert.match(off.m.thrown ?? "", /no layer of a token is right on this GPU/, "a ternary product off");

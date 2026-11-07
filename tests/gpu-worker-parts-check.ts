@@ -784,22 +784,23 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
     const ternary = own === "ternary", blocks = types;
     const candidates = tokenCandidates({ own, features, plan: { layerNorm } });
     assert.ok(candidates.length > 0, "a device with subgroups and the packed dot has forms of a token's layer");
-    if (blocks.length) assert.ok(candidates.every((form) => form.dp4a && !form.ternary), "a model of blocks' forms are DP4A's, of int8");
+    // (T642.14: a ternary model's too, whose matrices take ternary's text under the role's key with ":ternary")
+    if (own) assert.ok(candidates.every((form) => form.dp4a && !("ternary" in form)), "a model of blocks' or ternary weights' forms are DP4A's, the int8 model's");
     for (const form of candidates) for (const apart of [false, true]) for (const gated of [false, true]) for (const floatHead of [false, true]) {
       forms += 1;
       // (T579: every role's matrices int8 or ternary, and of each type the model has)
       const roles = new Map(["qkv", "add", "glu", "classifier", "write", "mix"].map((role) => [role, new Set([ternary ? "ternary" : "int8", ...blocks])]));
       const made = tokenCodes(form, { apart, gated, layerNorm, floatHead, roles });
       const typeOf = (key) => key.split(":")[1];
-      assert.deepEqual([...new Set(made.map(([key]) => typeOf(key)).filter(Boolean))], form.dp4a ? blocks : [], `${form.name}: the matrices' keys of each type the model has, and none of another`);
+      assert.deepEqual([...new Set(made.map(([key]) => typeOf(key)).filter(Boolean))], form.dp4a ? [...(ternary ? ["ternary"] : []), ...blocks] : [], `${form.name}: the matrices' keys of each type the model has, and none of another`);
       for (const [key, code] of made) {
         const row = rowOf.get(code), said = `${form.name}${own ? ` (a ${own} model)` : ""}, ${key}`;
         assert.ok(row, `${said}: a text of no row of the catalogue, which the device's key does not hold`);
         codes += 1;
         if (row.name !== "fusedDp4aMatVec") continue;
-        assert.equal(row.given.weights, ternary ? "ternary" : typeOf(key) ?? "int8", `${said}: the matrix of the other packing of the weights`);
+        assert.equal(row.given.weights, typeOf(key) ?? "int8", `${said}: the matrix of the other packing of the weights`);
         assert.equal(TERNARY_SHADERS.includes(row), ternary, `${said}: a ternary model's shaders are its own rows, and no other model takes them`);
-        assert.equal(BLOCK_SHADERS.includes(row), Boolean(typeOf(key)), `${said}: a model of blocks' own shaders are its own rows, and none other's`);
+        assert.equal(BLOCK_SHADERS.includes(row), Boolean(typeOf(key)) && typeOf(key) !== "ternary", `${said}: a model of blocks' own shaders are its own rows, and none other's`);
       }
     }
   }

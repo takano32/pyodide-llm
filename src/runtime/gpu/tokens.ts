@@ -10,7 +10,7 @@ import { flashVecSplits } from "../shaders/attention.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, fusedParams } from "../shaders/fused.ts";
 import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, OUTLIERS_MOST, outliersOf } from "../shaders/run.ts";
 import { ENGINE } from "../shaders/engine.ts";
-import { isBlock, packingsOf, asTernary } from "./packings.ts";
+import { PACKINGS, isBlock, packingsOf, asTernary } from "./packings.ts";
 import type { Model, Bound, Pass } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
@@ -23,7 +23,7 @@ import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 // T368.6: a form of a token's layer: one of TOKEN_FORMS (Candidate), and, once tokenforms.ts's choose() tries it, its
 // pipelines by their keys (tokenCodes()'s: normQuantize and the roles, TokenRole) and its steps' dispatches, made
 // for the cache they bind and kept by the attention's parts a head (tokenStep())
-type Candidate = { name: string; dp4a: boolean; subgroups: boolean; normApart?: boolean; ternary?: boolean };
+type Candidate = { name: string; dp4a: boolean; subgroups: boolean; normApart?: boolean };
 // (T547.2.4: a matrix of llama.cpp's blocks takes the pipeline of its role's key with ":" and its type after it; T579:
 // a role's keys are those of the packings of its matrices alone, tokenShape's roles)
 type TokenForm = Candidate & { pipes: { [key: string]: GPUComputePipeline }; steps?: { cache: Kept | null; lists: Map<number, Pass[]> } };
@@ -130,19 +130,16 @@ type Ran = { ids: Uint32Array<ArrayBuffer>; sampled: number; stopped: number; no
 const TOKEN_FORMS: Candidate[] = [{ name: "llama.cpp, fused (T150)", dp4a: false, subgroups: false },
   { name: "llama.cpp, fused (T150), subgroups", dp4a: false, subgroups: true },
   { name: "DP4A, fused (T175)", dp4a: true, subgroups: false },
-  { name: "DP4A, fused (T175), the norms apart", dp4a: true, subgroups: false, normApart: true },
-  // T232: the same two on ternary weights (fusedDp4aMatVec's weights: "ternary"), which a model of ternary weights alone takes,
-  // and takes no other
-  { name: "DP4A, fused (T175), ternary", dp4a: true, subgroups: false, ternary: true },
-  { name: "DP4A, fused (T175), ternary, the norms apart", dp4a: true, subgroups: false, ternary: true, normApart: true }];
+  { name: "DP4A, fused (T175), the norms apart", dp4a: true, subgroups: false, normApart: true }];
 function tokenCandidates(m: Model) {
-  const { subgroups, packed } = m.features, ternary = m.own === "ternary";
+  const { subgroups, packed } = m.features;
   // (T226: NORM_QUANTIZE is RMSNorm's: a model with LayerNorm has its norms apart, and the form with them fused is
   // the same as the one with them apart)
   // (T271.1: a rotated basis turns every matrix's input as it quantizes it, ROTATE_QUANTIZE: the forms of DP4A with the
   // norms apart alone, where no norm is on a matrix's read)
-  // (T547.2.4: a model of Q4_K blocks besides int8, the forms of DP4A alone: its blocks are read as packed int8 there)
-  return TOKEN_FORMS.filter((form) => Boolean(form.ternary) === ternary && (!form.subgroups || subgroups) && (!form.dp4a || packed) && (form.dp4a || m.own !== "blocks") &&
+  // (T547.2.4: a model of Q4_K blocks besides int8, the forms of DP4A alone: its blocks are read as packed int8 there;
+  // T232, T642.14: a model of ternary weights too, whose matrices take their packing's text under the role's key)
+  return TOKEN_FORMS.filter((form) => (!form.subgroups || subgroups) && (!form.dp4a || packed) && (form.dp4a || !m.own) &&
     (!m.plan.layerNorm || !form.dp4a || form.normApart) && (!m.plan.rotated || (form.dp4a && form.normApart)));
 }
 // T226: what of the model's form shapes a token's dispatches: apart, q, k and v are written as they are for what comes
@@ -155,7 +152,7 @@ function tokenCandidates(m: Model) {
 // shaders/run.ts's TAKE_OUTLIERS and TERNARY_COLUMNS)
 // (T261.4.2: geglu, the gate's activation is GELU (a Gemma 3's); posts, the norms behind the attention and the FFN, so
 // that o and down write their rows as they are, which RMSNORM_ADD norms into the stream)
-const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && m.own !== "ternary";
+const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && PACKINGS[m.plan.tokens!.classifier.packing].on === "int8";
 // (T568.2: what the kinds of the model's layers write besides (gpu/kinds.ts's writes()): mix, a matrix of the normed
 // stream written as it is (T545.2: an LFM2's convolution layers' matrix in; T271.3: a Qwen3.5's gate of its attending
 // layers' output); write, a matrix of a vector of the kind's own written as it is (a Qwen3.5's linear-attention layers')
@@ -170,7 +167,7 @@ const tokenShape = (m: Model) => {
   const { plan } = m, roles = new Map<TokenRole, Set<GpuPacking>>();
   const take = (role: TokenRole, names: TensorName[]) => {
     for (const matrix of names.map((name) => plan.matrices[name]).filter((matrix) => matrix !== undefined)) {
-      for (const packing of packingsOf(matrix)) roles.set(role, (roles.get(role) ?? new Set()).add(packing));
+      for (const packing of packingsOf(matrix)) roles.set(role, (roles.get(role) ?? new Set()).add(PACKINGS[packing].on));
     }
   };
   for (const kind of kindsOf(plan)) {
@@ -181,7 +178,7 @@ const tokenShape = (m: Model) => {
   take("glu", ["w1", "w3"]);
   take(plan.vectors.ffnPost ? "write" : "add", ["w2"]);
   // (T547.3.6: and the classifier's type, a token's matrix too)
-  roles.set("classifier", new Set([plan.tokens!.classifier.packing]));
+  roles.set("classifier", new Set([PACKINGS[plan.tokens!.classifier.packing].on]));
   return { apart: Boolean(plan.vectors.bq || plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), up: Boolean(m.weights.together?.up),
     geglu: plan.activation === "gelu", layerNorm: plan.layerNorm, floatHead: floatHead(m), roles };
 };
@@ -190,25 +187,26 @@ const tokenShape = (m: Model) => {
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
 // (T547.2.4: and each of the matrices' keys again with ":Q4_K" after it, fusedDp4aMatVec's text for Q4_K's blocks: a
 // matrix of them dispatches its key's counterpart; T547.3.6: the classifier's too, where it is one)
-// (T579: a role's key where a matrix of it is int8 or ternary, and its keys of blocks for the types its matrices have:
+// (T579: a role's key where a matrix of it is int8, and its keys of ternary (T642.14) and of blocks for the types its matrices have:
 // no pipeline that no matrix takes)
-const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, up, geglu, layerNorm, floatHead, roles }: ReturnType<typeof tokenShape>): [string, string][] => {
+const tokenCodes = ({ dp4a, subgroups, normApart }: Candidate, { apart, gated, up, geglu, layerNorm, floatHead, roles }: ReturnType<typeof tokenShape>): [string, string][] => {
   const floats = (output: FusedOutput) => ENGINE.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
-  const matrix = dp4a ? (output: FusedOutput) => ENGINE.fusedDp4aMatVec({ output, weights: ternary ? "ternary" : "int8" }) : floats;
+  const matrix = dp4a ? (output: FusedOutput) => ENGINE.fusedDp4aMatVec({ output, weights: "int8" }) : floats;
   // (a matrix whose input is no norm of the stream: the attention's output, the activation's)
   const plain = (output: FusedOutput) => (dp4a ? matrix(output) : ENGINE.fusedMatVec({ input: "plain", output, subgroups }));
   // (T547.3.2: gate and up apart are each written as they are)
   const glu: FusedOutput = !gated || up ? "write" : geglu ? "geglu" : "swiglu";
-  // [role, its output, the text of its matrices of int8 or ternary]
+  // [role, its output, the text of its matrices of int8]
   const texts: [TokenRole, FusedOutput, () => string][] = [["qkv", apart ? "write" : "rope", () => matrix(apart ? "write" : "rope")], ["add", "add", () => plain("add")],
     ["glu", glu, () => matrix(glu)], ["classifier", "write", () => (floatHead ? floats : matrix)("write")], ["write", "write", () => plain("write")],
     ["mix", "write", () => matrix("write")]];
   return [...(dp4a && !normApart ? [["normQuantize", ENGINE.NORM_QUANTIZE]] satisfies [string, string][] : []),
     ...texts.flatMap(([role, output, text]): [string, string][] => {
       const packings = [...(roles.get(role) ?? [])];
-      return [...(packings.some((packing) => !isBlock(packing)) ? [[role, text()]] satisfies [string, string][] : []),
-        // (T547.3.6: the classifier's too, where it is a matrix of the form's: one of blocks takes its type's)
-        ...(dp4a ? BLOCK_PACKINGS.filter((weights) => packings.includes(weights)).map((weights): [string, string] => [`${role}:${weights}`, ENGINE.fusedDp4aMatVec({ output, weights })]) : [])];
+      return [...(packings.includes("int8") ? [[role, text()]] satisfies [string, string][] : []),
+        // (T547.3.6: the classifier's too, where it is a matrix of the form's: one of blocks takes its type's; T642.14:
+        // one of ternary weights, binary's too, takes ternary's)
+        ...(dp4a ? (["ternary", ...BLOCK_PACKINGS] as const).filter((weights) => packings.includes(weights)).map((weights): [string, string] => [`${role}:${weights}`, ENGINE.fusedDp4aMatVec({ output, weights })]) : [])];
     })];
 };
 
@@ -301,7 +299,8 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   // (T547.2.4: a matrix of no scales apart, Q4_K's blocks, by the pipeline's counterpart for them)
   // (T547.3.3: by the type of its blocks, the third of what it is held as: weights.ts's Piece and Joined)
   const matrix = (role: TokenRole, [w, s, packing]: Held, input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass => {
-    const key = packing && isBlock(packing) ? `${role}:${packing}` : role, pipeline = form.pipes[key];
+    // (T642.14: by what the GPU holds it as: binary's as ternary's)
+    const on = packing && PACKINGS[packing].on, key = on && on !== "int8" ? `${role}:${on}` : role, pipeline = form.pipes[key];
     // (T579's review: a matrix of a role or a packing no kind's matrices() says has no pipeline: said here, not as a bind
     // group of none)
     if (!pipeline) throw new Error(`a token's step has no pipeline for ${key}: no kind's matrices() says a matrix of it`);
