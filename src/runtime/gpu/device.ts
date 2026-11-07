@@ -7,7 +7,8 @@
 // nothing to fetch after it and nothing of /benchmark/'s own shaders in it. The device's key is key.ts's, the same
 // text the model's worker reads its key from: tests/dist-check.ts holds the two built files to one key.)
 // (T379.1: the shaders themselves, the texts and their makers, are taken from one catalogue, shaders/engine.ts's
-// ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
+// ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part;
+// what is no WGSL, as halves.ts's readers and a part's maker of a uniform's bytes (T642.6), it takes from the part)
 import { halvesOf, floatOfHalf } from "../shaders/halves.ts";
 import { normParams } from "../shaders/steps.ts";
 import { deviceKey, deviceFeatures } from "../shaders/key.ts";
