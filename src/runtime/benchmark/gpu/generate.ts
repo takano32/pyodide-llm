@@ -130,25 +130,13 @@ function generationParts(model: GenerateModel, form: Form, pipes: GenerationPipe
   shared.device.queue.writeBuffer(v.norms, 0, data?.norms ?? new Float32Array((2 * layers + 1) * dim).map(() => 0.5 + Math.random()));
   shared.device.queue.writeBuffer(v.angles, 0, ropeTable(headSize, positions));
   const eps = data?.eps ?? EPS;
-  // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned
-  const params = (rows: number, n: number, second = 0, normAt = 0) => {
-    const bytes = new ArrayBuffer(48);
-    new Uint32Array(bytes).set([rows, n / 4, n / shared.GROUP, second, 0, normAt, dim, kvDim, headSize, headSize, 0, 0]);
-    new Float32Array(bytes, 16, 1)[0] = eps;
-    return uniform(new Uint8Array(bytes));
-  };
-  const flashParams = new ArrayBuffer(16);
-  new Uint32Array(flashParams, 0, 2).set([heads, shape.kvHeads]);
-  new Float32Array(flashParams, 8, 1)[0] = 1 / Math.sqrt(headSize);
+  // T642.18: fusedMatVec's Params from the shader part's maker (T642.6); turned is headSize here, the whole head turned
+  const params = (rows: number, n: number, second = 0, normAt = 0) =>
+    uniform(shared.WGSL.fusedParams({ rows, n, second, eps, normAt, qRows: dim, kvRows: kvDim, headSize, turned: headSize }));
   const step = v.step;
   // RMSNORM's and NORM_QUANTIZE's Norm (size, at, eps): a layer's two norms and the final one, from `at` in the norms
-  const normParams = (at: number) => {
-    const bytes = new ArrayBuffer(16);
-    new Uint32Array(bytes, 0, 2).set([dim, at]);
-    new Float32Array(bytes, 8, 1)[0] = eps;
-    return uniform(new Uint8Array(bytes));
-  };
-  const common = { step, flash: uniform(new Uint8Array(flashParams)), o: params(dim, dim), down: params(dim, hidden),
+  const normParams = (at: number) => uniform(shared.WGSL.normParams(dim, at, eps));
+  const common = { step, flash: uniform(shared.WGSL.flashParams(heads, shape.kvHeads, headSize)), o: params(dim, dim), down: params(dim, hidden),
     quantize: [dim, hidden].map((n) => uniform(new Uint32Array([n, n, 0, 0]))) };
   const u = { embed: uniform(new Uint32Array([dim, 0, 0, 0])), classifier: params(vocab, dim, 0, 2 * layers * dim), final: normParams(2 * layers * dim),
     layers: stack.map((_, l) => ({ ...common, qkv: params(dim + 2 * kvDim, dim, 0, 2 * l * dim), gateUp: params(hidden, dim, hidden, (2 * l + 1) * dim),

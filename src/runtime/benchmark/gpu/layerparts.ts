@@ -280,28 +280,16 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
   const start = data ?? layerState(shape, pos);
   reset(start);
   const step = uniform(new Uint32Array([1, pos, 0, 0]));
-  const normParams = (at: number) => {
-    const bytes = new ArrayBuffer(16);
-    new Uint32Array(bytes, 0, 2).set([dim, at]);
-    new Float32Array(bytes, 8, 1)[0] = eps;
-    return uniform(new Uint8Array(bytes));
-  };
-  const flashParams = new ArrayBuffer(16);
-  new Uint32Array(flashParams, 0, 2).set([heads, kvHeads]);
-  new Float32Array(flashParams, 8, 1)[0] = 1 / Math.sqrt(headSize);
-  // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned (T151: the
-  // position is the Step's)
-  const fusedParams = (rows: number, n: number, second = 0, normAt = 0) => {
-    const bytes = new ArrayBuffer(48);
-    new Uint32Array(bytes).set([rows, n / 4, n / shared.GROUP, second, 0, normAt, dim, kvDim, headSize, headSize, 0, 0]);
-    new Float32Array(bytes, 16, 1)[0] = eps;
-    return uniform(new Uint8Array(bytes));
-  };
+  // T642.18: the uniforms' bytes from the shader parts' makers (T642.6), as the engine's GPU Worker makes them
+  const normParams = (at: number) => uniform(shared.WGSL.normParams(dim, at, eps));
+  // fusedMatVec's Params (T151: the position is the Step's); turned is headSize here, the whole head turned
+  const fusedParams = (rows: number, n: number, second = 0, normAt = 0) =>
+    uniform(shared.WGSL.fusedParams({ rows, n, second, eps, normAt, qRows: dim, kvRows: kvDim, headSize, turned: headSize }));
   // T224: flash_attn_vec's Params a count of parts, made as the forms ask for them
   const vecParams = new Map<number, GPUBuffer>();
   const u = { step, positions: pos + 1, attentionNorm: normParams(0), ffnNorm: normParams(dim), rope: uniform(new Uint32Array([heads, kvHeads, headSize, headSize])),
     vecParams: (nwg: number) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(shared.WGSL.flashVecParams({ headSize }, heads, kvHeads, nwg))).get(nwg)!,
-    flash: uniform(new Uint8Array(flashParams)), swiglu: uniform(new Uint32Array([hidden, 0, 0, 0])),
+    flash: uniform(shared.WGSL.flashParams(heads, kvHeads, headSize)), swiglu: uniform(new Uint32Array([hidden, 0, 0, 0])),
     qkv: fusedParams(dim + 2 * kvDim, dim), o: fusedParams(dim, dim), gateUp: fusedParams(hidden, dim, hidden, dim), down: fusedParams(dim, hidden),
     // QUANTIZE's (n, xStride) of dim and of hidden
     quantize: [dim, hidden].map((n) => uniform(new Uint32Array([n, n, 0, 0]))) };

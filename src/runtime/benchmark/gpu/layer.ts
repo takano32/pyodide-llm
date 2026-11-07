@@ -250,11 +250,8 @@ async function attentionLengths(shape: LayerShape): Promise<AttentionLengths> {
         const v = { q: make(heads * headSize * 4), att: make(heads * headSize * 4),
           parts: make(Math.max(...[true, false].map((sub) => shared.WGSL.flashVecPartsBytes(vecAttention(sub).shape(headSize), heads)))) };
         shared.device.queue.writeBuffer(v.q, 0, floats(heads * headSize, 2));
-        const flashParams = new ArrayBuffer(16);
-        new Uint32Array(flashParams, 0, 2).set([heads, kvHeads]);
-        new Float32Array(flashParams, 8, 1)[0] = 1 / Math.sqrt(headSize);
         const vecParams = new Map<number, GPUBuffer>();
-        const u = { step: uniform(new Uint32Array([1, positions - 1, 0, 0])), positions, flash: uniform(new Uint8Array(flashParams)),
+        const u = { step: uniform(new Uint32Array([1, positions - 1, 0, 0])), positions, flash: uniform(shared.WGSL.flashParams(heads, kvHeads, headSize)),
           vecParams: (nwg: number) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(shared.WGSL.flashVecParams({ headSize }, heads, kvHeads, nwg))).get(nwg)! };
         const group: Grouping = (pipeline, entries) => shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
           entries: entries.map(([binding, resource]) => ({ binding, resource: "offset" in resource ? resource : { buffer: resource as GPUBuffer } })) });
