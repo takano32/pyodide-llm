@@ -7,11 +7,10 @@
 // file). A new relaxed kernel is written in the file of its kind and added to a line here.
 //   relaxed/int8.ts     int8 weights: a token's (matmul_q8r) and a prompt's four by four (matmul_q8r_tile)
 //   relaxed/six.ts      int6 weights (matmul_q6r), widened by ../six.ts
-//   relaxed/ternary.ts  ternary weights (matmul_t2r, matmul_t2r_tile), the codes of ../ternary.ts
-//   relaxed/binary.ts   binary weights (matmul_b1r, matmul_b1r_tile), the codes of ../binary.ts: ternary's numbers to
-//                       the bit for the same weights (it takes relaxed/ternary.ts's planes and scaled)
+//   relaxed/signs.ts    ternary and binary weights (matmul_t2r, matmul_t2r_tile, matmul_b1r, matmul_b1r_tile): one
+//                       kernel for both, the packing a type parameter (../signs.ts); binary's numbers are ternary's to
+//                       the bit for the same weights
 
 export { matmul_q8r, matmul_q8r_tile } from "./relaxed/int8";
 export { matmul_q6r } from "./relaxed/six";
-export { matmul_t2r, matmul_t2r_tile } from "./relaxed/ternary";
-export { matmul_b1r, matmul_b1r_tile } from "./relaxed/binary";
+export { matmul_t2r, matmul_t2r_tile, matmul_b1r, matmul_b1r_tile } from "./relaxed/signs";

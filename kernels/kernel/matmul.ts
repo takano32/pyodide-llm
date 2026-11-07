@@ -5,8 +5,8 @@
 // outliers' columns of the classifier (add_columns).
 
 import { sixFirst, sixSecond, sixTops } from "../six";
-import { codes, fourSums } from "../ternary";
-import { bitCodes } from "../binary";
+import { fourSums } from "../ternary";
+import { Ternary, Binary, groupBytes, rowBytes, blockBytes, codesOf } from "../signs";
 import { half, halves4 } from "./halves";
 import { GS, hsum, laneSum } from "./math";
 
@@ -146,15 +146,15 @@ export function interleave(xq: usize, xs: usize, n: i32): void {
   }
 }
 
-// matmul_t2r (kernel_relaxed.ts) without relaxed SIMD: the same weights, activations and sums, the same exact
-// integers a group and the same float32 operations in the same order, so the same numbers to the bit. A plane's
-// products are widened to int16 (its low eight bytes are of the first group of 32 activations, its high eight of the
-// second) and added over the four planes there (4 x 2 x 128 a lane at most), then widened once.
+// matmul_t2r and matmul_b1r (relaxed/signs.ts) without relaxed SIMD: the same weights, activations and sums, the same
+// exact integers a group and the same float32 operations in the same order, so the same numbers to the bit (and
+// binary's ternary's for the same weights: signs.ts). A plane's products are widened to int16 (its low eight bytes are
+// of the first group of 32 activations, its high eight of the second) and added over the four planes there
+// (4 x 2 x 128 a lane at most), then widened once. T644.7: one kernel for both packings, P (signs.ts).
 // @ts-ignore: decorator
-@inline function plain64(w: usize, x: usize, three: v128): v128 {
-  const v = v128.load(w);
+@inline function plain64<P>(v: v128, x: usize, h: i32, mask: v128): v128 {
   const x0 = v128.load(x), x1 = v128.load(x, 16), x2 = v128.load(x, 32), x3 = v128.load(x, 48);
-  const c0 = codes(v, 0, three), c1 = codes(v, 1, three), c2 = codes(v, 2, three), c3 = codes(v, 3, three);
+  const c0 = codesOf<P>(v, h, 0, mask), c1 = codesOf<P>(v, h, 1, mask), c2 = codesOf<P>(v, h, 2, mask), c3 = codesOf<P>(v, h, 3, mask);
   const low = i16x8.add(i16x8.add(i16x8.extmul_low_i8x16_s(x0, c0), i16x8.extmul_low_i8x16_s(x1, c1)),
                         i16x8.add(i16x8.extmul_low_i8x16_s(x2, c2), i16x8.extmul_low_i8x16_s(x3, c3)));
   const high = i16x8.add(i16x8.add(i16x8.extmul_high_i8x16_s(x0, c0), i16x8.extmul_high_i8x16_s(x1, c1)),
@@ -164,72 +164,41 @@ export function interleave(xq: usize, xs: usize, n: i32): void {
   return i32x4.add(v128.shuffle<i32>(first, second, 0, 1, 4, 5), v128.shuffle<i32>(first, second, 2, 3, 6, 7));
 }
 // @ts-ignore: decorator
-@inline function plain128(facc: v128, w: usize, x: usize, sums: usize, xs: usize, at: usize, d: v128, mask: v128): v128 {
-  const whole = i32x4.add(fourSums(plain64(w, x, mask), plain64(w + 16, x + 64, mask)), v128.load(sums + at));
+@inline function plain128<P>(facc: v128, w: usize, x: usize, sums: usize, xs: usize, at: usize, d: v128, mask: v128): v128 {
+  const v = v128.load(w);
+  const whole = i32x4.add(fourSums(plain64<P>(v, x, 0, mask), plain64<P>(blockBytes<P>(w, v, 1), x + 64, 1, mask)), v128.load(sums + at));
   return f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d));
 }
 // (T533: the float16 scales as matmul_t2r reads them)
+// @ts-ignore: decorator
+@inline function signsRows<P>(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, code: i32): void {
+  const groups = n >> 7, groups4 = groups & ~3, mask = i8x16.splat(<i8>code), bytes = groupBytes<P>();
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * rowBytes<P>(n);
+    const srow = ws + ((<usize>i * <usize>groups) << 1);
+    let facc = f32x4.splat(0);
+    let g = 0;
+    for (; g < groups4; g += 4) {
+      const d = halves4(srow + (<usize>g << 1)), w = row + <usize>g * bytes, x = xq + (<usize>g << 7), at = <usize>g << 4;
+      facc = plain128<P>(facc, w, x, sums, xs, at, v128.shuffle<i32>(d, d, 0, 0, 0, 0), mask);
+      facc = plain128<P>(facc, w + bytes, x + 128, sums, xs, at + 16, v128.shuffle<i32>(d, d, 1, 1, 1, 1), mask);
+      facc = plain128<P>(facc, w + 2 * bytes, x + 256, sums, xs, at + 32, v128.shuffle<i32>(d, d, 2, 2, 2, 2), mask);
+      facc = plain128<P>(facc, w + 3 * bytes, x + 384, sums, xs, at + 48, v128.shuffle<i32>(d, d, 3, 3, 3, 3), mask);
+    }
+    for (; g < groups; g++) {
+      facc = plain128<P>(facc, row + <usize>g * bytes, xq + (<usize>g << 7), sums, xs, <usize>g << 4, f32x4.splat(half(srow + (<usize>g << 1))), mask);
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+// three: 3 (ternary.ts says why it is an argument)
 export function matmul_t2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
-  const groups = n >> 7, groups4 = groups & ~3, mask = i8x16.splat(<i8>three);
-  const sums = xs + (<usize>(n >> 5) << 2);
-  for (let i = r0; i < r1; i++) {
-    const row = wq + <usize>i * <usize>(n >> 2);
-    const srow = ws + ((<usize>i * <usize>groups) << 1);
-    let facc = f32x4.splat(0);
-    let g = 0;
-    for (; g < groups4; g += 4) {
-      const d = halves4(srow + (<usize>g << 1)), w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
-      facc = plain128(facc, w, x, sums, xs, at, v128.shuffle<i32>(d, d, 0, 0, 0, 0), mask);
-      facc = plain128(facc, w + 32, x + 128, sums, xs, at + 16, v128.shuffle<i32>(d, d, 1, 1, 1, 1), mask);
-      facc = plain128(facc, w + 64, x + 256, sums, xs, at + 32, v128.shuffle<i32>(d, d, 2, 2, 2, 2), mask);
-      facc = plain128(facc, w + 96, x + 384, sums, xs, at + 48, v128.shuffle<i32>(d, d, 3, 3, 3, 3), mask);
-    }
-    for (; g < groups; g++) {
-      facc = plain128(facc, row + (<usize>g << 5), xq + (<usize>g << 7), sums, xs, <usize>g << 4, f32x4.splat(half(srow + (<usize>g << 1))), mask);
-    }
-    store<f32>(xout + (<usize>i << 2), hsum(facc));
-  }
+  signsRows<Ternary>(xout, xq, xs, wq, ws, n, r0, r1, three);
 }
-
-// T634: matmul_b1r (kernel_relaxed.ts) without relaxed SIMD, as matmul_t2 is matmul_t2r's: binary weights (binary.ts),
-// their codes ternary's, so matmul_t2's numbers to the bit for the same weights
-// @ts-ignore: decorator
-@inline function plainBits64(v: v128, x: usize, h: i32, two: v128): v128 {
-  const x0 = v128.load(x), x1 = v128.load(x, 16), x2 = v128.load(x, 32), x3 = v128.load(x, 48);
-  const c0 = bitCodes(v, 4 * h, two), c1 = bitCodes(v, 4 * h + 1, two), c2 = bitCodes(v, 4 * h + 2, two), c3 = bitCodes(v, 4 * h + 3, two);
-  const low = i16x8.add(i16x8.add(i16x8.extmul_low_i8x16_s(x0, c0), i16x8.extmul_low_i8x16_s(x1, c1)),
-                        i16x8.add(i16x8.extmul_low_i8x16_s(x2, c2), i16x8.extmul_low_i8x16_s(x3, c3)));
-  const high = i16x8.add(i16x8.add(i16x8.extmul_high_i8x16_s(x0, c0), i16x8.extmul_high_i8x16_s(x1, c1)),
-                         i16x8.add(i16x8.extmul_high_i8x16_s(x2, c2), i16x8.extmul_high_i8x16_s(x3, c3)));
-  const first = i32x4.extadd_pairwise_i16x8_s(low), second = i32x4.extadd_pairwise_i16x8_s(high);
-  return i32x4.add(v128.shuffle<i32>(first, second, 0, 1, 4, 5), v128.shuffle<i32>(first, second, 2, 3, 6, 7));
-}
-// @ts-ignore: decorator
-@inline function plainBits128(facc: v128, w: usize, x: usize, sums: usize, xs: usize, at: usize, d: v128, two: v128): v128 {
-  const v = v128.load(w);
-  const whole = i32x4.add(fourSums(plainBits64(v, x, 0, two), plainBits64(v, x + 64, 1, two)), v128.load(sums + at));
-  return f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d));
-}
+// T634: two: 2 (binary.ts)
 export function matmul_b1(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, two: i32): void {
-  const groups = n >> 7, groups4 = groups & ~3, mask = i8x16.splat(<i8>two);
-  const sums = xs + (<usize>(n >> 5) << 2);
-  for (let i = r0; i < r1; i++) {
-    const row = wq + <usize>i * <usize>(n >> 3);
-    const srow = ws + ((<usize>i * <usize>groups) << 1);
-    let facc = f32x4.splat(0);
-    let g = 0;
-    for (; g < groups4; g += 4) {
-      const d = halves4(srow + (<usize>g << 1)), w = row + (<usize>g << 4), x = xq + (<usize>g << 7), at = <usize>g << 4;
-      facc = plainBits128(facc, w, x, sums, xs, at, v128.shuffle<i32>(d, d, 0, 0, 0, 0), mask);
-      facc = plainBits128(facc, w + 16, x + 128, sums, xs, at + 16, v128.shuffle<i32>(d, d, 1, 1, 1, 1), mask);
-      facc = plainBits128(facc, w + 32, x + 256, sums, xs, at + 32, v128.shuffle<i32>(d, d, 2, 2, 2, 2), mask);
-      facc = plainBits128(facc, w + 48, x + 384, sums, xs, at + 48, v128.shuffle<i32>(d, d, 3, 3, 3, 3), mask);
-    }
-    for (; g < groups; g++) {
-      facc = plainBits128(facc, row + (<usize>g << 4), xq + (<usize>g << 7), sums, xs, <usize>g << 4, f32x4.splat(half(srow + (<usize>g << 1))), mask);
-    }
-    store<f32>(xout + (<usize>i << 2), hsum(facc));
-  }
+  signsRows<Binary>(xout, xq, xs, wq, ws, n, r0, r1, two);
 }
 
 // T98: int6 weights (24 bytes a group, six.ts) with one float32 scale per group: matmul_q8 on the widened groups

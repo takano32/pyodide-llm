@@ -1,5 +1,5 @@
-// binary.ts (T634): the weights of a binary model, one bit each, as the dot products take them. kernel/matmul.ts
-// (matmul_b1) and relaxed/binary.ts (matmul_b1r) import it. The layout is engine/packing.py's pack_binary's: a group of 128
+// binary.ts (T634): the weights of a binary model, one bit each, as the dot products take them. signs.ts (the
+// packing Binary of the kernels that are one for ternary and binary, T644.7) imports it. The layout is engine/packing.py's pack_binary's: a group of 128
 // weights in 16 bytes, weight 64 h + 4 c + p (h 0 or 1, c 0..15, p 0..3) at bit 4 h + p of byte c, set for +1, and
 // one float16 scale a group after all the bits of the matrix (as ternary's, ternary.ts).
 //
