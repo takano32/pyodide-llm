@@ -80,8 +80,7 @@ const SILENT = {
     ["quietly", "promise.catch(() => undefined)", "T117: a Cache API that will not open or read leaves the network to answer, as before there was a copy; a Service Worker has no page to tell"],
   ],
   "src/benchmark/isolation.ts": [
-    ["isolating", "catch {}", `${STORAGE}the copies are kept, as by default`],
-    ["isolating", "catch { return false; }", "the Service Worker's registration was refused: the page goes on unisolated, as where there is none, and the report's features say isolated: no"],
+    ["offlineAsKept", "catch { return true; }", `${STORAGE}the copies are kept, as by default`],
   ],
   "src/benchmark/memory.ts": [
     ["(the module)", "catch { return null; }", `${STORAGE}the page-memory section does not run, and its place on the page says so`],
@@ -102,7 +101,7 @@ const SILENT = {
     ["copy.onclick", "catch { copy.textContent = \"could not copy\"; }", "the clipboard refused: the button says so, and the table is on the page to select"],
   ],
   "src/page/isolation.ts": [
-    ["isolating", "catch { return false; }", "the Service Worker's registration was refused: the page goes on unisolated and on one core, as where there is none (T371 is to say why there is one thread)"],
+    ["isolating", "catch { return false; }", "the Service Worker's registration was refused: the page goes on unisolated and on one core, as where there is none (T371 is to say why there is one thread); /benchmark/'s report's features then say isolated: no"],
   ],
   // (T643.3: every read and write of the page's storage goes through these two, and each caller says what stands in:
   // the address alone, a search of the threads again, the GPU's forms chosen again, the default model, no second try

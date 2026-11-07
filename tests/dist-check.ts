@@ -186,9 +186,15 @@ export function distSaid(dist, tree = treeOf(), most = SITE_BYTES) {
     if (asked) said.push(`_astro/${name} asks for ${asked}: a module of Node's in a browser's file (what the tests need of Node is theirs to give: tests/helper-node.ts)`);
     if (/^(__vite-browser-external|rolldown-runtime)\./.test(name)) said.push(`_astro/${name}: the bundler's stand-in for a module of Node's, or its own runtime for one: a file of the runtime imports a module a browser does not have`);
   }
-  // 9 (T445): names read and declared nowhere in a file of the runtime (the pages' scripts read the DOM's names)
+  // 9 (T445): names read and declared nowhere in a file of the runtime (the pages' scripts read the DOM's names, and
+  // so does the chunk the bundler makes of what both pages' scripts import, which no file of the runtime imports:
+  // T643.8's src/page/isolation.ts is in it, with location and sessionStorage)
+  const script = (name) => name.includes(".astro_astro_type_script");
+  const importers = (name) => [...bytes].filter(([other, got]) => other !== name && other.endsWith(".js") &&
+    new RegExp(`(?:from|import\\()\\s*["']\\./${name.replace(/[.\\-]/g, "\\$&")}["']`).test(got.toString("utf8"))).map(([other]) => other);
+  const pages = (name) => { const by = importers(name); return by.length > 0 && by.every(script); };
   for (const [name, got] of bytes) {
-    if (!name.endsWith(".js") || name.includes(".astro_astro_type_script")) continue;
+    if (!name.endsWith(".js") || script(name) || pages(name)) continue;
     const unknown = undeclared(got.toString("utf8")).filter((one) => !AMBIENT.has(one));
     if (unknown.length) said.push(`_astro/${name} reads ${unknown.join(", ")}, declared nowhere in it and no ambient name of the runtime (tests/types.ts's AMBIENT): a declaration the bundler dropped, or a new ambient name to add there`);
   }

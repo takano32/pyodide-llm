@@ -1,13 +1,8 @@
-// What the parts of /benchmark/'s script stand on: the deployment's ?v= (the Service Worker's), the elements by id, the
-// URL's parameters, the sections the run-all runs, what the page tells the tools (window.__benchmark), and the choices
-// the URL makes (the sections' names and what a section's result is are src/bench/sections.ts's, T643.11).
+// What the parts of /benchmark/'s script stand on: the site's base, the elements by id, the URL's parameters, the
+// sections the run-all runs, what the page tells the tools (window.__benchmark), and the choices the URL makes (the sections' names and what a section's result is are src/bench/sections.ts's, T643.11).
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 
-declare const __BUILD__: string;
 export const BASE = import.meta.env.BASE_URL;
-// the Service Worker's registration carries it (isolation.ts). The workers do not any more (T367.3: a bundler names
-// each file by a hash of its text)
-export const V = `?v=${__BUILD__}`;
 export const $ = (id: string) => document.getElementById(id)!;
 export const parameters = new URLSearchParams(location.search);
 import { SECTIONS } from "../bench.ts";

@@ -4,8 +4,8 @@
 import { memoryFailure } from "../models.ts";
 import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf, roundsHere } from "../bench.ts";
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
-import { benchmark, weighed } from "./address.ts";
-import { SESSION, keep, recall, remember, rememberAlone, rememberGpu, rememberThreads, rememberUsage } from "./remembered.ts";
+import { benchmark, parameters, weighed } from "./address.ts";
+import { SESSION, keep, offlineKept, recall, remember, rememberAlone, rememberGpu, rememberThreads, rememberUsage } from "./remembered.ts";
 import { arrived, arriving, becameReady, fromTemplate, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
 import { STILL_MS, advanced, leftSaid, secondsLeft } from "./remaining.ts";
 import { answer, drew, idle, shape, undrawn, used, written, wrote } from "./answer.ts";
@@ -13,7 +13,7 @@ import { markdownCame, markdownWanted } from "./markdown.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
 import { drawAnswer, message, meta, thoughtSaid, rows, showBench, showRun, showStatus } from "./draw.ts";
-import { isolating } from "./isolation.ts";
+import { isolating, unregistered } from "./isolation.ts";
 import { endsWork, ofThisLoad } from "./heard.ts";
 import { answerMeta, gpuLine, loadLines, progressLine } from "./lines.ts";
 import { unstarted } from "../runtime/updated.ts";
@@ -36,7 +36,7 @@ function drawNow() {
   drawAnswer(answer.firstElementChild!, written, shape, markdownCame);
   drew(performance.now());
 }
-if (await isolating()) {
+if (await isolating({ off: parameters.get("coi") === "off", fallback: "unregisters", offline: offlineKept })) {
   await new Promise(() => {});  // the page reloads: nothing else may start
 }
 export const worker: ModelWorker = new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" });
@@ -162,12 +162,7 @@ function heardError(data: Failed) {
   const fallback = data.pyodide && self.crossOriginIsolated && !recall("coi-fallback", Boolean, true, SESSION) && keep("coi-fallback", "1", SESSION);
   if (fallback) {
     statusText.textContent = "Pyodide did not load under the service worker: trying again without it...";
-    navigator.serviceWorker?.getRegistrations().then(async (registrations) => {
-      for (const registration of registrations) {
-        await registration.unregister();
-      }
-      location.reload();
-    });
+    if (navigator.serviceWorker) void unregistered().then(() => location.reload());
     return "away";
   }
   message("model error", data.memory ? memoryFailure(model, data.heap, data.message) : data.message);

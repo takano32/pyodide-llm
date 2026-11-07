@@ -14,8 +14,8 @@ import { unlisted, unnamed } from "./repository.ts";
 // What each name is for. "model": it names the model the page has (address.ts's named() reads them, addressOf()
 // writes them, and only them, for the model chosen). "engine": how the model runs (settings.ts's switches and bits,
 // which a reload keeps; remembered.ts's threads). "visit": what this visit does (measure once, the Service Worker of
-// isolation.ts, the tests' GPU of draw.ts). The generation settings are names too: the keys of Sampled, which
-// fields.ts's LIMITS reads (one row each there).
+// isolation.ts, which receiver.ts and remembered.ts hand ?coi= and ?offline=, the tests' GPU of draw.ts). The
+// generation settings are names too: the keys of Sampled, which fields.ts's LIMITS reads (one row each there).
 export const NAMES = {
   model: "model", hf: "model", revision: "model", file: "model", checkpoint: "model", tokenizer: "model", template: "model", prompt: "model",
   without: "engine", kernel: "engine", bits: "engine", threads: "engine",

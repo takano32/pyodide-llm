@@ -36,6 +36,15 @@ export function keep(name: string, text: string | null, place = LOCAL): boolean 
 /** a kept JSON's value: undefined where nothing (or null) is kept, and a text that is no JSON throws (recall()'s otherwise) */
 const parsed = (text: string | null) => JSON.parse(text ?? "null") ?? undefined;
 
+// T111: the service worker keeps copies for offline use, on every visit (the owner, 2026-09-25). ?offline=off turns
+// that off (remembered, so that every later visit registers the same one; it then throws the copies away),
+// ?offline=on back on. (isolation.ts reads it as it registers the worker. No storage: only the address says)
+export function offlineKept(): boolean {
+  if (parameters.get("offline") === "off") keep("offline", "off");
+  if (parameters.get("offline") === "on") keep("offline", null);
+  return parameters.get("offline") !== "off" && recall("offline", (text) => text !== "off", true);
+}
+
 // T93: the number of threads. ?threads=N fixes it (for measuring); else the worker finds it for this device and
 // model and this page remembers the answer, so that the next visit starts with it.
 const fixedThreads = Math.max(0, Math.floor(Number(parameters.get("threads")) || 0));
