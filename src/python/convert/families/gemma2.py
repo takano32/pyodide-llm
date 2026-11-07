@@ -11,7 +11,7 @@
 import math
 
 from convert.families.family import Family, positive, refuse
-from convert.families.gemma3 import GEMMA3, gemma3_sources
+from convert.families.gemma3 import GEMMA3, gemma3_prefix, gemma3_sources
 from convert.families.llama import gguf_config
 from convert.families.local import FULL, SLIDING, local_agrees, local_check, local_options
 
@@ -120,7 +120,7 @@ def gemma2_agrees(own, config):
 
 GEMMA3_OUTSIDE, GEMMA3_LAYER, GEMMA3_NAMES = GEMMA3.gguf_names
 GEMMA2 = Family("Gemma 2", "gemma2", gemma2_sources, gemma2_check, before=gemma2_config, after=gemma2_after,
-                options=gemma2_options, scale=gemma2_scale, free_heads=True,
+                options=gemma2_options, scale=gemma2_scale, prefix=gemma3_prefix, free_heads=True,
                 gguf="gemma2", gguf_config=gemma2_gguf_config, gguf_marks=gemma2_gguf_marks, agrees=gemma2_agrees,
                 gguf_names=(GEMMA3_OUTSIDE, GEMMA3_LAYER,
                             {ours: theirs for ours, theirs in GEMMA3_NAMES.items() if ours not in ("attn_q_norm", "attn_k_norm")}))

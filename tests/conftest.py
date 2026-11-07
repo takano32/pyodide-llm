@@ -386,6 +386,11 @@ def naive_gemma3_logits(tensors, config, tokens, states=None):
     head_dim, window = config["head_dim"], config["sliding_window"]
     inverse = {kind: 1.0 / config[key] ** (np.arange(0, head_dim, 2, dtype=np.float64) / head_dim)
                for kind, key in (("full_attention", "rope_theta"), ("sliding_attention", "rope_local_base_freq"))}
+    # T613: a linear rope_scaling turns the full-attention layers factor times slower, and the others as they were
+    # (Gemma3RotaryEmbedding: the local layers' copy of the config has a rope_scaling of the default kind)
+    scaling = config.get("rope_scaling") or {}
+    if scaling.get("rope_type", scaling.get("type")) == "linear":
+        inverse["full_attention"] = inverse["full_attention"] / scaling["factor"]
     norm = lambda v, weight: v / math.sqrt(float(v @ v) / len(v) + eps) * (1.0 + weight)  # Gemma3RMSNorm
     # gelu_pytorch_tanh: torch's gelu(approximate="tanh")
     gelu = lambda v: 0.5 * v * (1.0 + np.tanh(math.sqrt(2.0 / math.pi) * (v + 0.044715 * v ** 3)))

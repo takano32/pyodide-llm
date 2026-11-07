@@ -211,6 +211,20 @@ class Gemma3TextConfig(Config):
             self.layer_types = ["sliding_attention" if (at + 1) % pattern else "full_attention" for at in range(said["num_hidden_layers"])]
 
 
+class SiglipVisionConfig(Config):
+    model_type = "siglip_vision_model"
+
+
+class Gemma3Config(Config):
+    """(T613) the whole model's: a Gemma 3's text config and a tower of sight's"""
+    model_type = "gemma3"
+
+    def to_json_string(self, use_diff=False):
+        said = {key: value for key, value in self.__dict__.items() if key not in ("text_config", "vision_config")}
+        return json.dumps({"model_type": self.model_type, **said, "text_config": json.loads(self.text_config.to_json_string()),
+                           "vision_config": json.loads(self.vision_config.to_json_string())})
+
+
 class Gemma2Config(Config):
     """(T612) transformers' Gemma2Config: one sliding-attention layer of every two from the first where none are listed"""
     model_type = "gemma2"
@@ -302,6 +316,26 @@ def Gemma3ForCausalLM(config):
                                       head_dim=config.head_dim, vocab_size=config.vocab_size, seq_len=8,
                                       shared=config.tie_word_embeddings)
     return Model(writable(tensors), json.loads(config.to_json_string()), config)
+
+
+class Gemma3Whole(Model):
+    """(T613) transformers' Gemma3ForConditionalGeneration: its language model is model.language_model"""
+
+    @property
+    def model(self):
+        return types.SimpleNamespace(language_model=types.SimpleNamespace(embed_tokens=types.SimpleNamespace(weight=self.embedding())))
+
+
+def Gemma3ForConditionalGeneration(config):
+    """(T613) the whole model's tensors by transformers' names (model.language_model., model.vision_tower., ...)"""
+    import made_up
+    text = config.text_config
+    kinds = "".join("s" if kind == "sliding_attention" else "l" for kind in text.layer_types)
+    tensors, _ = made_up.gemma3_model(dim=text.hidden_size, hidden_dim=text.intermediate_size, kinds=kinds,
+                                      n_heads=text.num_attention_heads, n_kv_heads=text.num_key_value_heads,
+                                      head_dim=text.head_dim, vocab_size=text.vocab_size, seq_len=8,
+                                      shared=text.tie_word_embeddings, whole="new")
+    return Gemma3Whole(writable(tensors), json.loads(config.to_json_string()), text)
 
 
 def Gemma2ForCausalLM(config):

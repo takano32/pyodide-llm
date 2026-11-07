@@ -13,7 +13,9 @@
 # Three parts, every line of the log beginning with "gemma3:".
 #   made-up: tiny random models of transformers' own class (Gemma3ForCausalLM) with a window of 8 positions, which the 80
 #     positions of the text are ten times, and with what the real 270M has not: a classifier of its own, the kinds of
-#     the layers by a pattern, keys for every head, heads that fill the width. transformers' logits, over the whole text
+#     the layers by a pattern, keys for every head, heads that fill the width; T613: the full-attention layers' RoPE
+#     scaled linearly (the 4B's and up), and the whole model (Gemma3ForConditionalGeneration: a tiny tower of sight
+#     beside the language model, the 4B's file). transformers' logits, over the whole text
 #     at once (its masks) and token by token with its cache (which keeps the last window - 1 keys of a sliding layer),
 #     against the naive reference of the unit tests (conftest.naive_gemma3_logits) and against the engine, converted the
 #     way the page converts (llama2_convert.Conversion). And what each holds after the text: the keys and values of
@@ -106,6 +108,11 @@ MADE_UP = {
     "heads that fill the width, another epsilon, other bases": dict(kinds="lsslss", head_dim=8, rms_norm_eps=1e-5,
                                                                     theta=5000.0, local_theta=300.0),
     "no sliding layer at all": dict(kinds="llll"),
+    # T613: the 4B's and up: the full-attention layers' RoPE scaled linearly (theirs by 8; 4 here, on a smaller base,
+    # for the scaling to show within the text), and the whole model (Gemma3ForConditionalGeneration, a tiny tower of
+    # sight beside the language model) whose language model is read and whose tower is not
+    "the full layers' RoPE scaled linearly": dict(kinds="sslssl", theta=10000.0, linear=4.0),
+    "the whole model, scaled": dict(kinds="ssslssl", theta=10000.0, linear=8.0, whole=True),
 }
 
 
@@ -115,6 +122,7 @@ def made_up(name, settings, positions=80):
     from transformers import Gemma3ForCausalLM, Gemma3TextConfig
 
     settings = dict(settings)
+    linear, whole_model = settings.pop("linear", None), settings.pop("whole", False)
     kinds, pattern = settings.pop("kinds", None), settings.pop("pattern", None)
     layers = settings.pop("layers", len(kinds or ""))
     theta, local_theta = settings.pop("theta", 1000000.0), settings.pop("local_theta", 10000.0)
@@ -124,34 +132,55 @@ def made_up(name, settings, positions=80):
         said["layer_types"] = ["sliding_attention" if kind == "s" else "full_attention" for kind in kinds]
     else:
         said["sliding_window_pattern"] = pattern
+    full = {"rope_type": "linear", "factor": linear} if linear else {"rope_type": "default"}
     config = Gemma3TextConfig(vocab_size=320, hidden_size=32, intermediate_size=64, num_hidden_layers=layers,
                               num_attention_heads=4, max_position_embeddings=256, bos_token_id=2, eos_token_id=7,
                               pad_token_id=0, query_pre_attn_scalar=said["head_dim"],
-                              rope_parameters={"full_attention": {"rope_type": "default", "rope_theta": theta},
+                              rope_parameters={"full_attention": {**full, "rope_theta": theta},
                                                "sliding_attention": {"rope_type": "default", "rope_theta": local_theta}},
                               **said)
     torch.manual_seed(261)
-    model = Gemma3ForCausalLM(config).to(torch.float32).eval()
-    tied = bool(config.tie_word_embeddings)
+    if whole_model:
+        from transformers import Gemma3Config, Gemma3ForConditionalGeneration, SiglipVisionConfig
+        # (a tower of 2 x 2 patches of 14 and a projector to 4 tokens an image: no image is given, but its tensors are in
+        # the file)
+        vision = SiglipVisionConfig(hidden_size=16, intermediate_size=32, num_hidden_layers=1, num_attention_heads=2,
+                                    image_size=28, patch_size=14)
+        everything = Gemma3Config(text_config=config, vision_config=vision, mm_tokens_per_image=4, bos_token_id=2,
+                                  eos_token_id=7, pad_token_id=0)
+        model = Gemma3ForConditionalGeneration(everything).to(torch.float32).eval()
+    else:
+        model = Gemma3ForCausalLM(config).to(torch.float32).eval()
+    tied = model.lm_head.weight is (model.model.language_model if whole_model else model.model).embed_tokens.weight
     with torch.no_grad():
         for key, parameter in model.named_parameters():
             # (a norm's weight is around zero here: the model multiplies by 1 + weight)
             if not (key == "lm_head.weight" and tied):
                 parameter.copy_(0.3 * torch.randn_like(parameter))
-    if tied:
-        assert model.lm_head.weight is model.model.embed_tokens.weight, "the classifier is not tied"
+    if bool(config.tie_word_embeddings):
+        assert tied, "the classifier is not tied"
     rng = np.random.default_rng(261)
     tokens = [int(token) for token in rng.integers(0, 320, positions)]
     whole, at_once, stepped, stepped_states = both_ways(model, tokens, model_states)
     tensors = {key: value.detach().numpy() for key, value in model.state_dict().items()}
     if tied:
         tensors.pop("lm_head.weight", None)
-    published = json.loads(config.to_json_string(use_diff=False))
-    # the naive reference reads the config as the unit tests' own (made_up.gemma3_model) says it
-    naive = naive_gemma3_logits(tensors, {**published, "layer_types": list(config.layer_types), "rope_theta": theta,
-                                          "rope_local_base_freq": local_theta, "sliding_window": said["sliding_window"],
-                                          "query_pre_attn_scalar": said["head_dim"], "head_dim": said["head_dim"],
-                                          "rms_norm_eps": said["rms_norm_eps"]}, tokens)
+    published = json.loads((everything if whole_model else config).to_json_string(use_diff=False))
+    if whole_model:
+        towers = [key for key in tensors if not key.startswith("model.language_model.") and key != "lm_head.weight"]
+        say(f"made-up ({name}): the whole model's file has {len(towers)} tensors besides the language model's "
+            f"({', '.join(sorted({key.split('.')[1] for key in towers}))}), which no row reads")
+    # the naive reference reads the config as the unit tests' own (made_up.gemma3_model) says it, and the language
+    # model's tensors by the text model's names
+    text = {("model." + key[len("model.language_model."):] if key.startswith("model.language_model.") else key): value
+            for key, value in tensors.items() if key.startswith("model.language_model.") or key == "lm_head.weight"} \
+        if whole_model else tensors
+    naive = naive_gemma3_logits(text, {**json.loads(config.to_json_string(use_diff=False)),
+                                       "layer_types": list(config.layer_types), "rope_theta": theta,
+                                       "rope_local_base_freq": local_theta, "sliding_window": said["sliding_window"],
+                                       "query_pre_attn_scalar": said["head_dim"], "head_dim": said["head_dim"],
+                                       "rms_norm_eps": said["rms_norm_eps"],
+                                       "rope_scaling": full if linear else None}, tokens)
 
     llama, options, _ = made_up_engine(tensors, published)
     ours = engine_logits(llama, tokens)
@@ -171,7 +200,12 @@ def made_up(name, settings, positions=80):
     failed |= options.get("local") != theirs
     say(f"made-up ({name}): the local layers {json.dumps(options.get('local'))}"
         f"{'' if options.get('local') == theirs else f' — FAILED (transformers: {json.dumps(theirs)})'}, options "
-        f"{json.dumps({key: options[key] for key in ('arch', 'head_dim', 'rope_theta', 'rms_norm_eps') if key in options})}")
+        f"{json.dumps({key: options[key] for key in ('arch', 'head_dim', 'rope_theta', 'rope_scaling', 'rms_norm_eps') if key in options})}")
+    # T613: the full-attention layers' scaling as transformers has it, and none where it has none
+    scaled = (options.get("rope_scaling") or {}).get("factor")
+    failed |= scaled != linear
+    if scaled != linear:
+        say(f"made-up ({name}): the options scale RoPE by {scaled} — FAILED (transformers: {linear})")
     return failed
 
 

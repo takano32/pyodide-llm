@@ -20,6 +20,7 @@ import llama2_convert
 from llama2_convert import Safetensors, check_config, checkpoint_form, checkpoint_size, normalize
 from llama2_numpy import FORM, GELU, LAYOUTS, SILU, Llama, checkpoint_dtype, form_of, local_layers, tensor_rows
 from convert.families.local import local
+from convert.plan import model_plan
 
 # more than the window (4), and a token that comes again
 TOKENS = [1, 5, 7, 9, 11, 5, 5, 300, 2, 17, 4]
@@ -36,13 +37,18 @@ MODELS = {
     "keys for every head": dict(n_kv_heads=4, kinds="lssl"),
     "heads that fill the width": dict(head_dim=8, n_kv_heads=2),
     "another epsilon, the bases the other way round": dict(eps=1e-5, theta=50.0, local_theta=1000000.0),
+    # T613: the 4B's and up (a window shorter than the text: the local layers turn unscaled past it)
+    "the full layers' RoPE scaled": dict(linear=8.0, kinds="slsl", theta=100.0, local_theta=100.0),
+    "scaled, as transformers 5 writes it": dict(linear=4.0, kinds="lsl", parameters=True, theta=100.0),
+    "the whole model, transformers 4.51's names": dict(whole="old", linear=8.0, kinds="ssls"),
+    "the whole model, transformers 4.52's names": dict(whole="new", linear=8.0, kinds="ssls", shared=False),
 }
 
 
 def read(config):
     """config.json as transformers' Gemma3TextConfig would have read it, for the reference: the kinds of the layers
     listed and the bases by their old names (by hand here, not by the converter's normalize())."""
-    read = dict(config)
+    read = dict(config.get("text_config", config))  # (T613: the whole model's text_config)
     if "layer_types" not in read:
         pattern = read["sliding_window_pattern"]
         read["layer_types"] = ["sliding_attention" if (layer + 1) % pattern else "full_attention"
@@ -50,6 +56,7 @@ def read(config):
     if "rope_parameters" in read:
         read["rope_theta"] = read["rope_parameters"]["full_attention"]["rope_theta"]
         read["rope_local_base_freq"] = read["rope_parameters"]["sliding_attention"]["rope_theta"]
+        read["rope_scaling"] = read["rope_parameters"]["full_attention"]
     return read
 
 
@@ -58,12 +65,13 @@ def options_of(config):
     config = normalize(config)
     form = checkpoint_form(config, {})
     return {"arch": "gemma3", "head_dim": form["head_dim"], "rope_theta": config["rope_theta"],
-            "rms_norm_eps": config["rms_norm_eps"], "local": local(config)}
+            "rope_scaling": config.get("rope_scaling"), "rms_norm_eps": config["rms_norm_eps"], "local": local(config)}
 
 
 def engine(tensors, config, dtype="float32"):
     checkpoint = converted(Safetensors(reader(safetensors_file(tensors))), config, dtype)
-    return Llama(checkpoint, pack_tokenizer(tiny_vocab(config["vocab_size"])), dtype=dtype, **options_of(config)), checkpoint
+    vocab = normalize(config)["vocab_size"]
+    return Llama(checkpoint, pack_tokenizer(tiny_vocab(vocab)), dtype=dtype, **options_of(config)), checkpoint
 
 
 def conversion(tensors, config, dtype="float32"):
@@ -86,9 +94,12 @@ def test_a_gemma3_converts_and_runs_like_transformers(model):
     tensors, config = gemma3_model(**MODELS[model])
     llama, checkpoint = engine(tensors, config)
     header = struct.unpack_from("<7i", checkpoint, 0)
-    assert header[:5] == (32, 64, config["num_hidden_layers"], 4, config["num_key_value_heads"])
+    text = config.get("text_config", config)
+    assert header[:5] == (32, 64, text["num_hidden_layers"], 4, text["num_key_value_heads"])
     assert checkpoint_dtype(header, len(checkpoint), options_of(config)) == "float32"
-    want = naive_gemma3_logits(tensors, read(config), TOKENS)
+    # (T613: the whole model's language model is the text model of the same values, by its own names)
+    text_tensors = gemma3_model(**{**MODELS[model], "whole": None})[0]
+    want = naive_gemma3_logits(text_tensors, read(config), TOKENS)
     for pos, token in enumerate(TOKENS):
         assert close(llama.forward(token, pos), want[pos]), pos
 
@@ -401,6 +412,64 @@ def test_the_published_configs_read_as_transformers_reads_them(model):
     assert header == (said["hidden_size"], said["intermediate_size"], said["num_hidden_layers"], 4, 1, 262144, 4096)
 
 
+# T613: config.json of unsloth/gemma-3-4b-it at bf46152c (google/gemma-3-4b-it's, the whole model's: its keys
+# but for the tower of sight's), and as transformers 5 writes the same model (rope_parameters a dict for each kind)
+GEMMA3_4B_TEXT = dict(attention_bias=False, attention_dropout=0.0, attn_logit_softcapping=None, cache_implementation="hybrid",
+                      final_logit_softcapping=None, head_dim=256, hidden_activation="gelu_pytorch_tanh", hidden_size=2560,
+                      initializer_range=0.02, intermediate_size=10240, max_position_embeddings=131072,
+                      model_type="gemma3_text", num_attention_heads=8, num_hidden_layers=34, num_key_value_heads=4,
+                      query_pre_attn_scalar=256, rms_norm_eps=1e-06, rope_local_base_freq=10000.0,
+                      rope_scaling={"factor": 8.0, "rope_type": "linear"}, rope_theta=1000000.0, sliding_window=1024,
+                      sliding_window_pattern=6, torch_dtype="bfloat16", use_cache=True, vocab_size=262208)
+GEMMA3_4B = dict(architectures=["Gemma3ForConditionalGeneration"], boi_token_index=255999, bos_token_id=2,
+                 eoi_token_index=256000, eos_token_id=106, image_token_index=262144, initializer_range=0.02,
+                 mm_tokens_per_image=256, model_type="gemma3", pad_token_id=0, text_config=GEMMA3_4B_TEXT,
+                 torch_dtype="bfloat16", transformers_version="4.51.3",
+                 vision_config=dict(hidden_size=1152, model_type="siglip_vision_model", num_hidden_layers=27))
+GEMMA3_4B_5 = {**GEMMA3_4B, "text_config": {**{key: value for key, value in GEMMA3_4B_TEXT.items()
+                                               if key not in ("rope_theta", "rope_local_base_freq", "rope_scaling",
+                                                              "sliding_window_pattern")},
+                                            "layer_types": ["full_attention" if (layer + 1) % 6 == 0 else "sliding_attention"
+                                                            for layer in range(34)],
+                                            "rope_parameters": {"full_attention": {"rope_type": "linear", "factor": 8.0,
+                                                                                   "rope_theta": 1000000.0},
+                                                                "sliding_attention": {"rope_type": "default",
+                                                                                      "rope_theta": 10000.0}}}}
+
+
+@pytest.mark.parametrize("said", [GEMMA3_4B, GEMMA3_4B_5], ids=["as published", "as transformers 5 writes it"])
+def test_the_whole_models_config_reads_as_its_language_models(said):
+    """T613: the 4B's config.json (Gemma3ForConditionalGeneration) is its text_config's Gemma 3, with the whole model's
+    tokens, the full-attention layers' RoPE scaled linearly by 8 and the local ones' not, whichever way it is written."""
+    config = normalize(said)
+    check_config(config)
+    assert normalize(config) == config  # twice is once
+    assert config["model_type"] == "gemma3_text" and (config["bos_token_id"], config["eos_token_id"]) == (2, 106)
+    assert config["rope_scaling"] == {"rope_type": "linear", "factor": 8.0} and config["rope_theta"] == 1e6
+    assert local(config) == {"layers": [layer for layer in range(34) if (layer + 1) % 6], "window": 1024,
+                             "rope_theta": 10000.0}
+    assert form_of(checkpoint_form(said, {})) == {**FORM, "arch": "gemma3", "head_dim": 256}
+    assert llama2_convert.checkpoint_header(said, {}, 4096) == (2560, 10240, 34, 8, 4, 262208, 4096)
+
+
+def test_the_whole_models_tower_of_sight_is_not_read():
+    """T613: a whole model's file has the tower of sight and its projector beside the language model; no row is made of
+    them (and the same file without them converts to the same bytes)."""
+    tensors, config = gemma3_model(whole="new", linear=8.0)
+    alone = {name: tensor for name, tensor in tensors.items() if "vision_tower" not in name and "multi_modal" not in name}
+    plan, _ = model_plan(normalize(config), Safetensors(reader(safetensors_file(tensors))),
+                                        *conversion_header(tensors, config))
+    read_names = {name for sources in plan if isinstance(sources, list) for name, _ in sources}
+    assert read_names and all(name.startswith("model.language_model.") for name in read_names)
+    whole = converted(Safetensors(reader(safetensors_file(tensors))), config, "int8")
+    assert whole == converted(Safetensors(reader(safetensors_file(alone))), config, "int8")
+
+
+def conversion_header(tensors, config):
+    source = Safetensors(reader(safetensors_file(tensors)))
+    return llama2_convert.checkpoint_header(config, source, 1 << 20), checkpoint_form(config, source)
+
+
 REFUSED = [
     ({"hidden_activation": "silu"}, "its activation is silu, not gelu_pytorch_tanh"),
     ({"attention_bias": True}, "its layers have biases"),
@@ -416,8 +485,14 @@ REFUSED = [
     ({"rope_theta": "1e6"}, "its config.json has no usable base of RoPE"),
     ({"query_pre_attn_scalar": 168}, "it scales its attention's scores by 168, not by the size of its heads"),
     ({"rope_scaling": {"rope_type": "yarn", "factor": 2.0}}, "it uses RoPE scaling of the yarn kind"),
-    ({"rope_parameters": {"full_attention": {"rope_type": "linear", "factor": 8.0, "rope_theta": 1e6},
-                          "sliding_attention": {"rope_type": "default", "rope_theta": 1e4}}}, "it uses RoPE scaling of the linear kind"),
+    # T613: the full-attention layers' linear scaling is read (the 4B's); any other kind, or one of the local layers, is not
+    ({"rope_scaling": {"rope_type": "llama3", "factor": 8.0, "low_freq_factor": 1.0, "high_freq_factor": 4.0,
+                       "original_max_position_embeddings": 8192}}, "it uses RoPE scaling of the llama3 kind"),
+    ({"rope_parameters": {"full_attention": {"rope_type": "yarn", "factor": 8.0, "rope_theta": 1e6},
+                          "sliding_attention": {"rope_type": "default", "rope_theta": 1e4}}}, "it uses RoPE scaling of the yarn kind"),
+    ({"rope_parameters": {"full_attention": {"rope_type": "default", "rope_theta": 1e6},
+                          "sliding_attention": {"rope_type": "linear", "factor": 8.0, "rope_theta": 1e4}}},
+     "it scales the RoPE of its sliding-attention layers"),
     ({"head_dim": 15}, "its attention heads do not divide the hidden size the way llama2.c expects"),
 ]
 
@@ -534,6 +609,8 @@ def safetensors_conversion(same, config, vocabulary, dtype, **more):
     return expected
 
 
+# llama.cpp's metadata of the 4B's linear RoPE scaling (unsloth's gemma-3-4b-it-GGUF)
+SCALED = (("gemma3.rope.scaling.type", 8, "linear"), ("gemma3.rope.scaling.factor", 6, 8.0))
 # the real file's metadata: a window, llama.cpp's own pattern (6) and its own base of the local layers (1e4)
 AS_PUBLISHED = dict(kinds="ssssslssss", local_theta=10000.0, window=5)
 GGUF_SHAPES = {"as the published one says it": (AS_PUBLISHED, ()),
@@ -541,7 +618,9 @@ GGUF_SHAPES = {"as the published one says it": (AS_PUBLISHED, ()),
                "a pattern and a base of its own": (dict(kinds="sslssl", local_theta=100.0),
                                                    (("gemma3.attention.sliding_window_pattern", 4, 3), ("gemma3.rope.freq_base_swa", 6, 100.0))),
                "the layers one by one": (dict(kinds="slsslsl", local_theta=10000.0),
-                                         (("gemma3.attention.sliding_window_pattern", 9, (7, [True, False, True, True, False, True, False])),))}
+                                         (("gemma3.attention.sliding_window_pattern", 9, (7, [True, False, True, True, False, True, False])),)),
+               # T613: the 4B's: its full-attention layers' RoPE scaled linearly
+               "the full layers' RoPE scaled": ({**AS_PUBLISHED, "linear": 8.0}, SCALED)}
 
 
 @pytest.mark.parametrize("dtype", ["int8", "float32", "float16", "int6"])
@@ -587,6 +666,17 @@ def test_a_gemma3_gguf_that_is_not_the_originals_is_refused(change, what):
     llama2_convert.gguf_weights(file, json.dumps(config))  # its own config goes through
     with pytest.raises(ValueError, match=f"its {what} is "):
         llama2_convert.gguf_weights(file, json.dumps({**config, **change}))
+
+
+@pytest.mark.parametrize("gguf, original", [(8.0, None), (None, 8.0), (8.0, 4.0)])
+def test_a_gguf_whose_rope_scaling_is_not_the_originals_is_refused(gguf, original):
+    """T613: the full-attention layers' linear scaling is no tensor: a GGUF that says another than the original's is
+    another model."""
+    config, file, _ = gemma3_gguf(more=(("gemma3.rope.scaling.type", 8, "linear"), ("gemma3.rope.scaling.factor", 6, gguf))
+                                  if gguf else (), **AS_PUBLISHED)
+    scaled = {**config, "rope_scaling": {"rope_type": "linear", "factor": original} if original else None}
+    with pytest.raises(ValueError, match="its RoPE scaling is "):
+        llama2_convert.gguf_weights(file, json.dumps(scaled))
 
 
 def test_a_gguf_that_caps_its_logits_is_refused():

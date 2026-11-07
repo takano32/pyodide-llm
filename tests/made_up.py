@@ -252,12 +252,18 @@ def lfm2_model(dim=32, block_ff_dim=96, kinds="ccaccaca", n_heads=4, n_kv_heads=
 # ------------------------------------------------------------------------------------- Gemma 3 (T261)
 def gemma3_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1, head_dim=16, window=4, vocab_size=320,
                  seq_len=24, shared=True, seed=0, eps=1e-6, theta=1000000.0, local_theta=100.0, listed=True, pattern=None,
-                 parameters=False):
+                 parameters=False, linear=None, whole=None):
     """Random Hugging Face tensors of a tiny Gemma 3 (the text model), with the names and shapes of
     unsloth/gemma-3-270m-it's model.safetensors, and its config.json. kinds: a letter a layer, s for a
     sliding-attention layer and l for one that attends every position ("full_attention"). listed: the config.json
     lists the kinds (the 270M's); otherwise it says sliding_window_pattern (the 1B's: pattern, which then has to make
-    kinds). parameters: the two bases of RoPE as transformers 5 writes them, one rope_parameters."""
+    kinds). parameters: the two bases of RoPE as transformers 5 writes them, one rope_parameters.
+    T613: linear: the factor of the full-attention layers' linear RoPE scaling (the 4B's 8), none where None. whole:
+    the whole model (Gemma3ForConditionalGeneration, the 4B's and up) by the names unsloth/gemma-3-4b-it has
+    ("language_model.model.", "old": transformers 4.51's) or transformers 4.52's and later ("model.language_model.",
+    "new"), with a few tensors of a tower of sight and of its projector beside the language model's, and the config.json
+    of the whole model: the text one as its text_config, the tokens it begins and ends with at its own level. The same
+    values whichever names (the tower's of another generator)."""
     rng = np.random.default_rng(seed)
     normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
     tensors = {"model.embed_tokens.weight": normal(vocab_size, dim), "model.norm.weight": normal(dim)}
@@ -288,12 +294,36 @@ def gemma3_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1,
         config["layer_types"] = ["sliding_attention" if kind == "s" else "full_attention" for kind in kinds]
     else:
         config["sliding_window_pattern"] = pattern
+    scaled = {"rope_type": "linear", "factor": linear} if linear else {"rope_type": "default"}
     if parameters:
-        config["rope_parameters"] = {"full_attention": {"rope_type": "default", "rope_theta": theta},
+        config["rope_parameters"] = {"full_attention": {**scaled, "rope_theta": theta},
                                      "sliding_attention": {"rope_type": "default", "rope_theta": local_theta}}
     else:
-        config.update(rope_theta=theta, rope_local_base_freq=local_theta)
+        config.update(rope_theta=theta, rope_local_base_freq=local_theta, rope_scaling=scaled if linear else None)
+    if whole:
+        tensors, config = gemma3_whole(tensors, config, whole)
     return tensors, config
+
+
+def gemma3_whole(tensors, config, names):
+    """T613: a Gemma 3's text model as the whole model's (gemma3_model()'s whole)."""
+    prefix = {"old": "language_model.model.", "new": "model.language_model."}[names]
+    renamed = {(prefix + name[len("model."):] if name.startswith("model.") else
+                ("language_model." if names == "old" else "") + name): tensor for name, tensor in tensors.items()}
+    rng = np.random.default_rng(1)
+    tower = "vision_tower.vision_model." if names == "old" else "model.vision_tower.vision_model."
+    projector = "multi_modal_projector." if names == "old" else "model.multi_modal_projector."
+    for name, shape in ((tower + "embeddings.patch_embedding.weight", (8, 3, 2, 2)),
+                        (tower + "encoder.layers.0.self_attn.q_proj.weight", (8, 8)),
+                        (tower + "post_layernorm.weight", (8,)),
+                        (projector + "mm_input_projection_weight", (8, config["hidden_size"])),
+                        (projector + "mm_soft_emb_norm.weight", (8,))):
+        renamed[name] = rng.standard_normal(shape).astype(np.float32)
+    ends = {key: config.pop(key) for key in ("bos_token_id", "eos_token_id", "pad_token_id")}
+    return renamed, {"model_type": "gemma3", "architectures": ["Gemma3ForConditionalGeneration"], **ends,
+                     "boi_token_index": 255999, "eoi_token_index": 256000, "image_token_index": 262144,
+                     "mm_tokens_per_image": 256, "text_config": {**config, "model_type": "gemma3_text"},
+                     "vision_config": {"model_type": "siglip_vision_model", "hidden_size": 8, "num_hidden_layers": 1}}
 
 
 # ------------------------------------------------------------------------------------- Gemma 2 (T612)
