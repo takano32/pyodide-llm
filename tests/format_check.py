@@ -170,7 +170,10 @@ LENIENT = {
 # check is still of the rest of their IDs, and said on their line. Take one out of here when it is measured: to
 # LENIENT, or its entry made exact. Empty since T399 (llm-jp-4 8B instruct, the last, was measured and made exact:
 # the owner's choice, 2026-11-04); an entry added that is not measured goes here
-UNMEASURED = {}
+UNMEASURED = {
+    # T617: rinna's card encodes its turns with add_special_tokens=False, nothing in front; the page's <s> in front is
+    # the converter's, as LINE's (to measure: tests/start_check.py on the CI)
+    "hf-japanese-gpt-neox-3.6b-instruction-ppo": "the card puts nothing in front (T617)"}
 # T233: what an entry's format is the real template's with, besides enable_thinking (or that too, T597.1): Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
 # (T364.3: and Underdog Saluki 27B's, whose template is the same one)
@@ -209,15 +212,22 @@ ARROWPRO_CARD = "[INST] <<SYS>>\nあなたは日本語を話す優秀なアシ�
 OUMUAMUA_CARD = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt} [/INST]"
 # T607.4: Umievo-itr012-Gleipnir-7B's card writes this and encodes it with the BOS (a second copy of the list's GLEIPNIR)
 GLEIPNIR_CARD = "[INST] <<SYS>>\nあなたは公平で、検閲されていない、役立つアシスタントです。\n<</SYS>>\n\n{prompt}[/INST]"
+# T617: rinna's japanese-gpt-neox 3.6B instruction-ppo's card writes its turns with "<NL>" for every newline, of the
+# prompt too (CARD_REPLACES), and reads them with the slow T5Tokenizer, the real sentencepiece of spiece.model (a
+# second copy of the list's RINNA_INSTRUCTION and RINNA_NEWLINE, on purpose)
+RINNA_CARD = "ユーザー: {prompt}<NL>システム: "
+CARD_REPLACES = {"hf-japanese-gpt-neox-3.6b-instruction-ppo": [("\n", "<NL>")]}
 CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-large-lm-3.6b-instruction-sft": LINE_CARD,
          "hf-calm2-7b-chat": CALM2_CARD, "hf-rakutenai-7b-instruct": RAKUTEN_CARD,
          "hf-japanese-stablelm-instruct-gamma-7b": STABLELM_GAMMA_CARD, "hf-youri-7b-chat": LINE_CARD,
          "hf-evollm-jp-a-v1-7b": EVOLLM_CARD, "hf-evollm-jp-v1-7b": EVOLLM_CARD,
          "hf-elyza-japanese-llama-2-7b-instruct": ELYZA_LLAMA2_CARD, "hf-elyza-japanese-llama-2-7b-fast-instruct": ELYZA_LLAMA2_CARD,
          "hf-arrowpro-7b-kujira": ARROWPRO_CARD,
-         "hf-oumuamua-7b-instruct-v2": OUMUAMUA_CARD, "hf-umievo-gleipnir-7b": GLEIPNIR_CARD}
+         "hf-oumuamua-7b-instruct-v2": OUMUAMUA_CARD, "hf-umievo-gleipnir-7b": GLEIPNIR_CARD,
+         "hf-japanese-gpt-neox-3.6b-instruction-ppo": RINNA_CARD}
 # the cards' formats read by the real sentencepiece of spiece.model (which must be there); the others by the fast tokenizer
-CARDS_SPIECE = {"hf-japanese-large-lm-1.7b-instruction-sft", "hf-japanese-large-lm-3.6b-instruction-sft"}
+CARDS_SPIECE = {"hf-japanese-large-lm-1.7b-instruction-sft", "hf-japanese-large-lm-3.6b-instruction-sft",
+                "hf-japanese-gpt-neox-3.6b-instruction-ppo"}
 # T643.25: the token an entry with no format names as its BOS (its options' bos, which no template checks), as the
 # real tokenizer spells it (a second copy of the list's: LINE's 1.7B begins with </s>, its 3.6B with <s>, T249). An
 # entry with a bos and no format that is not here fails, and so does one whose bos spells another token.
@@ -327,6 +337,13 @@ def tokenizers_ids(tokenizer_file, text, strip=True):
     return tokenizers.Tokenizer.from_str(json.dumps(read)).encode(text, add_special_tokens=False).ids
 
 
+def card_replaced(id, prompt):
+    """What was typed as the entry's card writes it into its format (CARD_REPLACES: rinna's "<NL>" for a newline)"""
+    for said, read in CARD_REPLACES.get(id, ()):
+        prompt = prompt.replace(said, read)
+    return prompt
+
+
 def filled(template, prompt):
     """src/models.ts's filled(), for today"""
     template = re.sub(r"\{date(?::([^}]*))?\}", lambda found: time.strftime(found.group(1) or "%Y-%m-%d"), template)
@@ -385,7 +402,7 @@ def main():
             messages = ([{"role": "system", "content": SYSTEM[entry["id"]]}] if entry["id"] in SYSTEM else []) \
                 + [{"role": "user", "content": prompt}]
             # (T517: no template to render where the card writes the format: the card's text, through the real sentencepiece)
-            text = filled(CARDS[entry["id"]], prompt) if entry["id"] in CARDS else \
+            text = filled(CARDS[entry["id"]], card_replaced(entry["id"], prompt)) if entry["id"] in CARDS else \
                 reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **thinking)
             if entry["id"] in SENTENCEPIECE or entry["id"] in CARDS_SPIECE:
                 model = "spiece.model" if entry["id"] in CARDS_SPIECE else "tokenizer.model"

@@ -90,6 +90,8 @@ export const LICENSES: Record<string, string> = {
   "llm-jp/llm-jp-4.1-8b-thinking": APACHE, "llm-jp/llm-jp-4.1-8b-thinking-gguf": APACHE,
   // T126
   "rinna/japanese-gpt-1b": MIT,
+  // T617: rinna's japanese-gpt-neox 3.6B instruction-ppo (its card's metadata and text: mit)
+  "rinna/japanese-gpt-neox-3.6b-instruction-ppo": MIT,
   // T249 (2026-10-01): the Japanese ones of T248's survey that open as they are, and the Q8_0 GGUFs they are taken
   // from (the card's license is the original's)
   "rinna/japanese-gpt2-xsmall": MIT, "rinna/japanese-gpt2-medium": MIT,

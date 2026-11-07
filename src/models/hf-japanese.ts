@@ -1,8 +1,8 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added), below 7B
 // (T643.24: from Qwen2.5 7B Instruct on, they are in hf-japanese-large.ts).
 import {
-  ASKED_JAPANESE, CONTINUES_JAPANESE, EUROLLM, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_OWN_BOS, RAKUTEN, SARASHINA,
-  TINYSWALLOW, TRANSLATES, eurollm, llmJp, sarashina,
+  ASKED_JAPANESE, CONTINUES_JAPANESE, EUROLLM, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_OWN_BOS, RAKUTEN,
+  RINNA_INSTRUCTION, RINNA_NEWLINE, SARASHINA, TINYSWALLOW, TRANSLATES, eurollm, llmJp, sarashina,
 } from "./formats.ts";
 import { JAPANESE_SAMPLING, greedy, thinking } from "./sampling.ts";
 import { ggufOf, hf } from "./builders.ts";
@@ -224,6 +224,13 @@ export const HF_JAPANESE: Entry[] = [
   { group: "hf", id: "hf-japanese-large-lm-3.6b-instruction-sft", name: "LINE japanese-large-lm 3.6B instruction-sft", note: "answers instructions · 日本語 · fetches 7.2 GB → int8 4.0 GB", japanese: true, converted: 4.0e9,
     hf: hf("line-corporation/japanese-large-lm-3.6b-instruction-sft", "3d357b288f78beab8a3af7d962cf98d7d93bf72d", "spiece.model"), download: 7237638964,
     conversion: {}, options: { bos: 1 }, generation: JAPANESE_SAMPLING, template: LINE_SFT, ...ASKED_JAPANESE },
+  // T617: rinna's japanese-gpt-neox 3.6B instruction-ppo (a GPT-NeoX, its spiece.model; the safetensors: mmnga's GGUF of
+  // 2023 may have attn_qkv in Hugging Face's order). Its card's turns, with "<NL>" for a newline both ways
+  // (RINNA_NEWLINE), and its card's sampling (0.7 and a repetition penalty of 1.1, no top-p)
+  { group: "hf", id: "hf-japanese-gpt-neox-3.6b-instruction-ppo", name: "rinna japanese-gpt-neox 3.6B instruction-ppo", note: "answers instructions · 日本語 · fetches 7.4 GB → int8 4.1 GB", japanese: true, converted: 4.1e9,
+    hf: hf("rinna/japanese-gpt-neox-3.6b-instruction-ppo", "018e1f11cfe7ceeaad26c5c6f7dc570281516a51", "spiece.model"), download: 7365554624,
+    conversion: {}, options: RINNA_NEWLINE, generation: { steps: 0, temperature: 0.7, topp: 1.0, repetition_penalty: 1.1 },
+    template: RINNA_INSTRUCTION, ...ASKED_JAPANESE },
   // T614: PFN's PLaMo 3 610M Fin Instruct, a PLaMo 3 (plamo3: T649) trained further on finance in Japanese, its card
   // says ja alone. The original's safetensors: mradermacher's GGUFs of it say no yarn of the full layers' RoPE, which
   // its config.json has (the converter refuses them). As PLaMo 3 Translate's, PFN in front and PLaMo in the name and

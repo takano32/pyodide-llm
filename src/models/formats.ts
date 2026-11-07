@@ -13,6 +13,9 @@ export type ListOptions = {
   specials?: string[];
   stop_tokens?: number[];
   tokenizer_kind?: "unigram";
+  // T617: strings the model reads in place of others, written into what goes in and turned back in what comes out
+  // (the engine's Tokenizer: rinna's "<NL>" for a newline)
+  replaced?: [string, string][];
 };
 export const JAPANESE = "文章の書き出しを入力（例: 富士山は、）";
 export const STORY = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
@@ -24,6 +27,13 @@ export const ASK_JAPANESE = "質問や指示を入力（例: 日本の首都は�
 // T517: LINE's japanese-large-lm instruction-sft (1.7B and 3.6B) have no chat template; their cards write this, and
 // the space at its end too, which the model answers after
 export const LINE_SFT = "ユーザー: {prompt}\nシステム: ";
+// T617: rinna's japanese-gpt-neox 3.6B instruction-ppo has no chat template either: its card's turns, the same as
+// LINE's but for the newline, which its vocabulary has not: the card writes "<NL>" for every newline that goes in and
+// turns it back in what comes out, which the engine does with the entry's replaced (RINNA_NEWLINE: the newlines of
+// what the visitor typed too). The card puts no <s> in front (add_special_tokens=False): the page's one BOS more is
+// the converter's <s>, said with the format (T617: not measured yet)
+export const RINNA_INSTRUCTION = "ユーザー: {prompt}<NL>システム: ";
+export const RINNA_NEWLINE = { bos: 2, replaced: [["\n", "<NL>"]] } satisfies ListOptions;
 // ChatML. <|im_start|> and <|im_end|> are tokens of their own, so the engine is told to read them as such
 export const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 // the same for a model whose BOS is <|im_start|> itself, which the page begins every text with (SmolLM2's, a Qwen3's
