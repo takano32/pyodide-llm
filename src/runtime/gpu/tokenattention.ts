@@ -3,7 +3,8 @@
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch, whyOf } from "./device.ts";
-import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.ts";
+import { LINE, threadsOf } from "./forms.ts";
+import { MOST_PASSES, pairedMs } from "./timing.ts";
 import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, tokenAttentionData,
   tokenAttentionOff } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
@@ -150,9 +151,8 @@ async function checkTokenAttention(m: Model, a: TokenAttention) {
   return null;
 }
 // ms of the attention of a token (every layer's) with each of right, on made-up numbers: at 128 positions and at 2048
-// (the model's context where shorter), all in turn, as the tiled shaders are timed (timeForms: a submission of n
-// attentions and one of 2n, n doubled from 1 until n takes TIMED_MS, up to MOST_PASSES layers of them, PAIRS pairs,
-// the median), times the layers; the two lengths' ms added. (T224's review: n counts attentions, not layers of them.
+// (the model's context where shorter), all in turn, as the tiled shaders are timed (timing.ts's pairedMs: n counts
+// attentions, up to MOST_PASSES layers of them), times the layers; the two lengths' ms added. (T224's review: n counts attentions, not layers of them.
 // A submission of a whole token's layers at the least made the slowest one long: the prompt's tiles at 2048
 // positions, if they take the time of T202's 0.90 ms at 127 positions in proportion (an estimate: the f32 tiles, on
 // the owner's Android), 16 × 14 ms a submission and some 3.9 s of timing at every start, 0.5 s so)
@@ -164,30 +164,12 @@ async function timeTokenAttention(m: Model, right: TokenAttention[]) {
       const io = attentionIo(m, a, { heads: plan.heads, kvHeads: plan.kvHeads, positions }, owned);
       return { a, passes: attentionPasses(m, a, io, plan.heads, positions) };
     }));
-    const submission = async ({ passes }: { passes: Pass[] }, n: number) => {
+    const ms = (await pairedMs(m, items, ({ passes }, n) => {
       const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       for (let i = 0; i < n; i++) for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
       pass.end();
-      const began = m.now();
-      device.queue.submit([encoder.finish()]);
-      await device.queue.onSubmittedWorkDone();
-      return m.now() - began;
-    };
-    const counts: number[] = [], differences: number[][] = items.map(() => []);
-    for (const item of items) {
-      await submission(item, 1);  // warm
-      let n = 1;
-      while (!m.fallback && n < MOST_PASSES * plan.layers && (await submission(item, n)) < TIMED_MS) n *= 2;
-      counts.push(n);
-    }
-    for (let round = 0; round < (m.fallback ? 1 : PAIRS); round++) {
-      for (const [i, item] of items.entries()) {
-        const once = await submission(item, counts[i]), twice = await submission(item, 2 * counts[i]);
-        differences[i].push((twice - once) / counts[i]);
-      }
-      if (stopping) break;
-    }
-    const ms = differences.map((d) => d.sort((x, y) => x - y)[d.length >> 1] * plan.layers);
+      return encoder.finish();
+    }, MOST_PASSES * plan.layers)).map((each) => each * plan.layers);
     return right.map((a) => items.reduce((sum, item, i) => (item.a === a ? sum + ms[i] : sum), 0));
   } finally {
     owned.forEach((b) => b.destroy());

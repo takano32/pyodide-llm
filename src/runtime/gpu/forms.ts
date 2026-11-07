@@ -3,6 +3,7 @@
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch, whyOf } from "./device.ts";
+import { pairedMs } from "./timing.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
 import { SUPERBLOCKS, CODEBOOK_BYTES } from "../shaders/superblocks.ts";
@@ -28,13 +29,7 @@ type Tiled = PromptForm & { pipeline: GPUComputePipeline; blockPipelines: Partia
 type Forms = { attention: Attention; form: Tiled | null; tried: Tried[] };
 
 // The right tiled shaders are timed together, in turn, on the model's first layer (its seven matrices by a whole block,
-// with the quantizations of a packed one): a submission of n passes of the layer and one of 2n, their difference the
-// time of n passes (what a submission costs besides its work is in both and drops out: 2.6 to 8.4 ms waited for on
-// the owner's Android, T134, where llm-jp-3 150M's gate by 64 tokens is 0.6 ms of work), n doubled until a submission
-// of n takes TIMED_MS (at most MOST_PASSES), PAIRS pairs a shader, the shaders in turn within each round (a device that
-// warms up or is loaded meanwhile falls on all of them alike: T168's review), the median of each shader's pairs. On a
-// fallback adapter (the CPU in the GPU's place: its times are no GPU's) one pair of one pass
-const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
+// with the quantizations of a packed one): timing.ts's pairedMs, a pass of the layer a pass
 
 // the tiled shaders of T146 this device can make (shaders/prompt.ts's promptForms)
 // (T271.1: a rotated basis turns a matrix's input as it quantizes it, ROTATE_QUANTIZE: the packed forms alone;
@@ -292,7 +287,7 @@ async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, pa
   return null;
 }
 
-// ms of a pass of the model's first layer with each of forms (see TIMED_MS): the seven matrices by plan.batch tokens,
+// ms of a pass of the model's first layer with each of forms (timing.ts's pairedMs): the seven matrices by plan.batch tokens,
 // each packed one's inputs quantized first
 async function timeForms(m: Model, forms: Tiled[]) {
   const { device, plan } = m, owned: GPUBuffer[] = [], layer: { rows: number; group: GPUBindGroup; pipeline: GPUComputePipeline; quantize: Quantizing | null | undefined }[][] = [];
@@ -305,7 +300,7 @@ async function timeForms(m: Model, forms: Tiled[]) {
       layer.push(await validated(m, () => products.flatMap(([name, from, to, add, quantize]) =>
         productGroups(m, form, name, 0, from, to!, add, owned).map((piece, i) => ({ ...piece, quantize: i ? null : quantize })))));
     }
-    const submission = async (i: number, passes: number) => {
+    return await pairedMs(m, forms.map((_, i) => i), (i, passes) => {
       const form = forms[i], encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       for (let p = 0; p < passes; p++) {
         for (const { group, rows, quantize, pipeline } of layer[i]) {
@@ -314,30 +309,13 @@ async function timeForms(m: Model, forms: Tiled[]) {
         }
       }
       pass.end();
-      const began = m.now();
-      device.queue.submit([encoder.finish()]);
-      await device.queue.onSubmittedWorkDone();
-      return m.now() - began;
-    };
-    const passes: number[] = [], differences: number[][] = forms.map(() => []);
-    for (let i = 0; i < forms.length; i++) {
-      await submission(i, 1);  // warm
-      let n = 1;
-      while (!m.fallback && n < MOST_PASSES && (await submission(i, n)) < TIMED_MS) n *= 2;
-      passes.push(n);
-    }
-    for (let round = 0; round < (m.fallback ? 1 : PAIRS); round++) {
-      for (let i = 0; i < forms.length; i++) {
-        const once = await submission(i, passes[i]), twice = await submission(i, 2 * passes[i]);
-        differences[i].push((twice - once) / passes[i]);
-      }
-    }
-    return differences.map((d) => d.sort((a, b) => a - b)[d.length >> 1]);
+      return encoder.finish();
+    });
   } finally {
     owned.forEach((b) => b.destroy());
   }
 }
 
-export { TIMED_MS, MOST_PASSES, PAIRS, chooseAttention, LINE, chooseMatrices, formsSaid, threadsOf, productGroups,
+export { chooseAttention, LINE, chooseMatrices, formsSaid, threadsOf, productGroups,
   multiply };
 export type { Forms, Tiled, Attention };

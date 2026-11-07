@@ -61,7 +61,7 @@ type Base = {
   // deviceFeatures, which the key reads too): half (shader-f16), shuffles (the device's subgroups: the prompt's tiles),
   // subgroups (the device's and WGSL's subgroup_id: the attention and a token's matrices), packed (WGSL's DP4A)
   features: Features;
-  // T642.4: the clock the timings that choose a form read (forms.ts, tokenattention.ts, block.ts, tokenforms.ts):
+  // T642.4: the clock the timings that choose a form read (timing.ts, for forms.ts, tokenattention.ts, block.ts, tokenforms.ts):
   // performance.now, but where a check hands openDevice() another (createForward()'s clock is the CPU's, the same way)
   now: () => number;
 };

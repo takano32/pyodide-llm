@@ -22,6 +22,7 @@ import { gpuAnswers } from "./fakes/gpu-answers.ts";
 import { opened } from "./fakes/gpu-model.ts";
 
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
+const timing_ = await import(runtimeUrl("gpu/timing.ts"));
 const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 
 // (the models, for the cases that spoil one: the same Pyodide as every answerer's)
@@ -180,7 +181,7 @@ console.log(`ok: llama.cpp's blocks: each of the ten types' texts checked right 
   const before = clock.reads;
   await forms_.chooseMatrices(m);
   assert.equal(m.forms.form.name, right[0].name, "no fallback: the fastest taken");
-  assert.equal(clock.reads - before, right.length * (2 + 2 * forms_.PAIRS) * 2, "no fallback: a pass to warm up, one that sets n, and PAIRS pairs a form");
-  console.log(`ok: T642.4: the fastest of ${right.length} forms taken by the clock (${right[0].name}, ${right.at(-1).name}), one pair each on a fallback adapter, ${forms_.PAIRS} on another`);
+  assert.equal(clock.reads - before, right.length * (2 + 2 * timing_.PAIRS) * 2, "no fallback: a pass to warm up, one that sets n, and PAIRS pairs a form");
+  console.log(`ok: T642.4: the fastest of ${right.length} forms taken by the clock (${right[0].name}, ${right.at(-1).name}), one pair each on a fallback adapter, ${timing_.PAIRS} on another`);
 }
 console.log("gpu-forms-check: ok");

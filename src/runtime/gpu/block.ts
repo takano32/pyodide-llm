@@ -10,6 +10,7 @@ import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { isBlock, asTernary } from "./packings.ts";
+import { roundsMs } from "./timing.ts";
 import type { Model } from "./device.ts";
 import type { Added, BlockStep, KindBlock, Product, Quantizing, State } from "./kinds.ts";
 import type { LayerKind, TensorName } from "../contracts/plan.ts";
@@ -299,25 +300,12 @@ function keysIn(m: Model, cache: Sent, from: number, pos: number) {
 // T148: what a whole block takes here, from the submission to its keys and values read back, for 16 and for 64 tokens
 // (plan.batch) at position 0 of the GPU's own cache (which holds nothing of forward.ts's yet): forward.ts weighs a
 // block of a prompt on the GPU against the same tokens on the CPU by it (a line through the two, scaled by the blocks
-// it then times itself). The two in turn, BLOCK_ROUNDS rounds after one of each to warm up (the pipelines' first
-// dispatches, the weights' first reads), the median of each (a device that warms up or is loaded meanwhile falls on
-// both alike); one round on a fallback adapter (tests: its times are no GPU's)
-const BLOCK_ROUNDS = 3;
+// it then times itself). The two in turn: timing.ts's roundsMs (a device that warms up or is loaded meanwhile
+// falls on both alike); none if a stop came
 async function timeBlocks(m: Model) {
-  const { batch, seqLen } = m.plan, counts = [...new Set([Math.min(16, batch, seqLen), Math.min(batch, seqLen)])], times: number[][] = counts.map(() => []);
-  const timed = async (count: number) => {
-    const began = m.now();
-    await block(m, count, 0, () => false, true);
-    return m.now() - began;
-  };
-  for (const count of counts) await timed(count);
-  for (let round = 0; round < (m.fallback ? 1 : BLOCK_ROUNDS); round++) {
-    for (let i = 0; i < counts.length; i++) {
-      times[i].push(await timed(counts[i]));
-      if (stopping) return [];
-    }
-  }
-  return counts.map((count, i) => ({ count, ms: times[i].sort((a, b) => a - b)[times[i].length >> 1] }));
+  const { batch, seqLen } = m.plan, counts = [...new Set([Math.min(16, batch, seqLen), Math.min(batch, seqLen)])];
+  const ms = await roundsMs(m, counts, (count) => block(m, count, 0, () => false, true));
+  return stopping ? [] : counts.map((count, i) => ({ count, ms: ms[i] }));
 }
 
 // T545, T271.2: the state of the layers that keep one, as a request goes on from it: none at position 0 (the CPU clears
@@ -434,6 +422,6 @@ async function keysBack(m: Model, wanted: () => boolean) {
   }
 }
 
-export { prepare, bindLayers, grow, roomFor, keysIn, BLOCK_ROUNDS, timeBlocks, block, keysOut, keysBack, stateIn };
+export { prepare, bindLayers, grow, roomFor, keysIn, timeBlocks, block, keysOut, keysBack, stateIn };
 
 export type { Block, Quantizing, Kept };

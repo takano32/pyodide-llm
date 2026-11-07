@@ -5,7 +5,8 @@ import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, rowBytes, stopping, within, isLa
 import { tablesOf } from "./weights.ts";
 import { PACKINGS, packingAt, blocksOf } from "./packings.ts";
 import { floatOfHalf } from "../shaders/halves.ts";
-import { roomFor, BLOCK_ROUNDS } from "./block.ts";
+import { roomFor } from "./block.ts";
+import { roundsMs } from "./timing.ts";
 import { chooseTokenAttention } from "./tokenattention.ts";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.ts";
 import { GROUP } from "../shaders/common.ts";
@@ -96,8 +97,8 @@ function tokensSaid(m: Model): TokensChosen | null {
 }
 
 // ms a step of each form: runs of plan.tokens.most steps a submission from position 0 (a made-up state, the settings
-// of the list's sampled models, T151's), the forms in turn after one run each to warm up, BLOCK_ROUNDS rounds (one on
-// a fallback adapter: its times are no GPU's), the median of each over its steps. The runs write the GPU's own keys
+// of the list's sampled models, T151's), the forms in turn (timing.ts's roundsMs), the median of each over its
+// steps. The runs write the GPU's own keys
 // and values of those positions, which hold nothing of forward.ts's yet (as timeBlocks)
 async function timeTokens(m: Model, forms: TokenForm[]) {
   const g = m.tokens!, most = g.most;
@@ -105,18 +106,9 @@ async function timeTokens(m: Model, forms: TokenForm[]) {
   const settings = samplingSettings({ vocab: g.vocab, temperature: 0.7, topp: 0.9, penalty: 1.1 });
   const randoms = new Float32Array(most).map(() => Math.fround(Math.random()) % 1);
   roomFor(m, most);
-  const timed = async (form: TokenForm) => {
-    const began = m.now();
-    await runTokens(m, tokenStep(m, form, most), { count: most, pos: 0, state, settings, randoms });
-    return m.now() - began;
-  };
-  for (const form of forms) await timed(form);
-  const times: number[][] = forms.map(() => []);
-  for (let round = 0; round < (m.fallback ? 1 : BLOCK_ROUNDS); round++) {
-    for (let i = 0; i < forms.length; i++) times[i].push(await timed(forms[i]));
-    if (stopping) break;
-  }
-  return times.map((list) => list.sort((a, b) => a - b)[list.length >> 1] / most);
+  const ms = await roundsMs(m, forms, (form) =>
+    runTokens(m, tokenStep(m, form, most), { count: most, pos: 0, state, settings, randoms }));
+  return ms.map((each) => each / most);
 }
 
 // ---- T152's check of a form on the model's own weights, against JavaScript (the drivers, the subgroups and the
