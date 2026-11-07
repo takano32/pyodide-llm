@@ -312,6 +312,11 @@ export const HF_FAMILIES: Entry[] = [
     "fetches 292 MB (GGUF) → int8 302 MB", 302e6),
   gemma3("1B", { gguf: "f0b45be0aac41bd6a100a4b5734cad5f67255bfb", original: "5b11413a10db4e486ef16a20101fd028f8f2499c" }, 1069306400,
     "fetches 1.1 GB (GGUF) → int8 1.1 GB", 1.1e9),
+  // T613: the 4B, the whole model's language model (its config.json is Gemma3ForConditionalGeneration's: the converter
+  // reads its text_config and leaves the tower of sight, which unsloth's GGUF has not either: mmproj is a file of its
+  // own), its full-attention layers' RoPE scaled linearly by 8
+  gemma3("4B", { gguf: "5a3566e716d80f709ed7b79817eaf7733d2a1fce", original: "bf46152c47f5dd20b896357cb51abc4c03b8ee8c" }, 4130402176,
+    "fetches 4.1 GB (GGUF) → int8 4.4 GB", 4.4e9),
   // T333: Gemma 4's two smallest (E2B, E4B), on the CPU alone (no shader has their layers yet: T334). T329.3 held the
   // E2B to transformers (logits 1.10e-4, the most likely token 96 of 96) and ran it in three browsers from ?hf=. loaded:
   // the int8 checkpoint without the table of every layer's inputs, which stays in the kept file (the converter's sizes
