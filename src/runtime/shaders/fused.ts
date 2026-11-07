@@ -504,17 +504,17 @@ ${ROW_RMS}
 //   unpacking  the functions the reads call: SDP8AI and what turns a word of the weights into packed int8 (T642.10)
 //   rowScales  after K32: how many scales a row has, where that is not the vector's groups of 32
 //   reads      what a thread reads of a row's group and adds to the row's sum (of up's row too where the output has
-//              two matrices: swiglu, geglu). Of int8 and ternary weights scaledReads (T642.10), from:
-//   scale      the index of the scale of a thread's group of 32 (k_offset: of int8 weights the index of its scale in
-//              a row as it is, which ORT's text names block_idx; of ternary ones two words of codes, a quarter of a
-//              scale's group) in a row (b_global, or up's row)
-//   word       a vec4<u32> of 16 packed int8, of the word at an index of b
+//              two matrices: swiglu, geglu). Of int8 and ternary weights scaledReads (T642.10, below)
 //   own        (T547.2.4, llama.cpp's blocks: the others' "") what a thread makes of its vector's group once (the sums
 //              of its halves, which a block's mins take); their reads a row's group read from its block (superblocks.ts's
 //              BLOCK_COMMON's BLK, the tiles' own reading). T547.3.3: a row a type of superblocks.ts's
 //              SUPERBLOCKS, its reading of a block its own (blockRows)
 // (T547.3.3: a type's row: its blocks' bytes the step from a block to the next)
-// (T642.10) the reads of int8 and ternary weights: a row's word and its group's scale, by SDP8AI
+// (T642.10) the reads of int8 and ternary weights: a row's word and its group's scale, by SDP8AI, from:
+//   scaleAt  the index of the scale of a thread's group of 32 (k_offset: of int8 weights the index of its scale in
+//            a row as it is, which ORT's text names block_idx; of ternary ones two words of codes, a quarter of a
+//            scale's group) in a row (b_global, or up's row)
+//   wordAt   a vec4<u32> of 16 packed int8, of the word at an index of b
 const scaledReads = (scaleAt: (row: string) => string, wordAt: (at: string) => string) => (two: boolean) => `
                 let b_offset = b_global * K32 + k_offset;
                 let own_scale_b = scales_b[${scaleAt("b_global")}];
