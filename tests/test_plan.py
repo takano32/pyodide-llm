@@ -42,7 +42,7 @@ cases = pytest.mark.parametrize("name, header, form, more", MODELS, ids=[model[0
 KEYS = {"arch", "dim", "hidden_dim", "n_layers", "n_heads", "n_kv_heads", "head_size", "vocab_size", "seq_len", "rotary",
         "parallel_residual", "kv_start", "rms_norm_eps", "shared_classifier", "int8", "relaxed", "tensors", "derived",
         "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths", "layer_norm", "gated_ffn",
-        "activation", "tiled", "own_kinds", "value_norm", "softcap"}
+        "activation", "tiled", "own_kinds", "value_norm", "softcap", "score_softcap"}
 
 
 def no_bytes(offset, length):

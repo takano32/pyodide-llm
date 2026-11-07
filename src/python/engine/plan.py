@@ -54,7 +54,8 @@ class Settings(NamedTuple):
     none of its own: rope_tables()'s; None where the file has them) and tiled (T363: FORM's, a linear-attention layer's
     output matrix reads its value heads in llama.cpp's order); local (T261: the model's local layers, local_layers()'s,
     None for a model without) and local_tables (their RoPE tables (cos, sin), which no file has); softcap (T331: the
-    logits are softcap * tanh(logits / softcap); 0, as they are)."""
+    logits are softcap * tanh(logits / softcap); 0, as they are); score_softcap (T612: so are the attention's scores,
+    after they are divided by the root of a head's size, a Gemma 2's; 0, as they are)."""
     int8: bool
     kv_start: int
     disable: tuple = ()
@@ -68,6 +69,7 @@ class Settings(NamedTuple):
     local: Any = None
     local_tables: Any = None
     softcap: float = 0.0
+    score_softcap: float = 0.0
 
 
 def layer_facts(dims, settings):
@@ -203,4 +205,7 @@ def forward_plan(dims, dtype, read, settings=None, **said):
             "activation": dims.layout.activation,
             # T331: a fourth, the heads of v are normalized (a Gemma 4's, without a weight); and the logits are capped
             # (softcap * tanh(logits / softcap); 0: as they are)
-            "value_norm": bool(dims.layout.value_norm), "softcap": float(settings.softcap or 0.0)}
+            "value_norm": bool(dims.layout.value_norm), "softcap": float(settings.softcap or 0.0),
+            # T612: the attention's scores are capped too (score_softcap * tanh(scores / score_softcap), after the root
+            # of a head's size; 0: as they are)
+            "score_softcap": float(settings.score_softcap or 0.0)}

@@ -51,7 +51,7 @@ const linearSizes = (linear, dim = 8) => ({ dim, numbers: { linear }, widths: { 
 const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
 const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
-  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, activation: "silu", local: false, windows: [0, 0], locals: [], extras: false, parallel: false, unturned: [], gpuKinds: kindsOf(["attention"]), stateful: false, rotated: 0,
+  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, activation: "silu", local: false, windows: [0, 0], locals: [], extras: false, scoresCapped: false, parallel: false, unturned: [], gpuKinds: kindsOf(["attention"]), stateful: false, rotated: 0,
   sharedClassifier: true, kinds: ["attention", "attention"], places: [0, 1], attending: 2, stateBytes: 0 };
 const matrixOf = (rows, n, at, more = {}) => ({ rows, n, kind: "int8", group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
 const WEIGHTS = { base: 8192, embedding: { kind: "int8", group: 32, offset: 100, scales: 200 },
@@ -703,6 +703,9 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{ activation: undefined }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ layerNorm: true, gatedFfn: false, activation: "gelu" }, { w3: null, attPost: 4096 }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ extras: true }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
+    // (T612: a Gemma 2's cap of the attention's scores, which comes before what else it has, its cap of the logits)
+    [{ scoresCapped: true }, {}, {}, /^attention whose scores are capped is not on the GPU yet$/],
+    [{ scoresCapped: true, extras: true, activation: "gelu" }, {}, {}, /^attention whose scores are capped is not on the GPU yet$/],
     [{}, {}, { sharedMemory: false }, /^the page is not cross-origin isolated$/],
     [{ headSize: 6 }, {}, {}, /^heads of a size that is no multiple of 4 are not on the GPU$/],
     [{}, { wq: { rows: 8, n: 8, kind: "f32", layer: () => [0] } }, {}, /^float32 weights are not on the GPU yet$/],

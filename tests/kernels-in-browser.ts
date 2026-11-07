@@ -651,6 +651,54 @@ async function inPage({ plain, relaxed }) {
     });
   }
 
+  // ---- T612: attention with its scores capped (a Gemma 2's), over float32 keys and values and over float16 ones: two
+  // heads of 24 (a rest of 0 after the fours, and the scores' rest of 3) of one key head, 23 positions, scores of -24 to
+  // 24 capped by 4. Held to the first call's output to the bit (the arithmetic does not change as the engine compiles it
+  // again), and to the formula in float64 within 1e-5 (the float16 cache's keys and values as the kernel reads them)
+  {
+    const at = extra + 3145728 + 65536, nh = 2, hs = 24, count = 23, cap = 4;
+    const q = at, kc = q + 1024, vc = kc + 4096, kh = vc + 4096, vh = kh + 2048, att = vh + 2048, out = att + 1024;
+    const H = new Uint16Array(memory.buffer);
+    const query = Float32Array.from({ length: nh * hs }, () => f(((next() % 2001) / 1000 - 1) * 2));
+    const keys = Float32Array.from({ length: count * hs }, () => f(((next() % 2001) / 1000 - 1) * 2));
+    const values = Float32Array.from({ length: count * hs }, () => f((next() % 2001) / 1000 - 1));
+    const half = (h) => {
+      const sign = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, m = h & 1023;
+      return e === 0 ? sign * m * 2 ** -24 : sign * (1 + m / 1024) * 2 ** (e - 15);
+    };
+    F.set(keys, kc / 4);
+    F.set(values, vc / 4);
+    k.to_f16(kh, kc, count * hs);
+    k.to_f16(vh, vc, count * hs);
+    for (const [name, kernel, K, V, read] of [["attention_capped", k.attention_capped, kc, vc, (at, i) => F[at / 4 + i]],
+      ["attention_f16_capped", k.attention_f16_capped, kh, vh, (at, i) => half(H[at / 2 + i])]]) {
+      const call = () => { F.set(query, q / 4); kernel(out, q, K, V, att, count - 1, nh, 1, hs, 0, nh, cap); };
+      call();
+      const first = Uint32Array.from(new Uint32Array(memory.buffer, out, nh * hs));
+      await check(name, call, () => {
+        F.fill(-7, out / 4, out / 4 + nh * hs + 4);
+        call();
+        const got = new Uint32Array(memory.buffer, out, nh * hs);
+        let bad = 0;
+        for (let h = 0; h < nh; h++) {
+          const scores = Array.from({ length: count }, (_, t) => {
+            let sum = 0;
+            for (let i = 0; i < hs; i++) sum += query[h * hs + i] * read(K, t * hs + i);
+            return cap * Math.tanh(sum / Math.sqrt(hs) / cap);
+          });
+          const largest = Math.max(...scores), weights = scores.map((s) => Math.exp(s - largest)), total = weights.reduce((a, b) => a + b, 0);
+          for (let i = 0; i < hs; i++) {
+            let want = 0;
+            for (let t = 0; t < count; t++) want += (weights[t] / total) * read(V, t * hs + i);
+            if (got[h * hs + i] !== first[h * hs + i] || !(Math.abs(F[out / 4 + h * hs + i] - want) <= 1e-5)) bad++;
+          }
+        }
+        for (let j = nh * hs; j < nh * hs + 4; j++) if (F[out / 4 + j] !== -7) bad++;
+        return bad ? `${bad} of ${nh * hs} values wrong` : null;
+      });
+    }
+  }
+
   // ---- sample (T561: equal tokens at a top-k's border and in the walk by the lower token, as NumPy's, the GPU's and
   // likecpu.ts's): 1000 logits, two of 6 and twenty of 4 at shuffled places (more than the 12 the walk's sort takes by
   // insertion: its quicksort partitions them too), the rest -30; each top-k of 1 to 22 and none, with a random number in

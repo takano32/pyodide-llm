@@ -26,7 +26,7 @@ export { six_sums, int8_sums, matmul_q8, interleave, matmul_t2 } from "./kernel/
 export { ternary_x } from "./kernel/quantize";
 export { matmul_q6 } from "./kernel/matmul";
 export { rmsnorm } from "./kernel/activations";
-export { rope, attention, attention_f16 } from "./kernel/attention";
+export { rope, attention, attention_f16, attention_capped, attention_f16_capped } from "./kernel/attention";
 export { to_f16, from_f16, finite_f16 } from "./kernel/halves";
 export { layernorm, gelu, swiglu } from "./kernel/activations";
 export { add_columns } from "./kernel/matmul";

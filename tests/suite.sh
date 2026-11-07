@@ -344,6 +344,12 @@ spark_stays_on_the_cpu() {
   node tests/gpu-hybrid-check.ts .tmp/made-up-spark-int8
 }
 part "a Spark-X2.5 where a GPU adapter is" spark_stays_on_the_cpu
+# T612: nor a Gemma 2, whose capped scores no shader has: a reason of its own (a few seconds)
+gemma2_stays_on_the_cpu() {
+  python tests/make_gemma2.py .tmp/made-up-gemma2-int8 int8
+  node tests/gpu-hybrid-check.ts .tmp/made-up-gemma2-int8
+}
+part "a Gemma 2 where a GPU adapter is" gemma2_stays_on_the_cpu
 # T357.3: the tool that checks the GPU in CI (tests/gpu-check.ts), run from its arguments to its exit with a stand-in
 # for Dawn that gives no device: NumPy's answers, the plans, the server, the worker threads, the harness's runs on the
 # CPU, the verdicts and the tables, on three made-up models. No shader runs (about ten seconds, Pyodide's start)
@@ -468,6 +474,20 @@ if [ "$suite" = full ]; then
     node tests/forward-check.ts .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-int8 --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up Gemma 3" made_up_gemma3
+  # T612: a made-up Gemma 2 (a Gemma 3's layers without the norms of the heads, its attention's scores and its logits
+  # capped): the capped attention's kernels, of float32 keys (the grouped-query one) and of float16 (own, a key for
+  # every head, on the shared memory), against NumPy; on a shared memory, a plain one and a 64-bit one, and without
+  # relaxed SIMD
+  made_up_gemma2() {
+    mkdir -p .tmp
+    for dtype in float32 float16 int8 int6; do python tests/make_gemma2.py .tmp/made-up-gemma2-$dtype $dtype; done
+    for dtype in float32 int8; do python tests/make_gemma2.py .tmp/made-up-gemma2-own-$dtype $dtype own; done
+    for memory in "" --plain --wide; do
+      node tests/forward-check.ts .tmp/made-up-gemma2-float32 .tmp/made-up-gemma2-float16 .tmp/made-up-gemma2-int8 .tmp/made-up-gemma2-int6 .tmp/made-up-gemma2-own-float32 .tmp/made-up-gemma2-own-int8 --rounds 1 --positions 128 $memory
+    done
+    node tests/forward-check.ts .tmp/made-up-gemma2-int8 .tmp/made-up-gemma2-own-int8 --without relaxed --rounds 1 --positions 128
+  }
+  part "forward.js against NumPy, a made-up Gemma 2" made_up_gemma2
   # T331.2: a made-up Gemma 4 (a Gemma 3's layers, the full-attention ones with heads twice as wide, turned in part by the
   # whole head's angles; the heads of v normalized, a number every layer ends with, the logits capped): as the Gemma 3
   # above, each shape of tests/make_gemma4.py (T330.2: shared, its last layers reading others' keys and values; T329.2:
@@ -532,6 +552,8 @@ if [ "$suite" = full ]; then
   part "the software threads, a made-up LFM2 above 4 GiB" node tests/threads-check.ts .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 --wide --high --rounds 1 --positions 24
   # T261: and a made-up Gemma 3, whose local layers hand each token's heads the cache from its window's first position on
   part "the software threads, a made-up Gemma 3" node tests/threads-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-own-int8 --rounds 1
+  # T612: and a made-up Gemma 2, whose heads' jobs are the capped attention's
+  part "the software threads, a made-up Gemma 2" node tests/threads-check.ts .tmp/made-up-gemma2-float32 .tmp/made-up-gemma2-int8 .tmp/made-up-gemma2-own-int8 --rounds 1
   # T331.2: and a made-up Gemma 4, whose layers' heads and FFN are of two widths
   part "the software threads, a made-up Gemma 4" node tests/threads-check.ts .tmp/made-up-gemma4-float32 .tmp/made-up-gemma4-int8 .tmp/made-up-gemma4-own-int8 .tmp/made-up-gemma4-shared-int8 .tmp/made-up-gemma4-embedded-int8 --rounds 1
   part "the software threads, a made-up Spark-X2.5" node tests/threads-check.ts .tmp/made-up-spark-float32 .tmp/made-up-spark-int8 .tmp/made-up-spark-own-int8 --rounds 1

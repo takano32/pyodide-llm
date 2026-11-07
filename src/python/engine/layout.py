@@ -423,6 +423,15 @@ def gemma3(d):
             Row("rms_final_weight", VECTOR, (d.dim,)), *rope_tables(d), *classifier(d)]
 
 
+def gemma2(d):
+    """A Gemma 2 (T612): a Gemma 3's tensors without the norms of the heads of q and k (its scores are capped by a tanh
+    in their place: the plan's score_softcap, which no row says)."""
+    return [*embedding(d), d.stack("rms_att_weight", VECTOR, EVERY, d.dim), *attention(d),
+            d.stack("rms_att_post_weight", VECTOR, EVERY, d.dim), *gated_ffn(d),
+            d.stack("rms_ffn_post_weight", VECTOR, EVERY, d.dim),
+            Row("rms_final_weight", VECTOR, (d.dim,)), *rope_tables(d), *classifier(d)]
+
+
 def gemma4(d):
     """A Gemma 4 (T331): a Gemma 3's tensors, but stacked by the width of the layer: the attention of the layers whose
     heads are of the form's "wide" size (q, k, v, o and the norms of their heads, each name with "_wide") after the
@@ -549,6 +558,9 @@ LAYOUTS = {
 # heads, local layers) with a Llama's SiLU in the gate, and yarn's magnitude in the tables of the layers that attend
 # all the positions
 LAYOUTS["plamo3"] = LAYOUTS["gemma3"]._replace(activation=SILU, yarn_magnitude=True)
+# T612: Gemma 2, a Gemma 3's layers without the norms of the heads of q and k (its caps of the scores and of the logits,
+# and its one local layer of every two, are the options': no fact of the layout)
+LAYOUTS["gemma2"] = LAYOUTS["gemma3"]._replace(rows=gemma2)
 
 
 def layout_of(arch):

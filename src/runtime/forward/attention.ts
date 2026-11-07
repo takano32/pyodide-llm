@@ -90,8 +90,10 @@ export const attention: Kind = {
       widths[fact.place] = width;
     }
     const first = cache.hold(count, windows, widths);
-    // the job (jobs.ts) of the attention of token t of a run, at position pos (T110: over float16 keys and values, or float32)
-    const scores = cache.half ? KIND.attention_f16 : KIND.attention;
+    // the job (jobs.ts) of the attention of token t of a run, at position pos (T110: over float16 keys and values, or
+    // float32; T612: with the scores capped, a Gemma 2's, the cap its ninth argument)
+    const cap = plan.score_softcap;
+    const scores = cap ? (cache.half ? KIND.attention_f16_capped : KIND.attention_capped) : cache.half ? KIND.attention_f16 : KIND.attention;
     return {
       layer(a, { rope, window, local, head: headSize, rotary, wide, stack, kept, reads }) {
         if (local && !localCos) throw new Error("The plan has a local layer and no RoPE tables of the local layers.");
@@ -176,7 +178,7 @@ export const attention: Kind = {
           for (let t = 0; t < count; t++) {
             // (the first position this token attends: 0, or where its window begins; a ring's layers have a window)
             const from = window ? Math.max(0, pos0 + t + 1 - window) : 0, slot = slotOf(from);
-            jobs.push([scores, xb + t * S, q + t * S, keys + slot, values + slot, att + t * A, pos0 + t - from, kvHeads, headSize, heads, 1, 0, 0, 0]);
+            jobs.push([scores, xb + t * S, q + t * S, keys + slot, values + slot, att + t * A, pos0 + t - from, kvHeads, headSize, heads, 1, cap, 0, 0]);
           }
           phase(jobs);
           if (wg) for (let t = 0; t < count; t++) k.gate(xb + t * S, xb + t * S, gate + t * S, qDim);

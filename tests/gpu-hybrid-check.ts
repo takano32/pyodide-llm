@@ -14,6 +14,7 @@
 // differently for it (GEGLU, the norms behind, every layer's window, the local layers and their tables); T261.4.2: and
 // its steps (the plan's tokens).
 // T342: and a Spark-X2.5, whose gate of the heads and exact GELU no shader has, by the same line (its FFN's activation).
+// T612: and a Gemma 2, whose capped scores no shader has, by a line of its own.
 // T271.2: a Qwen3.5's prompts are the GPU's now: its worker is started once, with a plan of every layer's kind and place,
 // its linear-attention layers' heads, sizes and taps, their matrices (wqkv, wz, wout) and vectors (the taps, the gates'
 // two small matrices, dt_bias, the decay, the norm of a value head) as theirs alone, and the attending layers' matrices
@@ -23,6 +24,7 @@
 //   node tests/gpu-hybrid-check.ts <a made-up LFM2 of tests/make_lfm2.py, the same>
 //   node tests/gpu-hybrid-check.ts <a made-up Gemma 3 of tests/make_gemma3.py, the same>
 //   node tests/gpu-hybrid-check.ts <a made-up Spark-X2.5 of tests/make_spark.py, the same>
+//   node tests/gpu-hybrid-check.ts <a made-up Gemma 2 of tests/make_gemma2.py, the same>
 //     [--forward <another forward.js, to see a broken one fail>]
 // What it sees: the factory of the GPU's worker is never called, and the engine says why. A made-up GPU that never answers
 // stands in for the real one: with the line gone, the factory is called and the check fails there.
@@ -50,8 +52,9 @@ const options = JSON.parse(fs.readFileSync(`${prefix}.json`, "utf8"));
 const REASONS = { qwen35: ["a Qwen3.5", "linear", null],
   lfm2: ["an LFM2", "convolution", null],
   gemma3: ["a Gemma 3", "local", null],
-  spark: ["a Spark-X2.5", "local", /this pair of norms and FFN is not on the GPU/] };
-assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2, no Gemma 3 and no Spark-X2.5`);
+  spark: ["a Spark-X2.5", "local", /this pair of norms and FFN is not on the GPU/],
+  gemma2: ["a Gemma 2", "local", /attention whose scores are capped is not on the GPU yet/] };
+assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2, no Gemma 3, no Spark-X2.5 and no Gemma 2`);
 const [model, layers, reasonOfArch] = REASONS[options.arch];
 // (T568.4: a Qwen3.5 whose key heads are wider than the GPU's delta rule takes, which its kind says, forward/linear.ts's
 // gpu.unfit(), and createForward() hands on: on the CPU)

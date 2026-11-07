@@ -23,6 +23,8 @@ export type Shape = {
   // every layer's window (0: every position) and the layers turned by those tables; extras: what a Gemma 4 has besides
   // (a norm of v's heads, a cap of the logits, a scale of a layer, layers of other widths, keys and values shared)
   activation: Activation; local: boolean; windows: number[]; locals: number[]; extras: boolean;
+  // T612: the attention's scores are capped (a Gemma 2's), which the GPU's attention has not
+  scoresCapped: boolean;
   // T568.4: what the GPU's side reads of each kind of the model's layers that the GPU's worker has a step for, in the table's
   // order (forward/kinds.ts's gpu): the names of the tensors of its layers alone, why the GPU would not take them (null:
   // it would), its numbers in the GPU's plan
@@ -83,8 +85,8 @@ export type Taken = { matrices(): Record<string, Held>; vectors(): Vectors; whyN
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; sharedMemory: boolean; oneThread?: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful, rotated,
-    sharedClassifier, kinds, attending, stateBytes } = shape;
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, scoresCapped, gpuKinds, stateful,
+    rotated, sharedClassifier, kinds, attending, stateBytes } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, channels } = weights;
   // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf())
   const countOf = (name: string) => (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
@@ -115,6 +117,8 @@ export function gpuFit({ shape, weights, device, direct }:
     // GPT-2's FFN (T154); gpu.ts picks between them by the norms and by whether there is a third matrix. An
     // architecture of another pair, which the CPU's engine runs by its facts (T375.2), stays there
     if (layerNorm === gatedFfn) return REASONS.pair;
+    // T612: nor attention whose scores are capped (a Gemma 2's: the flash tiles and the steps' attention have no cap)
+    if (scoresCapped) return REASONS.scoresCapped;
     // T261.4: and what a Gemma 3 has besides, which the GPU's layers have now: a GELU in the gate of its FFN (GEGLU), a
     // norm behind the attention and behind the FFN (RMSNORM_ADD), layers that attend a window (the flash tiles' window)
     // or are turned by tables of their own (a second table of angles). Not an activation no shader has (a Spark-X2.5's

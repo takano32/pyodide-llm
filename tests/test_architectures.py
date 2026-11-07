@@ -42,6 +42,8 @@ FACTS = {
                   rotatable=False, unturned=False, activation=GELU_ERF, local=True, value_norm=False, wide=False),
     "plamo3": dict(rows="gemma3", stateful=None, rope=WHOLE, yarn_magnitude=True, layer_norm=False, gated_ffn=True,
                    rotatable=False, unturned=False, activation=SILU, local=True, value_norm=False, wide=False),
+    "gemma2": dict(rows="gemma2", stateful=None, rope=WHOLE, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
+                   rotatable=False, unturned=False, activation=GELU, local=True, value_norm=False, wide=False),
 }
 # (a header and the form each architecture needs to be laid out)
 HEADER = [64, 128, 4, 4, 2, 320, 48]
@@ -50,14 +52,16 @@ FORMS = {"llama": {}, "gpt2": {"arch": "gpt2"}, "neox": {"arch": "neox"},
          "lfm2": {"arch": "lfm2", "qk_norm": True, "convolution": CONVOLUTION},
          "gemma3": {"arch": "gemma3", "head_dim": 32},
          "gemma4": {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}, "double": [2, 3]},
-         "spark": {"arch": "spark", "head_dim": 32}, "plamo3": {"arch": "plamo3", "head_dim": 32}}
+         "spark": {"arch": "spark", "head_dim": 32}, "plamo3": {"arch": "plamo3", "head_dim": 32},
+         "gemma2": {"arch": "gemma2", "head_dim": 32}}
 # what an engine is told of a model of each, besides the form (Llama's arguments)
 OPTIONS = {"qwen35": {"rotary": 4}, "neox": {"rotary": 4},
            "gemma3": {"local": {"layers": [0, 1, 3], "window": 2, "rope_theta": 100.0}},
            "gemma4": {"local": {"layers": [0, 2], "window": 2, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0},
            "spark": {"local": {"layers": [0, 1, 2], "window": 2, "rope_theta": 100.0}, "rotary": 8},
            "plamo3": {"local": {"layers": [0, 1, 2], "window": 2, "rope_theta": 100.0},
-                      "rope_scaling": {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 32}}}
+                      "rope_scaling": {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 32}},
+           "gemma2": {"local": {"layers": [0, 2], "window": 2, "rope_theta": 10000.0}, "softcap": 30.0, "score_softcap": 50.0}}
 every = pytest.mark.parametrize("arch", list(FACTS))
 
 
@@ -179,7 +183,7 @@ ENTRANCES = {
 def test_a_name_that_is_no_architectures_is_refused_wherever_it_comes_in(entrance):
     """It was read as a Llama until T359.6: a mistyped name ran another model's forward pass without a word."""
     for arch in ("llama3", "LLAMA", "qwen3", "", "gpt-2"):
-        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3, gemma4, spark, plamo3."
+        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3, gemma4, spark, plamo3, gemma2."
     for arch in FACTS:  # (and a name it has is not what is refused there)
         try:
             ENTRANCES[entrance](arch)

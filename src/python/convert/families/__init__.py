@@ -2,6 +2,7 @@
 # (convert/config.py, plan.py, gguf.py, conversion.py) looks a model up in. A new family is a record here (Family, in
 # family.py) and nothing in those files: one that is a Llama but for a number or two is LLAMA._replace(...) in
 # llama.py, as a Granite and a SmolLM3 are.
+from convert.families.gemma2 import GEMMA2
 from convert.families.gemma3 import GEMMA3
 from convert.families.gemma4 import GEMMA4, GEMMA4_WHOLE
 from convert.families.gpt2 import GPT2, NEOX
@@ -14,7 +15,7 @@ from engine.layout import layout_of
 
 # (in the order the refusals name them)
 FAMILIES = {"llama": LLAMA, "mistral": MISTRAL, "granite": GRANITE, "smollm3": SMOLLM3, "qwen2": QWEN2, "qwen3": QWEN3,
-            "qwen3_5_text": QWEN35, "qwen3_5": QWEN35_WHOLE, "lfm2": LFM2, "gemma3_text": GEMMA3, "gemma4_text": GEMMA4,
+            "qwen3_5_text": QWEN35, "qwen3_5": QWEN35_WHOLE, "lfm2": LFM2, "gemma2": GEMMA2, "gemma3_text": GEMMA3, "gemma4_text": GEMMA4,
             "gemma4": GEMMA4_WHOLE, "spark2_5": SPARK, "plamo3": PLAMO3, "gpt2": GPT2, "gpt_neox": NEOX}
 
 

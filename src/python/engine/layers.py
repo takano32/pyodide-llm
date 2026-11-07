@@ -217,6 +217,15 @@ def delta_rule(state, q, k, v, beta, decay):
 # gives the same logits (convert/families/gemma3.py).
 
 
+# T612: Google's Gemma 2 (config.json's model_type gemma2; arch="gemma2" here) is the Gemma 3 above but for four things,
+# by transformers' modeling_gemma2.py at the same commit (Gemma2Attention's eager attention, Gemma2ForCausalLM) and
+# llama.cpp's graph (src/models/gemma2.cpp): no norms of the heads of q and k; the scores capped after they are scaled,
+#     scores = attn_logit_softcapping * tanh(q k / sqrt(query_pre_attn_scalar) / attn_logit_softcapping)     (50)
+# (the options' score_softcap: the converter folds sqrt(head_dim / query_pre_attn_scalar) into q: 256 / 224 in the 2B, 1 in the 9B);
+# the logits capped the same way by final_logit_softcapping (30, the options' softcap); and one local layer of every two,
+# the first among them (a window of 4096, the page's whole context), turned by the one base of RoPE (1e4).
+
+
 # XHToken's Spark-X2.5 (config.json's model_type spark2_5; arch="spark" here, T339 to T342): a Llama's attention and
 # FFN with layers of two kinds that config.json lists (layer_types: three "sliding_attention" layers of every four).
 # The computation is taken from the model's own modeling code (Apache-2.0; the formulas, no line of it):

@@ -127,6 +127,12 @@ def cases(L):
         ("a norm of v", GROUPED, {"arch": "a norm of v"}, {}),
         ("a number of every layer", GROUPED, {"arch": "a number of every layer"}, {}),
         ("llama, its logits capped", GROUPED, {}, {"softcap": 2.0}),
+        # T612: a Gemma 2 (a Gemma 3 without the norms of the heads, one local layer of two, its scores and its logits
+        # capped), and a Llama whose scores alone are capped (small caps, well into the tanh)
+        ("gemma2", [64, 128, 4, 4, 2, 320, 48], {"arch": "gemma2", "head_dim": 32},
+         {"local": {"layers": [0, 2], "window": 3, "rope_theta": 100.0}, "softcap": 3.0, "score_softcap": 2.0,
+          "rms_norm_eps": 1e-6}),
+        ("llama, its scores capped", GROUPED, {}, {"score_softcap": 1.5}),
     ]
 
 

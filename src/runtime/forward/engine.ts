@@ -296,7 +296,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // layers have besides, which the GPU's have not
     windows: facts.map(({ window }) => window), locals: facts.flatMap(({ local }, l) => (local ? [l] : [])),
     extras: Boolean(plan.value_norm || softcap || layerScale || perLayered) ||
-      facts.some(({ wide, double, kept, reads, place }) => wide || double || kept !== place || reads !== place) };
+      facts.some(({ wide, double, kept, reads, place }) => wide || double || kept !== place || reads !== place),
+    // T612: a Gemma 2's cap of the scores
+    scoresCapped: Boolean(plan.score_softcap) };
   // (T547.3.4: and the codebooks of llama.cpp's blocks, which the GPU reads its IQ types by)
   const weights: Placed = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, signs,
     codebooks: T.codebooks ? base + T.codebooks.offset : 0,

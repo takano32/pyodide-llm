@@ -1,5 +1,5 @@
 // kernel/attention.ts (T356): the rotation of q and k (rope) and the attention of one token over the layer's cache,
-// of float32 keys and values or of float16 ones (kernel/halves.ts widens them).
+// of float32 keys and values or of float16 ones (kernel/halves.ts widens them); T612: and with its scores capped.
 
 import { hsum, fexp, vexp, largest } from "./math";
 import { halves4, half } from "./halves";
@@ -26,13 +26,38 @@ export function rope(v: usize, fcr: usize, fci: usize, nh: i32, hs: i32, rot: i3
 // heads h0..h1 of nh (T109: the software threads take heads as they take rows of a matmul). Every head is computed
 // alone, the same whatever the range, so the numbers do not depend on how the heads are shared out.
 export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
-  attentionOf<f32>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1);
+  attentionOf<f32, Plain>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1, 0);
 }
 // T110: the same over a cache of float16 keys and values (half the bytes to read, the longer the context the more
 // that is). Each is widened to the float32 it stands for, exactly, and then everything is as above: the numbers are
 // those of attention() on the widened cache.
 export function attention_f16(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
-  attentionOf<u16>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1);
+  attentionOf<u16, Plain>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1, 0);
+}
+// T612: the two of them with the scores capped before the softmax, cap * tanh(score / cap) (a Gemma 2's
+// attn_logit_softcapping), cap > 0. Kernels of their own, so that the two above are the same instructions as before
+// (the cap is a type here: AssemblyScript folds no branch of an argument, AGENTS.md)
+export function attention_capped(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32, cap: f32): void {
+  attentionOf<f32, Capped>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1, cap);
+}
+export function attention_f16_capped(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32, cap: f32): void {
+  attentionOf<u16, Capped>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1, cap);
+}
+// (whether the scores are capped, as attentionOf's second type)
+type Plain = i32;
+type Capped = f32;
+
+// T612: cap * tanh(s / cap) on four scores, as cap * (1 - 2 / (exp(2 s / cap) + 1)) (vexp clamps its argument: a
+// score far past the cap is the cap, of its sign); and on one, by fexp, the same numbers to the bit (where vexp gives
+// exp(-87) and fexp 0, 2 / (that + 1) is 2 all the same)
+// @ts-ignore: decorator
+@inline function capped4(s: v128, cap: v128, twice: v128): v128 {
+  const e = vexp(f32x4.mul(s, twice));
+  return f32x4.mul(cap, f32x4.sub(f32x4.splat(1), f32x4.div(f32x4.splat(2), f32x4.add(e, f32x4.splat(1)))));
+}
+// @ts-ignore: decorator
+@inline function capped1(s: f32, cap: f32, twice: f32): f32 {
+  return cap * (<f32>1 - <f32>2 / (fexp(s * twice) + <f32>1));
 }
 
 // four keys or values from the cache as float32, and one
@@ -59,7 +84,7 @@ export function attention_f16(out: usize, q: usize, kc: usize, vc: usize, att: u
 }
 
 // @ts-ignore: decorator
-@inline function attentionOf<T>(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
+@inline function attentionOf<T, C>(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32, cap: f32): void {
   const E: usize = sizeof<T>();  // bytes per key or value
   const kvDim = nkv * hs;
   const kvMul = nh / nkv;
@@ -110,9 +135,15 @@ export function attention_f16(out: usize, q: usize, kc: usize, vc: usize, att: u
       store<f32>(att + (<usize>(h * count + t) << 2), sc * isq);
     }
   }
-  // 2. softmax, head by head, four exponentials at a time
+  // 2. softmax, head by head, four exponentials at a time (T612: the scores capped first, where they are)
   for (let h = h0; h < h1; h++) {
     const scores = att + (<usize>(h * count) << 2);
+    if (isFloat<C>()) {
+      const caps = f32x4.splat(cap), twice: f32 = <f32>2 / cap, twices = f32x4.splat(twice);
+      let c = 0;
+      for (; c < count4; c += 4) v128.store(scores + (<usize>c << 2), capped4(v128.load(scores + (<usize>c << 2)), caps, twices));
+      for (; c < count; c++) store<f32>(scores + (<usize>c << 2), capped1(load<f32>(scores + (<usize>c << 2)), cap, twice));
+    }
     const mx = largest(scores, count, -f32.MAX_VALUE);
     const mxs = f32x4.splat(mx);
     let sums = f32x4.splat(0);

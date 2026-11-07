@@ -22,6 +22,7 @@ const { gatedFfn, plainFfn } = await import(runtimeUrl("forward/ffn.js"));
 const { keyValueCache } = await import(runtimeUrl("forward/cache.js"));
 const { LAYER_KINDS } = await import(runtimeUrl("forward/kinds.js"));
 const { perLayer } = await import(runtimeUrl("forward/perlayer.js"));
+const { KIND } = await import(runtimeUrl("jobs.js"));
 
 // ---- the stand-ins
 // a memory of a few pages: alloc() takes 64-byte lines of it from 4096 on, and the views are read each time (the test
@@ -166,7 +167,7 @@ const S = 100000;
 
 // ---- the layers that attend
 {
-  const plan = { dim: 64, n_heads: 4, n_kv_heads: 2, head_size: 16, seq_len: 48, rotary: 16, widths: { q: 64, kv: 32 }, tensors: {} };
+  const plan = { dim: 64, n_heads: 4, n_kv_heads: 2, head_size: 16, seq_len: 48, rotary: 16, widths: { q: 64, kv: 32 }, tensors: {}, score_softcap: 0 };
   // (T331.2: a layer's facts of its heads and stacks: the model's heads, its place)
   const att = (fact) => ({ window: 0, local: false, head: 16, rotary: 16, wide: false, stack: fact.place, double: false, ffn: fact.place, kept: fact.place, reads: fact.place, ...fact });
   const sizes = { dim: 64, heads: 4, seqLen: 48, widths: { q: 64, kv: 32 }, gate: false, numbers: {} };
@@ -210,6 +211,16 @@ const S = 100000;
   plain.layers.layer(0, att({ kind: "attention", place: 0, rope: false }))(2, 0);
   assert.deepEqual(names(plain.said), ["matmuls", "phase", "matmuls"]);
   assert.equal(plain.said[1][1][0], 3, "the attention over float32 keys and values");
+  // T612: a Gemma 2's scores capped: the capped kinds, of float32 keys and of float16, the cap in the job's out stride
+  {
+    plan.score_softcap = 50;
+    for (const [half, kind] of [[false, KIND.attention_capped], [true, KIND.attention_f16_capped]]) {
+      const capped = stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag"], half);
+      capped.layers.layer(0, att({ kind: "attention", place: 0, rope: false }))(2, 0);
+      assert.deepEqual(capped.said[1].slice(1).map((job) => [job[0], job[10], job[11]]), [[kind, 1, 50], [kind, 1, 50]], `the capped attention over ${half ? "float16" : "float32"} keys and values`);
+    }
+    plan.score_softcap = 0;
+  }
   // Qwen2's biases, Qwen3's norms of the heads and a Qwen3.5's gate, each where the model has the tensor
   const all = stand(["wq", "wk", "wv", "wo", "wg", "bq", "bk", "bv", "q_norm", "k_norm", "freq_cis_real", "freq_cis_imag"]);
   all.layers.layer(2, att({ kind: "attention", place: 2, rope: true }))(1, 9);
@@ -409,7 +420,7 @@ const S = 100000;
 // ---- T331.2: a layer of wide heads (a Gemma 4's full-attention layer) takes its own stacks at its place among them,
 // its heads' size and how much RoPE turns; the heads of v are normalized by a weight of ones where the plan says so
 {
-  const plan = { dim: 64, n_heads: 4, n_kv_heads: 1, head_size: 16, seq_len: 48, rotary: 8, widths: { q: 128, kv: 32 }, tensors: {}, value_norm: true };
+  const plan = { dim: 64, n_heads: 4, n_kv_heads: 1, head_size: 16, seq_len: 48, rotary: 8, widths: { q: 128, kv: 32 }, tensors: {}, value_norm: true, score_softcap: 0 };
   const sizes = { dim: 64, heads: 4, seqLen: 48, widths: { q: 128, kv: 32 }, gate: false, numbers: {} };
   const room = memoryOf(), cache = keyValueCache({ room, k: { to_f16() {} }, kvDim: 32, half: false, start: 16, seqLen: 48 });
   const made = coreOf(plan, { has: ["wq", "wk", "wv", "wo", "wq_wide", "wk_wide", "wv_wide", "wo_wide", "q_norm", "k_norm", "q_norm_wide", "k_norm_wide", "freq_cis_real", "freq_cis_imag"], cache, sizes });

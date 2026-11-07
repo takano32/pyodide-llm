@@ -28,6 +28,8 @@ export const REASONS = {
   stateful: "layers that keep a state are not on the GPU yet",
   // (T375.5, T484: the GPU's layers are of two pairs, RMSNorms with a gated FFN and LayerNorms with GPT-2's FFN)
   pair: "this pair of norms and FFN is not on the GPU yet",
+  // T612: attention whose scores are capped (a Gemma 2's), which no shader of the GPU's has
+  scoresCapped: "attention whose scores are capped is not on the GPU yet",
   // (said wherever the memory is not a shared one: T371, ?threads=1 on an isolated page reads this too)
   notIsolated: "the page is not cross-origin isolated",
   oneThread: "one thread was asked for",

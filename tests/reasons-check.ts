@@ -29,6 +29,7 @@ const SAID = [
   ["rotatedBlock", "a rotated basis of blocks of this size is not on the GPU"],
   ["stateful", "layers that keep a state are not on the GPU yet"],
   ["pair", "this pair of norms and FFN is not on the GPU yet"],
+  ["scoresCapped", "attention whose scores are capped is not on the GPU yet"],
   ["notIsolated", "the page is not cross-origin isolated"],
   ["oneThread", "one thread was asked for"],
   ["notShared", "the model's memory is not shared"],

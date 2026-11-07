@@ -134,4 +134,6 @@ export type Plan = {
   // * tanh(logits / softcap) (0: as they are)
   value_norm: boolean;
   softcap: number;
+  // T612: and so are the attention's scores, after the root of a head's size (a Gemma 2's; 0: as they are)
+  score_softcap: number;
 };

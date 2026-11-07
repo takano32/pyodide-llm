@@ -68,6 +68,9 @@ const KINDS = [
   ["matmul_sbw", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, B], { tile: ["matmul_sbw_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, B, 8]], rowBytes: (n) => (n / 256) * 66, a6: B, cold: true, kernel: "matmul_sbr" }],
   ["matmul_b1r", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, W], { tile: ["matmul_b1r_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, W]], rowBytes: (n) => n / 8 }],
   ["matmul_b1", "plain", [1, 2, 3, 4, 5, 7, 20, 30, W], { rowBytes: (n) => n / 8 }],
+  // T612: attention with its scores capped, the job's out stride (100: a job of one token has no use for it) the cap
+  ["attention_capped", "plain", [1, 2, 3, 4, 5, 6, 9, 7, 8, 20, 30, 100], {}],
+  ["attention_f16_capped", "plain", [1, 2, 3, 4, 5, 6, 9, 7, 8, 20, 30, 100], {}],
 ];
 const more = (name) => KINDS.find(([kind]) => kind === name)[3];
 const jobOf = (kind, said = {}) => [KIND[kind], 1, 2, 3, 4, 5, more(kind).a6 ?? 6, said.n ?? 7, 8, 9, said.count ?? 1, 100, 200, 300];

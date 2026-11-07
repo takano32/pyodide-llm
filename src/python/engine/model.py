@@ -232,6 +232,9 @@ class Llama:
         layers are local ones (local, as a Gemma 3's: whole heads turned by a base of their own), the others turning
         the first rotary values of a head (as a GPT-NeoX's), that gates each head of its attention's output by a value
         of its own (head_gate), and whose FFN's activation is the exact GELU.
+        arch="gemma2" (T612): Google's Gemma 2, a Gemma 3 without the norms of the heads of q and k, which caps its
+        attention's scores (score_softcap: score_softcap * tanh(scores / score_softcap), 0: as they are) and its
+        logits (softcap), and one layer of every two of which is a local one.
         arch="plamo3" (T649.2): Preferred Networks' PLaMo 3, a Gemma 3 whose FFN's activation is a Llama's SiLU and
         whose layers that attend all the positions turn by yarn's tables (rope_scaling: their magnitude is in them).
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
@@ -280,8 +283,8 @@ class Llama:
         reading = {SETTINGS[name]: value for name, value in options.items() if name in SETTINGS}
         # the plan's (Settings') and the Llama's own
         planned = {name: options.get(name, default) for name, default in PLANNED.items()}
-        rotary, parallel_residual, unturned, local, softcap = (planned[name] for name in (
-            "rotary", "parallel_residual", "unturned", "local", "softcap"))
+        rotary, parallel_residual, unturned, local, softcap, score_softcap = (planned[name] for name in (
+            "rotary", "parallel_residual", "unturned", "local", "softcap", "score_softcap"))
         own = {name: options.get(name, default) for name, default in OWN.items()}
         dtype, rope_theta, rope_scaling, bos, stop_tokens, specials, kernels, external = own.values()
         if external is not None:
@@ -334,10 +337,12 @@ class Llama:
         self.wide = dims.wide  # (T331: the wide heads' form, None of a model without)
         self.tiled = bool(form["tiled"])  # T363: FORM's "tiled", of a model made with it
         self.softcap = float(softcap or 0.0)
+        self.score_softcap = float(score_softcap or 0.0)  # T612: a Gemma 2 caps its attention's scores
         # the settings of the plan, but the RoPE tables (made below, once the rows are read)
         settings = Settings(int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
                             parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
-                            rotated=self.rotated, tiled=self.tiled, local=self.local, softcap=self.softcap)
+                            rotated=self.rotated, tiled=self.tiled, local=self.local, softcap=self.softcap,
+                            score_softcap=self.score_softcap)
         # T639.2: what every layer is (engine/plan.py's layer_facts(), the table the plan hands forward.ts): its kind
         # and place, its attention's width ("wide"), place in its stacks ("stack"), heads ("head") and keys and values
         # ("kept", -1 where it reads another's: T330; "reads"), whether and how RoPE turns it ("rope", "local",
@@ -524,6 +529,9 @@ class Llama:
                 keys = self.key_cache[held][:, first:pos + 1]      # (n_kv_heads, pos + 1 - first, size)
                 values = self.value_cache[held][:, first:pos + 1]
                 att = (q @ keys.transpose(0, 2, 1)) * np.float32(1.0 / math.sqrt(size))  # (n_kv_heads, kv_mul, pos + 1)
+                if self.score_softcap:  # T612: a Gemma 2 caps its scores
+                    cap = np.float32(self.score_softcap)
+                    att = (cap * np.tanh(att / cap)).astype(np.float32)
                 att = np.exp(att - att.max(axis=-1, keepdims=True))
                 att /= att.sum(axis=-1, keepdims=True)
                 attended = (att @ values).reshape(-1)

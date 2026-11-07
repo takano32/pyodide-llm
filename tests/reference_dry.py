@@ -1,6 +1,6 @@
 # reference_dry.py
 # T357.4: the tools that hold the engine to transformers in CI (tests/reference_llama.py, tests/reference_qwen35.py,
-# tests/reference_lfm2.py, tests/reference_gemma3.py, T329.3's tests/reference_gemma4.py, T342's tests/reference_spark.py, T649.2's tests/reference_plamo3.py), run from their arguments to their exit where there is no torch: stand-ins for torch and
+# tests/reference_lfm2.py, tests/reference_gemma3.py, T329.3's tests/reference_gemma4.py, T342's tests/reference_spark.py, T649.2's tests/reference_plamo3.py, T612's tests/reference_gemma2.py), run from their arguments to their exit where there is no torch: stand-ins for torch and
 # transformers (tests/reference_standin/) answer with the engine itself, on made-up models and made-up directories of
 # what Hugging Face publishes. Nothing is held to transformers here (CI does that, 10 to 50 minutes a tool); what this
 # shows in a quarter of a minute is that the tools still run: the made-up models, the conversions, the tokenizers'
@@ -48,6 +48,7 @@ def no_network(url, target, tries=3, timeout=60, optional=False):
 fetching.download = no_network  # (before the tools take the name)
 import made_up  # noqa: E402
 import reference  # noqa: E402
+import reference_gemma2  # noqa: E402
 import reference_gemma3  # noqa: E402
 import reference_gemma4  # noqa: E402
 import reference_lfm2  # noqa: E402
@@ -90,7 +91,7 @@ def put(folder, files):
 
 
 # the directories directories() makes, in the mark: a name more here and every checkout makes them again
-MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "llama")
+MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "gemma2", "llama")
 
 
 def directories(work):
@@ -134,6 +135,12 @@ def directories(work):
                                   "generation_config.json": "{}", "chat_template.jinja": "", "special_tokens_map.json": "{}", "modeling_plamo.py": "",
                                   "tokenization_plamo.py": "", "tokenizer.jsonl": "",
                                   "model.safetensors": made_up.safetensors_file(tensors)})
+    # (T612) a Gemma 2 of the 2B's caps, its kinds unsaid
+    tensors, config = made_up.gemma2_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="slslslsl", listed=False,
+                                           scores_cap=50.0, logits_cap=30.0, spread=0.1)
+    put(work / "gemma2" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
+                                  "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
+                                  "generation_config.json": "{}", "model.safetensors": made_up.safetensors_file(tensors)})
     for name, more in (("granite", dict(model_type="granite", attention_multiplier=0.3, embedding_multiplier=1.0, residual_multiplier=1.0,
                                         logits_scaling=1.0)),
                        ("smollm3", dict(model_type="smollm3", no_rope_layer_interval=4, use_sliding_window=False))):
@@ -269,6 +276,14 @@ def parts(work):
                 fine + [("a made-up vocabulary", 2), ("the two wrote the same", 1), (f"long: the engine ran {LONG} positions", 1),
                         (r"fault \(", plamo3), (r"noted \(", len(reference_plamo3.NOTED)),
                         (f"faults: {plamo3} of {plamo3} are past the line", 1)], {}))
+    # (T612: the faults on the first made-up model, transformers' own there)
+    gemma2 = len(reference_gemma2.FAULTS)
+    out += [(f"gemma2 made-up, {name}", lambda name=name, at=at: reference_gemma2.made_up(name, reference_gemma2.MADE_UP[name], with_faults=at == 0),
+             right, fine + [("the states after 80 positions", 1), ("the local layers", 1),
+                            *([(r"fault \(", gemma2), (f"faults: {gemma2} of {gemma2} are past the line", 1)] if at == 0 else [])], {})
+            for at, name in enumerate(reference_gemma2.MADE_UP)]
+    out.append(("gemma2 real", lambda: reference_gemma2.real(work / "gemma2" / "dry", 96, "dry"), right,
+                fine + [("the same ids", 1), ("the two wrote the same", 1)], {}))
     out.append(("llama real, a Granite with the weak faults", llama_real("granite", True), right,
                 fine + [("the same ids", 2), ("the two wrote the same", 1), (": a fault, ", WEAK), ("must see and did not: none", 1)], {}))
     out.append(("llama real, a SmolLM3", llama_real("smollm3", False), right,
@@ -294,6 +309,11 @@ def parts(work):
     out.append(("reference_plamo3.py --only=real --model=dry --positions=40 --no-faults",
                 main(reference_plamo3, str(work / "plamo3"), "--only=real", "--model=dry", "--positions=40", "--no-faults"), ("exit", 0),
                 ok + [("the states after 40 positions", 1), (r"fault \(", 0)], {}))
+    out.append(("reference_gemma2.py --only=made-up --no-faults", main(reference_gemma2, str(work / "gemma2"), "--only=made-up", "--no-faults"),
+                ("exit", 0), ok, {}))
+    out.append(("reference_gemma2.py --only=real --model=dry --positions=40",
+                main(reference_gemma2, str(work / "gemma2"), "--only=real", "--model=dry", "--positions=40"), ("exit", 0),
+                ok + [("the states after 40 positions", 1)], {}))
     out.append(("reference_qwen35.py --only=fetch", main(reference_qwen35, str(work / "qwen35"), "--only=fetch"), ("returned", None), [], {}))
     out.append(("reference_lfm2.py --only=fetch --model=dry", main(reference_lfm2, str(work / "lfm2"), "--only=fetch", "--model=dry"),
                 ("returned", None), [], {}))
@@ -312,7 +332,7 @@ def parts(work):
         first = next(iter(reference_llama.MADE_UP))
         out.append((f"WRONG ({what}): llama made-up", llama_made_up(first, False), ("returned", True), said, wrong))
         for tool, name in ((reference_qwen35, "qwen35"), (reference_lfm2, "lfm2"), (reference_gemma3, "gemma3"), (reference_gemma4, "gemma4"),
-                           (reference_spark, "spark"), (reference_plamo3, "plamo3")):
+                           (reference_spark, "spark"), (reference_plamo3, "plamo3"), (reference_gemma2, "gemma2")):
             first = next(iter(tool.MADE_UP))
             out.append((f"WRONG ({what}): {name} made-up", lambda tool=tool, first=first: tool.made_up(first, tool.MADE_UP[first]),
                         ("returned", True), said, wrong))
@@ -321,6 +341,7 @@ def parts(work):
         out.append((f"WRONG ({what}): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): gemma4 real", lambda: reference_gemma4.real(work / "gemma4" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+        out.append((f"WRONG ({what}): gemma2 real", lambda: reference_gemma2.real(work / "gemma2" / "dry", 96, "dry"), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): spark real", lambda: reference_spark.real(work / "spark" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         # (PLaMo 3's long text measures its own line by the code's two ways through it: a transformers off everywhere is
         # off in one of them, and that line says FAILED too)
@@ -371,6 +392,10 @@ def main():
     reference_spark.code_directory = lambda directory: directory
     # (T649.2: the PLaMo 3's own code is the stand-in's classes, its made-up models fetch nothing, and its long text is
     # this one's, past the made-up window of 64)
+    # (T612: the Gemma 2's, as the Gemma 3's)
+    reference_gemma2.MODELS["dry"] = ("made/gemma2", REVISION)
+    reference_gemma2.BOS, reference_gemma2.BEGINS, reference_gemma2.CHAT = 1, "<|startoftext|>", reference_lfm2.CHAT
+    reference_gemma2.SPECIALS, reference_gemma2.STOPS = reference_lfm2.SPECIALS, (1, 7)
     reference_plamo3.MODELS["dry"] = ("made/plamo3", REVISION, None)
     reference_plamo3.STOPS = (1, 7)
     reference_plamo3.LONG, reference_plamo3.LONG_AT = LONG, (0, 1, 62, 63, 64, 65, 66, 200, 298, 299)

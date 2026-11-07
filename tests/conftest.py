@@ -376,7 +376,10 @@ def naive_gemma3_logits(tensors, config, tokens, states=None):
     reference the converter and the engine are held to together (tests/reference_gemma3.py holds it to transformers
     itself, in CI). config: config.json as transformers' Gemma3TextConfig would have read it (the kinds of the layers
     listed, the two bases of RoPE by their old names). states: a list that gets, for every layer, what its attention
-    gave at every position (before the norm behind it)."""
+    gave at every position (before the norm behind it).
+    T612: and transformers' Gemma 2 (modeling_gemma2.py at the same commit), which is this without the norms of the
+    heads (none in its tensors) and with its scores and logits capped (attn_logit_softcapping, final_logit_softcapping:
+    cap * tanh(x / cap)); its config as Gemma2Config would have read it, rope_local_base_freq its one rope_theta."""
     wide = {name: np.asarray(tensor, dtype=np.float64) for name, tensor in tensors.items()}
     eps = config["rms_norm_eps"]
     dim, heads, kv_heads = config["hidden_size"], config["num_attention_heads"], config["num_key_value_heads"]
@@ -401,8 +404,11 @@ def naive_gemma3_logits(tensors, config, tokens, states=None):
         for pos, v in enumerate(normed):
             q = (wide[a + "q_proj.weight"] @ v).reshape(heads, head_dim)
             k = (wide[a + "k_proj.weight"] @ v).reshape(kv_heads, head_dim)
-            queries.append([rotate(norm(q[h], wide[a + "q_norm.weight"]), pos, kind) for h in range(heads)])
-            ks.append([rotate(norm(k[h], wide[a + "k_norm.weight"]), pos, kind) for h in range(kv_heads)])
+            # (T612: a Gemma 2 has no norms of the heads)
+            normed_q = (lambda v: norm(v, wide[a + "q_norm.weight"])) if a + "q_norm.weight" in wide else (lambda v: v)
+            normed_k = (lambda v: norm(v, wide[a + "k_norm.weight"])) if a + "k_norm.weight" in wide else (lambda v: v)
+            queries.append([rotate(normed_q(q[h]), pos, kind) for h in range(heads)])
+            ks.append([rotate(normed_k(k[h]), pos, kind) for h in range(kv_heads)])
             vs.append((wide[a + "v_proj.weight"] @ v).reshape(kv_heads, head_dim))
         mixed = []
         for pos in range(len(tokens)):
@@ -412,6 +418,8 @@ def naive_gemma3_logits(tensors, config, tokens, states=None):
             for h in range(heads):
                 kv = h // (heads // kv_heads)
                 scores = np.array([queries[pos][h] @ ks[t][kv] * config["query_pre_attn_scalar"] ** -0.5 for t in seen])
+                if config.get("attn_logit_softcapping"):  # T612: a Gemma 2's cap of the scores
+                    scores = config["attn_logit_softcapping"] * np.tanh(scores / config["attn_logit_softcapping"])
                 scores = np.exp(scores - scores.max())
                 scores /= scores.sum()
                 attended[h] = sum(score * vs[t][kv] for score, t in zip(scores, seen))
@@ -424,7 +432,9 @@ def naive_gemma3_logits(tensors, config, tokens, states=None):
             out = wide[p + "mlp.down_proj.weight"] @ (gelu(wide[p + "mlp.gate_proj.weight"] @ v) * (wide[p + "mlp.up_proj.weight"] @ v))
             x[pos] = x[pos] + norm(out, wide[p + "post_feedforward_layernorm.weight"])
     classifier = wide["lm_head.weight"] if "lm_head.weight" in wide else wide["model.embed_tokens.weight"]
-    return [classifier @ norm(v, wide["model.norm.weight"]) for v in x]
+    logits = [classifier @ norm(v, wide["model.norm.weight"]) for v in x]
+    cap = config.get("final_logit_softcapping")  # (T612: a Gemma 2's cap of the logits)
+    return [cap * np.tanh(row / cap) for row in logits] if cap else logits
 
 
 # ------------------------------------------------------------------------------------- Gemma 4 (T331)

@@ -64,7 +64,7 @@ def held(llama, count, stepped, wrong=0.0):
                 layers.append(types.SimpleNamespace(conv_states=[pad(np.array(arrays[0]))]))
             else:
                 layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale)))
-    elif arch in ("gemma3", "gemma4", "spark", "plamo3"):
+    elif arch in ("gemma3", "gemma4", "spark", "plamo3", "gemma2"):
         for _, (kind, arrays) in sorted(sys.modules[f"reference_{arch}"].engine_states(llama, count).items()):
             layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale),
                                                 is_sliding=kind == "sliding"))
@@ -211,6 +211,19 @@ class Gemma3TextConfig(Config):
             self.layer_types = ["sliding_attention" if (at + 1) % pattern else "full_attention" for at in range(said["num_hidden_layers"])]
 
 
+class Gemma2Config(Config):
+    """(T612) transformers' Gemma2Config: one sliding-attention layer of every two from the first where none are listed"""
+    model_type = "gemma2"
+    defaults = dict(tie_word_embeddings=True, hidden_activation="gelu_pytorch_tanh", attn_logit_softcapping=50.0,
+                    final_logit_softcapping=30.0, query_pre_attn_scalar=256, sliding_window=4096, rope_theta=10000.0)
+
+    def __init__(self, **said):
+        said.pop("attn_implementation", None)
+        super().__init__(**said)
+        if "layer_types" not in said:
+            self.layer_types = ["sliding_attention" if (at + 1) % 2 else "full_attention" for at in range(said["num_hidden_layers"])]
+
+
 class Gemma4TextConfig(Config):
     model_type = "gemma4_text"
     defaults = dict(tie_word_embeddings=True, hidden_activation="gelu_pytorch_tanh", final_logit_softcapping=None,
@@ -291,6 +304,17 @@ def Gemma3ForCausalLM(config):
     return Model(writable(tensors), json.loads(config.to_json_string()), config)
 
 
+def Gemma2ForCausalLM(config):
+    """(T612) as transformers' own: a Gemma 3's tensors but for the norms of the heads"""
+    import made_up
+    kinds = "".join("s" if kind == "sliding_attention" else "l" for kind in config.layer_types)
+    tensors, _ = made_up.gemma2_model(dim=config.hidden_size, hidden_dim=config.intermediate_size, kinds=kinds,
+                                      n_heads=config.num_attention_heads, n_kv_heads=config.num_key_value_heads,
+                                      head_dim=config.head_dim, vocab_size=config.vocab_size, seq_len=8,
+                                      shared=config.tie_word_embeddings)
+    return Model(writable(tensors), json.loads(config.to_json_string()), config)
+
+
 def Gemma4ForCausalLM(config):
     """(T329.3) as transformers' own: no k, v or their norms in a layer that reads another's"""
     import made_up
@@ -338,6 +362,7 @@ def Plamo3ForCausalLM(config):
 
 Lfm2ForCausalLM.from_pretrained = Gemma3ForCausalLM.from_pretrained = Spark2_5ForCausalLM.from_pretrained = Model.from_pretrained
 Plamo3ForCausalLM.from_pretrained = Model.from_pretrained
+Gemma2ForCausalLM.from_pretrained = Model.from_pretrained
 Qwen3_5ForConditionalGeneration = Model
 
 

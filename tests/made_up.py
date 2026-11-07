@@ -296,6 +296,47 @@ def gemma3_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1,
     return tensors, config
 
 
+# ------------------------------------------------------------------------------------- Gemma 2 (T612)
+def gemma2_model(dim=32, hidden_dim=64, kinds="slslsl", n_heads=4, n_kv_heads=2, head_dim=16, window=4, vocab_size=320,
+                 seq_len=24, shared=True, seed=0, eps=1e-6, theta=100.0, scalar=None, scores_cap=2.0, logits_cap=3.0,
+                 listed=True, spread=0.3):
+    """Random Hugging Face tensors of a tiny Gemma 2, with the names and shapes of google/gemma-2-2b-jpn-it's
+    model.safetensors (a Gemma 3's but for the norms of the heads of q and k), and its config.json as Gemma2Config reads
+    it. kinds: a letter a layer, s for a sliding-attention layer and l for one that attends every position; listed: the
+    config.json lists them (transformers' newer ones), otherwise it says nothing and they are one of every two from the
+    first (the real 2024 config.json's). scalar: query_pre_attn_scalar (None: the head's size, the 9B's; the 2B's is 224 of 256). The caps are
+    small, so that a score and a logit of these tensors are well into the tanh (the real ones', 50 and 30, are for
+    numbers of the real model's sizes); None: no cap."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * spread).astype(np.float32)
+    tensors = {"model.embed_tokens.weight": normal(vocab_size, dim), "model.norm.weight": normal(dim)}
+    for layer in range(len(kinds)):
+        p = f"model.layers.{layer}."
+        for norm in ("input_layernorm", "post_attention_layernorm", "pre_feedforward_layernorm", "post_feedforward_layernorm"):
+            tensors[f"{p}{norm}.weight"] = normal(dim)  # around zero: the model multiplies by 1 + weight
+        tensors[p + "self_attn.q_proj.weight"] = normal(n_heads * head_dim, dim)
+        tensors[p + "self_attn.k_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+        tensors[p + "self_attn.v_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+        tensors[p + "self_attn.o_proj.weight"] = normal(dim, n_heads * head_dim)
+        tensors[p + "mlp.gate_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.up_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.down_proj.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    config = dict(model_type="gemma2", architectures=["Gemma2ForCausalLM"], hidden_size=dim, intermediate_size=hidden_dim,
+                  num_hidden_layers=len(kinds), num_attention_heads=n_heads, num_key_value_heads=n_kv_heads, head_dim=head_dim,
+                  hidden_act="gelu_pytorch_tanh", hidden_activation="gelu_pytorch_tanh",
+                  query_pre_attn_scalar=scalar or head_dim, sliding_window=window, max_position_embeddings=seq_len,
+                  rms_norm_eps=eps, vocab_size=vocab_size, attention_bias=False, attn_logit_softcapping=scores_cap,
+                  final_logit_softcapping=logits_cap, rope_theta=theta, bos_token_id=2, eos_token_id=1, pad_token_id=0,
+                  cache_implementation="hybrid", tie_word_embeddings=shared)
+    if listed:
+        config["layer_types"] = ["sliding_attention" if kind == "s" else "full_attention" for kind in kinds]
+    else:
+        assert kinds == "".join("s" if layer % 2 == 0 else "l" for layer in range(len(kinds))), "unlisted kinds are one of every two"
+    return tensors, config
+
+
 # ------------------------------------------------------------------------------------- Spark-X2.5 (T342)
 def spark_model(dim=32, hidden_dim=64, kinds="sssl", n_heads=4, n_kv_heads=2, head_dim=16, window=4, vocab_size=320,
                 seq_len=24, shared=True, seed=0, eps=1e-6, theta=5000000.0, local_theta=100.0, part=0.25, local_part=1.0,

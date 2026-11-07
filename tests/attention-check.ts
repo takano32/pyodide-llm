@@ -83,6 +83,51 @@ for (let count = 2; count <= most; count++) {
     }
   }
 }
+// T612: the capped kernels, cap * tanh(score / cap) before the softmax: scores of -24 to 24 by a cap of 4 (most of them
+// well into the tanh), every count of positions from 1 to 40 (four at a time and the ones left over), against float64
+// from the very numbers the kernel reads, float32 and float16 caches
+const CAP = 4, CAPPED_LINE = 1e-4;
+let capped = 0, cappedWorst = 0;
+for (let count = 1; count <= 40; count++) {
+  for (let h = 0; h < nh; h++) {
+    for (let t = 0; t < count; t++) {
+      const score = (random() * 2 - 1) * 24;
+      for (let i = 0; i < hs; i++) {
+        F[kc / 4 + t * kvDim + h * hs + i] = (score * Math.sqrt(hs) / uu) * u[i];
+        F[vc / 4 + t * kvDim + h * hs + i] = random() * 2 - 1;
+      }
+    }
+  }
+  k.to_f16(kh, kc, count * kvDim);
+  k.to_f16(vh, vc, count * kvDim);
+  for (const [name, keys, values, read] of [["attention_capped", kc, vc, (at, i) => F[at / 4 + i]], ["attention_f16_capped", kh, vh, (at, i) => halfToFloat(H[at / 2 + i])]]) {
+    F.fill(NaN, out / 4, out / 4 + nh * hs);
+    k[name](out, q, keys, values, att, count - 1, nh, nh, hs, 0, nh, CAP);
+    for (let h = 0; h < nh; h++) {
+      const scores = Array.from({ length: count }, (_, t) => {
+        let sum = 0;
+        for (let i = 0; i < hs; i++) sum += F[q / 4 + h * hs + i] * read(keys, t * kvDim + h * hs + i);
+        return CAP * Math.tanh(sum / Math.sqrt(hs) / CAP);
+      });
+      const largest = Math.max(...scores), weights = scores.map((s) => Math.exp(s - largest));
+      const total = weights.reduce((sum, w) => sum + w, 0);
+      for (let i = 0; i < hs; i++) {
+        let want = 0;
+        for (let t = 0; t < count; t++) want += (weights[t] / total) * read(values, t * kvDim + h * hs + i);
+        const off = Math.abs(F[out / 4 + h * hs + i] - want);
+        if (!(off <= cappedWorst)) cappedWorst = Number.isNaN(off) ? NaN : Math.max(cappedWorst, off);
+        if (!(off <= CAPPED_LINE)) {
+          if (failed < 5) console.log(`${name}: ${count} positions, head ${h}: ${F[out / 4 + h * hs + i]} where ${want.toFixed(6)} is right`);
+          failed++;
+          break;
+        }
+      }
+    }
+    capped++;
+  }
+}
+console.log(`attention-check: ${capped} calls of the capped kernels (scores of -24 to 24 capped by ${CAP}, 1 to 40 positions), the worst ` +
+  `${Number.isNaN(cappedWorst) ? "NaN" : cappedWorst.toExponential(1)} from the right mix (line ${CAPPED_LINE})`);
 console.log(`attention-check: ${cases} calls (${nh} heads each: two positions far above the rest, 1, 4 and 32 apart, 2 to ${most} positions), ` +
   `the worst ${Number.isNaN(worst) ? "NaN" : worst.toExponential(1)} from the right mix (line ${LINE})${failed ? `, ${failed} heads off — FAILED` : ""}`);
 process.exit(failed ? 1 : 0);

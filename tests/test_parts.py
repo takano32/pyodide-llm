@@ -597,5 +597,5 @@ def test_every_option_is_of_one_table():
     from engine.model import OPTIONS, OWN, PLANNED
     from engine.layout import FORM
     from engine.tokenizer import SETTINGS
-    assert len(OPTIONS) == len(set(OPTIONS)) == len(FORM) + len(SETTINGS) + len(PLANNED) + len(OWN) == 39
+    assert len(OPTIONS) == len(set(OPTIONS)) == len(FORM) + len(SETTINGS) + len(PLANNED) + len(OWN) == 40
     assert set(READING) == set(SETTINGS)

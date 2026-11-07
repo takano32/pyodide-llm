@@ -41,6 +41,8 @@ if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRA
 // is for a single token, so the numbers are the same as one token at a time. A kind that has a tile takes the count
 // tokens in one call instead (a and b are then one frame apart, the same stride). Attention is always one token a
 // job, and so is the delta rule (a Gated DeltaNet layer's state after a token is what the next token reads).
+// count 1: a job of one token hands its out stride, which it has no use for, to its kind's call as a ninth argument
+// (T612: the cap of the scores of a capped attention's)
 export const ROWS = 9, COUNT = 10, SIZE = 14, FIRST = 15;
 const CHUNK_BYTES = 16384;
 // T231: the mask the ternary kernels take as an argument (kernels/ternary.ts: a constant written there would be made
@@ -55,6 +57,7 @@ export const ADDRESSES = {
   matmul_f32: [0, 1, 2], quantize_x: [0, 1, 2], quantize6_x: [0, 1, 2], ternary_x: [0, 1, 2], interleave: [0, 1],
   matmul_t2: [0, 1, 2, 3, 4], matmul_t2r: [0, 1, 2, 3, 4], six_sums: [0, 1], int8_sums: [0, 1], widen_bf16: [0, 1], widen_q8_0: [0, 1], widen_pq2_0: [0, 1], widen_ptq1_0: [0, 1], matmul_q8: [0, 1, 2, 3, 4],
   matmul_q6: [0, 1, 2, 3, 4], rmsnorm: [0, 1, 2], rope: [0, 1, 2], attention: [0, 1, 2, 3, 4], attention_f16: [0, 1, 2, 3, 4],
+  attention_capped: [0, 1, 2, 3, 4], attention_f16_capped: [0, 1, 2, 3, 4],
   to_f16: [0, 1], from_f16: [0, 1], finite_f16: [0], layernorm: [0, 1, 2, 3], gelu: [0, 1, 2], swiglu: [0, 1, 2], geglu: [0, 1, 2], geglu_erf: [0, 1, 2], add_columns: [0, 1, 2], add_inplace: [0, 1],
   gate: [0, 1, 2], convolve: [0, 1, 2], short_conv: [0, 1, 2, 3], delta_rule: [0, 1, 2, 3, 4], rotate: [0, 1, 2], unrotate: [0, 1, 2],
   argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
@@ -89,6 +92,8 @@ type Arguments = {
   rope: [v: number, fcr: number, fci: number, nh: number, hs: number, rot: number];
   attention: [out: number, q: number, kc: number, vc: number, att: number, pos: number, nh: number, nkv: number, hs: number, h0: number, h1: number];
   attention_f16: [out: number, q: number, kc: number, vc: number, att: number, pos: number, nh: number, nkv: number, hs: number, h0: number, h1: number];
+  attention_capped: [out: number, q: number, kc: number, vc: number, att: number, pos: number, nh: number, nkv: number, hs: number, h0: number, h1: number, cap: number];
+  attention_f16_capped: [out: number, q: number, kc: number, vc: number, att: number, pos: number, nh: number, nkv: number, hs: number, h0: number, h1: number, cap: number];
   to_f16: [out: number, x: number, n: number];
   from_f16: [out: number, x: number, n: number];
   finite_f16: [x: number, n: number];
@@ -169,7 +174,7 @@ export function addressed(exports: WebAssembly.Exports, wide: boolean): Kernels 
 // runner() and warmUp() read every line once as a thread is made; a job then costs a look into an array by its
 // number. A new kind is a line here, at the end (the numbers before it stay), its kernels' names in ADDRESSES, and
 // whoever builds its jobs writing KIND.<its name> (AGENTS.md, 物を足す手順, "カーネル・仕事の種類を足す").
-type Call = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, a8: number, rows: number, r0: number, r1: number) => unknown;
+type Call = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, a8: number, rows: number, r0: number, r1: number, a9: number) => unknown;
 type Tile = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, r0: number, r1: number, count: number, os: number, as: number, a8: number) => unknown;
 type Scratch = { xq: number; xs: number; w: number; s: number; c: number; out: number };
 export type Work = {
@@ -311,6 +316,18 @@ export const WORK = kinds({
     one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_b1(out, a, b, a4, a5, a7, r0, r1, TWO),
     warm: (k, { xq, xs, w, s, out }) => { k.matmul_b1(out, xq, xs, w, s, 128, 0, 1, TWO); },
   },
+  // T612: attention with its scores capped (a Gemma 2's), over a cache of float32 and of float16: the job's ninth
+  // argument (its out stride, of one token) is the cap
+  attention_capped: {
+    from: "plain",
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1, a9) => k.attention_capped(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1, a9),
+    warm: (k, { xq, w, c, out }) => { k.attention_capped(out, xq, w, w, c, 0, 1, 1, 4, 0, 1, 50); },
+  },
+  attention_f16_capped: {
+    from: "plain",
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1, a9) => k.attention_f16_capped(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1, a9),
+    warm: (k, { xq, w, c, out }) => { k.attention_f16_capped(out, xq, w, w, c, 0, 1, 1, 4, 0, 1, 50); },
+  },
 });
 export type Kind = keyof typeof WORK;
 /** the number of each kind of job: its place in WORK */
@@ -446,13 +463,13 @@ export function runner(k: Kernels, r: Kernels | null, thread = 0) {
   return (job: Job, r0: number, r1: number) => {
     const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = job;
     const one = ones[kind];
-    if (count === 1) return one(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
+    if (count === 1) return one(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1, os);
     const tile = tiles[kind];
     if (tile) return tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as, a8);
     const step = Math.max(1, Math.floor(CHUNK_BYTES / bytes[kind]!(a7, a6)));
     for (let r = r0; r < r1; r += step) {
       const end = Math.min(r + step, r1);
-      for (let t = 0; t < count; t++) one(out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end);
+      for (let t = 0; t < count; t++) one(out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end, 0);
     }
   };
 }

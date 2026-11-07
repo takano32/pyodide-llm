@@ -27,6 +27,8 @@ MODELS = [
     ("gemma3", [256, 768, 6, 4, 1, 2048, 320], {"arch": "gemma3", "head_dim": 128},
      {"local": {"layers": [0, 1, 2, 3, 4], "window": 96, "rope_theta": 10000.0}}),
     ("gemma3, its own classifier", [384, 1024, 3, 6, 2, -2304, 288], {"arch": "gemma3"}, {}),
+    ("gemma2", [256, 768, 6, 4, 2, 2048, 320], {"arch": "gemma2", "head_dim": 128},
+     {"local": {"layers": [0, 2, 4], "window": 96, "rope_theta": 10000.0}, "softcap": 30.0, "score_softcap": 50.0}),
     ("spark", [256, 768, 4, 4, 2, 2048, 320], {"arch": "spark", "head_dim": 128},
      {"local": {"layers": [0, 1, 2], "window": 96, "rope_theta": 10000.0}, "rotary": 32}),
 ]
@@ -161,6 +163,8 @@ ORDER = {
               "rms_ffn_post_weight rms_final_weight freq_cis_real freq_cis_imag",
     "gemma3, its own classifier": "token_embedding_table rms_att_weight wq wk wv wo q_norm k_norm rms_att_post_weight "
                                   "rms_ffn_weight w1 w2 w3 rms_ffn_post_weight rms_final_weight freq_cis_real freq_cis_imag wcls",
+    "gemma2": "token_embedding_table rms_att_weight wq wk wv wo rms_att_post_weight rms_ffn_weight w1 w2 w3 "
+              "rms_ffn_post_weight rms_final_weight freq_cis_real freq_cis_imag",
     "spark": "token_embedding_table rms_att_weight wq wk wv wo head_gate rms_ffn_weight w1 w2 w3 rms_final_weight "
              "freq_cis_real freq_cis_imag",
 }

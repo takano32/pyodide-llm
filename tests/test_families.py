@@ -37,6 +37,9 @@ LFM2_MARKS = {"shortconv.conv.weight": {"shape": [64, 1, 8]}}
 GEMMA3_MARKS = {name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "post_attention_norm.weight",
                                                    "ffn_norm.weight", "post_ffw_norm.weight", "attn_q_norm.weight",
                                                    "attn_k_norm.weight")}
+# T612: a Gemma 2's, a Gemma 3's but for the norms of the heads it has not
+GEMMA2_MARKS = {name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "post_attention_norm.weight",
+                                                   "ffn_norm.weight", "post_ffw_norm.weight")}
 # T649.4: a PLaMo 3's norms with what the model adds (the two behind by their whole names, without a ".weight")
 PLAMO3_MARKS = {**{name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "ffn_norm.weight",
                                                     "attn_q_norm.weight", "attn_k_norm.weight")},
@@ -75,6 +78,7 @@ FACTS = {
                           "model.", set(), QWEN35_MARKS),
     "qwen3_5": Facts("Qwen3.5", "qwen35", None, "lm_head.weight", {"renamed", "free_heads", "rotatable", "rms_norm", "partly"}),
     "lfm2": Facts("LFM2", "lfm2", "lfm2", "lm_head.weight", {"rms_norm"}, "", set(), LFM2_MARKS),
+    "gemma2": Facts("Gemma 2", "gemma2", "gemma2", "lm_head.weight", {"free_heads", "rms_norm"}, "", set(), GEMMA2_MARKS),
     "gemma3_text": Facts("Gemma 3", "gemma3", "gemma3", "lm_head.weight", {"free_heads", "rms_norm"}, "", set(), GEMMA3_MARKS),
     "gemma4_text": Facts("Gemma 4", "gemma4", "gemma4", "lm_head.weight", {"free_heads", "rms_norm"}, "model.", set(), {}),
     "gemma4": Facts("Gemma 4", "gemma4", None, "lm_head.weight", {"renamed", "free_heads", "rms_norm"}),
@@ -116,6 +120,7 @@ LAYOUTS = {
     # (T341: a number for each layer, RoPE turning a part of some layers' heads and all of the others')
     "spark": ([256, 768, 4, 4, 2, -2048, 320], {"arch": "spark", "head_dim": 128}, (128, 128, 128, 32)),
     "plamo3": ([256, 768, 8, 4, 1, -2048, 320], {"arch": "plamo3", "head_dim": 128}, 0),
+    "gemma2": ([256, 768, 6, 4, 2, -2048, 320], {"arch": "gemma2", "head_dim": 128}, 0),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
         "max_position_embeddings": 4096}
