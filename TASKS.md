@@ -131,7 +131,6 @@
 - T611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 未着手
 - T612 [追加][モデル] gemma2 の家族（gemma-2-2b-jpn-it ほか） — 未着手
 - T613 [追加][モデル] Gemma 3 4B・12B の言語の部分（まるごとの config） — 未着手
-- T614 [追加][モデル] PLaMo 3（plamo3） — 反映済み
 - T615 [追加][モデル] Mamba2 の層（PLaMo 2・Nemotron-Nano-9B-v2-Japanese） — 候補
 - T616 [追加][モデル] stablelm の家族（Japanese StableLM 3B） — 候補
 - T617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
@@ -1315,11 +1314,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T613 [追加][モデル] Gemma 3 4B・12B の言語の部分（まるごとの config） — 状態: 未着手（2026-10-30、T591 から。規模 小〜中）
 - google/gemma-3-4b-it @ 093f9f388b31de276ce2de164bdc2081324b9767・gemma-3-12b-it @ 96b6f1eccf38110c56df3a15bffe176da04bfd80 は model_type `gemma3`（画像つき）で、いまは Llama として読まれて断られる。Gemma 4 と Qwen3.5 の `*_WHOLE` の形で `text_config` を読む家族を足す。全体の層の RoPE の linear の縮め（factor 8）も要る。
 - 開くもの: ほかに ArrowMint-Gemma3-4B・Aratako の gemma-3-4b-RP・EZO2.5-gemma-3-12b・translategemma-4b。Swallow の順位表で 12B 0.405・4B 0.292（一覧の Gemma 4 E2B・E4B より下）。
-
-### T614 [追加][モデル] PLaMo 3（plamo3） — 状態: 反映済み（2026-11-07。前の状態: 未着手、2026-10-30、T591 から。規模 中）
-- **結果（2026-11-07、Opus medium、1 コミット）**: 一覧に PFN PLaMo 3 610M Fin Instruct（`hf-plamo-3-610m-fin-instruct`、pfnet/plamo-3-610m-fin-instruct @ a000b59209f1688322c0804009dc9f3fd67e62c1、原本の safetensors 1.8 GB → int8 1.0 GB、考える形）を足した。mradermacher の GGUF は全体の層の yarn を書いておらず、変換器が原本の config と食い違うと断るので使わない。書式・BOS 1・止まり [1, 2, 16] は変換器が chat_template から読み、`format_check.py` は 9/9。カードの greedy は 12 の問いのうち 4 つで考えの中を 1,500 トークンまで繰り返したので、Qwen3 の考える形の組（0.6・0.95）にした（4 つ × 種 2 つの全部で閉じた）。PLaMo の考えの印を `THOUGHT_MARKS` とページの `MARKS` に足した: 3 トークンずつなのでエンジンは追わず上限も効かない（ページは文で畳む。追う形は候補 T655）。Python の `None` がページに `undefined` で届き、折りたたみが「Thought for undefined tokens」と出ていたのを直した（型を `number | null | undefined`）。リポジトリにライセンスの写しが無いので、About の輪はカードの `license_link`（`models-check` はこのリポジトリだけ認める）。**NICT 2B・8B base は足していない**: 原本が gated で、重みの写しが mmnga-o の GGUF だけで原本と照らせない（足すなら (a) CI に HF のトークンを置いて照らす、(b) 照らさず Translate 2B・8B の語彙と config で `rebuilt` として開く、のどちらかを持ち主に）。**持ち主に見せる案**: 最初の問いをカードの例「PERとは何ですか?一文で答えて。」に替えるか、note に「finance」を足すか（どちらも入れていない）。手元: models-check・bos-check・pytest・smoke・page-parts-check・型・build・dist-check・e2e（手元の Chrome、2 スレッドで 16.4 tok/s）。CI: `tests.yml` 42365198082（軽い組）。レビュー（Sonnet low、2026-11-07）: OK、must-fix なし、直しなし。項目（`bos` と `template` を書かず変換器に任せる組、`thinks`・`converted`・`japanese`・`download`・40 桁のリビジョン・作り手 PFN・「Built with PLaMo」）は `models-check` が通り、`THOUGHT_MARKS` の 3 行目は `mark_of()` が None を返して `thought_marks()` の 2 つの輪が飛ばすのでエンジンに害は無く、ページの `MARKS` の行は `thoughtOf` の試験が 3 つの場合で見る。stats で None になりうるのは `thought` だけで、広げた型 `number | null | undefined` で足りる。About の輪はリポジトリに写しが無いのでカードの `license_link` のほかに手が無く、`models-check` の例外は 1 つのリポジトリと 1 つの URL に絞られている。should 2 つ（直さない）: 上限の効かない項目でも URL の `&thinking=` と設定の欄が効かないことを訪問者は知らない（欄の文の側で言うなら持ち主に）。3 トークンの印を追う形は候補として T655 に。
-- 層はほぼ Gemma 3（前後の norm、q・k の head の norm、窓 2048 と 8 層に 1 つの全体の層、局所の RoPE 1e4・全体 1e6 と yarn ×256）。違いは SwiGLU、変換器が畳める norm の定数のずれ、埋め込みの倍率なし。**重いのは PLaMo 自身のトークナイザ（`tokenizer.jsonl`）**。
-- 開くもの: pfnet/plamo-3-610m-fin-instruct（GGUF 0.95 GB）・plamo-3-nict-2b-base（2.77 GB、ゲート付き）・plamo-3-nict-8b-base（8.6 GB、ゲート付き）。
 
 ### T615 [追加][モデル] Mamba2 の層（PLaMo 2・Nemotron-Nano-9B-v2-Japanese） — 状態: 候補（2026-10-30、T591 から。規模 大）
 - 新しい状態を持つ層の種類（AGENTS.md の「層の種類を足す」）。開くもの: pfnet/plamo-2-translate（likes 128、Q8_0 10.13 GB、T614 のトークナイザも要る）・plamo-2-1b・plamo-2.1-2b-cpt、nvidia/NVIDIA-Nemotron-Nano-9B-v2-Japanese @ 3979dd16634988c34cc3bd911583c51e6a731d10（nemotron_h、Swallow の順位表で ≤14B の 4 位）。
