@@ -116,7 +116,7 @@
 - T513 [性能][モデル] 量子化を組み合わせて、スマホ向けのモデルをもっと軽くする — 調べまで済み
 - T519 [調査][変換] wllama から取り込める設計を見る — 調べは完了
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 持ち主の判断待ち
-- T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 持ち主の判断待ち
+- T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 進行中
 - T545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 進行中
 - T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 反映済み
 - T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
@@ -1214,7 +1214,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **調べ（2026-10-25）**: 警告（`src/models/memory.js` の `memoryWarning()`）は項目を選んだときにページが出し、そのときページは保存が使えるか（worker の `opfsWritable()`: 同期のアクセスハンドル）を知らない。数も、項目が持つのは表を引いた `loaded` だけ。だから直すには (a) ページが保存を使えるかを見積もる、(b) 項目に表を入れた大きさを持たせる、の 2 つが要る。案: (1) **勧め**: 今ある文（「… needs about N of memory, and this device has …」）を使い回し、保存の使えない訪問（ページの `navigator.storage.getDirectory` が無いか断る）では N に表を足す。新しい文は要らない。(2) 何もしない（保存の使えない訪問は Firefox の private のような少ない場合で、そのときは読み込みが落ちてメモリ不足の文が出る）。(3) 保存できない訪問だけに別の 1 文を足す（文面は持ち主）。
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
 
-### T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 持ち主の判断待ち（2026-10-25。前の状態: 未着手、2026-10-15、T532 のレビューの気づき）
+### T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 進行中（2026-11-07、**持ち主の決め（選択肢で）: T635 の `CONVERTER` 13 の回に「同じ回に入れる」**。T635 は T541 と一緒に本線に入れる。前の状態: 持ち主の判断待ち、2026-10-25。その前: 未着手、2026-10-15、T532 のレビューの気づき）
 - transformers 5 は config に `original_max_position_embeddings` があると factor を `max_position_embeddings / original` で作り直す。こちらは config の factor をそのまま使う（前から）。一覧の 4 つ（Ternary Bonsai）には効かない。一覧の外の yarn のモデルで差が出るかは未計測。
 - **取りまとめ役の読み（2026-10-25）**: transformers に合わせるなら変換器の config の読み（`convert/config.py`）で factor を作り直すので、変換器の出す options が変わる: `CONVERTER` を上げる回になる（上げると全部の訪問者の保存が変換し直し: 既定の Shisa で 379 MB の取り直し）。一覧の項目には効かない（Ternary Bonsai の 3 つは項目の options の `PLAIN_ROPE`、27B は yarn でない）ので、急がず、**次に `CONVERTER` を上げる回にまとめて入れる**のが勧め。その回まで止めておく（区切りのまとめで持ち主に聞く）。
 
