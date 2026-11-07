@@ -99,7 +99,7 @@ function drawShaped(bubble: Element, text: string, opened: boolean, markdown?: M
   }
 }
 /** T520: the line of an answer's fold, at its end: how long the thought was, by the engine's count. */
-export function thoughtSaid(bubble: Element, stats: { thought: number | null; thought_cut: boolean }) {
+export function thoughtSaid(bubble: Element, stats: { thought: number | null | undefined; thought_cut: boolean }) {
   const line = bubble.querySelector(":scope > details.thought > summary");
   if (line) line.textContent = thoughtLine(folded.has(line.parentElement!), stats);
 }

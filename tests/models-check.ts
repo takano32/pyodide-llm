@@ -59,7 +59,8 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
 // thought, and no other entry has one (a second copy of the number, on purpose: src/models/sampling.ts's THOUGHT_BUDGET)
 {
   // entries with one form only, whose template the converter reads from the original and ends with "<think>\n" (T604)
-  const readThinking = ["hf-lumi-v2-llm-jp-4-8b"];
+  // (T614: or whose model opens its thought itself after the format the converter reads: PLaMo 3's marks)
+  const readThinking = ["hf-lumi-v2-llm-jp-4-8b", "hf-plamo-3-610m-fin-instruct"];
   // (T592.2: or harmony's analysis channel, which llm-jp-4's thinking form opens)
   const thinking = MODELS.filter((entry) => /\(thinking\)|Thinking|DeepSeek-R1/.test(entry.name) || /(<think>|<\|channel\|>analysis<\|message\|>)\s*$/.test(entry.template ?? "") || readThinking.includes(entry.id));
   assert.ok(thinking.length >= 27, `only ${thinking.length} entries that think were found`);
@@ -121,7 +122,10 @@ for (const repo of Object.keys(LICENSES)) assert.ok(used.has(repo), `LICENSES na
 for (const [repo, link] of Object.entries(LICENSE_TEXTS)) {
   // (T649.4: a repository the weights come from, or the one of their vocabulary)
   const pinned = MODELS.flatMap((entry) => [entry.hf, entry.hf?.vocabulary]).filter((from) => from?.repo === repo);
-  assert.ok(pinned.length && pinned.every((from) => link!.includes(`/blob/${from!.revision}/`)), `LICENSE_TEXTS: ${repo}'s text is not at its entries' revision`);
+  // (T614: or, for a repository that holds no copy, the page of the license its card links: a second copy of them)
+  const page = ["pfnet/plamo-3-610m-fin-instruct"].includes(repo)
+    && link === "https://plamo.preferredai.jp/info/plamo-community-license-en";
+  assert.ok(pinned.length && (page || pinned.every((from) => link!.includes(`/blob/${from!.revision}/`))), `LICENSE_TEXTS: ${repo}'s text is not at its entries' revision`);
 }
 for (const entry of MODELS.filter((entry) => LICENSES[sourceOf(entry)!] === "PLaMo Community License")) {
   assert.match(entry.note, /, Built with PLaMo( ·|$)/, entry.id);

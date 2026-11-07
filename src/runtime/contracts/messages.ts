@@ -116,8 +116,9 @@ export type Stats = {
   prompt_seconds: number;
   prompt_tokens_per_second: number;
   first_token_seconds: number;
-  // T520: the tokens of the answer's thought (null: none), and whether its budget closed it
-  thought: number | null;
+  // T520: the tokens of the answer's thought (null: none; T614: the engine's None, which reaches the page as undefined),
+  // and whether its budget closed it
+  thought: number | null | undefined;
   thought_cut: boolean;
 };
 

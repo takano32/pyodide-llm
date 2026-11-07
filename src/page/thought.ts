@@ -5,8 +5,11 @@
 // T592.1: the marks of every kind of thought: its opening and closing marks, and what a model writes after the closing
 // one before its answer. Harmony's (llm-jp-4's thinking forms) is its analysis channel, which the format opens, and
 // the answer its final channel's message. The engine follows the same (src/python/engine/generation.py' THOUGHT_MARKS)
+// T614: PLaMo 3's, which PLaMo 3 610M Fin Instruct writes itself after its format's header (three tokens each: the engine
+// follows no budget of it, the page folds it by the text)
 const MARKS = [{ opens: "<think>", closes: "</think>", answers: "" },
-  { opens: "<|channel|>analysis<|message|>", closes: "<|end|>", answers: "<|start|>assistant<|channel|>final<|message|>" }];
+  { opens: "<|channel|>analysis<|message|>", closes: "<|end|>", answers: "<|start|>assistant<|channel|>final<|message|>" },
+  { opens: "<|plamo:begin_think:plamo|>", closes: "<|plamo:end_think:plamo|>", answers: "" }];
 /** T592.1: whether a format leaves the answer inside a thought (the text sent ends in an opening mark). */
 export const opensThought = (sent: string) => MARKS.some(({ opens }) => sent.trimEnd().endsWith(opens));
 /** T520: what was written, as the thought (null: none; its marks and the white space around it left out), whether the
@@ -43,8 +46,9 @@ function past(answer: string, answers: string) {
 }
 /** T520: the one line a folded thought says: while it goes on, once it closed, and at the answer's end (stats: the
  * engine's count of its tokens and whether its budget closed it; thought null where the engine saw no marks). */
-export function thoughtLine(closed: boolean, stats?: { thought: number | null; thought_cut: boolean }) {
-  if (!stats || stats.thought === null) return closed ? "Thought" : "Thinking…";
+export function thoughtLine(closed: boolean, stats?: { thought: number | null | undefined; thought_cut: boolean }) {
+  // (T614: undefined, the engine's None, where the page folds a thought the engine did not follow: PLaMo 3's marks)
+  if (!stats || stats.thought === null || stats.thought === undefined) return closed ? "Thought" : "Thinking…";
   const tokens = `${stats.thought} token${stats.thought === 1 ? "" : "s"}`;
   return stats.thought_cut ? `Thought for ${tokens}, up to its limit` : closed ? `Thought for ${tokens}` : `Thought for ${tokens}, not finished`;
 }

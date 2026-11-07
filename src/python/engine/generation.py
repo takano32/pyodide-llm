@@ -34,8 +34,12 @@ from engine.sampler import Sampling
 THOUGHT_OPENS, THOUGHT_CLOSES = "<think>", "</think>"
 # T592.1: the marks of every kind of thought, the opening and the closing one. Harmony's (llm-jp-4's thinking forms)
 # is its analysis channel, which its format opens (three tokens: no model of the list opens it itself) and its <|end|>
-# closes; the answer is the final channel's message after it. The page folds the same (src/page/thought.ts' MARKS)
-THOUGHT_MARKS = ((THOUGHT_OPENS, THOUGHT_CLOSES), ("<|channel|>analysis<|message|>", "<|end|>"))
+# closes; the answer is the final channel's message after it. T614: PLaMo 3's (PLaMo 3 610M Fin Instruct writes
+# them itself after its format's header), three tokens each (<|plamo:begin_, think, :plamo|>): mark_of() finds no one
+# token of them, so the engine follows no such thought and its budget closes none. The page folds the same, by the
+# text (src/page/thought.ts' MARKS)
+THOUGHT_MARKS = ((THOUGHT_OPENS, THOUGHT_CLOSES), ("<|channel|>analysis<|message|>", "<|end|>"),
+                 ("<|plamo:begin_think:plamo|>", "<|plamo:end_think:plamo|>"))
 
 
 def mark_of(model, mark):

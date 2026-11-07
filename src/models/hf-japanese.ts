@@ -4,7 +4,7 @@ import {
   ASKED_JAPANESE, CONTINUES_JAPANESE, EUROLLM, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_OWN_BOS, RAKUTEN, SARASHINA,
   TINYSWALLOW, TRANSLATES, eurollm, llmJp, sarashina,
 } from "./formats.ts";
-import { JAPANESE_SAMPLING, greedy } from "./sampling.ts";
+import { JAPANESE_SAMPLING, greedy, thinking } from "./sampling.ts";
 import { ggufOf, hf } from "./builders.ts";
 import type { Entry } from "./builders.ts";
 
@@ -224,4 +224,15 @@ export const HF_JAPANESE: Entry[] = [
   { group: "hf", id: "hf-japanese-large-lm-3.6b-instruction-sft", name: "LINE japanese-large-lm 3.6B instruction-sft", note: "answers instructions · 日本語 · fetches 7.2 GB → int8 4.0 GB", japanese: true, converted: 4.0e9,
     hf: hf("line-corporation/japanese-large-lm-3.6b-instruction-sft", "3d357b288f78beab8a3af7d962cf98d7d93bf72d", "spiece.model"), download: 7237638964,
     conversion: {}, options: { bos: 1 }, generation: JAPANESE_SAMPLING, template: LINE_SFT, ...ASKED_JAPANESE },
+  // T614: PFN's PLaMo 3 610M Fin Instruct, a PLaMo 3 (plamo3: T649) trained further on finance in Japanese, its card
+  // says ja alone. The original's safetensors: mradermacher's GGUFs of it say no yarn of the full layers' RoPE, which
+  // its config.json has (the converter refuses them). As PLaMo 3 Translate's, PFN in front and PLaMo in the name and
+  // "Built with PLaMo" in the note and About (the PLaMo Community License's Article 4: the owner's T649 (1)). The
+  // converter reads its format (BOS 1, stops 1, 2 and 16; tests/format_check.py 9/9). Its card is greedy, which loops
+  // in the thought on 4 of answers.ts's 12 questions to 1500 tokens (its marks are three tokens each: the engine's
+  // budget closes none, T520): Qwen3's thinking set closed all 8 of those, with two seeds each
+  { group: "hf", id: "hf-plamo-3-610m-fin-instruct", name: "PFN PLaMo 3 610M Fin Instruct",
+    note: "thinks before it answers · 日本語 · fetches 1.8 GB → int8 1.0 GB, Built with PLaMo", japanese: true, thinks: true, converted: 1.0e9,
+    hf: hf("pfnet/plamo-3-610m-fin-instruct", "a000b59209f1688322c0804009dc9f3fd67e62c1", "tokenizer.jsonl"), download: 1780709128,
+    conversion: {}, options: {}, generation: thinking, ...ASKED_JAPANESE },
 ];

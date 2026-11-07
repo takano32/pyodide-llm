@@ -487,10 +487,18 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.deepEqual(thoughtOf("Hm.<|end|><|start|> user", true), { thought: "Hm.", closed: true, answer: "<|start|> user" }, "T592.2: another turn's start is no final channel");
   assert.deepEqual(thoughtOf("Hm.<|end|>Tokyo.", true), { thought: "Hm.", closed: true, answer: "Tokyo." }, "an answer without the final channel's start is all answer");
   assert.deepEqual(thoughtOf("Hm. <|end|> then </think> x", true).thought, "Hm.", "of two kinds the closing mark that comes first ends it");
+  // T614: PLaMo 3's marks, which PLaMo 3 610M Fin Instruct writes itself after its format's header (as it wrote them)
+  assert.deepEqual(thoughtOf("<|plamo:begin_think:plamo|>まず、富士山です。<|plamo:end_think:plamo|>日本で最も高い山は**富士山**です。", false),
+    { thought: "まず、富士山です。", closed: true, answer: "日本で最も高い山は**富士山**です。" }, "PLaMo 3's thought the model opened, closed, and its answer");
+  assert.deepEqual(thoughtOf("<|plamo:begin_think:plamo|>The user asks", false), { thought: "The user asks", closed: false, answer: "" }, "PLaMo 3's thought that goes on");
+  assert.equal(opensThought("…<|plamo:tag|>assistant<|plamo:key|>functions<|plamo:val|>think<|plamo:msg|>"), false, "PLaMo 3's format leaves the thought to the model");
   assert.deepEqual([thoughtLine(false), thoughtLine(true)], ["Thinking…", "Thought"], "while it goes on, and once it closed");
   assert.deepEqual([thoughtLine(true, { thought: 412, thought_cut: false }), thoughtLine(true, { thought: 1, thought_cut: false }),
     thoughtLine(true, { thought: 3000, thought_cut: true }), thoughtLine(false, { thought: 80, thought_cut: false }), thoughtLine(true, { thought: null, thought_cut: false })],
   ["Thought for 412 tokens", "Thought for 1 token", "Thought for 3000 tokens, up to its limit", "Thought for 80 tokens, not finished", "Thought"], "at the answer's end, by the engine's count");
+  // T614: the engine's None reaches the page as undefined (a thought the page folds and the engine did not follow)
+  assert.deepEqual([thoughtLine(true, { thought: undefined, thought_cut: false }), thoughtLine(false, { thought: undefined, thought_cut: false })],
+    ["Thought", "Thinking…"], "no count of the engine's: no number said");
   cases += 1;
 }
 console.log(`page-parts-check: thought.ts by itself: a thought, its end and its line`);
