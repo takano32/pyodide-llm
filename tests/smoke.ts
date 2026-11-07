@@ -1121,6 +1121,21 @@ f"T257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} tex
   if (pattern !== "((.)\\2{3,}| {2,})") throw new Error(`T649.3: the breaks handed from JavaScript make ${pattern}`);
   console.log("T649.3: PLaMo's breaks handed from JavaScript are read");
 }
+// T617: an entry's replaced (rinna's "<NL>" for a newline, an array of arrays) as the worker hands it to the engine:
+// read in, and what is written turned back, through Pyodide's proxies
+{
+  const llama = pyodide.pyimport("llama2_numpy").Llama.callKwargs(pyodide.runPython('read("tiny-lm.bin")'), pyodide.runPython('read("tiny-lm.tokenizer.bin")'),
+    { dtype: "int8", tokenizer_kind: "unigram", replaced: [["\n", "<NL>"]] });
+  pyodide.globals.set("MADE", llama);
+  const read = pyodide.runPython(`
+from engine.tokenizer import Unreplaced
+out = Unreplaced(MADE.tokenizer.replaced)
+(MADE.tokenizer.encode("a\\nb") == MADE.tokenizer.encode("a<NL>b"), [out("a<N"), out("L>b"), out("", final=True)] == ["a", "\\nb", ""])`).toJs();
+  pyodide.runPython("del MADE");
+  llama.destroy();
+  if (!read[0] || !read[1]) throw new Error(`T617: the replaced handed from JavaScript are not read (in ${read[0]}, out ${read[1]})`);
+  console.log("T617: an entry's replaced handed from JavaScript are read");
+}
 // T235: an entry's rope_scaling: {} (src/models/formats.ts's PLAIN_ROPE) as the worker hands it to the engine: a
 // JavaScript object among the keyword arguments of Llama.callKwargs(), which Python sees as a proxy. The tables are the
 // plain ones to the bit, and yarn's magnitude is off; the same object with yarn in it scales them

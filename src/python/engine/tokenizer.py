@@ -357,7 +357,34 @@ def plamo_breaks(breaks):
 # default is the default
 SETTINGS = {"tokenizer_kind": "kind", "nfkc": "nfkc", "nfc": "nfc", "pretokenizer": "pretokenizer",
             "ignore_merges": "ignore_merges", "collapse": "collapse", "unknown": "unknown", "lowercase": "lowercase",
-            "prefixed": "prefixed", "spaced": "spaced", "breaks": "breaks"}
+            "prefixed": "prefixed", "spaced": "spaced", "breaks": "breaks", "replaced": "replaced"}
+
+
+def replacements(replaced):
+    """T617: the pairs (what is written, what the model reads in its place) of a Tokenizer's replaced, checked: two
+    strings each, neither empty (an entry's options, a JsProxy in Pyodide: unwrapped as every other one)"""
+    pairs = tuple(tuple(pair) for pair in plain(replaced) or ())
+    if not all(len(pair) == 2 and all(isinstance(side, str) and side for side in pair) for pair in pairs):
+        raise ValueError(f"Unsupported replaced: {replaced!r} (pairs of two strings that are not empty: what is written, what the model reads)")
+    return pairs
+
+
+class Unreplaced:
+    """T617: what a model writes with its replacements turned back (rinna's "<NL>" a newline again), as the text comes
+    out a token or so at a time. A replacement may be written over several tokens ("<", "N", "L", ">"), so the end of
+    what came that could still become one is held back until the next text says (or until the end: final)."""
+
+    def __init__(self, pairs):
+        self.pairs = [(read, said) for said, read in pairs]  # what the model writes, what it is turned back into
+        self.held = ""
+
+    def __call__(self, text, final=False):
+        text = self.held + text
+        for read, said in self.pairs:
+            text = text.replace(read, said)
+        keep = 0 if final else max((k for read, _ in self.pairs for k in range(1, len(read)) if text.endswith(read[:k])), default=0)
+        self.held = text[len(text) - keep:] if keep else ""
+        return text[:len(text) - keep] if keep else text
 
 
 class Tokenizer:
@@ -376,7 +403,7 @@ class Tokenizer:
     UNMERGED = -1e10  # llama2.c's line: "bpe" merges a pair that scores above it (an unmatchable piece's -1e9 too)
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
-                 collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False, breaks=None):
+                 collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False, breaks=None, replaced=None):
         if kind not in TOKENIZER_KINDS:
             raise ValueError(f"Unsupported tokenizer kind: {kind!r} (the engine reads {', '.join(TOKENIZER_KINDS)})")
         # T639.4: what the kind does, from its row of TOKENIZER_KINDS, taken apart once (encode() and decode() read it)
@@ -404,6 +431,10 @@ class Tokenizer:
         # (T649.3: a dict of the page's options, a JsProxy in Pyodide: unwrapped as every other one, engine/proxy.py)
         self.breaks = plamo_breaks(plain(breaks) or {})
         self.cuts = {}  # cut()'s, of the specials it was last asked for
+        # T617: strings the model reads in place of others, written in every text encode() is given before anything
+        # else, and turned back in what it writes (Unreplaced, which generate() makes where there are any): rinna's
+        # japanese-gpt-neox instruction models read "<NL>" for a newline, which their vocabulary has not
+        self.replaced = replacements(replaced)
         self.collapse = collapse  # a sentencepiece model's remove_extra_whitespaces: see normalized()
         # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run
         # of them as one; the others spell it in bytes
@@ -433,6 +464,8 @@ class Tokenizer:
         """specials: pieces such as "</s>" that stand for their token wherever they are written (a chat template
         puts them between the turns). As plain text they would be spelled out letter by letter."""
         tokens, first = [], True
+        for said, read in self.replaced:
+            text = text.replace(said, read)
         pattern, pieces = self.cut(tuple(specials)) if specials else (None, ())
         for part in pattern.split(text) if specials else [text]:
             if part in pieces:

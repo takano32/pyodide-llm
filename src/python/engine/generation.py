@@ -28,6 +28,7 @@ import time
 import numpy as np
 
 from engine.sampler import Sampling
+from engine.tokenizer import Unreplaced
 
 # T520: the marks of a thought, in the formats of the list that think (Qwen3, Qwen3.5, DeepSeek-R1's distills, Granite
 # 4.2, SmolLM3, MiniCPM5, Spark-X...): a token each in their vocabularies.
@@ -101,6 +102,8 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     rng = np.random.default_rng(seed)
     # a character can be split over several tokens
     utf8 = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    # T617: the replacements of the model's tokenizer turned back in what is written (none: nothing is called for it)
+    unreplaced = Unreplaced(model.tokenizer.replaced) if model.tokenizer.replaced else None
 
     model._run += 1
     run = model._run
@@ -179,12 +182,16 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 else:
                     forced += 1
                 count += 1
+                if unreplaced is not None and (echo or drawn):
+                    text = unreplaced(text)
                 if text and (echo or drawn):
                     yield text
                 pos += 1
             if ended:
                 break
         text = utf8.decode(b"", final=True)
+        if unreplaced is not None:
+            text = unreplaced(text, final=True)
         if text:
             yield text
     finally:
