@@ -135,7 +135,7 @@
 - T617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
 - T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T619 [追加][モデル] LFM3（lfm3） — 候補
-- T650 [性能][モデル] Firefox の翻訳にショートリストを使って速くする — 未着手
+- T650 [性能][モデル] Firefox の翻訳にショートリストを使って速くする — 反映済み
 - T654 [バグ][計測実行] `tests/compare-builds.sh` が作る物のフォルダ `built/facts` を写せずに落ちる — 反映済み
 - T655 [改善][モデル] モデルが自分で開く複数トークンの考えの印を追う（PLaMo 3 の考える形の上限） — 候補
 <!-- 目次ここまで -->
@@ -1331,7 +1331,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
 
 
-### T650 [性能][モデル] Firefox の翻訳にショートリストを使って速くする — 状態: 未着手（2026-11-05、T648 の持ち主の決め (1)「ショートリストは速さのために後で足し、その時は使う形の fxtranslate の訳と比べる」から）
+### T650 [性能][モデル] Firefox の翻訳にショートリストを使って速くする — 状態: 反映済み（2026-11-07。**3 項目でいつも使うかは持ち主の判断待ち**（区切りのまとめで聞く）。前の状態: 未着手、2026-11-05、T648 の持ち主の決め (1)「ショートリストは速さのために後で足し、その時は使う形の fxtranslate の訳と比べる」から）
+- **結果（2026-11-07、Opus medium、1 コミット）**: `engine/translation.py` の `Translator(shortlist=)` が文ごとに訳文の語を引き（頭の 50・原文の語ごとの語・`</s>`、昇順）、出力の層をその行だけで掛ける（`Affine.only()`・`KernelAffine.only()`: 残る logits は全部の層とビット単位で同じ、外は −inf）。`translation(shortlist=)` と項目の `translation.shortlist: { file, bytes }`（worker がモデルの隣で部品として取る、進みは知らせない）で入る。**どの項目もまだ書かない**（既定はショートリストなし）。基準は fxtranslate 0.5.0 の `Translator(shortlist=)` の `translate()` の訳 3 本 × 100 文（`tests/fixtures/translations-shortlist.json`、`translation_check.py --write --shortlist`）で、NumPy の道もカーネルの道も 300/300。1 文あたり（Pyodide のカーネル、同じプロセスで交互、a1-free で load 1.5〜2.3 の粗い数）: en-ja 0.369 → 0.339 秒（1.09 倍）、ja-en 3.1 0.170 → 0.116 秒（1.46 倍）、ja-en 3.0 0.178 → 0.104 秒（1.72 倍）。手元の Chrome 156 で 3 本に一時的に入れて e2e が答えた（148〜228 tok/s）。**持ち主に聞くこと**: 3 項目でいつも使うか（取りまとめ役の案は「使う」: どのモデルでも遅くならず Firefox 自身と同じ訳。訳が変わるのは向きの合う文で en-ja 33・ja-en 3.1 5・3.0 2、取得が en-ja 4.1 MB・ja-en 9.3 MB 増え（サイトの大きさは同じ）、準備完了のステータス行の backend に「, shortlist」が付く）。CI: `tests.yml` 42380265204（軽い組）。レビュー（Sonnet low、2026-11-07）: OK、must-fix なし、直しなし。`shortlisted()` は Marian の `LexicalShortlistGenerator`・fxtranslate の形（頭の min(firstNum, 語彙) 個、原文の語の集合が挙げる語、目標語の `</s>`、昇順の ID）に合い、未知の語は `<unk>` の ID、127 で切った単位は単位ごとに引く。`read_shortlist()` の形式（見出し 6×u64、大きさ `HEAD + 8w + 4n`、offsets の単調）も妥当。`Affine.only()` は重み・bias・sums を、`KernelAffine.only()` はずらしの補正 127 Σ W も同じ行で抜くので、残る行は全部の層とビット単位で同じ。−inf の行列は NaN を作らず、昇順なので argmax の同点は先の ID、`</s>` は必ず入る。worker は項目に書いたときだけ取り、失敗はモデルの取得と一緒に止める。should（取りまとめ役が見て直さない）: `translate.ts` で取り始めたショートリストが `into()` の前に失敗したときの未処理の拒否: `download()` は `{ into, stop }` を返し、失敗は `into()` の Promise で届くので、モデルの `checkpoint` と同じ扱い（`.catch` は要らない）。「, shortlist」の文は項目に書く回に持ち主に見せる。
 - ショートリスト（`lex.50.50.*.s2t.bin`）はサイトに置いてある（T648.5）。読み手は `engine/marian.py` の `read_shortlist()`（T648.1）。出力の層を、原文の語から引いた訳文の語（firstNum 50 + bestNum 50 の和と `</s>`）の行だけで掛ける。Firefox はいつも使い、使うと 100 文のうち 38 文（en-ja 33・ja-en 5）の訳が変わる（T648 の調べ）。
 - 正しさの基準は、ショートリストを使う形の fxtranslate の `translate()` の訳（3 本 × 100 文、`tests/fixtures/translations.json` の隣に）で 100/100。速さは 1 文あたりの秒をショートリストなしと並べる（出力の層は語彙 32,000〜64,000 行で、1 ステップのいちばん大きな行列）。
 - ページで使うかを項目の設定にするか、いつも使うかは、速さと訳の違いを見て持ち主に。
