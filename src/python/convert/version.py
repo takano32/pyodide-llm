@@ -21,5 +21,8 @@
 # the version, the ternary ones, twice the size, would stay in the visitors' storage beside the binary ones. What it
 # costs: every visitor who kept conversions fetches and converts every entry once again. T400 (3) rides with it: a
 # tokenizer.json's Metaspace puts no dummy prefix before a first text that begins with a space, options' spaced).
+# 13: a tokenizer.json (a unigram's) that puts "▁" before no text, the first either (a Metaspace that never prepends,
+# a normalizer that only writes the spaces as "▁"), says prefixed "never" (T635: the engine put "▁" before the first
+# text, which the tokenizers library does not; no entry of the list reads one, only ?hf=).
 # (the page reads it before any Python runs, src/runtime/kept.ts's CONVERTER: python_facts.py writes it there)
-CONVERTER = 12
+CONVERTER = 13

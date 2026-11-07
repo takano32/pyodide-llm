@@ -108,9 +108,12 @@ def tokenizer_json_options(tokenizer):
     # else, as T265's do_lower_case of a sentencepiece model)
     lowered = {"lowercase": True} if '"Lowercase"' in normalizers else {}
     if tokenizer_kind_of(tokenizer) != "BPE":
-        prefixed = prefixed_texts(tokenizer)
+        # T635: where the spaces are written as "▁" and nothing puts one before the first text either (a Metaspace
+        # that never prepends, a normalizer that only writes the spaces as "▁"), the engine puts it nowhere: "never"
+        spaced = metaspaced(tokenizer)
+        prefixed = prefixed_texts(tokenizer) or ("never" if not spaced and spaces_written(tokenizer) else False)
         return {"tokenizer_kind": "unigram", "nfkc": nfkc, **({"prefixed": prefixed} if prefixed else {}), **lowered,
-                **({"spaced": True} if metaspaced(tokenizer) else {})}
+                **({"spaced": True} if spaced else {})}
     if written_out(tokenizer):
         return written_out_options(tokenizer)
     return {"tokenizer_kind": "bytebpe", "nfkc": nfkc, "nfc": '"NFC"' in normalizers,
@@ -229,7 +232,9 @@ def prefixed_texts(tokenizer):
     tokens on its own). "every": a normalizer that prepends it (Prepend) or replaces the start of the text with it (a
     Replace of a pattern that ends in ^: llm-jp's "(?<!\n)^"). "wanting": a Metaspace pre-tokenizer that always
     prepends, which leaves a stretch that begins with a space as it is. False: neither. Said to the engine as
-    Llama(prefixed=), only where it is one of the two (each as the tokenizers library does it: tests/test_prefixed.py)."""
+    Llama(prefixed=), only where it is one of the two (each as the tokenizers library does it: tests/test_prefixed.py);
+    where it is neither, no Metaspace puts "▁" before the first text (metaspaced()) and the spaces are written as "▁"
+    (spaces_written()), the converter says "never" (T635: tokenizer_json_options())."""
     steps, found = [tokenizer.get("normalizer") or {}, tokenizer.get("pre_tokenizer") or {}], set()
     while steps:
         step = steps.pop()
@@ -254,6 +259,22 @@ def metaspaced(tokenizer):
         steps += [*(step.get("normalizers") or []), *(step.get("pretokenizers") or [])]
         if step.get("type") == "Metaspace" and \
                 step.get("prepend_scheme", "always" if step.get("add_prefix_space", True) else "never") in ("always", "first"):
+            return True
+    return False
+
+
+def spaces_written(tokenizer):
+    """T635: whether this tokenizer.json writes the spaces of a text as sentencepiece's "▁" (a Metaspace pre-tokenizer,
+    whatever its prepend_scheme, or a normalizer that replaces " " with it). One that does not ({}: the made-up ones of
+    the tests) is not read as the tokenizers library reads it anyway (the engine's pieces spell "▁" as a space), and
+    keeps the dummy prefix before the first text it always had."""
+    steps = [tokenizer.get("normalizer") or {}, tokenizer.get("pre_tokenizer") or {}]
+    while steps:
+        step = steps.pop()
+        steps += [*(step.get("normalizers") or []), *(step.get("pretokenizers") or [])]
+        pattern = step.get("pattern") or {}
+        if step.get("type") == "Metaspace" or (step.get("type") == "Replace" and step.get("content") == "\u2581"
+                                               and " " in (pattern.get("String"), pattern.get("Regex"))):
             return True
     return False
 

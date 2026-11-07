@@ -157,10 +157,18 @@ def test_a_unigram_tokenizer_json_that_prefixes_every_text_begins_with_the_templ
     assert options["stop_tokens"] == [1, 3]
     for typed in ("hello", " hello"):
         assert sent(options, engine, typed) == engine.encode(f"<|start|>{typed}<|end|><|start|>", ("<|start|>", "<|end|>"))
-    # the same without that normalizer: the BOS stays in front
+    # the same with a Metaspace that prefixes the first text only: the BOS stays in front
     del tokenizer["normalizer"]
+    tokenizer["pre_tokenizer"] = {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": False}
     options, _ = converted(tokenizer, config={"bos_token_id": 1, "eos_token_id": 3}, chat_template=template, bos_token="<s>")
     assert "prefixed" not in options and options["bos"] == 1 and options["template"] == "<|start|>{prompt}<|end|><|start|>"
+    # T635: and with one that prefixes no text, the first either ("never"): every stretch is read as the first is, so
+    # the template's first token begins it, as with the normalizer that prefixes every text
+    tokenizer["pre_tokenizer"]["prepend_scheme"] = "never"
+    options, engine = converted(tokenizer, config={"bos_token_id": 1, "eos_token_id": 3}, chat_template=template, bos_token="<s>")
+    assert options["prefixed"] == "never" and options["bos"] == 2 and options["template"] == "{prompt}<|end|><|start|>"
+    for typed in ("hello", " hello"):
+        assert sent(options, engine, typed) == engine.encode(f"<|start|>{typed}<|end|><|start|>", ("<|start|>", "<|end|>"))
 
 
 def test_the_answer_stops_at_the_eos_the_tokenizer_names_too():

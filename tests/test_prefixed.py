@@ -48,36 +48,38 @@ UNIGRAM = {"added_tokens": [{"id": 1, "content": "<sp>", "special": True}],
                      "vocab": [["<unk>", 0.0], ["<sp>", 0.0], ["▁", -3.0], ["▁hello", -1.0], ["hello", -2.0], ["▁world", -1.5],
                                ["world", -2.5], ["h", -6.0], ["e", -6.0], ["l", -6.0], ["o", -6.0], ["w", -6.0], ["r", -6.0], ["d", -6.0]]}}
 SPACES = {"type": "Replace", "pattern": {"String": " "}, "content": "▁"}
-DESCRIBED = [  # (what tokenizer.json says, which stretches of text are prefixed besides the first)
-    ({"normalizer": {"type": "Sequence", "normalizers": [{"type": "Prepend", "prepend": "▁"}, SPACES]}}, "every"),
+DESCRIBED = [  # (what tokenizer.json says, which stretches of text are prefixed besides the first, what the options say)
+    ({"normalizer": {"type": "Sequence", "normalizers": [{"type": "Prepend", "prepend": "▁"}, SPACES]}}, "every", "every"),
     ({"normalizer": {"type": "Sequence", "normalizers": [{"type": "Replace", "pattern": {"Regex": "(?<!\\n)^"}, "content": "▁"},
-                                                         {"type": "Replace", "pattern": {"Regex": " "}, "content": "▁"}]}}, "every"),
-    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always", "split": False}}, "wanting"),
-    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": False}}, False),
-    ({"normalizer": {"type": "Sequence", "normalizers": [SPACES]}}, False),
-    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "never", "split": False}}, False),
-    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": True}}, "wanting"),  # (before prepend_scheme)
-    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": False}}, False),
-    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁"}}, "wanting"),  # (neither key: the tokenizers library's default is "always")
-    ({"normalizer": {"type": "Prepend", "prepend": "_"}}, False),
-    ({"normalizer": {"type": "Replace", "pattern": {"Regex": "^x"}, "content": "▁"}}, False),
-    ({"normalizer": {"type": "Replace", "pattern": {"String": "^"}, "content": "▁"}}, False),
-    ({}, False),
+                                                         {"type": "Replace", "pattern": {"Regex": " "}, "content": "▁"}]}}, "every", "every"),
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always", "split": False}}, "wanting", "wanting"),
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": False}}, False, False),
+    # T635: no "▁" before the first text either: "never"
+    ({"normalizer": {"type": "Sequence", "normalizers": [SPACES]}}, False, "never"),
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "never", "split": False}}, False, "never"),
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": True}}, "wanting", "wanting"),  # (before prepend_scheme)
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": False}}, False, "never"),
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁"}}, "wanting", "wanting"),  # (neither key: the tokenizers library's default is "always")
+    # (and the ones that do not write the spaces as "▁" at all, whose first text keeps the "▁" it always had)
+    ({"normalizer": {"type": "Prepend", "prepend": "_"}}, False, False),
+    ({"normalizer": {"type": "Replace", "pattern": {"Regex": "^x"}, "content": "▁"}}, False, False),
+    ({"normalizer": {"type": "Replace", "pattern": {"String": "^"}, "content": "▁"}}, False, False),
+    ({}, False, False),
 ]
 
 
-@pytest.mark.parametrize("said, prefixed", DESCRIBED)
-def test_a_tokenizer_json_says_which_texts_are_prefixed(said, prefixed):
+@pytest.mark.parametrize("said, prefixed, options_say", DESCRIBED)
+def test_a_tokenizer_json_says_which_texts_are_prefixed(said, prefixed, options_say):
     assert llama2_convert.prefixed_texts({**UNIGRAM, **said}) == prefixed
     options = llama2_convert.tokenizer_json_options({**UNIGRAM, **said})
-    assert options.get("prefixed", False) == prefixed and ("prefixed" in options) == bool(prefixed)
+    assert options.get("prefixed", False) == options_say and ("prefixed" in options) == bool(options_say)
     # a byte-level BPE has no dummy prefix at all: never said there
     tokenizer, _ = byte_level(["<|endoftext|>"])
     assert "prefixed" not in llama2_convert.tokenizer_json_options({**tokenizer, **{key: value for key, value in said.items() if key == "normalizer"}})
 
 
-@pytest.mark.parametrize("said, prefixed", DESCRIBED[:5])
-def test_the_prefix_after_a_special_token_is_the_real_tokenizers(said, prefixed):
+@pytest.mark.parametrize("said, prefixed, options_say", DESCRIBED[:5])
+def test_the_prefix_after_a_special_token_is_the_real_tokenizers(said, prefixed, options_say):
     """The same descriptions through the tokenizers library itself: from the first special token on (what stands before
     the first text is not T308's), the engine's ids with what the converter says are the real ones, also where the
     text after the token begins with a space or two, or with a newline."""
@@ -90,8 +92,8 @@ def test_the_prefix_after_a_special_token_is_the_real_tokenizers(said, prefixed)
                                                      "model": {**UNIGRAM["model"], "byte_fallback": False}}))
     pieces = list(llama2_convert.tokenizer_json_pieces({**UNIGRAM, **said}))
     options = llama2_convert.tokenizer_json_options({**UNIGRAM, **said})
-    assert options.get("prefixed", False) == prefixed
-    engine = Tokenizer(llama2_convert.tokenizer_bin(pieces, len(pieces)), len(pieces), kind="unigram", prefixed=prefixed)
+    assert options.get("prefixed", False) == options_say
+    engine = Tokenizer(llama2_convert.tokenizer_bin(pieces, len(pieces)), len(pieces), kind="unigram", prefixed=options_say)
     for text in ("<sp>hello<sp>world", "<sp>hello world<sp>hello", "hello<sp>world hello<sp>", "<sp> hello<sp>  world",
                  "<sp>hello<sp> world<sp>hello"):
         ids = real.encode(text, add_special_tokens=False).ids
@@ -130,14 +132,43 @@ FIRST_SPACED = [  # T400 (3): (what tokenizer.json says, whether the first text 
     ({"pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}]}}, True),
     ({"normalizer": {"type": "Sequence", "normalizers": [{"type": "Prepend", "prepend": "▁"}, SPACES]}}, False),
 ]
-# (and two that say no "▁" at all, where the engine still puts one before the first text: not T400 (3)'s, see TASKS.md)
-NOT_SPACED = [{"normalizer": {"type": "Sequence", "normalizers": [SPACES]}}, {}]
+# T635: and the ones that put no "▁" before any text, the first too: the converter says "never", the engine puts none
+NEVER = [{"normalizer": {"type": "Sequence", "normalizers": [SPACES]}},
+         {"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "never", "split": False}}]
+# (the old Metaspace of add_prefix_space false, DESCRIBED's, says "never" too; the tokenizers library of today refuses
+# to read it without a prepend_scheme, so it is not compared)
 
 
-@pytest.mark.parametrize("said", NOT_SPACED)
+@pytest.mark.parametrize("said", NEVER + [{}])
 def test_no_metaspace_is_not_spaced(said):
     from convert.tokenizer import metaspaced
     assert not metaspaced({**UNIGRAM, **said}) and "spaced" not in llama2_convert.tokenizer_json_options({**UNIGRAM, **said})
+
+
+@pytest.mark.parametrize("said", NEVER)
+def test_a_tokenizer_json_with_no_prefix_anywhere_is_the_real_tokenizers(said):
+    """T635: where nothing puts "▁" before the first text, the converter says "never" and the engine's ids are the
+    real ones for the whole text: a first text with a space, two or none, and the text after a special token. (A
+    tokenizer.json that does not write its spaces as "▁" at all, {}, is not read as the real one either way: the
+    engine's pieces spell "▁" as a space. It keeps the "▁" before the first text: convert/tokenizer.py's
+    spaces_written().)"""
+    options = llama2_convert.tokenizer_json_options({**UNIGRAM, **said})
+    assert options["prefixed"] == "never"
+    tokenizers = pytest.importorskip("tokenizers")
+    real = tokenizers.Tokenizer.from_str(json.dumps({"version": "1.0", "truncation": None, "padding": None, "normalizer": None,
+                                                     "pre_tokenizer": None, "post_processor": None, "decoder": None,
+                                                     **UNIGRAM, **said,
+                                                     "added_tokens": [{**UNIGRAM["added_tokens"][0], "single_word": False, "lstrip": False,
+                                                                       "rstrip": False, "normalized": False}],
+                                                     "model": {**UNIGRAM["model"], "byte_fallback": False}}))
+    pieces = list(llama2_convert.tokenizer_json_pieces({**UNIGRAM, **said}))
+    engine = Tokenizer(llama2_convert.tokenizer_bin(pieces, len(pieces)), len(pieces), kind="unigram",
+                       **{key: options[key] for key in ("prefixed", "spaced") if key in options})
+    for text in ("hello world", " hello world", "  hello", "hello<sp>world", " hello<sp> world", "<sp>hello<sp>  world",
+                 "hello world<sp>hello"):
+        assert engine.encode(text, ("<sp>",)) == real.encode(text, add_special_tokens=False).ids, (text, said)
+    # the first text has no "▁" of its own (before T635 the engine put one there: [3])
+    assert real.encode("hello", add_special_tokens=False).ids == [4]
 
 
 @pytest.mark.parametrize("said, spaced", FIRST_SPACED)
