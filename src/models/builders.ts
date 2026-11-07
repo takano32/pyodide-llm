@@ -210,6 +210,24 @@ export const gemma3 = (size: string, revisions: Revisions, download: number, siz
   generation: { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
 });
+/** T612.2: Google's Gemma 2 2B JPN (gemma-2-2b-jpn-it, Gemma 2 2B trained further for Japanese; the original is
+ * gated): bartowski's Q8_0 GGUF's weights with the vocabulary, config.json and chat template of hpprc's ungated copy of
+ * the original (its tokenizer files are the original's, git blob for git blob; its config.json adds hidden_act and says
+ * float32). Its tokenizer.json lacks the byte piece <0x09> (the tab is a piece: T612.2's converter). The card says
+ * Japanese alone (T537). The BOS (<bos>) and the format (<start_of_turn>user … <start_of_turn>model) are the
+ * converter's, read from the template, and so are the stops (<eos>, <bos> and <end_of_turn>: generation_config.json's
+ * eos_token_id is <eos>). generation_config.json names no sampling: Gemma 3's of the list (a choice of the
+ * coordinator, T612.2). On the CPU alone (REASONS.scoresCapped: no shader caps the scores yet). The notice the Gemma Terms of Use ask for is
+ * in About, on the line of the original, as Gemma 3's */
+export const gemma2Jpn = (revisions: Revisions, download: number, sizes: string, converted: number): Entry => ({
+  group: "hf", id: "hf-gemma-2-2b-jpn", name: "Google Gemma 2 2B JPN",
+  note: `answers instructions · 日本語 · ${sizes}`, japanese: true, converted,
+  ...ggufOf("bartowski/gemma-2-2b-jpn-it-GGUF", revisions.gguf, "gemma-2-2b-jpn-it-Q8_0.gguf", "hpprc/gemma-2-2b-jpn-it",
+    revisions.original), original: "google/gemma-2-2b-jpn-it", download,
+  conversion: {}, options: {},
+  generation: { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 },
+  prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
+});
 /** T333: a Gemma 4 of the list (E2B, E4B: the language model of Google's original, whose vision and audio towers the
  * converter leaves; the original is not gated and under Apache 2.0, so no copy and no notice). T529: the weights of
  * llama.cpp's own Q8_0 GGUF of it (ggml-org's: half the original's download), with the vocabulary, config.json and chat

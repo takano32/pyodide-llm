@@ -274,6 +274,8 @@ export const LICENSES: Record<string, string> = {
   "google/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it-GGUF": GEMMA,
   "google/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it-GGUF": GEMMA,
   "google/gemma-3-4b-it": GEMMA, "unsloth/gemma-3-4b-it": GEMMA, "unsloth/gemma-3-4b-it-GGUF": GEMMA,
+  // T612.2: Gemma 2 2B JPN, Google's original (gated), hpprc's ungated copy (its card: license gemma) and bartowski's GGUF
+  "google/gemma-2-2b-jpn-it": GEMMA, "hpprc/gemma-2-2b-jpn-it": GEMMA, "bartowski/gemma-2-2b-jpn-it-GGUF": GEMMA,
   // T333: Gemma 4 is Apache 2.0, not the Gemma Terms of Use: the cards' metadata says apache-2.0 and their text "License:
   // Apache 2.0" (a link to ai.google.dev/gemma/docs/gemma_4_license); no notice is asked for
   "google/gemma-4-E2B-it": APACHE, "google/gemma-4-E4B-it": APACHE,
@@ -295,7 +297,7 @@ const GEMMA_NOTICE = "Gemma is provided under and subject to the Gemma Terms of 
 // the note of each of its entries)
 const PLAMO_NOTICE = "Built with PLaMo";
 export const NOTICES: Partial<Record<string, string>> = { "google/gemma-3-270m-it": GEMMA_NOTICE, "google/gemma-3-1b-it": GEMMA_NOTICE,
-  "google/gemma-3-4b-it": GEMMA_NOTICE,
+  "google/gemma-3-4b-it": GEMMA_NOTICE, "google/gemma-2-2b-jpn-it": GEMMA_NOTICE,
   "pfnet/plamo-3-translate-0.8b": PLAMO_NOTICE, "pfnet/plamo-3-translate-2b": PLAMO_NOTICE, "pfnet/plamo-3-translate-8b": PLAMO_NOTICE,
   "pfnet/plamo-3-translate-0.8b-GGUF": PLAMO_NOTICE, "pfnet/plamo-3-translate-2b-GGUF": PLAMO_NOTICE, "pfnet/plamo-3-translate-8b-GGUF": PLAMO_NOTICE,
   "pfnet/plamo-3-610m-fin-instruct": PLAMO_NOTICE };

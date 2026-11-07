@@ -9,7 +9,7 @@ import {
   AGENTS_A1_SAMPLING, BONSAI_27B_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING,
   SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.ts";
-import { binaryBonsai, gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
+import { binaryBonsai, gemma2Jpn, gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
 
 export const HF_FAMILIES: Entry[] = [
@@ -317,6 +317,10 @@ export const HF_FAMILIES: Entry[] = [
   // own), its full-attention layers' RoPE scaled linearly by 8
   gemma3("4B", { gguf: "5a3566e716d80f709ed7b79817eaf7733d2a1fce", original: "bf46152c47f5dd20b896357cb51abc4c03b8ee8c" }, 4130402176,
     "fetches 4.1 GB (GGUF) → int8 4.4 GB", 4.4e9),
+  // T612.2: Gemma 2 2B JPN (Gemma 2: T612.1), bartowski's Q8_0 GGUF with the vocabulary of hpprc's ungated copy of the
+  // gated original
+  gemma2Jpn({ gguf: "bd1518c8610c36695a89c3d7df74ae8bf61e72c2", original: "4cf0b12a1e7a141ede84d0eebd6102aaebbae65e" }, 2784495776,
+    "fetches 2.8 GB (GGUF) → int8 2.9 GB", 2.9e9),
   // T333: Gemma 4's two smallest (E2B, E4B), on the CPU alone (no shader has their layers yet: T334). T329.3 held the
   // E2B to transformers (logits 1.10e-4, the most likely token 96 of 96) and ran it in three browsers from ?hf=. loaded:
   // the int8 checkpoint without the table of every layer's inputs, which stays in the kept file (the converter's sizes

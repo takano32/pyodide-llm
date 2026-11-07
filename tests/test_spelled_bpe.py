@@ -232,10 +232,17 @@ def test_refuses_what_the_engine_would_not_follow():
     vocab, merges = spec["model"]["vocab"], spec["model"]["merges"]
     read = lambda spec: (tokenizer_json_options(spec), list(tokenizer_json_pieces(spec)))
     read(spec)
-    # a character the vocabulary lacks: only as the byte pieces, all of them
-    for other in (changed(byte_fallback=False), changed(vocab={text: id for text, id in vocab.items() if text != "<0x80>"})):
+    # a character the vocabulary lacks: only as the byte pieces, all of them, but for an ASCII byte whose character is
+    # a piece of its own (T612.2: Gemma 2's tab)
+    # (the byte's piece gone and its id another piece's: the character's where `spelled`, else one no text has)
+    def without(byte, spelled=False):
+        named = {text: id for text, id in vocab.items() if text != "<0x%02X>" % byte}
+        return changed(vocab={**named, (chr(byte) if spelled else "\ue000"): vocab["<0x%02X>" % byte]})
+    absent = next(byte for byte in range(0x80) if chr(byte) not in vocab)
+    for other in (changed(byte_fallback=False), without(0x80), without(0x80, spelled=True), without(absent)):
         with pytest.raises(ValueError, match="spells a character it lacks in a way the engine does not know"):
             read(other)
+    read(without(absent, spelled=True))
     # merges the engine's BPE would not follow: a way to spell a piece with two pieces that is no merge (which is how a
     # BPE trained by the tokenizers library names them: one way for each piece), a pair of no pieces, a piece
     # written with a space, a piece taken whole before the merges, marks at the edges of a word, merges left out at random

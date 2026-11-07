@@ -146,10 +146,14 @@ def written_out_options(tokenizer):
     minus the ranks of their merges, tokenizer_json_bpe_pieces()), with the dummy prefix before every stretch of text
     where the normalizer prepends it (a Llama tokenizer's file: CAT-Translate 7B's) and before none where it does not
     (a Gemma's). A character the vocabulary lacks is spelled with the byte pieces, as the engine's BPE spells it: the
-    model must say so (byte_fallback) and have all 256. Its other ways (a piece taken whole before the merges, marks
-    at the edges of a word, merges dropped at random) are none of sentencepiece's."""
+    model must say so (byte_fallback) and have all 256, but for an ASCII byte whose character is a piece of its own
+    (T612.2: Gemma 2's has no <0x09>, its tab being piece 226), which nothing spells with its byte. Its other ways (a
+    piece taken whole before the merges, marks at the edges of a word, merges dropped at random) are none of
+    sentencepiece's."""
     model = tokenizer["model"]
-    if not model.get("byte_fallback") or not all("<0x%02X>" % byte in model["vocab"] for byte in range(256)):
+    vocab = model["vocab"]
+    if not model.get("byte_fallback") or not all("<0x%02X>" % byte in vocab or (byte < 0x80 and chr(byte) in vocab)
+                                                  for byte in range(256)):
         raise ValueError("This tokenizer.json spells a character it lacks in a way the engine does not know.")
     if model.get("ignore_merges") or model.get("dropout") or model.get("continuing_subword_prefix") or model.get("end_of_word_suffix"):
         raise ValueError("This tokenizer.json merges its pieces in a way the engine does not know.")

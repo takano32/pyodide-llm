@@ -325,6 +325,8 @@ NAMES["gemma4"] = ({**NAMES["gemma3"][0], "per_layer_token_embd.weight": "model.
                    {**NAMES["gemma3"][2], "inp_gate": "per_layer_input_gate", "proj": "per_layer_projection",
                     "post_norm": "post_per_layer_input_norm"})
 WHOLE["gemma4"] = {"layer_output_scale.weight": "layer_scalar"}
+# T612.2: a Gemma 2's (llama.cpp's conversion/gemma.py's Gemma2Model): a Gemma 3's names, with no norm of the heads
+NAMES["gemma2"] = NAMES["gemma3"]
 # T649.4: a PLaMo 3's (llama.cpp's conversion/plamo.py's Plamo3Model, gguf-py's tensor_mapping.py and
 # src/models/plamo3.cpp at 67107ac3): q, k and v one matrix as the original's (attn_qkv), the gate and the up of the FFN
 # one too (ffn_up: the original's gate_up_proj), the norms behind the attention and the FFN named without a ".weight"
@@ -368,10 +370,10 @@ def as_llama_cpp_writes(target, original, arch):
     changed. T261.3: a Gemma 3's norms are written with their 1, as a Qwen3.5's."""
     if arch == "lfm2" and target.endswith(".conv.conv.weight"):
         return original.reshape(original.shape[0], original.shape[-1]), "(channels, taps)"
-    if arch == "gemma3" and target.endswith("norm.weight"):
+    if arch in ("gemma3", "gemma2") and target.endswith("norm.weight"):
         # T261.3: a Gemma 3's norms, every one of them (the heads' too), with the 1 the model adds to them (conversion/
         # gemma.py's Gemma3Model.norm_shift: a tensor whose name ends in norm.weight). The embedding is stored as it is
-        # (llama.cpp multiplies the row by sqrt(dim) at run time)
+        # (llama.cpp multiplies the row by sqrt(dim) at run time). T612.2: a Gemma 2's as well (Gemma2Model.modify_tensors)
         return original.astype(np.float32) + np.float32(1), "1 + weight"
     if arch == "plamo3" and target.endswith("norm.weight"):
         # T649.4: every norm of a PLaMo 3 with what the model adds to it, 1 but behind the attention and the FFN
@@ -845,6 +847,13 @@ def config_pairs(config, arch="llama"):
         pairs += [pattern,
                   ("attention.sliding_window", "sliding_window", config.get("sliding_window"), True),
                   ("rope.freq_base_swa", "rope_local_base_freq", config.get("rope_local_base_freq", 10000.0), True)]
+    if arch == "gemma2":
+        # T612.2: the window and the two caps, which are no tensor (Gemma2Model.set_gguf_parameters). Which layers attend
+        # the window llama.cpp does not write (every other one from the first, as transformers' Gemma2Config). The
+        # defaults are transformers' Gemma2Config's
+        pairs += [("attention.sliding_window", "sliding_window", config.get("sliding_window", 4096), True),
+                  ("attn_logit_softcapping", "attn_logit_softcapping", config.get("attn_logit_softcapping", 50.0), True),
+                  ("final_logit_softcapping", "final_logit_softcapping", config.get("final_logit_softcapping", 30.0), True)]
     if arch == "gemma4":
         # T529: a Gemma 4's (conversion/gemma.py's Gemma4Model.set_gguf_parameters at b76b1337). The heads: key_length is
         # the full-attention layers' (global_head_dim) and key_length_swa the others' (head_dim); the FFN a width a layer
@@ -892,6 +901,8 @@ GEMMA3_DEFAULTS = {"attention.sliding_window_pattern": lambda layers: [layer % 6
 # T598: a Llama's GGUF that writes no base of its RoPE (QuantFactory's sarashina2 7B, of 2024): llama.cpp takes 1e4,
 # as the converter does (families/llama.py's gguf_config)
 LLAMA_DEFAULTS = {"rope.freq_base": lambda layers: 10000.0}
+# T612.2: a Gemma 2's GGUF writes no base of its RoPE (Gemma2Model.set_gguf_parameters): llama.cpp's is 1e4
+GEMMA2_DEFAULTS = {"rope.freq_base": lambda layers: 10000.0}
 
 def rope_factors(config, width):
     """What llama.cpp writes as rope_freqs.weight: how many times slower each pair of a head turns under
@@ -937,8 +948,8 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             # of August 2025, writes neither): every sixth layer a full-attention one (src/llama-model.cpp's
             # set_swa_pattern(6) at 4413a192), and a base of 1e4 for the others
             ours, defaulted = GEMMA3_DEFAULTS[key](metadata.get(f"{arch}.block_count", 0)), " (not in the GGUF: llama.cpp's default)"
-        if ours is None and arch == "llama" and key in LLAMA_DEFAULTS:
-            ours, defaulted = LLAMA_DEFAULTS[key](metadata.get(f"{arch}.block_count", 0)), " (not in the GGUF: llama.cpp's default)"
+        if ours is None and (arch, key) in (("llama", "rope.freq_base"), ("gemma2", "rope.freq_base")):
+            ours, defaulted = {"llama": LLAMA_DEFAULTS, "gemma2": GEMMA2_DEFAULTS}[arch][key](metadata.get(f"{arch}.block_count", 0)), " (not in the GGUF: llama.cpp's default)"
         # the GGUF writes floats as float32: 1e-6 of relative difference is its rounding
         if isinstance(ours, list) or isinstance(theirs, list):
             same = ours == theirs  # an LFM2's key-value heads, a number a layer (T260)
