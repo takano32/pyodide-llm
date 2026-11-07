@@ -52,7 +52,8 @@ export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_
 // translation: under models/translations/<folder>/, its model's file in parts of 8 MiB (bytes: their size together),
 // the sentencepiece models of the source's vocabulary and the target's (one file where the two are one), whole, and
 // the two languages, BCP 47 codes (from: what the source's sentences are cut by)
-export type Translation = { folder: string; model: string; source: string; target: string; from: string; to: string };
+// shortlist (T650): the model's shortlist on the site (its file and bytes), whose rows alone the output layer then has
+export type Translation = { folder: string; model: string; source: string; target: string; from: string; to: string; shortlist?: { file: string; bytes: number } };
 export type OfTranslation = Named & { translation: Translation; bytes: number; hf?: undefined; file?: undefined; url?: undefined };
 
 // T93 stage 2: what the page asks about the number of threads: fixed (?threads=N), the count it remembers for this

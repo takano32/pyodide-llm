@@ -1,0 +1,825 @@
+{
+ "made": "fxtranslate 0.5.0 (PyPI), backend scalar, Translator.translate(): greedy, with the shortlist (lex.50.50.*.s2t.bin), one unit; by tests/translation_check.py --write --shortlist",
+ "sentences": [
+  {
+   "id": 1,
+   "src_lang": "en",
+   "src": "Set the timeout to 30 seconds, then restart the worker with `systemctl restart worker` and check the log."
+  },
+  {
+   "id": 2,
+   "src_lang": "en",
+   "src": "Never commit API keys to the repository; rotate any key that has already been pushed."
+  },
+  {
+   "id": 3,
+   "src_lang": "en",
+   "src": "Why does the cache return stale entries after the process calls `fork()`?"
+  },
+  {
+   "id": 4,
+   "src_lang": "en",
+   "src": "Because the scheduler runs each task in its own thread, a slow task delays only itself, but a task that holds the global lock for several seconds will stall every other worker until the lock is released, so keep critical sections short."
+  },
+  {
+   "id": 5,
+   "src_lang": "en",
+   "src": "Deprecated in v2.4; use `Client.connect()` instead."
+  },
+  {
+   "id": 6,
+   "src_lang": "en",
+   "src": "Are you sure you want to delete this folder? This action cannot be undone."
+  },
+  {
+   "id": 7,
+   "src_lang": "en",
+   "src": "Save changes"
+  },
+  {
+   "id": 8,
+   "src_lang": "en",
+   "src": "You have 3 unread messages and 1 pending invitation."
+  },
+  {
+   "id": 9,
+   "src_lang": "en",
+   "src": "Your password must be at least 12 characters and include a number."
+  },
+  {
+   "id": 10,
+   "src_lang": "en",
+   "src": "Sign in with your account to sync bookmarks across devices. You can turn this off anytime in **Settings > Privacy**."
+  },
+  {
+   "id": 11,
+   "src_lang": "en",
+   "src": "The central bank raised its benchmark rate by 0.25 percentage points to 4.5 percent on Thursday, the third increase this year."
+  },
+  {
+   "id": 12,
+   "src_lang": "en",
+   "src": "Heavy rain forced the cancellation of more than 200 flights at Frankfurt airport on Monday morning."
+  },
+  {
+   "id": 13,
+   "src_lang": "en",
+   "src": "Officials said they would not release the report until the investigation had concluded."
+  },
+  {
+   "id": 14,
+   "src_lang": "en",
+   "src": "Osaka Mayor Hanako Yamamoto announced the plan at a press conference, saying the city would turn over a new leaf on public transport."
+  },
+  {
+   "id": 15,
+   "src_lang": "en",
+   "src": "A new study suggests that people who walk for at least 30 minutes a day are less likely to develop heart disease, though the researchers caution that the data cannot prove a causal link and that other lifestyle factors may explain part of the difference."
+  },
+  {
+   "id": 16,
+   "src_lang": "en",
+   "src": "I've been using this keyboard for three months now, and honestly, the only thing I'd change is the price."
+  },
+  {
+   "id": 17,
+   "src_lang": "en",
+   "src": "If you're new to gardening, start small: a few pots of herbs on a sunny windowsill will teach you more than any book."
+  },
+  {
+   "id": 18,
+   "src_lang": "en",
+   "src": "## Top 5 mistakes beginners make when learning to code"
+  },
+  {
+   "id": 19,
+   "src_lang": "en",
+   "src": "It took me a while to warm up to the idea, but once I did, I couldn't go back."
+  },
+  {
+   "id": 20,
+   "src_lang": "en",
+   "src": "**Spoiler alert:** the ending isn't what you'd expect."
+  },
+  {
+   "id": 21,
+   "src_lang": "en",
+   "src": "Thank you for your prompt reply. I would appreciate it if you could send the revised quotation by Friday."
+  },
+  {
+   "id": 22,
+   "src_lang": "en",
+   "src": "Unfortunately, we will be unable to attend the meeting on March 14, as our team will be traveling that week."
+  },
+  {
+   "id": 23,
+   "src_lang": "en",
+   "src": "Please find the attached invoice ([No. 2026-0417](https://example.com/inv/2026-0417)) for last month's consulting services."
+  },
+  {
+   "id": 24,
+   "src_lang": "en",
+   "src": "I'm writing to follow up on my earlier message regarding the delivery schedule, which I have not yet received a response to; could you let me know when we might expect an update?"
+  },
+  {
+   "id": 25,
+   "src_lang": "en",
+   "src": "Let's touch base next week."
+  },
+  {
+   "id": 26,
+   "src_lang": "en",
+   "src": "Dude, you're not gonna believe what just happened."
+  },
+  {
+   "id": 27,
+   "src_lang": "en",
+   "src": "Wanna grab a coffee at Starbucks or something?"
+  },
+  {
+   "id": 28,
+   "src_lang": "en",
+   "src": "I totally forgot it was your birthday, my bad!"
+  },
+  {
+   "id": 29,
+   "src_lang": "en",
+   "src": "No way! You got the job?"
+  },
+  {
+   "id": 30,
+   "src_lang": "en",
+   "src": "Can you hold my place in line for a sec? I need to run to the bathroom before it gets any worse."
+  },
+  {
+   "id": 31,
+   "src_lang": "en",
+   "src": "Welcome! Do you have a reservation, or would you like a table for two?"
+  },
+  {
+   "id": 32,
+   "src_lang": "en",
+   "src": "I'm sorry, we're out of the salmon today. May I recommend the sea bass instead?"
+  },
+  {
+   "id": 33,
+   "src_lang": "en",
+   "src": "Could I have your name and phone number, please?"
+  },
+  {
+   "id": 34,
+   "src_lang": "en",
+   "src": "The check-out time is 11 a.m., but we can hold your luggage until you're ready to leave."
+  },
+  {
+   "id": 35,
+   "src_lang": "en",
+   "src": "Excuse me, is this seat taken?"
+  },
+  {
+   "id": 36,
+   "src_lang": "en",
+   "src": "The Licensee shall not sublicense, sell, or otherwise transfer the Software to any third party without the prior written consent of the Licensor."
+  },
+  {
+   "id": 37,
+   "src_lang": "en",
+   "src": "This Agreement shall be governed by and construed in accordance with the laws of Japan."
+  },
+  {
+   "id": 38,
+   "src_lang": "en",
+   "src": "Either party may terminate this Agreement upon thirty (30) days' written notice."
+  },
+  {
+   "id": 39,
+   "src_lang": "en",
+   "src": "In no event shall the Company be liable for any indirect, incidental, or consequential damages arising out of the use of the Service, even if advised of the possibility of such damages."
+  },
+  {
+   "id": 40,
+   "src_lang": "en",
+   "src": "Unless otherwise stated, all prices include consumption tax."
+  },
+  {
+   "id": 41,
+   "src_lang": "en",
+   "src": "The rain had stopped, but the street still held the dark memory of it."
+  },
+  {
+   "id": 42,
+   "src_lang": "en",
+   "src": "She laughed, and for a moment the whole kitchen seemed to lean toward the sound."
+  },
+  {
+   "id": 43,
+   "src_lang": "en",
+   "src": "He had never learned how to say goodbye; he only knew how to leave."
+  },
+  {
+   "id": 44,
+   "src_lang": "en",
+   "src": "Silence settled over the harbor like snow."
+  },
+  {
+   "id": 45,
+   "src_lang": "en",
+   "src": "\"Are you coming?\" she asked, though she already knew the answer."
+  },
+  {
+   "id": 46,
+   "src_lang": "en",
+   "src": "just missed the last train lol, tonight's gonna be a long one"
+  },
+  {
+   "id": 47,
+   "src_lang": "en",
+   "src": "this ramen place near Shin-Okubo station is sooo good!! 10/10 would slurp again"
+  },
+  {
+   "id": 48,
+   "src_lang": "en",
+   "src": "RT if you're still awake #insomnia"
+  },
+  {
+   "id": 49,
+   "src_lang": "en",
+   "src": "can't believe it's already november"
+  },
+  {
+   "id": 50,
+   "src_lang": "en",
+   "src": "@mika thx for the rec, just finished the book and wow"
+  },
+  {
+   "id": 51,
+   "src_lang": "ja",
+   "src": "ファイルが見つからない場合は、パスを確認してからもう一度実行してください。"
+  },
+  {
+   "id": 52,
+   "src_lang": "ja",
+   "src": "`mutex.lock()` を握ったまま例外を投げると、他のスレッドが永久に待たされる。"
+  },
+  {
+   "id": 53,
+   "src_lang": "ja",
+   "src": "メモリ使用量が 2.5 GB を超えたらアラートを出す設定にしてある。"
+  },
+  {
+   "id": 54,
+   "src_lang": "ja",
+   "src": "**注意:** `git rebase -i HEAD~3` は直近3つのコミットを書き換えるので、push 済みの履歴には使わないこと。"
+  },
+  {
+   "id": 55,
+   "src_lang": "ja",
+   "src": "非同期処理の戻り値を待たずに次の行へ進むと、まだ入っていない値を読んでしまうことがあり、原因の特定に時間がかかるため、まずログの出力順を確かめるとよい。"
+  },
+  {
+   "id": 56,
+   "src_lang": "ja",
+   "src": "保存せずに閉じる"
+  },
+  {
+   "id": 57,
+   "src_lang": "ja",
+   "src": "**接続エラー:** ネットワークに接続できません。接続を確認してもう一度お試しください。"
+  },
+  {
+   "id": 58,
+   "src_lang": "ja",
+   "src": "通知を許可すると、新着メッセージをすぐにお知らせします。"
+  },
+  {
+   "id": 59,
+   "src_lang": "ja",
+   "src": "{count} 件の項目が選択されています"
+  },
+  {
+   "id": 60,
+   "src_lang": "ja",
+   "src": "設定を元に戻しますか？"
+  },
+  {
+   "id": 61,
+   "src_lang": "ja",
+   "src": "政府は来月1日から、電気料金の補助を3か月間延長すると発表した。"
+  },
+  {
+   "id": 62,
+   "src_lang": "ja",
+   "src": "気象庁によると、台風14号は明日の昼ごろ関東地方に最も接近する見込み。"
+  },
+  {
+   "id": 63,
+   "src_lang": "ja",
+   "src": "容疑者は調べに対し、「覚えていない」と話しているという。"
+  },
+  {
+   "id": 64,
+   "src_lang": "ja",
+   "src": "日銀の植田総裁は、物価の動向を注視しながら、金融政策を慎重に判断していく考えを示した。"
+  },
+  {
+   "id": 65,
+   "src_lang": "ja",
+   "src": "東京株式市場で日経平均は反発。"
+  },
+  {
+   "id": 66,
+   "src_lang": "ja",
+   "src": "この記事では、初心者でも迷わず設定できるように、手順を[画像つきの一覧](https://example.com/guide)で説明します。"
+  },
+  {
+   "id": 67,
+   "src_lang": "ja",
+   "src": "結論から言うと、どちらを選んでも大きな差はありません。"
+  },
+  {
+   "id": 68,
+   "src_lang": "ja",
+   "src": "実際に1週間使ってみたところ、バッテリーの持ちが思ったより良くて驚いた。"
+  },
+  {
+   "id": 69,
+   "src_lang": "ja",
+   "src": "京都の夏は蒸し暑いので、観光するなら朝のうちに回るのがおすすめです。"
+  },
+  {
+   "id": 70,
+   "src_lang": "ja",
+   "src": "「走れば何とかなる」と思っていたが、現実はそう甘くなかった。"
+  },
+  {
+   "id": 71,
+   "src_lang": "ja",
+   "src": "お世話になっております。株式会社ミナトの高橋です。"
+  },
+  {
+   "id": 72,
+   "src_lang": "ja",
+   "src": "ご多忙のところ恐縮ですが、ご確認いただけますと幸いです。"
+  },
+  {
+   "id": 73,
+   "src_lang": "ja",
+   "src": "来週の打ち合わせの件ですが、都合が悪くなりましたので、日程を変更させていただけないでしょうか。"
+  },
+  {
+   "id": 74,
+   "src_lang": "ja",
+   "src": "添付の見積書は、消費税を含めて合計 1,320,000 円です。"
+  },
+  {
+   "id": 75,
+   "src_lang": "ja",
+   "src": "のちほど、こちらからお電話をおかけ直しいたします。"
+  },
+  {
+   "id": 76,
+   "src_lang": "ja",
+   "src": "え、マジで？ 昨日あんなに飲んでたのに、もう朝から走ってきたの？"
+  },
+  {
+   "id": 77,
+   "src_lang": "ja",
+   "src": "ちょっと待って、鍵どこ置いたっけ。"
+  },
+  {
+   "id": 78,
+   "src_lang": "ja",
+   "src": "別に怒ってないけど、ひと言くらい言ってほしかったな。"
+  },
+  {
+   "id": 79,
+   "src_lang": "ja",
+   "src": "今日はなんか疲れちゃったから、ご飯は適当でいいや。"
+  },
+  {
+   "id": 80,
+   "src_lang": "ja",
+   "src": "あの店、結構当たりだったよ。今度一緒に行こう。"
+  },
+  {
+   "id": 81,
+   "src_lang": "ja",
+   "src": "いらっしゃいませ。何名様でいらっしゃいますか。"
+  },
+  {
+   "id": 82,
+   "src_lang": "ja",
+   "src": "恐れ入りますが、こちらの商品は在庫を切らしております。"
+  },
+  {
+   "id": 83,
+   "src_lang": "ja",
+   "src": "お会計は別々になさいますか。"
+  },
+  {
+   "id": 84,
+   "src_lang": "ja",
+   "src": "ご不明な点がございましたら、お気軽に係の者にお申し付けください。"
+  },
+  {
+   "id": 85,
+   "src_lang": "ja",
+   "src": "お手数ですが、こちらのフォームにご記入をお願いいたします。"
+  },
+  {
+   "id": 86,
+   "src_lang": "ja",
+   "src": "利用者は、本規約に同意した時点で、本サービスの利用を開始したものとみなします。"
+  },
+  {
+   "id": 87,
+   "src_lang": "ja",
+   "src": "当社は、事前の通知なく本サービスの内容を変更または終了することがあります。"
+  },
+  {
+   "id": 88,
+   "src_lang": "ja",
+   "src": "前項の規定にかかわらず、未成年者が本サービスを利用する場合は、親権者の同意を得なければならない。"
+  },
+  {
+   "id": 89,
+   "src_lang": "ja",
+   "src": "本契約の有効期間は、令和8年4月1日から1年間とする。"
+  },
+  {
+   "id": 90,
+   "src_lang": "ja",
+   "src": "本件に関する一切の紛争は、東京地方裁判所を第一審の専属的合意管轄裁判所とする。"
+  },
+  {
+   "id": 91,
+   "src_lang": "ja",
+   "src": "夕暮れの空が、ゆっくりと藍色に溶けていった。"
+  },
+  {
+   "id": 92,
+   "src_lang": "ja",
+   "src": "彼女は何も言わず、ただ窓の外を見ていた。"
+  },
+  {
+   "id": 93,
+   "src_lang": "ja",
+   "src": "蝉の声が、遠い夏の記憶を連れてきた。"
+  },
+  {
+   "id": 94,
+   "src_lang": "ja",
+   "src": "ふいに、懐かしい匂いがして、足が止まった。"
+  },
+  {
+   "id": 95,
+   "src_lang": "ja",
+   "src": "「ありがとう」の一言が、どうしても出てこなかった。"
+  },
+  {
+   "id": 96,
+   "src_lang": "ja",
+   "src": "今日の電車、人多すぎて死ぬかと思った…"
+  },
+  {
+   "id": 97,
+   "src_lang": "ja",
+   "src": "新作のコーヒー飲んでみた☕ 思ったより甘くなくて好き！"
+  },
+  {
+   "id": 98,
+   "src_lang": "ja",
+   "src": "締め切りまであと3時間。無理。"
+  },
+  {
+   "id": 99,
+   "src_lang": "ja",
+   "src": "#今日の空 めっちゃ綺麗だった"
+  },
+  {
+   "id": 100,
+   "src_lang": "ja",
+   "src": "推しのライブ当たった！！！人生で一番運を使った気がする"
+  }
+ ],
+ "models": {
+  "en-ja 3.0": {
+   "file": "model.enja.intgemm.alphas.bin",
+   "bytes": 43849787,
+   "translations": [
+    "タイムアウトを30秒に設定し、次に「systemctl restart ワーカー」でワーカーを再起動し、ログを確認します。",
+    "APIキーをリポジトリにコミットしないでください。すでに押されたキーをローテーションしないでください。",
+    "プロセス後にキャッシュが古みを返すのは、なぜ `fork()` を呼び出すのですか?",
+    "スレジューラは各タスクをそれぞれ独自のスレッドで実行するため、作業が遅くなると遅延するが、数秒間グローバルロックを保持したタスクは、ロックが解放されるまで他のすべての作業者を停止させるため、重要なセクションを短く保つ。",
+    "v2.4で非推奨。代わりに `Client.connect()` を使用してください。",
+    "このフォルダを本当に削除したいですか?この操作は取り消しできません。",
+    "変更を保存します",
+    "未読のメッセージが3件、招待状が1件未送信中です。",
+    "パスワードは少なくとも12文字でなければならず、番号も含まれていなければなりません。",
+    "アカウントでサインインして、デバイス間でブックマークを同期できます。いつでも「設定」>「プライバシー」でオフにできます。",
+    "中央銀行は木曜日、基準金利を0.25ポイント引き上げ、4.5%に引き上げた。これは今年3回目の引き上げである。",
+    "月曜日の朝、フランクフルト空港では大雨のため200便以上の便が欠航した。",
+    "当局は、調査が終了するまで報告書を公表しないと述べた。",
+    "大阪市長の山本花子氏は記者会見でその計画を発表し、市が公共交通機関に新たな方針を転換すると述べた。",
+    "新しい研究によると、1日30分以上歩く人は心臓病を発症する可能性が低いという。しかし研究者らは、データが因果関係を示すことはできないとし、他の生活習慣の要因がその違いの一部を説明する可能性があると警告している。",
+    "このキーボードを3か月間使っていて、正直なところ、私が変更するのは価格だけです。",
+    "もし園芸初心者なら、小さなものから始めましょう。日当たりのきい窓辺に数鉢のハーブを植えれば、どんな本よりも多くのことを教えてくれます。",
+    "#初心者がプログラミングを学ぶ際に犯す上位5つの間違い",
+    "アイデアに熱中するのに時間がかかったが、一度そうすると、戻れなかった。",
+    "** 通報:終わりは期待したものではない。",
+    "迅速な返信をいただき、ありがとうございます。金曜日までに改訂された見積もりを送付していただき、誠にありがとうございます。",
+    "残念ながら、3月14日の会議には出席できません。今週はチームが巡回する予定です。",
+    "先月のコンサルティングサービスについて、添付の請求書([No. 2026-0417](https://example.com/inv/2026-0417))をご確認ください。",
+    "配達スケジュールに関する以前のメッセージのフォローアップを予定していますが、まだ返信は受けていません。いつ更新が予定できるか、お知らせください。",
+    "来週はベースに触れましょう。",
+    "ねえ、さっき起こったことなんて信じられないよ。",
+    "スターバックスでコーヒーを飲みたいですか?",
+    "誕生日だったなんて、まったく忘れてたよ、私の悪い!",
+    "いい!その仕事を手に入れたの?",
+    "1秒ほど私の列に並んでもいいですか? 悪化する前にトイレまで走らなければなりません。",
+    "ようこそ!予約はありますか、それとも2人用のテーブルを用意しますか?",
+    "申し訳ありませんが、本日はサーモンから外されました。代わりにシーバスをおすすめしてもよろしいでしょうか?",
+    "お名前と電話番号をおかけしてもいいですか?",
+    "チェックアウト時間は午前11時ですが、荷物を預けて出発する準備が整います。",
+    "この席は奪われたの?",
+    "ライセンシーは、ライセンサーの事前の書面による同意なしに、ソフトウェアを第三者にサブライセンス、販売、またはその他の方法で譲渡してはならないものとします。",
+    "本契約は、日本の法律に準拠し、これに従って解釈されるものとします。",
+    "いずれの当事者も、本協定を30日前の書面による通知の時点で終了することができる。",
+    "いかなる場合においても、当社は、当該サービスの利用に起因する間接的、偶起的、または結果的な損害について、たとえその損害の可能性について知らされた場合でも、一切の責任を負わないものとします。",
+    "特に明記されていない限り、すべての価格には消費税が含まれます。",
+    "雨は止みましたが、街中はまだその暗い記憶を抱いた。",
+    "彼女は笑い、しばらくの間、キッチン全体が音に傾いたように見えた。",
+    "彼はさよならを言う方法を学んだことがなかった。ただ、去る方法しか知らなかった。",
+    "雪のように、静けさが港に降り積もる。",
+    "「来るの?」と彼女は尋ねたが、すでに答えはわかっていた。",
+    "ちょうど最終列車に乗り遅れただけで、今夜は長い列車になる",
+    "新大久保駅近くのこのラーメン店は本当においしいです!! 10/10はまたもらっているでしょう",
+    "まだ起きていればRT #insomniア",
+    "もう今が今かなんて信じられない",
+    "@mika thxさん、本を読み終えて、本当に驚きました",
+    "ファイルル ヴィチルクユーイイージューのはな、パス と<0xE7><0xA2><0xBA>じでからだ、",
+    "`mutex.lock()` をカカンジュマ を着泊ます。",
+    "メミリ用考 2.5GB へ<0xE8><0xB6><0x85>ええアラート をご覧ください。",
+    "**本: `git リベース -i ヘッド〜3` は直<0xE8><0xBF><0x91>3のコミットを例 は直<0xE8><0xBF><0x91>3のコミットをくく、押し <0xE8><0xB8><0x88>のッセンワーキにはそそ 地の居<0xE7><0xA5><0xA5>派",
+    "シダ区 対本妙のツェーケー ケア は、はんののなはの は、 <0xE9><0x9D><0x9E>区妙の は、はんのの は、",
+    "宝正<0x9B>デ ブ<0x89>じり",
+    "** ネットワークには、 ネットワークには !なットワークには ネットワークにはたで、 ネットワークにはた。",
+    "-- - <0xE9><0x80><0x9A><0xE7><0x9F><0xA5>です。",
+    "{count} の<0xE9><0xA0><0x85><0xE7><0x9B><0xAE>は<0xB8>り とのです",
+    "<0xE8><0xA8><0xAD>宝区に的さ、?",
+    "政倍時 1 日本語版",
+    "気<0xE8><0xB1><0xA1>ビュにより、 対14号(<0xE9><0xA2><0xA8>14号)明の日の (私は)。",
+    ")対<0xE8><0x96><0x91><0xE8><0x80><0x85>は<0xE8><0xAA><0xBF> ]、 [ <0xE8><0xA6><0x9A>ええ はは、は」",
+    "旧金の天<0xE9><0x94><0xB0><0xE7><0xB7><0x8F><0xE8><0xA3><0x81>は、 さ<0x89>無の型さ さ び <0xE8><0xA6><0x96>",
+    "東部 条ロンからだ邸 2年 日日 ナスヒョン ははと",
+    "のの記泊、より<0xE8><0x88><0x9D>用<0xE8><0x80><0x85>でも<0xE8><0xBF><0xB7><0xE8><0xA8><0x9A><0xE8><0xA8><0xAD>光した、するんに、<0xE8><0x89><0x8B>んんんんんだを[<0xE7><0x94><0xBB>健つの<0xE4><0xB8><0x80><0xE8><0xA6><0xA7>](https://example.com/guide)で、伝説の<0xE7><0x98><0x8E>さすぎ",
+    "<0xE7><0xB5><0x90><0xE8><0xAB><0x96>からだへとと、 へではははりません",
+    "備<0xE9><0x9A><0x9B>1<0xE9><0x80><0xB1>頭用とは、バッテレーののはび はん",
+    "京の天は へさ純ので、<0xE8><0xA6><0xB3>光性のはんだのに はのです にのの お性さです。",
+    "「<0xE8><0xB5><0xB0>のさとはるか」と、<0xE7><0x8F><0xBE>部はさ<0x86><0xE8><0x94><0x94>・なから4。",
+    "おなぎ<0xE8><0xA9><0xB1>になで、ぎりりとりです。",
+    "な<0xA4><0xBF>のとんんんんんんんんはんでり。",
+    "ツツダの部 対部(ドツ)",
+    "経さの見る<0xE7><0xA9><0x8D><0xE8><0x9B><0xB8>は、132万 φですぎ と、<0xE8><0xA8><0x9F><0xE8><0xB2><0xBB><0xE7><0xA8><0x8E>]] と<0xE7><0xA8><0x8E>2 ]。",
+    "のチェド のチ<0xB1>ド – さ",
+    "ええ、マジュで? 時泊んな で、でんんな でんでのののは、はさ ?",
+    "びと、 チポとマツー ー。",
+    "破] 時性 と<0xE8><0xA8><0x80><0xE8><0xA8><0x80>=なな <0xE8><0xA8><0x80>]",
+    "未無・んから破、",
+    "のの張、 <0xE8><0xB5><0x90>正ギャインり 泊。",
+    "からりささでからさ 。",
+    "的 もらいチュルりです はんチュの客用はとり。",
+    "お会話とは時",
+    "なぎ ◎な はなな<0xE7><0x82><0xB9>な、ゴッ остн <0xD0><0xBF>р<0xD0><0x95><0xD0><0x95> <0xD0><0xBF>рс",
+    "お装小幅です。",
+    "Ω–用<0xE8><0x80><0x85>は、本<0xE8><0xA6><0x8F>約にはした時 <0xE7><0x82><0xA7>で、本ソービスの Ω",
+    "能力は。 性<0xE7><0xBA><0x8B>部の<0xE9><0x80><0x9A><0xE7><0x9F><0xA5>ななから本の 名 の家 経 <0xE7><0xBA><0x82>次性ともです。",
+    "年<0xE9><0xA0><0x85><0xE8><0xA6><0x8F>未にとかからんだ。未 未カエル年<0xE8><0x80><0x85>本本ビス、<0xE8><0xA6><0xAA>歳<0xE8><0x80><0x85>の対のな",
+    "未大の <0xF0><0x9C><0xAC>骨の <0xF0><0x82><0x89>用 (人物 ́8年4日1日 1年 1年) は、",
+    "純政に びに対応 р未のの 細のののの 細のののの 細のののの 細ののののの 細ののののの",
+    "大貸の 経貸の <0xE7><0xA4><0x95>貸の <0xE7><0xA9><0xBA>は、 <0xD0><0x8F>р<0xD0><0x8F> と<0xE8><0x97><0x8D>色 へはは<0x91>されていて です。",
+    "複写はさ さ<0xBD>万ユーロ・<0xE7><0xAA><0x93>のととん とんのとのとんの天 ます。",
+    "<0xE8><0x9D><0x89>の張は、",
+    "フイ さ的 はははの は、",
+    "「はりはとののののん、さん でさ でさ ぎのり",
+    "車日の<0xE9><0x9B><0xBB>車、市 乗務員とかとツー......",
+    "普段のコーヒー ゲン からさんより<0xE7><0x94><0x98>からなてて用 !",
+    "<0xE7><0xB7><0xA0><0xE7><0x81><0x87>りですと3時。",
+    "#印の <0xE7><0xA9><0xBA> りcmェ<0xE7><0xB6><0xBA><0xE9><0xBA><0x97>です ",
+    "率のの イブジュした !!! 人気 – 人気"
+   ]
+  },
+  "ja-en 3.1": {
+   "file": "model.jaen.intgemm.alphas.bin",
+   "bytes": 43977787,
+   "translations": [
+    "Set the timeout to 30 seconds, then restart the worker with `systemctl restart worker` and check the log.",
+    "Never commit API keys to the repository; rotate any key that has already been pushed.",
+    "Why does the cache return stale entries after the process calls `fork()`?",
+    "Because the scheduler runs each task in its own thread, a slow task delays only itself, but a task holds the global lock for several seconds will stall every other worker until the lock is released, so keep critical sections short.",
+    "Deprecated in v2.4; use `Client.connect()` instead.",
+    "Are you sure you want to delete this folder? This action cannot be undone.",
+    "Save changes",
+    "You have 3 unread messages and 1 pending invitation.",
+    "Your password must be at least 12 characters and include a number.",
+    "Sign in with your account to sync bookmarks across devices. You can turn this off anytime in **Settings > Privacy**.",
+    "The central bank raised its benchmark rate by 0.25 percentage points to 4.5 percent on Thursday, the third increase this year.",
+    "Heavy rain forced the cancellation of more than 200 flights at Frankfurt airport on Monday morning.",
+    "Officials said they would not release the report until the investigation had concluded.",
+    "Osaka Mayor Hanako Yamamoto announced the plan at a press conference, saying the city would turn over a new leaf on public transport.",
+    "A new study suggests that people who walk for at least 30 minutes a day are less likely to develop heart disease, though the researchers caution that the data cannot prove a causal link and that other lifestyle factors may explain part of the difference.",
+    "I've been using this keyboard for three months now, and honestly, the only thing I'd change is the price.",
+    "If you're new to gardening, start small: a few pots of herbs on a sunny windowsill will teach you more than any book.",
+    "Top 5 mistakes beginners make when learning to code",
+    "It took me a while to warm up to the idea, but once I did, I couldn't go back.",
+    "The ending isn't what you'd expect.",
+    "Thank you for your prompt reply, I would appreciate it if you could send the revised quotation by Friday.",
+    "Unfortunately, we will be unable to attend the meeting on March 14, as our team will be traveling that week.",
+    "Please find the attached invoice ([No. 2026-0417](https://example.com/inv/2026-0417)) for last month's consulting services.",
+    "I'm writing to follow up on my earlier message regarding the delivery schedule, which I have not yet received a response to; could you let me know when we might expect an update?",
+    "Let's touch base next week.",
+    "Dude, you're not gonna believe what just happened.",
+    "Wanna grab a coffee at Starbucks or something?",
+    "I totally forgot it was your birthday, my bad!",
+    "No way! You got the job?",
+    "Can you hold my place in line for a sec? I need to run to the bathroom before it gets any worse.",
+    "Welcome! Do you have a reservation, or would you like a table for two?",
+    "I'm sorry, we're out of the salmon today. May I recommend the sea bass instead?",
+    "Could I have your name and phone number, please?",
+    "The check-out time is 11 a.m., but we can hold your luggage until you're ready to leave.",
+    "Excuse me, is this seat taken?",
+    "The Licensee shall not sublicense, sell, or otherwise transfer the Software to any third party without the prior written consent of the Licensor.",
+    "This Agreement shall be governed by and construed in accordance with the laws of Japan.",
+    "Either party may terminate this agreement upon thirty (30) days' written notice.",
+    "In no event shall the Company be liable for any indirect, incidental, or consequential damages arising out of the use of the Service, even if advised of the possibility of such damages.",
+    "Unless otherwise stated, all prices include consumption tax.",
+    "The rain had stopped, but the street still held the dark memory of it.",
+    "She laughed, and for a moment the whole kitchen seemed to lean toward the sound.",
+    "He had never learned how to say goodbye; he only knew how to leave.",
+    "Silence settled over the harbor like snow.",
+    "\"Are you coming?\" she asked, though she already knew the answer.",
+    "Just missed the last train lol, tonight's gonna be a long one",
+    "this ramen place near Shin-Okubo station is sooo good!! 10/10 would slurp again",
+    "RT if you're still awake #insomnia",
+    "Can't believe it's already number",
+    "@mika thx for the rec, just finished the book and wow",
+    "If you can't find the file, check the path and then run it again.",
+    "Throwing an exception while holding `mutex.lock()` will make other threads wait forever.",
+    "If the memory usage exceeds 2.5 GB, it is set to issue an alert.",
+    "**Note: ** `git rebase -i HEAD~3` rewrites the most recent three commits, so don't use it for your push history.",
+    "If you proceed to the next line without waiting for the return value of the asynchronous processing, you may read the value that has not yet been entered, and it takes time to identify the cause, so it is good to first check the order of the output of the log.",
+    "Close without saving",
+    "**Connection error:** Cannot connect to the network. Please check the connection and try again.",
+    "If you allow notifications, we will notify you of your new message immediately.",
+    "{count} The item of the case is selected",
+    "Do you want to restore the settings?",
+    "The government has announced that it will extend the subsidy for electricity bills by three months from next month.",
+    "According to the Japan Meteorological Agency, Typhoon Hagibis is expected to approach the Kanto region around noon tomorrow.",
+    "The suspect told the investigation, “I don’t remember.”",
+    "Mr. Ueda, the Bank of Japan, expressed his intention to make a careful assessment of monetary policy while closely monitoring developments in prices.",
+    "The Nikkei average on the Tokyo stock market rebounded.",
+    "In this article, we will explain the procedure in [List with image] (https://example.com/guide) so that even beginners can set it without hesitation.",
+    "As it turns out, there is no big difference between which one you choose.",
+    "When I actually used it for a week, I was surprised that the battery was more than I thought.",
+    "Summer in Kyoto is hot and humid, so it is recommended to go around in the morning if you want to go sightseeing.",
+    "I thought, \"If you run, you'll be fine,\" but the reality was not so sweet.",
+    "Thank you for your help. It is Takahashi of Minato Co., Ltd.",
+    "We are very busy, but we would appreciate it if you could confirm it.",
+    "It's about next week's meeting, but it's getting worse, can you change the schedule?",
+    "The attached quote is a total of 1,320,000 yen, including consumption tax.",
+    "Later, we will call you back from here.",
+    "Did you drink that much yesterday and have you already run in the morning?",
+    "Wait a minute, where did you put the key?",
+    "I’m not angry, but I wanted to say a word.",
+    "I’m tired today, so I’m not going to eat properly.",
+    "That shop was quite a hit. Let's go together next time.",
+    "Welcome. How many people are you?",
+    "Sorry, but this product is out of stock.",
+    "Do you pay separately?",
+    "If you have any questions, please feel free to contact the staff.",
+    "Sorry to trouble you, but please fill out this form.",
+    "The user shall be deemed to have started using this service when he/shering in these Terms.",
+    "The Company may change or terminate the contents of the Service without prior notice.",
+    "Notwithstanding the provisions of the preceding paragraph, when a minor uses the Service, the consent of the custodial parent must be obtained.",
+    "The validity period of this Agreement shall be one year from April 1st.",
+    "Any dispute relating to this matter shall be subject to the exclusive jurisdiction of the Tokyo District Court in the first instance.",
+    "The sky at dusk slowly melted into indigo.",
+    "She said nothing and just looked out the window.",
+    "The sound of the fire brought me memories of the distant summer.",
+    "It smelled nostalgic and my feet stopped.",
+    "“Thank you” didn’t come out.",
+    "I thought today's train was going to die because there were too many people ...",
+    "I tried a new coffee <0xE2><0x98><0x95> I like it not sweeter than I thought!",
+    "Three hours until the deadline. I can't.",
+    "Today's sky was very beautiful",
+    "I hit the live of the thrust! ! I feel that I used the luck the most in my life"
+   ]
+  },
+  "ja-en 3.0": {
+   "file": "model.jaen.intgemm.alphas.bin",
+   "bytes": 59504955,
+   "translations": [
+    "Set the timeout to 30 seconds, then restart the worker with `systemctl restart worker` and check the log.",
+    "Never commit API keys to the repository; rotate any key that has already been pushed.",
+    "Why does the cache return stale entries after the process calls `fork()?",
+    "Because the scheduler runs each task in its own thread, a slow task delays only itself, but a task that holds the global lock for seconds several will stall every other worker until the lock is released, so keep critical sections short.",
+    "Deprecated in v2.4; use `Client.connect()` instead.",
+    "Are you sure you want to delete this folder? This action cannot be undone.",
+    "Save changes",
+    "You have 3 unread messages and 1 invitation pending.",
+    "Your password must be at least 12 characters and include a number.",
+    "Sign in with your account to sync bookmarks across devices. You can turn this off anytime in **Settings > Privacy**.",
+    "The central bank raised its benchmark rate by 0.25 percentage points to 4.5 percent on Thursday, the third increase this year.",
+    "Heavy rain forced the cancellation of more than 200 flights at Frankfurt airport on Monday morning.",
+    "Officials said they would not release the report until the investigation had concluded.",
+    "Osaka Mayor Hanako Yamamoto announced the plan at a press conference, saying the city would turn over a new leaf on public transport.",
+    "A new study suggests that people who walk for at least 30 minutes a day are less likely to develop heart disease, though the researchers caution that the data cannot prove a causal link and that other lifestyle factors may explain part of the difference.",
+    "I've been using this keyboard for three months now, and honestly, the only thing I'd change is the price.",
+    "If you're new to gardening, start small: a few pots of herbs on a sunny windowsill will teach you more than any book.",
+    "#Top 5 mistakes beginners make when learning to code",
+    "It took me a while to warm up to the idea, but once I did, I couldn't go back.",
+    "Spoiler alert: The ending isn't what you'd expect.",
+    "Thank you for your prompt reply. I would appreciate it if you could send the revised quotation by Friday.",
+    "Unfortunately, we will be unable to attend the meeting on March 14, as our team will be traveling that week.",
+    "Please find the attached invoice ([No. 2026-0417]) (https://example.com/inv/2026-0417) for last month's consulting services.",
+    "I'm writing to follow up on my earlier message regarding the delivery schedule, which I have not yet received a response to; could you let me know when we might expect an update?",
+    "Let's touch base next week.",
+    "Dude, you're not gonna believe what just happened.",
+    "Wanna grab a coffee at Starbucks or something?",
+    "I totally forgot it was your birthday, my bad!",
+    "No way! You got the job?",
+    "Can you hold my place in line for a sec? I need to run to the bathroom before it gets any worse.",
+    "Do you have a reservation, or would you like a table for two?",
+    "I'm sorry, we're out of the salmon today. May I recommend the sea bass instead?",
+    "Could I have your name and phone number, please?",
+    "The check-out time is 11 a.m., but we can hold your luggage until you're ready to leave.",
+    "Excuse me, is this seat taken?",
+    "The Licensee shall not sublicense, sell, or otherwise transfer the Software to any third party without the prior written consent of the Lcensor.",
+    "This Agreement shall be governed by and construed in accordance with the laws of Japan.",
+    "Either party may terminate this Agreement upon thirty (30) days' written notice.",
+    "In no event shall the Company be liable for any indirect, incidental, or consequential damages arising out of the use of the Service, even if advised of the possibility of such damages.",
+    "Unless otherwise stated, all prices include consumption tax.",
+    "The rain had stopped, but the street still held the dark memory of it.",
+    "She laughed, and for a moment the whole kitchen seemed to lean toward the sound.",
+    "He had never learned how to say goodbye; he only knew how to leave.",
+    "Silence settled over the harbor like snow.",
+    "\"Are you coming?\" she asked, though she already knew the answer.",
+    "just missed the last train lol, tonight's gonna be a long one",
+    "this ramen place near Shin-Okubo station is sooo good!! 10/10 would slurp again",
+    "RT if you're still awake #insomnia",
+    "Can't believe it's already november",
+    "@mika thx for the rec, just finished the book and wow",
+    "If you can't find the file, check the path and do it again.",
+    "Throwing an exception while holding `mutex.lock()` will make the other thread wait forever.",
+    "If the memory usage exceeds 2.5 GB, an alert is set to issue.",
+    "**NOTE: ** `git rebase -i HEAD~3` rewrites the last three commits, so do not use it for the history of push.",
+    "If you proceed to the next line without waiting for the return value of the asynchronous processing, you may read the value that has not yet entered, and it takes time to determine the cause, so it is good to check the output order of the log first.",
+    "Close without saving",
+    "**Connection error:** Unable to connect to the network. Please check the connection and try again.",
+    "If you allow notifications, we will notify you of new messages immediately.",
+    "{count} items selected",
+    "Do you want to restore the settings?",
+    "The government has announced that from the first of next month, it will extend subsidies for electricity prices by three months.",
+    "According to the Japan Meteorological Agency, Typhoon Hagibis is expected to approach the Kanto region most around noon tomorrow.",
+    "The suspect said he did not remember the investigation.",
+    "Bank of Japan Governor Ueda expressed his intention to make a careful assessment of monetary policy, paying close attention to developments in prices.",
+    "The Tokyo stock market rebounded in the Nikkei average.",
+    "In this article, we will explain the procedure in [List with images] (https://example.com/guide) so that even beginners can set it without hesitation.",
+    "In conclusion, there is no big difference in which one you choose.",
+    "When I actually used it for a week, I was surprised that the battery life was better than I thought.",
+    "Summer in Kyoto is hot and humid, so if you are going sightseeing, it is recommended to visit in the morning.",
+    "I thought, \"I'll be able to do it if I run,\" but the reality was not so sweet.",
+    "I am indebted to you. It is Takahashi of Minato Co., Ltd.",
+    "I'm sorry for your busy schedule, but I'm glad you can check it out.",
+    "As for next week’s meeting, it’s been a bad day, can you change the schedule?",
+    "The accompanying quotation is a total of 1,320,000 yen, including consumption tax.",
+    "We will call you back to the phone from here.",
+    "I was drinking so much yesterday, have you been running since the morning?",
+    "Wait a minute, where did you put the key?",
+    "I’m not angry, but I wanted you to say something.",
+    "I’m tired today, so the food is good.",
+    "That shop was quite a hit. Let's go together next time.",
+    "Welcome. How many people are here?",
+    "Sorry, but this product is out of stock.",
+    "Will the accounts be separate?",
+    "If you have any questions, please feel free to contact the person in charge.",
+    "Sorry to trouble you, but please fill out this form.",
+    "The User shall be deemed to have started using the Service upon his/her acceptance of these Terms of Use.",
+    "The Company may change or terminate the contents of the Service without prior notice.",
+    "Notwithstanding the provisions of the preceding paragraph, if a minor uses the Service, the consent of the parent or guardian must be obtained.",
+    "The term of validity of this Agreement shall be one year from April 1st, Reiwa 8th.",
+    "The Tokyo District Court shall be the exclusive court of jurisdiction in the first instance for all disputes related to this matter.",
+    "The sky at dusk slowly melted into indigo blue.",
+    "She said nothing, just looking out the window.",
+    "The sound of the fire brought me to the distant memory of summer.",
+    "There was a nostalgic smell and my feet stopped.",
+    "A word of “thank you” did not come out.",
+    "Today's train, too many people thought I was going to die...",
+    "I tried to drink a new coffee <0xE2><0x98><0x95> I like it not sweeter than I thought!",
+    "Three hours until the deadline. Not possible.",
+    "The sky today was so beautiful",
+    "I feel like I've used the luckiest thing in my life!"
+   ]
+  }
+ }
+}

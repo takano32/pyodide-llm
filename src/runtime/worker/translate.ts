@@ -6,7 +6,9 @@
 // Llama's names (contracts/python.ts's Answering): worker.ts's generate() runs it as it runs a Llama.
 // The vocabularies are sentencepiece models, which the converter's Python reads: its archive is placed first
 // (by convert.ts, as a conversion places it). The source's sentences are cut here, by the browser's
-// Intl.Segmenter, as Firefox cuts a text before it translates; Python asks for them with every answer.
+// Intl.Segmenter, as Firefox cuts a text before it translates; Python asks for them with every answer. T650: an entry
+// that names its shortlist has it come as the model does (its progress unsaid) and handed to Python, which then
+// writes the output layer's rows of the source's shortlist alone.
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide, pyodideAt, pythonKernels, runtimeReady } from "./runtime.ts";
@@ -30,9 +32,10 @@ export function sentencesOf(language: string) {
 /** A translation model loaded and adopted as the model loaded now; what its ready says besides (no GPU: "") */
 export async function translated(model: OfTranslation, signal: AbortSignal, id: number) {
   postMessage({ type: "status", load: id, text: `Downloading ${model.name}...` } satisfies Status);
-  const { folder, model: file, source, target, from, to } = model.translation;
+  const { folder, model: file, source, target, from, to, shortlist } = model.translation;
   const started = performance.now();
   const checkpoint = download({ checkpoint: `translations/${folder}/${file}`, bytes: model.bytes }, signal, id);
+  const listed = shortlist && download({ checkpoint: `translations/${folder}/${shortlist.file}`, bytes: shortlist.bytes }, signal, id, false);
   const vocabulary = (name: string) => tokenizerAt(new URL(`models/translations/${folder}/${name}`, root), name, signal);
   const vocabularies = Promise.all([vocabulary(source), source === target ? undefined : vocabulary(target)]);
   vocabularies.catch(() => {});
@@ -44,11 +47,17 @@ export async function translated(model: OfTranslation, signal: AbortSignal, id: 
     weights = pythonBuffer(model.bytes);
   } catch (error) {
     checkpoint.stop(error);
+    listed?.stop(error);
     throw error;
   }
   const proxies: Proxy[] = [weights.buffer];
   try {
     await checkpoint.into(weights.write);
+    const lex = shortlist && pythonBuffer(shortlist.bytes);
+    if (lex) {
+      proxies.push(lex.buffer);
+      await listed!.into(lex.write);
+    }
     const [sourceBytes, targetBytes] = await vocabularies;
     signal.throwIfAborted();
     took("download", checkpoint.seconds ?? since(started));
@@ -65,8 +74,11 @@ export async function translated(model: OfTranslation, signal: AbortSignal, id: 
     const translating = pyodide.pyimport("engine.translating");
     proxies.push(translating);
     adopted({ llama: translating.translation.callKwargs(weights.buffer, words, others, to,
-      { kernels: pythonKernels, disable: switchesNow(), sentences: sentencesOf(from) }) });
+      { kernels: pythonKernels, disable: switchesNow(), sentences: sentencesOf(from), ...(lex && { shortlist: lex.buffer }) }) });
     took("construct", since(made));
+  } catch (error) {
+    listed?.stop(error);  // (the shortlist's download stops with the model's that failed)
+    throw error;
   } finally {
     for (const proxy of proxies) proxy.destroy();
   }

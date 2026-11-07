@@ -474,6 +474,18 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
       await sleep(50);
       assert.deepEqual([of("error"), requests.filter((r) => r.url.endsWith(".spm")).length, asked[0].args[1] === asked[0].args[2], asked[0].args[3]], [[], 1, true, "en"],
         "a model of one vocabulary asks for it once and hands it as both");
+      // T650: an entry that names its shortlist: its parts come beside the model's, unsaid, and Python is handed them
+      asked.length = 0;
+      requests.length = 0;
+      fresh((url) => new Response(url.endsWith(".spm") ? new Uint8Array(8) : url.includes("/lex.bin.") ? new Uint8Array(24).fill(7) : file.slice(), { status: 200 }));
+      await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 69,
+        model: { ...translation, translation: { ...translation.translation, shortlist: { file: "lex.bin", bytes: 24 } } } } });
+      await sleep(50);
+      const handed = asked[0]?.args.at(-1).shortlist;
+      assert.deepEqual([of("error"), requests.filter((r) => r.url.includes("/lex.bin.")).map((r) => r.url), handed !== undefined,
+        of("progress").filter((p) => p.load === 69).every((p) => p.total === BYTES), of("ready").filter((r) => r.load === 69).length],
+        [[], ["https://site.test/app/models/translations/en-ja-3.0/lex.bin.000"], true, true, 1],
+        "a shortlist's parts are fetched beside the model's, its progress unsaid, and handed to translation()");
       delete context.stand.pyodide.pyimport;
     }
 

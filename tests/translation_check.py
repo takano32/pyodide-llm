@@ -3,6 +3,8 @@
 
     .venv/bin/python tests/translation_check.py [--only <model>] [--limit <n>]
     .venv/bin/python tests/translation_check.py --write     # fxtranslate's translations, again, into the fixture
+    .venv/bin/python tests/translation_check.py --shortlist [--write]   # T650: with the shortlist, its own fixture
+    .venv/bin/python tests/translation_check.py --speed <rounds>        # T650: the seconds with it and without, by turns
     node tests/translation-kernels.ts [--only <model>] [--limit <n>]   # T648.3: the same, its affines on the kernel
 
 --kernels runs every affine on the SIMD kernel affine_q8 (engine/translation.py's KernelAffine), which loads in
@@ -17,6 +19,10 @@ every model (the other direction's too: their nonsense is translated by the same
 wrote it: one unit, no shortlist. (translate_long() cuts the text into sentences with ICU4X first, which writes 16 of
 the 100 otherwise; the engine cuts none: the page will, T648.4.) --write makes it again, running fxtranslate where
 FXTRANSLATE_PYTHON is (bergamot-vs-shisa's .venv by default), which nothing here installs.
+
+T650: --shortlist gives the engine and fxtranslate the model's shortlist (lex.50.50.*.s2t.bin, Firefox's way: the
+output layer has the rows the source's words list alone), and the reference is tests/fixtures/translations-shortlist.json,
+written by --write --shortlist as the other one is. --speed n times both translators in one process by turns.
 
 A translation is compared as fxtranslate's text: fxtranslate writes a byte piece as its text ("<0xE2><0x98><0x95>"
 for ☕: ja-en's sentence 97), and the engine's text() writes the byte. The check says where the two texts differ
@@ -39,30 +45,34 @@ sys.path.insert(0, python_folder(ROOT))
 import numpy as np  # noqa: E402
 
 from engine.kernels import load_kernels  # noqa: E402
-from engine.marian import read_marian  # noqa: E402
+from engine.marian import read_marian, read_shortlist  # noqa: E402
 from engine.translating import vocabulary  # noqa: E402
 from engine.translation import Translator  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "translations.json"
+SHORTLISTED = ROOT / "tests" / "fixtures" / "translations-shortlist.json"  # T650: fxtranslate with the shortlist
 HOME = Path.home() / "GitHub" / "bergamot-vs-shisa"
 FOLDERS = [Path(folder) for folder in os.environ.get("MARIAN_FILES", "").split(os.pathsep) if folder] + [ROOT / "translations", HOME / "models"]
 SENTENCES = Path(os.environ.get("SENTENCES", HOME / "data" / "sentences.jsonl"))
 FXTRANSLATE = os.environ.get("FXTRANSLATE_PYTHON", str(HOME / ".venv" / "bin" / "python"))
-# a model -> (its file, the source's vocabulary, the target's): each a name's end and a size (tests/test_marian.py's)
+# a model -> (its file, the source's vocabulary, the target's, its shortlist): each a name's end and a size
+# (tests/test_marian.py's)
 JAEN = ("vocab.jaen.spm", 1_443_222)
 MODELS = {
-    "en-ja 3.0": (("model.enja.intgemm.alphas.bin", 43_849_787), ("srcvocab.enja.spm", 796_275), ("trgvocab.enja.spm", 827_144)),
-    "ja-en 3.1": (("model.jaen.intgemm.alphas.bin", 43_977_787), JAEN, JAEN),
-    "ja-en 3.0": (("model.jaen.intgemm.alphas.bin", 59_504_955), JAEN, JAEN),
+    "en-ja 3.0": (("model.enja.intgemm.alphas.bin", 43_849_787), ("srcvocab.enja.spm", 796_275), ("trgvocab.enja.spm", 827_144),
+                  ("lex.50.50.enja.s2t.bin", 4_128_360)),
+    "ja-en 3.1": (("model.jaen.intgemm.alphas.bin", 43_977_787), JAEN, JAEN, ("lex.50.50.jaen.s2t.bin", 9_348_172)),
+    "ja-en 3.0": (("model.jaen.intgemm.alphas.bin", 59_504_955), JAEN, JAEN, ("lex.50.50.jaen.s2t.bin", 9_346_816)),
 }
 # what runs in fxtranslate's Python: the files and the texts in on stdin, the translations out
 FX = """import importlib.metadata, json, sys
 from fxtranslate import Translator
 asked = json.load(sys.stdin)
 out = {"version": importlib.metadata.version("fxtranslate"), "models": {}}
-for name, (model, source, target) in asked["models"].items():
+for name, (model, source, target, lex) in asked["models"].items():
     read = lambda path: open(path, "rb").read()
-    t = Translator(model=read(model), src_vocab=read(source), trg_vocab=read(target))
+    t = Translator(model=read(model), src_vocab=read(source), trg_vocab=read(target),
+                   shortlist=read(lex) if asked["shortlist"] else None)
     out["backend"] = t.backend()
     out["models"][name] = [t.translate(text) for text in asked["texts"]]
 json.dump(out, sys.stdout, ensure_ascii=False)
@@ -128,28 +138,32 @@ def first_difference(translator, ids, theirs):
     return "the same text, written by other tokens"
 
 
-def write(names):
+def write(names, shortlist):
     sentences = [json.loads(line) for line in SENTENCES.read_text(encoding="utf-8").splitlines() if line.strip()]
-    asked = {"texts": [s["src"] for s in sentences], "models": {name: [str(p) for p in files(name)] for name in names}}
+    asked = {"texts": [s["src"] for s in sentences], "shortlist": shortlist,
+             "models": {name: [str(p) for p in files(name)] for name in names}}
     made = subprocess.run([FXTRANSLATE, "-I", "-c", FX], input=json.dumps(asked), capture_output=True, text=True,
                           check=True, timeout=3600)
     out = json.loads(made.stdout)
-    FIXTURE.write_text(json.dumps({
+    fixture = SHORTLISTED if shortlist else FIXTURE
+    used = "with the shortlist (lex.50.50.*.s2t.bin)" if shortlist else "no shortlist"
+    fixture.write_text(json.dumps({
         "made": f"fxtranslate {out['version']} (PyPI), backend {out['backend']}, Translator.translate(): greedy, "
-                "no shortlist, one unit; by tests/translation_check.py --write",
+                f"{used}, one unit; by tests/translation_check.py --write{' --shortlist' if shortlist else ''}",
         "sentences": [{key: s[key] for key in ("id", "src_lang", "src")} for s in sentences],
         "models": {name: {"file": MODELS[name][0][0], "bytes": MODELS[name][0][1], "translations": out["models"][name]}
                    for name in names}}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"wrote {FIXTURE.relative_to(ROOT)}: {', '.join(names)}, {len(sentences)} sentences each")
+    print(f"wrote {fixture.relative_to(ROOT)}: {', '.join(names)}, {len(sentences)} sentences each")
 
 
-def check(names, limit, kernels=None):
-    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+def check(names, limit, kernels=None, shortlist=False):
+    fixture = json.loads((SHORTLISTED if shortlist else FIXTURE).read_text(encoding="utf-8"))
     sentences = fixture["sentences"][:limit]
     failed = False
     for name in names:
-        model, source, target = files(name)
-        translator = Translator(read_marian(model.read_bytes()), spm_tokenizer(source), spm_tokenizer(target), kernels=kernels)
+        model, source, target, lex = files(name)
+        translator = Translator(read_marian(model.read_bytes()), spm_tokenizer(source), spm_tokenizer(target), kernels=kernels,
+                                shortlist=read_shortlist(lex.read_bytes()) if shortlist else None)
         theirs = fixture["models"][name]["translations"]
         same, own, began = 0, [], time.perf_counter()
         for sentence, their in zip(sentences, theirs):
@@ -164,9 +178,38 @@ def check(names, limit, kernels=None):
             print(f"  {name} sentence {sentence['id']} ({sentence['src_lang']}): DIFFERENT\n    ours   {fx_text(translator, written)}\n"
                   f"    theirs {their}\n    {first_difference(translator, ids, their)}")
         seconds = (time.perf_counter() - began) / max(len(sentences), 1)
-        print(f"{name}{' (the kernel)' if kernels else ''}: {same} of {len(sentences)} the same as fxtranslate's ({seconds:.2f} s a sentence)"
+        how = ", ".join(([] if not kernels else ["the kernel"]) + ([] if not shortlist else ["the shortlist"]))
+        print(f"{name}{f' ({how})' if how else ''}: {same} of {len(sentences)} the same as fxtranslate's ({seconds:.2f} s a sentence)"
               + (f"; the engine's own text writes the bytes of sentences {own}" if own else ""), flush=True)
     return failed
+
+
+def speed(names, limit, kernels, rounds):
+    """T650: the seconds of a sentence with the shortlist and without it, in this process, a sentence at a time one
+    after the other, the order turned round each round (the first round warms and is not counted where there are more).
+    Each translator's translations are checked to be its fixture's first."""
+    fixtures = [json.loads(path.read_text(encoding="utf-8")) for path in (FIXTURE, SHORTLISTED)]
+    sentences = fixtures[0]["sentences"][:limit]
+    for name in names:
+        model, source, target, lex = files(name)
+        made = read_marian(model.read_bytes()), spm_tokenizer(source), spm_tokenizer(target)
+        sides = [Translator(*made, kernels=kernels), Translator(*made, kernels=kernels, shortlist=read_shortlist(lex.read_bytes()))]
+        seconds = [0.0, 0.0]
+        for turn in range(rounds):
+            for at, sentence in enumerate(sentences):
+                for side in (0, 1) if (turn + at) % 2 == 0 else (1, 0):
+                    translator = sides[side]
+                    began = time.perf_counter()
+                    written = translator.greedy(translator.source_ids(sentence["src"]))
+                    took = time.perf_counter() - began
+                    if turn == 0 and fx_text(translator, written) != fixtures[side]["models"][name]["translations"][at]:
+                        sys.exit(f"{name} sentence {sentence['id']}: not fxtranslate's translation{' with the shortlist' if side else ''}")
+                    if turn > 0 or rounds == 1:
+                        seconds[side] += took
+        counted = len(sentences) * max(rounds - 1, 1)
+        whole, listed = (value / counted for value in seconds)
+        print(f"{name}{' (the kernel)' if kernels else ''}: {whole:.3f} s a sentence without the shortlist, {listed:.3f} s with it "
+              f"({whole / listed:.2f} times as fast; {len(sentences)} sentences, {counted // len(sentences)} rounds counted)", flush=True)
 
 
 def main():
@@ -175,6 +218,8 @@ def main():
     parser.add_argument("--only", action="append", choices=list(MODELS))
     parser.add_argument("--limit", type=int)
     parser.add_argument("--kernels", action="store_true")
+    parser.add_argument("--shortlist", action="store_true")
+    parser.add_argument("--speed", type=int, metavar="ROUNDS", help="time the shortlist against none (T650)")
     arguments = parser.parse_args()
     kernels = None
     if arguments.kernels:
@@ -189,9 +234,12 @@ def main():
     if arguments.write:
         if missing:
             sys.exit("--write makes every model's translations: give MARIAN_FILES the missing ones")
-        write(names)
+        write(names, arguments.shortlist)
         return
-    sys.exit(1 if check(names, arguments.limit, kernels) else 0)
+    if arguments.speed:
+        speed(names, arguments.limit, kernels, arguments.speed)
+        return
+    sys.exit(1 if check(names, arguments.limit, kernels, arguments.shortlist) else 0)
 
 
 if __name__ == "__main__":

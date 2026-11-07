@@ -3,7 +3,7 @@
 # runs. The worker reads it by the names it reads of a Llama (src/runtime/contracts/python.ts's Answering), and its
 # generate() runs it as it runs a Llama's: the page's answer is the prompt translated.
 #
-#     translation(model, source, target, "en", kernels=path, disable=[...], sentences=cut)
+#     translation(model, source, target, "en", kernels=path, disable=[...], sentences=cut, shortlist=lex)
 #
 # model: the bytes of the model's file (engine/marian.py reads it where it is: the weights are views of these bytes).
 # source, target: the bytes of the two vocabularies, sentencepiece models (the same bytes for a model of one
@@ -12,14 +12,17 @@
 # Intl.Segmenter, as Firefox cuts a text: the worker hands it); none, the text is one sentence. The language translated
 # into says what goes between two sentences of the translation where the source has no line between them (SPACES).
 #
-# Every sentence is translated by itself, greedily, without a shortlist (the owner's T648 (1)), and a sentence of more
+# shortlist: the bytes of the model's binary shortlist (lex.50.50.*.s2t.bin), whose rows alone the output layer then
+# has, as Firefox translates (T650: fxtranslate's translations with it, faster); none, the whole vocabulary's.
+#
+# Every sentence is translated by itself, greedily (with the shortlist where one is given), and a sentence of more
 # than PIECES pieces is cut into stretches of PIECES that are translated by themselves (fxtranslate's and Marian's
 # max-length-break of 128, less the </s>). The settings of an answer (the temperature, the steps...) are a Llama's and
 # are not read: a translation is the greedy search's.
 import codecs
 import time
 
-from engine.marian import read_marian
+from engine.marian import read_marian, read_shortlist
 from engine.proxy import plain
 from engine.tokenizer import Tokenizer
 from engine.translation import Translator
@@ -49,11 +52,12 @@ def whole(text):
     return [text]
 
 
-def translation(model, source, target, language, kernels=None, disable=(), sentences=None):
+def translation(model, source, target, language, kernels=None, disable=(), sentences=None, shortlist=None):
     """The Translation of a model's bytes and its vocabularies' (the worker's way in: the head of this file), into
     language (its BCP 47 code: SPACES says what sets its sentences apart).
     kernels: the path of the SIMD kernels (engine/kernels.py), whose affine_q8 then does every affine, unless disable
-    (?without=) names "kernels"; else NumPy does (T648.3: the same numbers)."""
+    (?without=) names "kernels"; else NumPy does (T648.3: the same numbers). shortlist: the bytes of the model's
+    shortlist, or none (T650)."""
     from engine.kernels import load_kernels
 
     if language not in SPACES:
@@ -62,8 +66,10 @@ def translation(model, source, target, language, kernels=None, disable=(), sente
     found = load_kernels(kernels) if kernels and "kernels" not in disable else None
     source_vocabulary = vocabulary(source)
     target_vocabulary = source_vocabulary if bytes(target) == bytes(source) else vocabulary(target)
-    translator = Translator(read_marian(model), source_vocabulary, target_vocabulary, kernels=found)
-    return Translation(translator, "int8, SIMD kernels" if found else "int8, NumPy", sentences, SPACES[language])
+    lex = read_shortlist(shortlist) if shortlist is not None else None
+    translator = Translator(read_marian(model), source_vocabulary, target_vocabulary, kernels=found, shortlist=lex)
+    backend = ("int8, SIMD kernels" if found else "int8, NumPy") + (", shortlist" if lex is not None else "")
+    return Translation(translator, backend, sentences, SPACES[language])
 
 
 class Translation:

@@ -62,7 +62,7 @@ export type Answering = Pick<Llama, "backend" | "seq_len" | "generate" | "stats"
 // bytes and its vocabularies' (sentencepiece models), into language (its BCP 47 code); sentences: the source's sentences
 // of a text (the worker's Intl.Segmenter)
 export type TranslatingModule = Proxy & {
-  translation: { callKwargs(model: Bytes, source: Bytes, target: Bytes, language: string, options: { kernels?: string; disable?: string[]; sentences?: (text: string) => string[] }): Answering };
+  translation: { callKwargs(model: Bytes, source: Bytes, target: Bytes, language: string, options: { kernels?: string; disable?: string[]; sentences?: (text: string) => string[]; shortlist?: Bytes }): Answering };
 };
 
 // src/python/llama2_numpy.py, the engine's window

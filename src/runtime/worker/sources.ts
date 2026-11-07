@@ -83,7 +83,8 @@ export async function dropStaleParts(model: Parts) {
   }
 }
 
-export function download(model: Parts, signal: AbortSignal, load: number) {
+// shown: the page hears the download's progress (T650: a translation's shortlist comes beside its model, unsaid)
+export function download(model: Parts, signal: AbortSignal, load: number, shown = true) {
   const parts = Math.ceil(model.bytes / PART_BYTES);
   const queue: [number, Uint8Array<ArrayBuffer>][] = [];
   const started = performance.now();
@@ -140,7 +141,7 @@ export function download(model: Parts, signal: AbortSignal, load: number) {
         // one message per percent is plenty; none that goes back (T129 (4): a part fetched again takes back what its
         // broken body had brought, and the page showed the bar going back for a moment)
         const percent = Math.floor((received / model.bytes) * 100);
-        if (percent > reported) {
+        if (shown && percent > reported) {
           reported = percent;
           postMessage({ type: "progress", load, received, total: model.bytes } satisfies Progress);
         }

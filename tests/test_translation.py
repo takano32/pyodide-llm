@@ -9,10 +9,10 @@ import numpy as np
 import pytest
 
 from convert.tokenizer import tokenizer_bin
-from engine.marian import read_marian
+from engine.marian import read_marian, read_shortlist
 from engine.tokenizer import Tokenizer
 from engine.translation import FLOAT_FUNCTIONS, Affine, Translator, layer_norm, total
-from test_marian import floats, intgemm, marian
+from test_marian import floats, intgemm, marian, shortlist
 
 F = np.float32
 D, HEADS, FFN, VOCAB, ENCODER, DECODER = 8, 2, 12, 16, 2, 2
@@ -289,3 +289,45 @@ def test_the_float_functions_round_once():
     assert np.array_equal(FLOAT_FUNCTIONS.exp(x), np.exp(x.astype(np.float64)).astype(F))
     assert np.array_equal(FLOAT_FUNCTIONS.sin(x), np.sin(x.astype(np.float64)).astype(F))
     assert FLOAT_FUNCTIONS.exp(x).dtype == F
+
+
+# ---- T650: the shortlist
+
+def test_the_affine_of_some_rows_is_those_rows_of_the_whole():
+    model = made_up()
+    whole = Affine(model.items["Wemb"], 12.5, model.items["decoder_ff_logit_out_b"].values)
+    x = np.random.default_rng(650).standard_normal((3, D)).astype(F) * 4
+    rows = np.asarray([0, 3, 4, 9, 15])
+    assert np.array_equal(whole.only(rows)(x), whole(x)[:, rows])
+    assert whole(x).shape == (3, VOCAB)  # (the whole one is left as it was)
+
+
+def test_the_shortlist_takes_its_words_and_no_other():
+    # source word 5 lists 9 and 12, 6 lists 3; </s> (0) lists 13; the first 2 come with every sentence
+    lists = [[13], [], [], [], [], [9, 12], [3], *([[]] * (VOCAB - 7))]
+    lex = read_shortlist(shortlist(2, 2, lists))
+    whole, short = translator(), Translator(made_up(), tokenizer(), tokenizer(), shortlist=lex)
+    ids = [5, 6, 5, 0]
+    words = [0, 1, 3, 9, 12, 13]
+    assert short.shortlisted(ids).tolist() == words
+    forced = whole.greedy(ids)
+    for ours, theirs in zip(short.steps(ids, forced=forced), whole.steps(ids, forced=forced)):
+        # each listed word's logit is the whole layer's, to the bit; the others cannot be written
+        assert np.array_equal(ours[words], theirs[words])
+        assert np.all(np.isneginf(np.delete(ours, words)))
+    for written in short.greedy(ids):
+        assert written in words
+    # a word outside the list that the whole vocabulary would write: here the shortlist writes another
+    best = int(np.argmax(next(whole.steps(ids))))
+    other = [word for word in range(2, VOCAB) if word != best]
+    lex = read_shortlist(shortlist(0, 1, [other[:1]] * VOCAB))
+    first = next(Translator(made_up(), tokenizer(), tokenizer(), shortlist=lex).steps(ids))
+    assert int(np.argmax(first)) in (0, other[0]) and np.isneginf(first[best])
+
+
+def test_a_shortlist_of_another_vocabulary_is_refused():
+    with pytest.raises(ValueError, match="has 3 source words where the model has 16"):
+        Translator(made_up(), tokenizer(), tokenizer(), shortlist=read_shortlist(shortlist(2, 2, [[1], [2], [3]])))
+    lex = read_shortlist(shortlist(2, 2, [[1]] * (VOCAB - 1) + [[VOCAB]]))
+    with pytest.raises(ValueError, match="names the target's word 16 of 16"):
+        Translator(made_up(), tokenizer(), tokenizer(), shortlist=lex).shortlisted([VOCAB - 1, 0])

@@ -4,6 +4,8 @@
 #
 #     translator = Translator(read_marian(data), source, target)   source, target: engine.tokenizer.Tokenizer
 #     Translator(read_marian(data), source, target, kernels=load_kernels(path))   every affine on the kernel (Pyodide)
+#     Translator(read_marian(data), source, target, shortlist=read_shortlist(lex))   T650: the output layer's rows of
+#                                                                   the source's shortlist alone (Firefox's way)
 #     translator.translate("こんにちは。")                           the text, as one unit (no sentences are cut)
 #     translator.greedy(translator.source_ids(text))                the target's ids, without </s>
 #     for logits in translator.steps(ids, forced): ...              each step's logits, the tokens being forced's
@@ -24,6 +26,11 @@
 #     an affine's activation is x · qA rounded to even, kept to ±127 and moved up by 127; its sum over k is the
 #     exact integer, turned into a float32 once; then unquant · sum + the bias that takes the 127 back off
 #     exp, sin and the positions' pow are glibc's expf, sinf and powf, which fxtranslate calls: FLOAT_FUNCTIONS
+#
+# T650: with a shortlist (Marian's binary lexical shortlist, as fxtranslate and Firefox take one), the output layer of a
+# sentence is the target's rows that its shortlist names (shortlisted()) and no other: each of those logits is the same
+# number as the whole layer's (a row's sum is its own), and a step writes the largest of them.
+import copy
 import math
 from typing import NamedTuple
 
@@ -83,6 +90,13 @@ class Affine:
         self.bias = raw - F(127) * self.unquant * self.sums.astype(F)  # (|Σ| ≤ 127 k: exact in float32)
         return rows
 
+    def only(self, rows):
+        """This affine of its output rows rows alone (T650: a shortlist's), each the same number as here."""
+        part = copy.copy(self)
+        part.weight = np.ascontiguousarray(self.weight[:, rows])
+        part.bias, part.sums = self.bias[rows], self.sums[rows]
+        return part
+
     def __call__(self, x):
         q = np.clip(np.rint(x * self.alpha), -127, 127) + F(127)
         sums = (q.astype(self.weight.dtype) @ self.weight).astype(F)
@@ -103,6 +117,12 @@ class KernelAffine(Affine):
         self.rows = np.ascontiguousarray(rows, np.int8)
         self.shifts = (127 * self.sums).astype(np.int32)
         self.bias = np.ascontiguousarray(self.bias, F)
+
+    def only(self, rows):
+        part = copy.copy(self)
+        part.rows, part.shifts = np.ascontiguousarray(self.rows[rows]), np.ascontiguousarray(self.shifts[rows])
+        part.bias, part.sums, part.n = np.ascontiguousarray(self.bias[rows]), self.sums[rows], len(rows)
+        return part
 
     def __call__(self, x):
         x = np.ascontiguousarray(x, F)
@@ -129,14 +149,23 @@ class Attention(NamedTuple):
     o: Affine
 
 
+class Context(NamedTuple):
+    """What every step of the decoder reads for one source: each layer's keys and values of the encoder's output, the
+    output layer, and the target's ids of its rows (None: the whole vocabulary's, in order)."""
+    layers: list
+    output: object
+    words: object
+
+
 class Translator:
     """A Marian transformer of Firefox Translations: a post-norm encoder of self-attention and ReLU FFNs, and a
-    decoder of SSRU, attention on the source and FFN layers; greedy, without a shortlist."""
+    decoder of SSRU, attention on the source and FFN layers; greedy, with or without a shortlist."""
 
-    def __init__(self, model, source, target, functions=FLOAT_FUNCTIONS, kernels=None):
+    def __init__(self, model, source, target, functions=FLOAT_FUNCTIONS, kernels=None, shortlist=None):
         """kernels: engine.kernels.load_kernels()'s, whose affine_q8 then does every affine (T648.3: the same numbers),
-        or None for NumPy's."""
-        self.source, self.target, self.functions = source, target, functions
+        or None for NumPy's. shortlist: engine.marian.read_shortlist()'s, whose rows alone the output layer then has
+        (T650), or None for the whole vocabulary's."""
+        self.source, self.target, self.functions, self.shortlist = source, target, functions, shortlist
         product = (lambda *made: KernelAffine(*made, kernels["affine_q8"])) if kernels else Affine
         items, config = model.items, model.config
         alphas = {name[:-len(ALPHA)]: item for name, item in items.items() if name.endswith(ALPHA)}
@@ -174,6 +203,10 @@ class Translator:
         out = alphas["none"] if "none" in alphas else alphas["decoder_Wemb"]
         out_alpha = out.values[0, 0] if out.kind == "float32" else F(out.values[0, 0]) / F(out.quant_mult)
         self.output = product(target_table, out_alpha, items["decoder_ff_logit_out_b"].values if "decoder_ff_logit_out_b" in items else None)
+        self.vocabulary = target_table.values.shape[0]
+        if shortlist is not None and len(shortlist.offsets) - 1 != source_table.values.shape[0]:
+            raise ValueError(f"The shortlist has {len(shortlist.offsets) - 1:,} source words where the model has "
+                             f"{source_table.values.shape[0]:,}.")
         # the positions: PE(t)[c] = sin(t f_c + o_c), f_c = 1e-4 ^ ((c mod D/2) / (D/2 − 1)), o_c = ⌊c / (D/2)⌋ π/2
         half = self.dim // 2
         column = np.arange(self.dim)
@@ -230,7 +263,7 @@ class Translator:
             x = self.ffn(ffn, x)
         return x
 
-    def step(self, token, position, context, cells):
+    def step(self, token, position, layers, cells):
         """One decoder step for the token before (at position): each layer's SSRU, c = σ(f) c' + (1 − σ(f)) x̃ with
         x̃ = u W and f = u Wf + bf, then LN(u + relu(c)), the attention on the source and the FFN. cells (one [1, D]
         state a layer) are written; the top is returned."""
@@ -240,7 +273,7 @@ class Translator:
             gate = F(1) / (F(1) + exp(-forget(x)))
             cells[l] = gate * cells[l] + (F(1) - gate) * candidate(x)
             x = layer_norm(np.maximum(cells[l], F(0)) + x, scale, bias)
-            keys, values = context[l]
+            keys, values = layers[l]
             x = layer_norm(self.attend(attention, x, keys, values) + x, scale2, bias2)
             x = self.ffn(ffn, x)
         return x
@@ -251,21 +284,40 @@ class Translator:
         """The source's ids for text: its pieces and </s> (Marian puts no beginning before them)."""
         return [*self.source.encode(text), self.eos[0]]
 
+    def shortlisted(self, ids):
+        """The target's ids a shortlist lets the source's ids be translated into, in order: the first ones (first),
+        those each source id lists, and </s> (Marian's LexicalShortlistGenerator, fxtranslate's)."""
+        lex = self.shortlist
+        lists = [lex.targets[int(lex.offsets[word]):int(lex.offsets[word + 1])] for word in set(ids)]
+        words = np.unique(np.concatenate([np.arange(min(lex.first, self.vocabulary)), [self.eos[1]], *lists]).astype(np.int64))
+        if words[-1] >= self.vocabulary:
+            raise ValueError(f"The shortlist names the target's word {int(words[-1]):,} of {self.vocabulary:,}.")
+        return words
+
     def context(self, ids):
-        """What every step of the decoder reads of the source: each layer's keys and values of the encoder's output."""
+        """What every step of the decoder reads of the source (Context): each layer's keys and values of the
+        encoder's output, and the output layer, the shortlist's rows of it where there is a shortlist."""
         encoded = self.encode(ids)
-        return [(attention.k(encoded), attention.v(encoded)) for _, _, _, attention, _, _ in self.decoder]
+        layers = [(attention.k(encoded), attention.v(encoded)) for _, _, _, attention, _, _ in self.decoder]
+        if self.shortlist is None:
+            return Context(layers, self.output, None)
+        words = self.shortlisted(ids)
+        return Context(layers, self.output.only(words), words)
 
     def steps(self, ids, forced=None, context=None):
-        """Each step's logits (the whole target vocabulary's, float32) for the source's ids. The token each step
-        writes is the logits' first largest, or forced's (a list of the target's ids) while it lasts; it stops after
+        """Each step's logits (the whole target vocabulary's, float32; −inf for a word the shortlist leaves out) for the
+        source's ids. The token each step writes is the logits' first largest, or forced's (a list of the target's
+        ids) while it lasts; it stops after
         </s> or at the length's bound, min(⌈2 S⌉ + 4, 256) steps with S the source's ids. context: context(ids),
         where it was made already (T648.4: the page times the encoder apart)."""
         context = self.context(ids) if context is None else context
         cells = [np.zeros((1, self.dim), F) for _ in self.decoder]
         token = self.eos[1]  # (position 0 embeds nothing: it only stands in)
         for position in range(min(2 * len(ids) + 4, 256)):
-            logits = self.output(self.step(token, position, context, cells))[0]
+            logits = context.output(self.step(token, position, context.layers, cells))[0]
+            if context.words is not None:
+                listed, logits = logits, np.full(self.vocabulary, -np.inf, F)
+                logits[context.words] = listed
             yield logits
             token = forced[position] if forced is not None and position < len(forced) else int(np.argmax(logits))
             if token == self.eos[1]:

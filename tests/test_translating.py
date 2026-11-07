@@ -90,6 +90,8 @@ REAL = {
                   " ", ["こんにちは。", "今日はいい天気ですね。"]),
 }
 
+SHORTLISTS = {"en-ja 3.0": ("lex.50.50.enja.s2t.bin", 4_128_360), "ja-en 3.1": ("lex.50.50.jaen.s2t.bin", 9_348_172)}
+
 
 def test_a_language_it_does_not_know_is_refused():
     with pytest.raises(ValueError, match="No translation into 'fr'"):
@@ -104,5 +106,20 @@ def test_a_real_model_answers_as_its_translator(which):
     answering = translation(read(model), read(source), read(target), language, sentences=lambda text: sentences)
     assert answering.space == space
     assert answering.backend == "int8, NumPy"  # (pytest has no kernels)
+    alone = [answering.translator.translate(sentence) for sentence in sentences]
+    assert joined(answering, "".join(sentences)) == space.join(alone)
+
+
+@pytest.mark.parametrize("which", REAL)
+def test_a_real_model_with_its_shortlist(which):
+    """T650: translation() reads the shortlist's bytes and its translator takes it."""
+    model, source, target, space, sentences = REAL[which]
+    read = lambda file: found(*file).read_bytes()
+    lex = SHORTLISTS[which]
+    language = "ja" if which.startswith("en") else "en"
+    answering = translation(read(model), read(source), read(target), language, sentences=lambda text: sentences,
+                            shortlist=read(lex))
+    assert answering.backend == "int8, NumPy, shortlist"
+    assert answering.translator.shortlist is not None
     alone = [answering.translator.translate(sentence) for sentence in sentences]
     assert joined(answering, "".join(sentences)) == space.join(alone)
