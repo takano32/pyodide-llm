@@ -1,5 +1,6 @@
 // blocks/row.ts (T363.4): a row of llama.cpp's blocks as float32, sb_row. blocks/types.ts has what a type is.
-import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_ONES, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, sizeOf, hasMinimums, halfAt, vectorAt, magnitudes, weights, shiftsDown, scaleOf, minimumOf, wholeScale, blockMinimum } from "./types";
+import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_ONES, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, sizeOf, hasMinimums, vectorAt, magnitudes, weights, shiftsDown, scaleOf, minimumOf, wholeScale, blockMinimum } from "./types";
+import { half } from "../kernel/halves";
 
 // ---- a row as float32: the n weights of the row at w, each as src/python/convert/superblocks.py reads it, to the
 // bit (the scales in that reader's order of float32 products; W an integer). A token's row of the embedding.
@@ -7,11 +8,11 @@ import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_ONES, K2, K4, XXS2, XS2, S2, XXS
 // @ts-ignore: decorator
 @inline function floatScale<K>(p: usize, h: i32): f32 {
   const s = <f32>(scaleOf<K>(p, h) >> 1);
-  if (idof<K>() == idof<XXS2>() || idof<K>() == idof<XS2>() || idof<K>() == idof<S2>()) return halfAt(p) * (<f32>0.5 + s) * 0.25;
-  if (idof<K>() == idof<XXS3>()) return halfAt(p) * (<f32>0.5 + s) * 0.5;
+  if (idof<K>() == idof<XXS2>() || idof<K>() == idof<XS2>() || idof<K>() == idof<S2>()) return half(p) * (<f32>0.5 + s) * 0.25;
+  if (idof<K>() == idof<XXS3>()) return half(p) * (<f32>0.5 + s) * 0.5;
   if (idof<K>() == idof<M1>()) return wholeScale(p) * <f32>scaleOf<K>(p, h);
-  if (idof<K>() == idof<K2>()) return halfAt(p + 80) * <f32>scaleOf<K>(p, h);
-  return halfAt(p) * <f32>scaleOf<K>(p, h);
+  if (idof<K>() == idof<K2>()) return half(p + 80) * <f32>scaleOf<K>(p, h);
+  return half(p) * <f32>scaleOf<K>(p, h);
 }
 // @ts-ignore: decorator
 @inline function rowOf<K>(out: usize, row: usize, tab: usize, n: i32, bits: v128, first: v128, three: v128, fifteen: v128): void {

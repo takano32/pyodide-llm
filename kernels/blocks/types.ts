@@ -77,7 +77,10 @@
 // grid, which has one added. A type's entries are looked up twice to eight times for each 32 weights and stay in the
 // first caches (IQ1's 16 KB cost its kernel 2 to 10% with indices drawn evenly, the worst case: T363.1).
 
-import { halfOf } from "../kernel/halves";
+// a scale of a block, a float16 at p, is read by kernel/halves.ts's half (one load16_s; the finite ones exactly,
+// subnormals too: an infinity or a NaN, which no scale of a file is, reads as a finite number), and IQ1_M's d, put
+// together from four words, by its halfOf
+import { half, halfOf } from "../kernel/halves";
 
 const T_IQ2XS: usize = 2048, T_IQ2S: usize = 6144, T_IQ3XXS: usize = 14336, T_IQ3S: usize = 15360, T_IQ1S: usize = 17408;
 const T_SIGNS: usize = 33792, T_IQ4: usize = 34816, T_VECTORS: usize = 34864;
@@ -132,14 +135,6 @@ function bytesOf(kind: i32): usize {
 }
 
 // ---- small things
-// the float16 at p as float32 (kernel/halves.ts's halfOf: the finite ones exactly, subnormals too; an infinity or a
-// NaN, which no scale of a file is, reads as a finite number). Loaded unsigned and widened by halfOf, as before T644.5:
-// kernel/halves.ts's half (one load16_s for the load16_u and extend16_s) is the same number, but other instructions in
-// the blocks' kernels (kernels-same)
-// @ts-ignore: decorator
-@inline function halfAt(p: usize): f32 {
-  return halfOf(<i32>load<u16>(p));
-}
 // @ts-ignore: decorator
 @inline function vectorAt(tab: usize, which: usize): v128 {
   return v128.load(tab + T_VECTORS + which);
@@ -301,11 +296,11 @@ function bytesOf(kind: i32): usize {
 }
 // @ts-ignore: decorator
 @inline function blockScale<K>(p: usize): f32 {
-  if (idof<K>() == idof<XXS2>() || idof<K>() == idof<XS2>() || idof<K>() == idof<S2>() || idof<K>() == idof<S1>()) return halfAt(p) * 0.125;
-  if (idof<K>() == idof<XXS3>()) return halfAt(p) * 0.25;
+  if (idof<K>() == idof<XXS2>() || idof<K>() == idof<XS2>() || idof<K>() == idof<S2>() || idof<K>() == idof<S1>()) return half(p) * 0.125;
+  if (idof<K>() == idof<XXS3>()) return half(p) * 0.25;
   if (idof<K>() == idof<M1>()) return wholeScale(p) * 0.125;
-  if (idof<K>() == idof<K2>()) return halfAt(p + 80);
-  return halfAt(p);
+  if (idof<K>() == idof<K2>()) return half(p + 80);
+  return half(p);
 }
 // IQ1_M's d: the top four bits of its four words, the first word's the lowest
 // @ts-ignore: decorator
@@ -315,7 +310,7 @@ function bytesOf(kind: i32): usize {
 }
 // @ts-ignore: decorator
 @inline function blockMinimum<K>(p: usize): f32 {
-  return idof<K>() == idof<K2>() ? halfAt(p + 82) : halfAt(p + 2);
+  return idof<K>() == idof<K2>() ? half(p + 82) : half(p + 2);
 }
 
 // ---- the tables, at area (TABLES bytes), of the checkpoint's row of codebooks (convert/grids.py's codebooks():
@@ -350,4 +345,4 @@ export function sb_tables(area: usize, codebooks: usize): i32 {
   return TABLES;
 }
 
-export { T_IQ2XS, T_IQ2S, T_IQ3XXS, T_IQ3S, T_IQ1S, T_SIGNS, T_IQ4, T_VECTORS, GRIDS, TABLES, V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, V_SEVENS, V_ONES, V_POWERS4, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, sizeOf, bySixteen, hasSigns, hasMinimums, halfAt, vectorAt, pairSums, four, pair, quad, signedBy, dotAdd, lookup, bytesOfBits, nibblesOf, magnitudes, minuses, weights, shiftsDown, scaleOf, minimumOf, blockScale, wholeScale, blockMinimum };
+export { T_IQ2XS, T_IQ2S, T_IQ3XXS, T_IQ3S, T_IQ1S, T_SIGNS, T_IQ4, T_VECTORS, GRIDS, TABLES, V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, V_SEVENS, V_ONES, V_POWERS4, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, sizeOf, bySixteen, hasSigns, hasMinimums, vectorAt, pairSums, four, pair, quad, signedBy, dotAdd, lookup, bytesOfBits, nibblesOf, magnitudes, minuses, weights, shiftsDown, scaleOf, minimumOf, blockScale, wholeScale, blockMinimum };
