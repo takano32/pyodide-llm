@@ -154,9 +154,14 @@ export function posted(trees, to) {
     walk(program, (node) => {
       if (node.type !== "CallExpression" && node.type !== "OptionalCallExpression") return;
       const callee = node.callee, called = callee.type === "Identifier" ? callee.name : callee.property?.name;
-      const literal = node.arguments[0];
-      if (called !== "postMessage" || literal?.type !== "ObjectExpression") return;
-      if (to && (to === "owner") !== (callee.type === "Identifier")) return;
+      // T641.11: forward/gpuside.ts posts its asks to the GPU's worker through asked((serial) => ({ … })), which posts
+      // what the arrow returns: that object is a message as much as postMessage's own
+      const first = node.arguments[0];
+      let literal = called === "asked" && first?.type === "ArrowFunctionExpression" ? first.body : first;
+      while (literal?.type === "ParenthesizedExpression") literal = literal.expression;
+      if ((called !== "postMessage" && called !== "asked") || literal?.type !== "ObjectExpression") return;
+      // (asked is a worker's postMessage, not the owner's)
+      if (to && (to === "owner") !== (called === "postMessage" && callee.type === "Identifier")) return;
       const type = literal.properties.find((property) => property.type === "ObjectProperty" && keyName(property) === "type")?.value;
       if (type?.type !== "StringLiteral") return;
       const message = messages.get(type.value) ?? { keys: new Set(), spreads: 0, files: new Set() };
