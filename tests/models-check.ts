@@ -42,6 +42,27 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
     assert.ok(/^TOKENIZERS = .*\b/m.exec(fs.readFileSync(new URL("../Makefile", import.meta.url), "utf8"))?.[0].split(/\s+/).includes(entry.url.tokenizer), `${entry.id}: ${entry.url.tokenizer} is a tokenizer of this site`);
   }
 }
+// T650.1: a translation's model and shortlist are the files fetch_translations.py fetches, at the lengths its table MODELS
+// says they unpack to (the worker downloads by bytes: a wrong one stops the load); every translation has its shortlist
+{
+  const table = fs.readFileSync(new URL("../fetch_translations.py", import.meta.url), "utf8");
+  const sizes = new Map();
+  let folder;
+  for (const line of table.split("\n")) {
+    folder = /^    "([^"]+)": \[$/.exec(line)?.[1] ?? folder;
+    const file = /^        \("([^"]+)",/.exec(line)?.[1];
+    if (file) sizes.set(`${folder}/${file}`, []);
+    const numbers = /^         ([\d_]+), "[0-9a-f]{64}"/.exec(line)?.[1];
+    if (numbers) [...sizes.values()].at(-1).push(Number(numbers.replaceAll("_", "")));
+  }
+  const translating = MODELS.filter((entry) => entry.translation);
+  assert.equal(translating.length, 3);
+  for (const { id, bytes, translation: { folder, model, shortlist } } of translating) {
+    assert.ok(shortlist, `${id}: no translation.shortlist (T650.1: every translation uses its shortlist)`);
+    assert.equal(bytes, sizes.get(`${folder}/${model}`)?.[1], `${id}: bytes is not the length of ${folder}/${model} in fetch_translations.py`);
+    assert.equal(shortlist.bytes, sizes.get(`${folder}/${shortlist.file}`)?.[1], `${id}: shortlist.bytes is not the length of ${folder}/${shortlist.file} in fetch_translations.py`);
+  }
+}
 // T274's review: an entry's generation reaches Llama.generate() as keyword arguments, so a misspelt key (topk for top_k)
 // is a TypeError at the first answer, in the browser only, and a value outside what generate() accepts is a ValueError
 // there. Only the keys the page and the engine know, in the ranges they take

@@ -15,11 +15,14 @@ const INTO_ENGLISH = "英語に訳す文を入力（例: 今日はいい天気�
 export const TRANSLATIONS: Entry[] = [
   { id: "firefox-en-ja", name: "Mozilla Firefox Translations English → Japanese", note: "日本語, English, translation only, 44 MB", japanese: true,
     source: SOURCE, bytes: 43849787, options: {}, generation: GREEDY, prompt: "The weather is nice today. Let's go for a walk.", placeholder: INTO_JAPANESE,
-    translation: { folder: "en-ja-3.0", model: "model.enja.intgemm.alphas.bin", source: "srcvocab.enja.spm", target: "trgvocab.enja.spm", from: "en", to: "ja" } },
+    translation: { folder: "en-ja-3.0", model: "model.enja.intgemm.alphas.bin", source: "srcvocab.enja.spm", target: "trgvocab.enja.spm", from: "en", to: "ja",
+      shortlist: { file: "lex.50.50.enja.s2t.bin", bytes: 4128360 } } },
   { id: "firefox-ja-en", name: "Mozilla Firefox Translations Japanese → English (desktop)", note: "日本語, English, translation only, 60 MB", japanese: true,
     source: SOURCE, bytes: 59504955, options: {}, generation: GREEDY, prompt: "今日はいい天気ですね。散歩に行きましょう。", placeholder: INTO_ENGLISH,
-    translation: { folder: "ja-en-3.0", model: "model.jaen.intgemm.alphas.bin", source: "vocab.jaen.spm", target: "vocab.jaen.spm", from: "ja", to: "en" } },
+    translation: { folder: "ja-en-3.0", model: "model.jaen.intgemm.alphas.bin", source: "vocab.jaen.spm", target: "vocab.jaen.spm", from: "ja", to: "en",
+      shortlist: { file: "lex.50.50.jaen.s2t.bin", bytes: 9346816 } } },
   { id: "firefox-ja-en-android", name: "Mozilla Firefox Translations Japanese → English (Android)", note: "日本語, English, translation only, 44 MB", japanese: true,
     source: SOURCE, bytes: 43977787, options: {}, generation: GREEDY, prompt: "今日はいい天気ですね。散歩に行きましょう。", placeholder: INTO_ENGLISH,
-    translation: { folder: "ja-en-3.1", model: "model.jaen.intgemm.alphas.bin", source: "vocab.jaen.spm", target: "vocab.jaen.spm", from: "ja", to: "en" } },
+    translation: { folder: "ja-en-3.1", model: "model.jaen.intgemm.alphas.bin", source: "vocab.jaen.spm", target: "vocab.jaen.spm", from: "ja", to: "en",
+      shortlist: { file: "lex.50.50.jaen.s2t.bin", bytes: 9348172 } } },
 ];
