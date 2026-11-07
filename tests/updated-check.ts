@@ -262,7 +262,7 @@ const LATER = {
     ["built(name).then((res) => res.arrayBuffer()))));", "said"],
   ],
   "src/runtime/worker/convert.ts": [
-    ["built(archive, signal).then((res) => res.arrayBuffer()), archive);", "said"],
+    ["built(archive, signal).then((res) => res.arrayBuffer()), archive)]);", "said"],
     ['named(import.meta.url, () => import("../kept.ts"))', "said"],
   ],
   "src/runtime/worker/alone.ts": [
