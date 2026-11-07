@@ -39,14 +39,19 @@ GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7:
 # docs/notes/t505-gguf-alone-2026-10-13.md has the names seen and the ones left out)
 # (spark2_5, T340: XHToken's Q8_0 GGUF of Spark-X2.5 1.7B has the 131,072 tokens and 130,716 merges of the original's
 # tokenizer.json, each the same, in the same order: docs/notes/t339-spark-x-2026-10-15.md)
+# (tekken, T611: QuantFactory's Q8_0 GGUF of cyberagent/Mistral-Nemo-Japanese-Instruct-2408 and mradermacher's of
+# shisa-v2-mistral-nemo-12b have the 131,072 tokens and 269,443 merges of their originals' tokenizer.json, each the
+# same, in the same order; the first has two tokens more after them, the ones of its config's vocab_size 131,074)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3",
                       "qwen35": "qwen35", "granite-docling": "gpt2", "minicpm5": "minicpm5", "lfm2": "llama3",
-                      "smaug-bpe": "llama3", "deepseek-r1-qwen": "qwen", "spark2_5": "spark2_5"}
+                      "smaug-bpe": "llama3", "deepseek-r1-qwen": "qwen", "spark2_5": "spark2_5",
+                      "tekken": "tekken"}
 # the ones whose tokenizer.json normalizes to NFC, which a GGUF does not say (Qwen's)
 GGUF_NFC = ("qwen2", "qwen35", "deepseek-r1-qwen")
 # the ones whose tokenizer.json takes a piece that is in the vocabulary whole (ignore_merges), which a GGUF does not
-# say (a Llama 3's; llama.cpp does so for llama-bpe and for lfm2, and not for smaug-bpe, whose two originals do)
-GGUF_IGNORE_MERGES = ("llama-bpe", "smaug-bpe")
+# say (a Llama 3's; llama.cpp does so for llama-bpe and for lfm2, and not for smaug-bpe, whose two originals do; T611:
+# Mistral Nemo's tekken)
+GGUF_IGNORE_MERGES = ("llama-bpe", "smaug-bpe", "tekken")
 
 
 def gguf_read(data):

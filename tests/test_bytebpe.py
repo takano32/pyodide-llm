@@ -27,6 +27,15 @@ MINICPM5_PATTERNS = (r"\p{N}{1,3}", QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}+|"
 SPARK_PATTERNS = (r"\p{N}{1,3}", "[一-龥぀-ゟ゠-ヿ]+",
                   r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^""" + "\r\n" + r"""\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+"""
                   + r"""| ?[\p{P}\p{S}]+|[""" + "\r\n" + r"""]|\s+(?!\S)|\s+""")
+# T611: Mistral's Tekken (cyberagent/Mistral-Nemo-Japanese-Instruct-2408's tokenizer.json), one Split whose letters are
+# told apart by their cases
+TEKKEN_PATTERN = (r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?"
+                  r"[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+"
+                  r"|\s+(?!\S)|\s+")
+# where Tekken's is none of the others: words cut where the case turns, capitals before a word, title case, the
+# letters of no case on both sides, slashes after punctuation, contractions (which it does not name)
+TEKKENED = ["HelloWorld", "HTTPServer", "iPhone", "ǅungla ǈ", "ABCdef GHI", "東京Tower", "カタカナABCdef", "ʰaʰ",
+            "a/b//c", "x:// y", ".../\n", "it's DON'T", "e\u0301E\u0301", "\u0301ABC", "日本語のtextとTEXT"]
 # where Spark-X2.5's is none of the others: punctuation before a word, the ideographs and the kana (and what of their
 # blocks is no letter: ゠, ・, ー, ゛, the voicing marks), the symbols, a line break after a space
 SPARKED = [".hello", "-abc def", "'s it's", "(Hello) [x]", "漢字とカタカナ、ひらがな。", "ア゠イ・ウー", "がき゛く",
@@ -60,8 +69,9 @@ def trained(pattern, digits):
 
 @pytest.mark.parametrize("name, pattern, digits", [
     ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False),
-    ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after")])
-@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED + SPARKED)
+    ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after"),
+    ("tekken", TEKKEN_PATTERN, False)])
+@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED + SPARKED + TEKKENED)
 def test_matches_the_real_tokenizer(name, pattern, digits, text):
     real, spec = trained(pattern, digits)
     options = tokenizer_json_options(spec)
@@ -74,7 +84,7 @@ def test_matches_the_real_tokenizer(name, pattern, digits, text):
 
 @pytest.mark.parametrize("name, pattern, digits", [
     ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False),
-    ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after")])
+    ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after"), ("tekken", TEKKEN_PATTERN, False)])
 def test_decodes_every_piece(name, pattern, digits):
     real, spec = trained(pattern, digits)
     vocab_size = real.get_vocab_size()
@@ -100,6 +110,12 @@ def test_pretokenizers_follow_the_patterns(text):
 def test_spark_follows_its_patterns(text):
     regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
     assert pretokenize(text, "spark2_5") == sparked(regex, text)
+
+
+@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED + SPARKED + TEKKENED)
+def test_tekken_follows_its_pattern(text):
+    regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
+    assert pretokenize(text, "tekken") == regex.findall(TEKKEN_PATTERN, text)
 
 
 def sparked(regex, text):
@@ -172,6 +188,18 @@ def test_spark_follows_its_patterns_on_random_texts():
         assert pretokenize(text, "spark2_5") == sparked(regex, text), text
 
 
+# T611: and the cases Tekken's pattern tells apart: title case, the letters of no case (Lm, Lo), the slash
+TEKKEN_PIECES = SPARK_PIECES + ["ǅ", "ǈ", "ʰ", "ー", "ª", "/", "//", "A/", "Ab", "aB", "ÉÀ", "ßẞ", "Σσς", "ǅa", "aǅ"]
+
+
+def test_tekken_follows_its_pattern_on_random_texts():
+    regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
+    rng = random.Random(611)
+    for _ in range(3000):
+        text = "".join(rng.choices(TEKKEN_PIECES, k=rng.randrange(0, 16)))
+        assert pretokenize(text, "tekken") == regex.findall(TEKKEN_PATTERN, text), text
+
+
 def test_minicpm5_is_not_llama3_before_a_number():
     """T254: what one pattern cannot say. Llama 3's \\s+(?!\\S) leaves the last space of a run before a number to
     stand alone; cut off from the number first, the run is one piece. Elsewhere the two are the same pieces."""
@@ -207,6 +235,11 @@ def around(c):
 def sparked_around(c):
     return around(c) + f"漢{c}カ.{c}b{c}x€{c}é́{c}\x00{c}​{c}y"
 
+
+# T611: and for Tekken's, next to letters of each case and of none, after punctuation, before a slash
+def tekkened(c):
+    return around(c) + f"A{c}B{c}b{c}Bあ{c}ʰ{c}.{c}/{c}é́{c}y"
+
 def real_pretokenizer(name):
     from tokenizers import Regex, pre_tokenizers
     byte_level = pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=True)
@@ -216,6 +249,8 @@ def real_pretokenizer(name):
         return pre_tokenizers.Sequence([pre_tokenizers.Digits(individual_digits=True), byte_level])
     if name == "minicpm5":
         return pre_tokenizers.Sequence([pre_tokenizers.Split(Regex(pattern), behavior="isolated") for pattern in MINICPM5_PATTERNS])
+    if name == "tekken":
+        return pre_tokenizers.Split(Regex(TEKKEN_PATTERN), behavior="isolated")
     if name == "spark2_5":
         return pre_tokenizers.Sequence([*(pre_tokenizers.Split(Regex(pattern), behavior="isolated") for pattern in SPARK_PATTERNS),
                                         pre_tokenizers.Digits(individual_digits=True)])
@@ -225,9 +260,9 @@ def real_pretokenizer(name):
 
 # 17 to 29 s for each of the four on CI's runner, so only the full suite runs it (tests/suite.sh full, T193)
 @pytest.mark.skipif(not os.environ.get("EVERY_CODE_POINT"), reason="EVERY_CODE_POINT=1: tests/suite.sh full runs it")
-@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35", "minicpm5", "spark2_5"])
+@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35", "minicpm5", "spark2_5", "tekken"])
 def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
-    real, placed = real_pretokenizer(name), sparked_around if name == "spark2_5" else around
+    real, placed = real_pretokenizer(name), {"spark2_5": sparked_around, "tekken": tekkened}.get(name, around)
 
     def ends(text):
         """Where the real pieces end, and where the engine's do (the real offsets are the text's characters)."""
@@ -349,6 +384,14 @@ def test_refuses_what_the_engine_cannot_split():
                   [one, two, three, digits, {**byte_level, "add_prefix_space": True}], [one, two, three, digits],
                   [one, three, two, digits, byte_level], [one, two, split(SPARK_PATTERNS[2], behavior="Removed"), digits, byte_level],
                   [split(first), split(second), digits, byte_level]):
+        with pytest.raises(ValueError, match="does not know"):
+            named(*steps)
+    # T611: Tekken's one Split with the ByteLevel behind it, and nothing that is that otherwise
+    tekken = split(TEKKEN_PATTERN)
+    assert named(tekken, byte_level)["pretokenizer"] == "tekken"
+    for steps in ([tekken], [tekken, {**byte_level, "use_regex": True}], [tekken, {**byte_level, "add_prefix_space": True}],
+                  [split(TEKKEN_PATTERN, behavior="Removed"), byte_level], [tekken, digits, byte_level],
+                  [byte_level, tekken], [tekken, tekken, byte_level]):
         with pytest.raises(ValueError, match="does not know"):
             named(*steps)
     with pytest.raises(ValueError, match="adds a space"):

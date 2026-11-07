@@ -147,10 +147,42 @@ class SparkClasses(dict):
 # and the katakana blocks)
 KANJI_KANA = ((0x4E00, 0x9FA5), (0x3040, 0x309F), (0x30A0, 0x30FF))
 SPARK_CLASSES = SparkClasses()
-# Spark-X2.5's pre-tokenizer on those classes, a pattern for each of its stages, each of which cuts every piece of the
-# one before (Split, Isolated: what a pattern matches is a piece, and so is what lies between two matches)
-STAGES = {"spark2_5": (re.compile("0|[^0]+"), re.compile("[kqmz]+|[^kqmz]+"),
-                       re.compile("!A+|[^\r\nAak!pq]?[Aak~m]+| ?[!pq]+|[\r\n]|[ \t\r\n]+(?![^ \t\r\n])|[ \t\r\n]+"))}
+
+
+class TekkenClasses(dict):
+    r"""T611: the classes Mistral's Tekken pre-tokenizer tells apart (its pattern names the letters by their cases): an
+    upper or title case letter (Lu, Lt) "U", a lower case letter (Ll) "l", a letter of neither case (Lm, Lo, which its
+    pattern takes on both sides) "o", a combining mark "~", a number "0", the space, \r, \n and "/" as they are (its
+    punctuation takes "/" after it as it takes a line break), any other whitespace "\t" (Oniguruma's \s, as CharClasses
+    has it), anything else "!"."""
+
+    def __missing__(self, code):
+        char = chr(code)
+        kind = unicodedata.category(char)
+        if char in " \r\n/":
+            found = char
+        elif char.isspace() and not "\x1c" <= char <= "\x1f":
+            found = "\t"
+        elif kind in ("Lu", "Lt"):
+            found = "U"
+        elif kind == "Ll":
+            found = "l"
+        elif kind in ("Lm", "Lo"):
+            found = "o"
+        else:
+            found = {"M": "~", "N": "0"}.get(kind[0], "!")
+        self[code] = found
+        return found
+
+
+TEKKEN_CLASSES = TekkenClasses()
+# The pre-tokenizers of their own classes: the classes, and a pattern for each of their stages, each of which cuts
+# every piece of the one before (Split, Isolated: what a pattern matches is a piece, and so is what lies between two
+# matches). Spark-X2.5's (T340) on SparkClasses; Tekken's (T611), one Split, on TekkenClasses
+STAGES = {"spark2_5": (SPARK_CLASSES, (re.compile("0|[^0]+"), re.compile("[kqmz]+|[^kqmz]+"),
+                       re.compile("!A+|[^\r\nAak!pq]?[Aak~m]+| ?[!pq]+|[\r\n]|[ \t\r\n]+(?![^ \t\r\n])|[ \t\r\n]+"))),
+          "tekken": (TEKKEN_CLASSES, (re.compile("[^\r\nUlo0]?[Uo~]*[lo~]+|[^\r\nUlo0]?[Uo~]+[lo~]*|0"
+                                                 "| ?[^ \t\r\nUlo0]+[\r\n/]*|[ \t\r\n]*[\r\n]+|" + SPACES),))}
 
 
 def isolated(pattern, classes, start, end):
@@ -192,11 +224,15 @@ def pretokenize(text, pattern):
     then); [一-龥぀-ゟ゠-ヿ]+, the ideographs and the kana; and
         [!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+|[\r\n]|\s+(?!\S)|\s+
     which leaves what it does not match (a character of none of those classes, alone) a piece too (SparkClasses).
-    All seven are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
+    "tekken" is Mistral's Tekken (T611: Mistral Nemo's), one Split, whose letters are told apart by their cases
+    (TekkenClasses):
+        [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+
+    All eight are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
     """
     if pattern in STAGES:
-        classes, spans = text.translate(SPARK_CLASSES), [(0, len(text))]
-        for stage in STAGES[pattern]:
+        table, stages = STAGES[pattern]
+        classes, spans = text.translate(table), [(0, len(text))]
+        for stage in stages:
             spans = [piece for start, end in spans for piece in isolated(stage, classes, start, end)]
         return [text[start:end] for start, end in spans]
     classes = text.translate(CHAR_CLASSES)

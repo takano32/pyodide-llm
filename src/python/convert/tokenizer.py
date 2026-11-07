@@ -336,6 +336,11 @@ STAGED_PRETOKENIZERS = {
     (r"\p{N}{1,3}", "[一-龥぀-ゟ゠-ヿ]+",
      r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^""" + "\r\n" + r"""\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+|["""
      + "\r\n" + r"""]|\s+(?!\S)|\s+"""): ("spark2_5", ("Digits", "ByteLevel")),
+    # T611: Mistral's Tekken (cyberagent/Mistral-Nemo-Japanese-Instruct-2408's tokenizer.json, as Mistral Nemo's): one
+    # Split whose letters are told apart by their cases, and a ByteLevel that splits no more. pretokenize's "tekken"
+    (r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}"
+     r"\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+",):
+        ("tekken", ("ByteLevel",)),
 }
 
 
