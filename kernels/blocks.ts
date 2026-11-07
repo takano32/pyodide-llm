@@ -6,7 +6,7 @@
 //   blocks/token.ts   one token's rows (matmul_sb here, matmul_sbr there), and sums_x, what its activations need
 //   blocks/tile.ts    a prompt's tokens, four against one reading of a row (blocks_relaxed.ts's)
 //   blocks/row.ts     a row as float32 (sb_row: a token's row of the embedding)
-// A file added to blocks/ is added to the Makefile's KERNEL_PARTS too, or make kernels does not see it change.
+// (A file added to blocks/ is seen by the Makefile's KERNEL_SOURCES, which takes every .ts under kernels/: T644.4.)
 
 export { sb_tables } from "./blocks/types";
 export { sums_x, matmul_sb } from "./blocks/token";
