@@ -135,16 +135,16 @@ async function keepConverted(model: Remote, checkpoint: Weights, bytes: number, 
 }
 
 /** The converter's window (llama2_convert), fetched, placed and imported when a model is first converted: most
- * visitors never convert anything. (T367.2: its Python, a window and its parts, is one archive, converter.zip.) */
-export async function converter(signal?: AbortSignal) {
-  if (!llama2_convert) {
-    // (T397) and jinja2 with it, for the model's chat template: the conversion goes on without it where it does not come
-    const jinja = templatePackage(pyodide);
-    const archive = "converter.zip";
-    await placePython(pyodide, built(archive, signal).then((res) => res.arrayBuffer()), archive);
-    await jinja;
-    llama2_convert = pyodide.pyimport("llama2_convert");
-  }
+ * visitors never convert anything. (T367.2: its Python, a window and its parts, is one archive, converter.zip.)
+ * templates: and jinja2 with it, for the model's chat template (T397), by a conversion; what only reads with the
+ * converter's parts (a vocabulary, a kept model's blocks widened) does not ask for it. T640.14: waited for as NumPy is,
+ * and where it does not come the conversion fails as a load without NumPy does (pyodide.ts's templatePackage()). */
+export async function converter(signal?: AbortSignal, templates = false) {
+  const archive = "converter.zip";
+  // (the two at once, and both heard: the first to fail is what is said)
+  await Promise.all([templates && templatePackage(pyodide),
+                     !llama2_convert && placePython(pyodide, built(archive, signal).then((res) => res.arrayBuffer()), archive)]);
+  llama2_convert ??= pyodide.pyimport("llama2_convert");
   return llama2_convert;
 }
 
@@ -167,7 +167,7 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     return { fromCache: true, keptIn: kept.keptIn, template: kept.template };
   }
   const keptMiss = kept?.miss;
-  await converter(signal);
+  await converter(signal, true);
   const started = performance.now();
   // T156: a model that goes on the GPU alone is kept as it comes (nothing holds its weights whole afterwards): a file
   // opened for its int8 conversion (T232: or its ternary one, where the page asked for that) where it may (the choice

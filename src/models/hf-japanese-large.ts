@@ -268,7 +268,7 @@ export const HF_JAPANESE_LARGE: Entry[] = [
   // 2026-05-28, mmnga-o's of 2026-06-02, which is llama.cpp's Q8_0 of the pinned weights (0 off the nearest reference)
   // T594: Tanuki-8B, made from scratch by the volunteers of the University of Tokyo's Matsuo Lab (GENIAC), its SFT and
   // DPO. A Llama with llm-jp-3's form of Unigram tokenizer.json; the template (Alpaca in Japanese, with its default system
-  // sentence) is read by the converter, jinja2 and the converter's own reader alike (full-width spaces inside its {{ }}).
+  // sentence) is read by the converter's jinja2 as transformers reads it (full-width spaces inside its {{ }}).
   // The GGUF is the makers' team's Q8_0 (the card says its GGUFs may be worse: gguf_check.py tensors against the original)
   { group: "hf", id: "hf-tanuki-8b-dpo-v1.0", name: "Matsuo Lab Tanuki 8B", note: "answers instructions · 日本語 / English · fetches 8.0 GB (GGUF) → int8 8.5 GB", japanese: true, converted: 8.5e9,
     ...ggufOf("team-hatakeyama-phase2/Tanuki-8B-dpo-v1.0-GGUF", "d3e6436bf6256612bf9c7f8647826b326f7e07e8", "Tanuki-8B-dpo-v1.0-Q8_0.gguf",

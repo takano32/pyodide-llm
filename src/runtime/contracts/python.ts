@@ -112,7 +112,6 @@ export type Pyodide = {
   pyimport(name: "llama2_convert"): ConverterWindow;
   pyimport(name: "convert.conduct"): ConductModule;
   pyimport(name: "engine.translating"): TranslatingModule;
-  pyimport(name: "jinja2"): Proxy;
   globals: { get(name: "bytearray"): (size: number) => Bytes };
   toPy(value: unknown): Proxy;
   runPython(code: string): unknown;

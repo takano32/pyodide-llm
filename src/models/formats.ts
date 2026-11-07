@@ -290,8 +290,8 @@ export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] } sati
 // not None. The conversion is the same bytes and the same options either way (CONVERTER stays), and ?hf= of the same
 // repository, which has no entry, keeps config.json's scaling
 export const PLAIN_ROPE = { rope_scaling: {} } satisfies ListOptions;
-// T343: XHToken's Spark-X2.5. Its chat_template calls a macro (render_content), which the converter's own reader
-// refuses, and jinja2 reads (where a browser could not fetch jinja2, there would be no format): so one turn by hand, as
+// T343: XHToken's Spark-X2.5. Its chat_template calls a macro (render_content), which the converter's own reader of
+// Jinja refused (where a browser could not fetch jinja2, there was no format; T640.14 took that reader out): so one turn by hand, as
 // the real Jinja writes it with enable_thinking true (the default: "<think>" after the answer's mark) and with false
 // ("</think>"), and no system turn of the visitor's. Every turn begins with <｜start▁of▁sentence｜> (0, the BOS of
 // config.json and the tokenizer) and ends with <｜end▁of▁sentence｜> (1, the EOS); the template writes its own system

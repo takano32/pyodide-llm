@@ -1,22 +1,23 @@
 # template_corpus.py
-# The converter's reader of chat templates (llama2_convert.one_turn_template, T73 / T127 / T269) against Jinja itself
+# The converter's reading of chat templates (llama2_convert.one_turn_template, T73 / T127 / T269) against Jinja itself
 # on real templates: those of the most downloaded text-generation models of the Hub that are not gated, and of any
 # repository named. Only tokenizer_config.json and chat_template.jinja are fetched (kept in the directory, so a second
 # run asks the Hub for nothing).
 #
 #   python3 tests/template_corpus.py <directory> [--top 500] [--before <another llama2_convert.py>] [owner/repo[@revision] ...]
 #
-# T397: the converter renders with jinja2 itself where it can import it, so here "the converter" is its wrapping of
-# jinja2 (the date, the prompt written once, what it trims) against the plain rendering below, and "its own reader" is
-# what a browser without the package gets: both are judged, and neither may write another text than Jinja.
+# T397: the converter renders with jinja2 itself (T640.14: with nothing else), so here "the converter" is its wrapping
+# of jinja2 (the date, the prompt written once, what it trims) against the plain rendering below: it may not write
+# another text than Jinja.
 #
 # For each distinct template, one user turn is rendered by jinja2 with transformers' settings (what
 # apply_chat_template does: trim_blocks, lstrip_blocks, the tokenizer's special tokens by name, tools and documents
-# as None, strftime_now, raise_exception, tojson, the generation tag) and by the reader. The reader may refuse (the page then has no format for ?hf=); what it
-# must not do is read a template and write another text than Jinja: any such is DIFFERENT and the exit status is 1.
+# as None, strftime_now, raise_exception, tojson, the generation tag) and by the converter. The converter may refuse (the
+# page then has no format for ?hf=); what it must not do is read a template and write another text than Jinja: any such
+# is DIFFERENT and the exit status is 1.
 # --before: the same with another copy of the converter (src/python/llama2_convert.py of another tree: main's is under
 # .tmp/unchanged/<commit> once `node tests/unchanged.ts sizes` or any of its checks has run, tests/other-tree.ts),
-# and what changed between the two is listed: a change of the reader is to move templates from refused to the same,
+# and what changed between the two is listed: a change of the converter is to move templates from refused to the same,
 # and nothing else.
 #
 # Needs jinja2 (tests/requirements-reference.txt has it through transformers); no weights, no torch.
@@ -143,30 +144,21 @@ def real_turn(template, config):
     return None, "trims one side of the prompt"
 
 
-def by_reader(module, template, config, in_file, own=False):
-    """The converter's one turn with its {date:format} filled with DAY, or None where it refuses. own: by its own
-    reader, as where jinja2 is not there (a converter of before T397 has no other)"""
+def by_converter(module, template, config, in_file):
+    """The converter's one turn with its {date:format} filled with DAY, or None where it refuses"""
     import re
     tokens = {name: config[name] for name in TOKENS if name in config}
-    parts = module.one_turn.__globals__  # convert/template.py's names
-    had = parts.get("jinja_environment")
-    if own and had:
-        parts["jinja_environment"] = lambda: None
-    try:
-        if in_file:
-            turn = module.one_turn_template(json.dumps(tokens), template)
-        else:
-            turn = module.one_turn_template(json.dumps({**tokens, "chat_template": template}))
-    finally:
-        if own and had:
-            parts["jinja_environment"] = had
+    if in_file:
+        turn = module.one_turn_template(json.dumps(tokens), template)
+    else:
+        turn = module.one_turn_template(json.dumps({**tokens, "chat_template": template}))
     if turn is None:
         return None
     return re.sub(r"\{date:([^}]*)\}", lambda found: time.strftime(found.group(1), DAY), turn)
 
 
-def judge(module, template, config, in_file, real, own=False):
-    turn = by_reader(module, template, config, in_file, own)
+def judge(module, template, config, in_file, real):
+    turn = by_converter(module, template, config, in_file)
     if turn is None:
         return "refused"
     if real is None:
@@ -193,7 +185,6 @@ def main():
     if top:
         repos += most_downloaded(top)
     seen, counts, changes, different = {}, {}, [], []
-    alone, alone_changes = {}, []  # the same of the converter's own reader
     without = 0
     for repo, revision in repos:
         try:
@@ -222,35 +213,22 @@ def main():
         if verdict == "DIFFERENT":
             different.append(repo)
             print(f"templates: {repo}@{revision[:8]}: DIFFERENT: Jinja {json.dumps(real) if real is not None else why}, "
-                  f"the reader {json.dumps(by_reader(now, template, config, bool(template_file)))}")
-        by_itself = judge(now, template, config, bool(template_file), real, own=True)
-        alone[by_itself] = alone.get(by_itself, 0) + 1
-        if by_itself == "DIFFERENT":
-            different.append(repo)
-            print(f"templates: {repo}@{revision[:8]}: DIFFERENT by the converter's own reader: Jinja "
-                  f"{json.dumps(real) if real is not None else why}, the reader "
-                  f"{json.dumps(by_reader(now, template, config, bool(template_file), own=True))}")
+                  f"the converter {json.dumps(by_converter(now, template, config, bool(template_file)))}")
         if then:
-            was = judge(then, template, config, bool(template_file), real, own=True)
+            was = judge(then, template, config, bool(template_file), real)
             if was != verdict:
                 changes.append((repo, was, verdict))
                 print(f"templates: {repo}@{revision[:8]}: {was} before, {verdict} now"
                       f"{'' if real is not None else f' (Jinja: {why})'}")
-            if was != by_itself:
-                alone_changes.append((repo, was, by_itself))
-                print(f"templates: {repo}@{revision[:8]}: {was} before, {by_itself} now by the converter's own reader")
     print(f"templates: {len(repos)} repositories, {without} without a template, {len(seen)} distinct templates: "
           + ", ".join(f"{count} {verdict}" for verdict, count in sorted(counts.items())))
-    print("templates: by the converter's own reader (where jinja2 is not there): "
-          + ", ".join(f"{count} {verdict}" for verdict, count in sorted(alone.items())))
     if then:
-        for what, changed in (("the converter", changes), ("its own reader", alone_changes)):
-            kinds = {}
-            for _, was, verdict in changed:
-                kinds[f"{was} -> {verdict}"] = kinds.get(f"{was} -> {verdict}", 0) + 1
-            print(f"templates: against the converter before, {what}: {len(changed)} changed"
-                  + (": " + ", ".join(f"{count} {kind}" for kind, count in sorted(kinds.items())) if kinds else ""))
-    bad = [change for change in [*changes, *alone_changes] if change[1:] != ("refused", "the same")]
+        kinds = {}
+        for _, was, verdict in changes:
+            kinds[f"{was} -> {verdict}"] = kinds.get(f"{was} -> {verdict}", 0) + 1
+        print(f"templates: against the converter before: {len(changes)} changed"
+              + (": " + ", ".join(f"{count} {kind}" for kind, count in sorted(kinds.items())) if kinds else ""))
+    bad = [change for change in changes if change[1:] != ("refused", "the same")]
     if different or bad:
         print(f"templates: FAILED ({len(different)} DIFFERENT, {len(bad)} changes other than refused -> the same)")
         sys.exit(1)

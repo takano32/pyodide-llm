@@ -227,10 +227,11 @@ const made = build(tree.python(), path.join(work, "tree"));
   assert.equal(said.message, "Could not read converter.zip: the file did not arrive whole. Reload the page to try again.");
   assert.match(said.cause.message, /not a zip file/);
 
-  // the converter: asked for by the first conversion and not before, after jinja2 was asked of Pyodide, imported after
-  // it is placed; the second conversion asks for nothing
+  // the converter: asked for by the first conversion and not before, after jinja2 was asked of Pyodide, imported once
+  // it is placed and jinja2 came (T640.14: jinja2 is waited for as NumPy is); the second conversion asks for nothing
   const told = [];
   const pyodide = {
+    version: "314.0.7",
     unpackArchive: (bytes, format) => { told.push(`unpack ${format} of ${bytes.byteLength} bytes`); setTimeout(() => pyodide.jinjaCame?.(), 30); },
     // (jinja2 comes late: only after the converter's archive is unpacked)
     loadPackage: (name) => { told.push(`loadPackage ${name}`); return new Promise((resolve) => { pyodide.jinjaCame = resolve; }); },
@@ -241,20 +242,30 @@ const made = build(tree.python(), path.join(work, "tree"));
   fresh((url, init) => { told.push(`fetch ${last(url)}`); return answers(made["converter.zip"])(url, init); });
   assert.equal(requests.length, 0);
   const load = new AbortController();
-  const converter = await run("converter")(load.signal);
+  const converter = await run("converter")(load.signal, true);
   assert.equal(converter.name, "llama2_convert");
   assert.equal(run("llama2_convert"), converter);
-  assert.deepEqual(told, ["loadPackage jinja2", `fetch ${last(asked("converter.zip"))}`, `unpack zip of ${made["converter.zip"].length} bytes`, "import jinja2", "import llama2_convert"],
+  assert.deepEqual(told, ["loadPackage jinja2", `fetch ${last(asked("converter.zip"))}`, `unpack zip of ${made["converter.zip"].length} bytes`, "import llama2_convert"],
     "jinja2 is asked for first, the archive fetched and unpacked meanwhile, and the converter imported once both are there");
   assert.deepEqual(requests.map(({ url, signal }) => [url, signal === load.signal]), [[asked("converter.zip"), true]], "one request, the load's to cancel");
   told.length = 0;
-  assert.equal(await run("converter")(load.signal), converter);
+  assert.equal(await run("converter")(load.signal, true), converter);
   assert.deepEqual([told, requests.length], [[], 1], "the second conversion fetched or placed the converter again");
   // a converter that did not come: the conversion fails with the fetch's words, and the next one asks again
   run("llama2_convert = undefined;");
   fresh(() => new Response("", { status: 503 }));
-  await assert.rejects(run("converter")(load.signal), { message: "Could not fetch converter.zip: 503" });
+  await assert.rejects(run("converter")(load.signal, true), { message: "Could not fetch converter.zip: 503" });
   assert.equal(run("llama2_convert"), undefined);
+  // (T640.14) and a jinja2 that did not come fails the conversion with the words of a step of Pyodide's
+  // (another Pyodide: a load that came is kept for the one it came to)
+  context.stand = { pyodide: { ...pyodide, loadPackage: () => Promise.reject(new Error("the CDN said no")) } };
+  run("pyodide = stand.pyodide;");
+  fresh((url, init) => answers(made["converter.zip"])(url, init));
+  await assert.rejects(run("converter")(load.signal, true), { message: "the CDN said no" });
+  // where no template is read (a vocabulary, a kept model's blocks widened), jinja2 is not asked for
+  told.length = 0;
+  assert.equal(await run("converter")(load.signal), run("llama2_convert"));
+  assert.ok(!told.includes("loadPackage jinja2"), "a converter for no conversion asked for jinja2");
 
   // who names the archives: init() the engine's, converter() the converter's, and convert() alone calls converter().
   // (T462: init() runs in Node on a made-up Pyodide, tests/worker-init-check.ts, and in a browser, tests/e2e.ts; here its
@@ -271,10 +282,10 @@ const made = build(tree.python(), path.join(work, "tree"));
   assert.match(body(sources.runtime, /^async function init\(search *, starts *\) \{$/m), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(pyodide, engine, "engine\.zip"\);\s*llama2_numpy = pyodide\.pyimport\("llama2_numpy"\);/,
     "init() asks for the engine's archive before it waits for Pyodide, and places it before it imports the engine");
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
-  assert.match(body(sources.convert, /^async function converter\(signal *\) \{$/m), /"converter\.zip"/);
+  assert.match(body(sources.convert, /^async function converter\(signal *, templates *= false\) \{$/m), /"converter\.zip"/);
   assert.deepEqual(Object.entries(sources).flatMap(([name, source]) => [...source.matchAll(/\bconverter\(/g)].map(() => name)).sort(), ["convert", "convert", "load", "translate"],
     "converter() is called in three places: a conversion, (T363.5) a checkpoint of llama.cpp's blocks where NumPy computes, whose readers are the converter's, and (T648.4) a translation model, whose vocabularies the converter reads");
-  assert.match(body(sources.convert, /^async function convert\(model *, signal *, id *\) \{$/m), /if \(kept && !kept\.miss\) \{\s*return [^]*?\}\s*const keptMiss = [^\n]*\n\s*await converter\(signal\);/,
+  assert.match(body(sources.convert, /^async function convert\(model *, signal *, id *\) \{$/m), /if \(kept && !kept\.miss\) \{\s*return [^]*?\}\s*const keptMiss = [^\n]*\n\s*await converter\(signal, true\);/,
     "convert() asks for the converter only once the model is not among the kept ones");
   assert.ok(!/\.py\b[^"'`\n]*\$\{self\.location\.search\}|python\.js/.test(Object.values(sources).join("\n")), "the worker still fetches a .py or python.js");
   ok("the worker asks for an archive as a built file, says the fetch's words where it is not there, unpacks it where Pyodide is; the converter's on the first conversion alone");

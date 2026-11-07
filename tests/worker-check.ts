@@ -524,56 +524,53 @@ const ok = (line) => {
   ok("NumPy is fetched without integrity: its bytes count on a slow line, and a stop is given up after 30 s");
 
   // (3) T397: templatePackage(), jinja2 for the converter's reading of chat templates. Pyodide's own package by its
-  // name (no version here), with the integrity check loadPackage has by default. Whatever goes wrong, it answers false
-  // and throws nothing: the conversion goes on and the converter's own reader reads what it can.
+  // name (no version here), with the integrity check loadPackage has by default. T640.14 (the owner: as the other
+  // packages): waited for as NumPy is, a step of Pyodide's: one that does not come fails the conversion as NumPy's
+  // does (a Failure of the kind "runtime", the same words), and nothing is said in the console meanwhile.
   {
     fresh(() => new Response("", { status: 404 }));
-    const calls = [], warned = [];
-    const warn = context.console.warn;
-    context.console.warn = (...said) => warned.push(said.join(" "));
-    const pyodide = (loadPackage, pyimport = () => ({ destroy() {} })) => ({
-      loadPackage: (...given) => { calls.push(given); return loadPackage(); }, pyimport,
+    const calls = [], warned = [], said = [];
+    const warn = context.console.warn, post = context.postMessage;
+    context.console.warn = (...told) => warned.push(told.join(" "));
+    context.postMessage = (message) => said.push(message);
+    const pyodide = (loadPackage) => ({
+      version: "314.0.7", loadPackage: (...given) => { calls.push(given); return loadPackage(); },
     });
-    assert.equal(await context.templatePackage(pyodide(async () => {})), true);
+    assert.equal(await context.templatePackage(pyodide(async () => {})), undefined);
     assert.equal(calls.length, 1);
     assert.equal(calls[0][0], "jinja2");
     assert.notEqual(calls[0][1]?.checkIntegrity, false, "jinja2 was fetched without its integrity check");
-    assert.equal(warned.length, 0);
     // two asks for one Pyodide while the first is on its way share one load (watchArrivals() wraps fetch and puts back
     // the one it found: two overlapping would leave the first's wrapper on every fetch), and a load that failed is tried again
     const once = pyodide(async () => {});
     const [first, second] = [context.templatePackage(once), context.templatePackage(once)];
     assert.equal(first, second, "a second load of jinja2 beside the first");
-    assert.equal(await first, true);
+    await first;
     assert.equal(calls.length, 2);
     const failing = pyodide(() => Promise.reject(new Error("the CDN said no")));
-    assert.equal(await context.templatePackage(failing), false);
-    assert.equal(await context.templatePackage(failing), false);
+    assert.match((await failure(context.templatePackage(failing)))?.error.message ?? "", /the CDN said no/);
+    assert.match((await failure(context.templatePackage(failing)))?.error.message ?? "", /the CDN said no/);
     assert.equal(calls.length, 4, "a load that failed was not tried again");
-    warned.length = 0;
-    assert.equal(await context.templatePackage(pyodide(() => Promise.reject(new Error("the CDN said no")))), false);
-    assert.match(warned.pop(), /jinja2 did not load \(.*the CDN said no.*\): chat templates are read by the converter's own reader/);
-    // a package loadPackage says nothing about but that is not there (it writes its failures to the console only)
-    assert.equal(await context.templatePackage(pyodide(async () => {}, () => { throw new Error("No module named 'jinja2'"); })), false);
-    assert.match(warned.pop(), /No module named/);
-    assert.equal(await context.templatePackage({}), false, "a Pyodide without loadPackage");
-    warned.pop();
-    // one that never comes is given up after the quiet spell, not waited for
+    // one that never comes is given up after the quiet spell as NumPy is, not waited for
     const began = clock.now();
-    assert.equal(await context.templatePackage(pyodide(() => new Promise(() => {}))), false);
-    assert.match(warned.pop(), /nothing arrived for 30 seconds/);
-    assert.ok(clock.now() - began >= quiet * 1000 && clock.now() - began < (quiet + 10) * 1000,
-      `jinja2 was given up after ${(clock.now() - began) / 1000} s`);
+    const stopped = await failure(context.templatePackage(pyodide(() => new Promise(() => {}))));
+    assert.equal(stopped?.error.message, 'Pyodide 314.0.7: "jinja2" got nothing from the network for 30 seconds');
+    assert.equal(stopped.error.kind, "runtime");
+    assert.ok(stopped.at - began >= quiet * 1000 && stopped.at - began < (quiet + 10) * 1000,
+      `jinja2 was given up after ${(stopped.at - began) / 1000} s`);
     assert.equal(context.fetch, fetchStandIn, "the load of jinja2 left the counting fetch behind");
+    assert.deepEqual([warned, said], [[], []], "the load of jinja2 said something in the console or the status line");
     context.console.warn = warn;
-    // convert() asks for it where it first places the converter, and has waited for it before the converter is imported.
-    // That block runs in no check here (the converter is a stand-in in them): its text is read, and tests/e2e.ts fails
-    // a conversion in a browser that did not ask the CDN for the wheel (T367.2: tests/python-archive-check.ts runs
-    // the block, converter(), on a stand-in of Pyodide: the order of what it asks for and imports)
+    context.postMessage = post;
+    // convert() asks for it with the converter, and has waited for both before it goes on. That block runs in no
+    // check here (the converter is a stand-in in them): its text is read, and tests/e2e.ts fails a conversion in a
+    // browser that did not ask the CDN for the wheel (T367.2: tests/python-archive-check.ts runs the block,
+    // converter(), on a stand-in of Pyodide: the order of what it asks for and imports)
     const converts = fs.readFileSync(runtimeUrl("worker/convert.js"), "utf8");
-    assert.match(converts, /if \(!llama2_convert\) \{[^]*?const jinja = templatePackage\(pyodide\);[^]*?await jinja;\s*llama2_convert = pyodide\.pyimport\("llama2_convert"\);/,
-      "convert() no longer loads jinja2 before it imports the converter");
-    ok("jinja2 is asked of Pyodide by its name, and a conversion goes on where it does not come (T397)");
+    assert.match(converts, /await Promise\.all\(\[templates && templatePackage\(pyodide\),[^]*?\]\);\s*llama2_convert \?\?= pyodide\.pyimport\("llama2_convert"\);/,
+      "converter() no longer waits for jinja2 before it imports the converter");
+    assert.match(converts, /await converter\(signal, true\);/, "convert() no longer asks for jinja2");
+    ok("jinja2 is asked of Pyodide by its name, and a conversion fails as NumPy's load does where it does not come (T640.14)");
   }
 }
 

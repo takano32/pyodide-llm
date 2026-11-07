@@ -192,8 +192,8 @@ let refetched = 0;
 const BROKEN_STREAM = /Failed to read data from the ReadableStream: /;
 let threadReports = 0;  // T172: the page's lines about the worker's search for the number of threads
 // T397: the worker loads Pyodide's jinja2 before it first converts a model, for the model's chat template. What it
-// asked the CDN for (the wheel's name, as Pyodide's lock has it), and what it said where the package did not come
-let jinjaAsked, jinjaMissed;
+// asked the CDN for (the wheel's name, as Pyodide's lock has it)
+let jinjaAsked;
 // T360: what huggingface.co answered 404 of the files a conversion asks for that a repository may not have (the
 // tokenizer's candidates, the template, the index of shards): the conduct takes that as "not there" and goes on, and
 // WebKit says each such answer on the console as an error, which is then no failure of the page
@@ -209,7 +209,6 @@ page.context().on("request", (request) => {
 page.on("console", (message) => {
   if (message.type() === "error") errors.push(message.text());
   if (/^threads: /.test(message.text())) threadReports++;
-  if (/^jinja2 did not load/.test(message.text())) jinjaMissed = message.text();
   if (/ broke off \(.*\): fetched again$/.test(message.text())) refetched++;
   remember(`[${message.type()}] ${message.text()}`);
 });
@@ -463,11 +462,11 @@ if (gpuTest && /answers on WebGPU/.test(result.status) && !/on WebGPU/.test(resu
 if (swiftShader && !gpuTest && (!/prompts on the CPU \(/.test(gpuVerdict?.status ?? "") || /on WebGPU/.test(result.prompt))) {
   failures.push(`SwiftShader was not refused (${gpuVerdict?.status}; ${result.prompt})`);
 }
-// T397: a model converted in this visit (nothing is kept in a new profile) had jinja2 asked for; where it did not
-// come the conversion went on with the converter's own reader, which is said and is no failure
+// T397: a model converted in this visit (nothing is kept in a new profile) had jinja2 asked for (T640.14: where it did
+// not come, the conversion failed, as one without NumPy does)
 if (/^hf([-:]|$)/.test(id)) {
   if (!jinjaAsked) failures.push("the conversion did not ask Pyodide for jinja2");
-  console.log(jinjaMissed ?? `jinja2: ${jinjaAsked ?? "not asked for"}`);
+  console.log(`jinja2: ${jinjaAsked ?? "not asked for"}`);
 }
 // T385: where the page runs on the SIMD kernels, a conversion widens every stored type that has a kernel's reader on
 // the kernel (without it, the conversion is only slower, and nothing else says so). The ready message says how each

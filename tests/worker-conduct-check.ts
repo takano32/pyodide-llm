@@ -51,6 +51,8 @@ function world({ gpu = false } = {}) {
     converter: { kernel_readers: (kernels) => proxy(`the readers of ${kernels}`) },
     numpy: { Llama: { callKwargs: (checkpoint, tokenizer, options) => { engines.push(options); return {}; } }, OUTLIER_CHANNELS: 8, KV_START: 256, kernel_quantizer: (kernels) => proxy(`the quantizer of ${kernels}`) },
     pyodide: {
+      // (T640.14: jinja2, which a conversion waits for as NumPy is: here it comes at once)
+      version: "314.0.7", loadPackage: async () => {},
       toPy: (value) => { const made = proxy("the model as it is listed", { value }); played.listed.push(value); return made; },
       pyimport: (name) => {
         assert.equal(name, "convert.conduct");

@@ -1142,21 +1142,30 @@ f"T257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} tex
   assert.equal(plain[0], 1);
   assert.ok(Math.abs(scaled[0] - (0.1 * Math.log(4) + 1)) < 1e-12 && scaled[1] !== plain[1], "yarn in the options did not scale the tables");
 }
-// T397: the converter reads a chat template with jinja2 where Pyodide has the package loaded, as the worker loads it
-// before a conversion (worker/pyodide.js's templatePackage()), and with its own reader where it has not. A template
-// that calls a macro (Qwen3.5's, LFM2's) is one only jinja2 reads
+// T397: the converter reads a chat template with jinja2, which Pyodide has once the package is loaded, as the worker
+// loads it before a conversion (worker/pyodide.ts's templatePackage()). T640.14: without it, a template read raises
+// (the conversion fails as one without NumPy does); with it, a template that calls a macro (Qwen3.5's, LFM2's) is read
 {
   const check = (loaded) => pyodide.runPython(`
 import sys, time
 import llama2_convert
 macro = "{% macro text(m) %}{{ m.content }}{% endmacro %}<|im_start|>user\\n{{ text(messages[0]) }}<|im_end|>\\n{{ strftime_now('%d %b %Y') }}"
 began = time.perf_counter()
-assert (llama2_convert.jinja_environment() is not None) == ${loaded ? "True" : "False"}, "jinja2 is ${loaded ? "not " : ""}there"
+try:
+    llama2_convert.jinja_environment()
+    there = True
+except ImportError:
+    there = False
+assert there == ${loaded ? "True" : "False"}, "jinja2 is ${loaded ? "not " : ""}there"
 seconds = time.perf_counter() - began
-turn = llama2_convert.one_turn(macro, {})
-assert turn == ${loaded ? '"<|im_start|>user\\n{prompt}<|im_end|>\\n{date:%d %b %Y}"' : "None"}, turn
-chatml = "{% for m in messages %}{{ '<|im_start|>' + m.role + '\\n' + m.content + '<|im_end|>\\n' }}{% endfor %}{{ '<|im_start|>assistant\\n' }}"
-assert llama2_convert.one_turn(chatml, {}) == "<|im_start|>user\\n{prompt}<|im_end|>\\n<|im_start|>assistant\\n"
+try:
+    turn = llama2_convert.one_turn(macro, {})
+except ImportError:
+    turn = ImportError
+assert turn == ${loaded ? '"<|im_start|>user\\n{prompt}<|im_end|>\\n{date:%d %b %Y}"' : "ImportError"}, turn
+if there:
+    chatml = "{% for m in messages %}{{ '<|im_start|>' + m.role + '\\n' + m.content + '<|im_end|>\\n' }}{% endfor %}{{ '<|im_start|>assistant\\n' }}"
+    assert llama2_convert.one_turn(chatml, {}) == "<|im_start|>user\\n{prompt}<|im_end|>\\n<|im_start|>assistant\\n"
 llama2_convert.jinja_environment.cache_clear()  # (asked once: the next check asks again)
 seconds
 `);

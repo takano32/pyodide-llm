@@ -1,27 +1,19 @@
-"""The chat_template reader (T73): the part of Jinja that a tokenizer_config.json actually uses.
+"""The chat templates (T73): one user turn of a model's own template, rendered by jinja2 as transformers renders it.
 
 The templates here are the real ones of the models this site lists, and the expected text is what transformers
-produces for a single user turn (checked against jinja2 on the development machine, where transformers is
-installed; CI has neither, so the expectations are written out).
+produces for a single user turn (checked against transformers on the development machine; CI has it not, so the
+expectations are written out). T640.14: jinja2 alone renders (the converter's own reader of a part of Jinja is gone),
+and a converter without it raises where it reads a template.
 """
 import json
 
 import pytest
 from made_up import unigram
 
-from llama2_convert import Unsupported, one_turn, one_turn_template, render
+import sys
 
+from llama2_convert import one_turn, one_turn_template
 
-@pytest.fixture(params=["jinja2", "the reader"])
-def reads(request, monkeypatch):
-    """T397: what renders a template for one_turn(): jinja2 where it can be imported, else this project's own reader
-    (a browser whose fetch of the package failed). What both must do is tested with both. render() is the reader
-    itself, whichever of the two one_turn() takes."""
-    if request.param == "jinja2":
-        pytest.importorskip("jinja2")
-    else:
-        monkeypatch.setattr("convert.template.jinja_environment", lambda: None)
-    return request.param
 
 SMOLLM2 = ("{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}"
            "{{ '<|im_start|>system\nYou are a helpful AI assistant named SmolLM, trained by Hugging Face"
@@ -50,15 +42,14 @@ QWEN = ("{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n{%- else %}\n    {
     (QWEN, "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n"
            "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"),
 ])
-def test_one_turn_is_what_transformers_writes(template, expected, reads):
+def test_one_turn_is_what_transformers_writes(template, expected):
     assert one_turn(template, {"bos_token": "<s>", "eos_token": "</s>"}) == expected
 
 
-def test_a_template_it_cannot_read_is_refused_quietly(reads):
+def test_a_template_it_cannot_read_is_refused_quietly():
     # the filters, calls and statements it does not know: the caller keeps the format it has
     assert one_turn("{{ messages | tojson }}{{ messages[0].content }}", {}) is None  # (jinja2: the prompt twice)
-    macro = one_turn("{% macro m() %}x{% endmacro %}{{ m() }}{{ messages[0].content }}", {})  # a macro called
-    assert macro == ("x{prompt}" if reads == "jinja2" else None)
+    assert one_turn("{% macro m() %}x{% endmacro %}{{ m() }}{{ messages[0].content }}", {}) == "x{prompt}"  # a macro called
     assert one_turn("{{ undefined_function() }}{{ messages[0].content }}", {}) is None
     assert one_turn("{{ raise_exception('only system and user') }}{{ messages[0].content }}", {}) is None
     assert one_turn("{% for message in messages %}{{ message['content'] }}", {}) is None  # never closed
@@ -70,11 +61,9 @@ def test_a_template_it_cannot_read_is_refused_quietly(reads):
     assert one_turn("[{{ messages[0].content.lstrip() }}]", {}) is None
 
 
-def test_jinja2_renders_where_it_is_there_and_the_reader_where_it_is_not(monkeypatch):
-    """T397: what only jinja2 reads has a format with it and none without (the page then keeps what the list has, or
-    sends what was typed as it is): a macro called (Qwen3.5's, LFM2's), tojson, a for with a test, loop controls,
-    {% generation %}, which transformers adds."""
-    pytest.importorskip("jinja2")
+def test_what_jinja2_reads():
+    """T397: a macro called (Qwen3.5's, LFM2's), tojson, a for with a test, loop controls, {% generation %}, which
+    transformers adds."""
     only_jinja = [
         ("{% macro text(m) %}{{ m.content }}{% endmacro %}<u>{{ text(messages[0]) }}</u>", "<u>{prompt}</u>"),
         ("{{ {'a': 1} | tojson }}{{ messages[0].content }}", '{"a": 1}{prompt}'),
@@ -91,9 +80,25 @@ def test_jinja2_renders_where_it_is_there_and_the_reader_where_it_is_not(monkeyp
         assert one_turn(template, {}) == written, template
     for template, written in only_jinja[5:]:
         assert one_turn(template, {"bos_token": "", "eos_token": "</s>"}) == written, template
-    monkeypatch.setattr("convert.template.jinja_environment", lambda: None)
-    for template, _ in only_jinja[:5]:
-        assert one_turn(template, {}) is None, template
+
+
+def test_a_converter_without_jinja2_raises_where_it_reads_a_template(monkeypatch):
+    """T640.14 (the owner: as the other packages): where jinja2 cannot be imported, a conversion that reads a template
+    fails, as one without NumPy does; it does not go on as if the model had no format. One without a template does
+    not ask for jinja2."""
+    from convert.template import answer_end, jinja_environment
+    monkeypatch.setitem(sys.modules, "jinja2", None)  # (import jinja2 raises ImportError)
+    jinja_environment.cache_clear()
+    try:
+        with pytest.raises(ImportError):
+            one_turn(SMOLLM2, {})
+        with pytest.raises(ImportError):
+            answer_end(SMOLLM2, {})
+        with pytest.raises(ImportError):
+            one_turn_template(json.dumps({"chat_template": SMOLLM2}))
+        assert one_turn_template(json.dumps({"bos_token": "<s>"})) is None
+    finally:
+        jinja_environment.cache_clear()
 
 
 def test_jinja2_is_imported_once_and_not_before_a_template_is_read():
@@ -102,7 +107,6 @@ def test_jinja2_is_imported_once_and_not_before_a_template_is_read():
     import subprocess
     import sys
     from pathlib import Path
-    pytest.importorskip("jinja2")
     from tree import python_folder
     sources = python_folder(Path(__file__).resolve().parent.parent)
     script = ("import sys; sys.path.insert(0, sys.argv[1]); import llama2_convert as c; print('jinja2' in sys.modules); "
@@ -115,79 +119,7 @@ def test_jinja2_is_imported_once_and_not_before_a_template_is_read():
     assert one_turn("{{ ''.__class__.__mro__ }}{{ messages[0].content }}", {}) is None  # sandboxed
 
 
-def test_the_pieces_of_jinja_it_does_read():
-    scope = {"messages": [{"role": "user", "content": "X"}], "add_generation_prompt": True,
-             "bos_token": "<s>", "eos_token": "</s>"}
-    assert render("{{ 'a' + 'b' }}", scope) == "ab"
-    assert render("{%- if messages %}yes{%- else %}no{% endif %}", scope) == "yes"
-    assert render("{% if tools is defined %}yes{% else %}no{% endif %}", scope) == "no"
-    assert render("{% for m in messages %}{{ loop.first }}{{ loop.last }}{% endfor %}", scope) == "TrueTrue"
-    assert render("{{ messages[0]['role'].capitalize() }}", scope) == "User"
-    assert render("{# a comment #}text", scope) == "text"
-    assert render("{{ '<|x|>' }}", scope) == "<|x|>"      # a | inside quotes is not a filter
-    assert render("{{ ' a ' | trim }}", scope) == "a"
-    assert render("{% if ('x' == 'y') or (messages[0].role == 'user') %}yes{% endif %}", scope) == "yes"
-    with pytest.raises(Unsupported):
-        render("{{ messages | tojson }}", scope)
-
-
-def test_the_pieces_of_jinja_t127_adds():
-    """What Qwen3's, Mistral v0.3's and sarashina2.2's templates use for one turn (each checked against jinja2 with
-    transformers' trim_blocks and lstrip_blocks on the development machine)."""
-    scope = {"messages": [{"role": "system", "content": "S"}, {"role": "user", "content": "X"}]}
-    assert render("{{ messages | length % 2 }}{{ (messages|length - 1) * 3 }}{{ 7 - 2 - 1 }}", scope) == "034"
-    assert render("{{ messages | selectattr('role', 'equalto', 'user') | list | length }}", scope) == "1"
-    assert render("{% set others = messages | rejectattr('role', 'equalto', 'user') | list %}{{ others[0].content }}", scope) == "S"
-    assert render("{% set ns = namespace(n=0, last=messages|length - 1) %}{% for m in messages %}"
-                  "{% set ns.n = ns.n + 1 %}{% endfor %}{{ ns.n }}{{ ns.last }}", scope) == "21"
-    assert render("{% for m in messages[::-1] %}{{ m.role }}{% endfor %}{{ messages[1:][0].content }}", scope) == "usersystemX"
-    assert render("{% set c = 'a</t>b' %}{{ messages[-1].content }}{{ c.split('</t>')[-1] }}{{ c.split('</t>')[0].strip('a') }}", scope) == "Xb"
-    assert render("{% if messages[1].content is string and not(messages[1].content.startswith('<')) %}yes{% endif %}", scope) == "yes"
-    assert render("{% if x is defined and x is false %}no{% elif 3 > 2 and 'a' not in 'bc' %}yes{% endif %}", scope) == "yes"
-    assert render("{{ 'the user\\'s' }}", scope) == "the user's"   # an escaped quote
-    assert render("{# the user's #}ok", scope) == "ok"               # a comment is prose: its quotes are not strings
-    assert render("{% macro tools(x) %}{{ x }}{% endmacro %}ok", scope) == "ok"  # defined, never called
-    # trim_blocks and lstrip_blocks, as transformers renders: the newline after a block goes, and the indent before it
-    assert render("{% for m in messages %}\n  {% if m.role == 'user' %}\n{{ m.content }}\n  {% endif %}\n{% endfor %}", scope) == "X\n"
-
-
-def test_the_pieces_of_jinja_t269_adds():
-    """What Granite 4.2's template uses for one turn: a if c else b, a list written out, the filter string (each the
-    same as jinja2 writes with transformers' settings, on the development machine)."""
-    scope = {"messages": [{"role": "system", "content": "S"}, {"role": "user", "content": "X"}]}
-    for template, written in (
-            ("{% set t = t if t is defined else True %}{{ t }}", "True"),
-            ("{% set t = false %}{% set t = t if t is defined else True %}{{ t }}", "False"),
-            ("{{ 'a' if messages | length > 1 else 'b' }}|{{ 'a' if messages | length > 2 else 'b' }}", "a|b"),
-            # the else of one is another one; without an else the other side is undefined
-            ("{{ 'a' if false else 'b' if false else 'c' }}|{{ 'a' if false else 'b' if true else 'c' }}", "c|b"),
-            ("[{{ 'a' if false }}]{{ 'yes' if true }}", "[]yes"),
-            # it binds loosest: the + and the or belong to a side
-            ("{{ ('x' if false else 'y') + 'z' }}|{{ 'x' if false else 'y' + 'z' }}|{{ 'x' if true else 'y' + 'z' }}", "yz|yz|x"),
-            ("{{ 'a' or 'b' if false else 'c' }}", "c"),
-            ("{{ 'a' if messages[0].role == 'system' and messages[1].role == 'user' else 'b' }}", "a"),
-            # the words inside quotes are no words of it
-            ("{{ 'if' if ' if ' in ' if x else ' else ' else ' }}", "if"),
-            # only the side picked is read
-            ("{{ messages[0].content if messages[0].role == 'system' else '' }}{{ nothing.here if false else 'safe' }}", "Ssafe"),
-            ("{% set l = [] %}{{ l | length }}{% if l %}full{% else %}empty{% endif %}", "0empty"),
-            ("{% set l = ['a', 'b,c', messages[1].content] %}{{ l | length }}{{ l[1] }}{{ l[-1] }}"
-             "{% for i in l %}<{{ i }}>{% endfor %}", "3b,cX<a><b,c><X>"),
-            ("{% set l = [[1, 2], []] %}{{ l[0][1] }}{{ l[1] | length }}{{ 'b' in ['a', 'b'] }}{{ 'c' in ['a', 'b'] }}", "20TrueFalse"),
-            ("{% for m in [] %}never{% endfor %}ok", "ok"),
-            ("{{ messages[1].content | string }}|{{ 3 | string }}|{{ true | string }}|{{ none | string }}|[{{ nothing | string }}]",
-             "X|3|True|None|[]"),
-            ("{{ (messages | length | string) + '!' }}", "2!")):
-        assert render(template, dict(scope)) == written, template
-    # a for with a test keeps the items that pass, which the conditional would read as "all of them or nothing"
-    # (the second would read as "messages if true" and loop over them all, which is right by chance: not read either)
-    for filtered in ("{% for m in messages if m.role == 'user' %}{{ m.content }}{% endfor %}",
-                     "{% for m in messages if true %}{{ m.content }}{% endfor %}"):
-        with pytest.raises(Unsupported):
-            render(filtered, dict(scope))
-    for broken in ("{{ 'a' if }}", "{{ if true else 'b' }}", "{{ 'a' if true else }}", "{{ ['a', 'b' }}"):
-        with pytest.raises(Unsupported):
-            render(broken, dict(scope))
+def test_the_tokens_transformers_gives_by_name():
     # the tokens transformers gives by name are all in the scope (a template may write the pad token), the ones not set are not
     assert one_turn("{{ pad_token }}{{ messages[0].content }}{{ unk_token }}", {"pad_token": "<pad>"}) == "<pad>{prompt}"
     assert one_turn("{{ messages[0].content }}", {"pad_token": ""}) == "{prompt}"
@@ -196,53 +128,12 @@ def test_the_pieces_of_jinja_t269_adds():
                     "{{ messages[0].content }}{{ '<think>' if think else '' }}", {}) == "{prompt}<think>"
 
 
-def test_what_the_review_of_t269_found():
-    """Each against jinja2 with transformers' settings (the same snippets, the same outputs), on the development machine"""
-    scope = {"messages": [{"role": "system", "content": "S"}, {"role": "user", "content": "X"}]}
-    for template, written in (
-            # lists are joined as lists (they were joined as their texts: "[][1]"), whichever side is the empty one
-            ("{% set x = [] %}{% set x = x + [1, 2] %}{{ x | length }}{{ [] + [] }}{{ [3] + x }}", "2[][3, 1, 2]"),
-            # {% for %} ... {% else %}: the else when there was nothing to loop over, and only then
-            ("{% for i in [] %}{{ i }}{% else %}none{% endfor %}|{% for i in [1] %}{{ i }}{% else %}none{% endfor %}", "none|1"),
-            ("{% for m in messages[2:] %}x{% else %}{% for i in [1, 2] %}{{ i }}{% endfor %}{% endfor %}", "12"),
-            ("{% for i in [1] %}{% if i == 2 %}a{% else %}b{% endif %}{% else %}none{% endfor %}", "b"),
-            # what Jinja writes of an undefined and of a namespace inside a list or on its own
-            ("{{ [nothing, 1] }}", "[Undefined, 1]"),
-            # without an else the other side is undefined, not an empty text
-            ("{% set a = 1 if false %}{{ 'D' if a is defined else 'U' }}{% set b = 1 if true %}{{ b }}", "U1"),
-            ("{% set ns = namespace(a=1) %}{{ ns | string }}", "<Namespace {'a': 1}>"),
-            # None is written (Jinja: "None"), an undefined is not; a bool is a number
-            ("[{{ none }}][{{ nothing }}]", "[None][]"),
-            ("{{ 'a' if true is number else 'b' }}{{ 'a' if 'x' is number else 'b' }}", "ab")):
-        assert render(template, dict(scope)) == written, template
-    # Jinja reads a if b if c else d as (a if b) if c else d, and the reader does not take it for a if (b if c) else d;
-    # a float is no name with an attribute; a list and a text, or a list and a number, are no sum
-    for not_read in ("{{ 'a' if false if true else 'b' }}", "{{ 1.5 }}", "{{ [1.5] }}", "{{ [1] + 'x' }}", "{{ 'x' + [1] }}",
-                     "{{ [1] * 2 }}", "{{ [1] - [1] }}",
-                     "{{ [1, 2][0] }}", "{{ ['a', 'b'][1:] }}", "{{ (1, 2) }}"):
-        with pytest.raises(Unsupported):
-            render(not_read, dict(scope))
-
-
-def test_what_the_review_of_t127_found():
-    """Each against transformers' Jinja on the development machine (the same snippets, the same outputs)"""
-    scope = {"messages": [{"role": "user", "content": "X"}]}
-    # or / and are the operand that decides, as in Jinja: not True or False
-    assert render("{% set s = none %}{{ (s or 'You are a helpful assistant.') }}|{{ 'a' and 'b' }}|{{ '' and 'b' }}|{{ none or '' }}",
-                  dict(scope)) == "You are a helpful assistant.|b||"
-    # a comment stands between the text before it and a {%- after it
-    assert render("<s>\n{# The system prompt #}\n{%- if true %}[{{ messages[0].content }}]{% endif %}", dict(scope)) == "<s>\n[X]"
-    # escapes, left to right as Python's unicode-escape (Jinja's lexer)
-    assert render("{{ 'a\\\\nb' }}|{{ '\\x41' }}|{{ '\\u2581' }}|{{ 'it\\'s' }}|{{ '\\\\' }}", dict(scope)) == "a\\nb|A|\u2581|it's|\\"
-
-
-def test_the_date_of_a_template_is_the_day_the_prompt_is_sent(reads):
+def test_the_date_of_a_template_is_the_day_the_prompt_is_sent():
     # strftime_now() is the day the prompt is sent: filled() in src/models.ts makes {date:format} of it
     assert one_turn("Today Date: {{ strftime_now('%d %b %Y') }}\n{{ messages[0].content }}", {}) == "Today Date: {date:%d %b %Y}\n{prompt}"
     for unknown in ("strftime_now('%j')", "strftime_now(fmt)", "strftime_now('%d}')"):
         assert one_turn("{{ " + unknown + " }}{{ messages[0].content }}", {}) is None, unknown
-    # (a format put together is one jinja2 reads and the reader does not)
-    assert one_turn("{{ strftime_now('%d ' + '%b') }}{{ messages[0].content }}", {}) == ("{date:%d %b}{prompt}" if reads == "jinja2" else None)
+    assert one_turn("{{ strftime_now('%d ' + '%b') }}{{ messages[0].content }}", {}) == "{date:%d %b}{prompt}"
     # a template that reckons with the date (an Unsloth copy of Mistral Small works out yesterday's) cannot be
     # filled later: checked on two real days, it gives up
     assert one_turn("{% set d = strftime_now('%d') %}{% if d == '01' %}first {% endif %}{{ d }} {{ messages[0].content }}", {}) is None
@@ -252,7 +143,7 @@ FIXTURES = json.load(open(__import__("pathlib").Path(__file__).parent / "fixture
 
 
 @pytest.mark.parametrize("fixture", FIXTURES, ids=[fixture["repo"] for fixture in FIXTURES])
-def test_real_templates_read_as_jinja_writes_them(fixture, reads):
+def test_real_templates_read_as_jinja_writes_them(fixture):
     """T127: real templates of the families this site takes (tokenizers/fixtures: the template of the pinned
     revision, and one turn of it rendered by jinja2 with transformers' settings, the BOS the template writes first
     left out). Two of them are in chat_template.jinja, which the converter is handed on its own."""
@@ -265,7 +156,7 @@ def test_real_templates_read_as_jinja_writes_them(fixture, reads):
     assert got == fixture["one_turn"].replace("{prompt}", "{prompt:trim}" if fixture["trims"] else "{prompt}")
 
 
-def test_it_reads_a_tokenizer_config(reads):
+def test_it_reads_a_tokenizer_config():
     config = {"chat_template": SMOLLM2, "bos_token": {"content": "<s>"}, "eos_token": "</s>"}
     assert one_turn_template(json.dumps(config)).endswith("<|im_start|>assistant\n")
     assert one_turn_template(json.dumps({"chat_template": [{"name": "default", "template": LLM_JP}],

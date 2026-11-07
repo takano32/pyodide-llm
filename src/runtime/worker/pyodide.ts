@@ -130,22 +130,13 @@ function watchArrivals() {
   return watch;
 }
 
-// Loads Pyodide and NumPy of version in named steps. Each step says its name, and ends in an error rather than
-// never: loadPyodide() does not fail when a fetch of its files fails, it waits for ever (AGENTS.md), and a phone that
-// stopped at "Loading Pyodide" said nothing else. It ends when nothing has arrived for QUIET_SECONDS (T118), however
-// long it takes while bytes keep coming. importer(url) imports pyodide.mjs (tests/worker-check.ts gives its own).
-// T129 (2), the owner's choice (2026-09-28): loadPackage fetches NumPy's wheel without integrity (checkIntegrity:
-// false). A fetch with integrity settles only once its whole body is in, so watchArrivals() counted none of the wheel
-// until its end, and where the prefetch had not put it in the HTTP cache (no lock, another shape of it, a CDN that said
-// no, a cache that did not keep it) a line below 0.8 Mbps gave NumPy up after QUIET_SECONDS while it was arriving. The
-// check of the wheel's hash (SRI) goes; the wheel comes from the same CDN and version as the rest of Pyodide.
-export async function pyodideSteps(version: string, importer: (url: string) => Promise<PyodideModule>) {
-  const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
-  const watch = watchArrivals();
-  // (of the kind "runtime": the page may try again without the service worker, isolation made this hang on iOS)
+// A step of Pyodide's loading, named: it says its name in the status line (said), and ends in an error of the kind
+// "runtime" (the page may try again without the service worker, isolation made this hang on iOS) where nothing has
+// arrived for QUIET_SECONDS, rather than never. T640.14: jinja2's load, when a conversion first needs it, is one too.
+function stepOf(version: string, watch: Watch, said = true) {
   const stop = (name: string, why: string) => new Failure("runtime", `Pyodide ${version}: "${name}" ${why}`);
-  const step = async <T>(name: string, promise: Promise<T>) => {
-    postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` } satisfies Status);
+  return async <T>(name: string, promise: Promise<T>) => {
+    if (said) postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` } satisfies Status);
     const quiet = watch.quiet(QUIET_SECONDS);
     const stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
     try {
@@ -161,6 +152,21 @@ export async function pyodideSteps(version: string, importer: (url: string) => P
       quiet.cancel();
     }
   };
+}
+
+// Loads Pyodide and NumPy of version in named steps. Each step says its name, and ends in an error rather than
+// never: loadPyodide() does not fail when a fetch of its files fails, it waits for ever (AGENTS.md), and a phone that
+// stopped at "Loading Pyodide" said nothing else. It ends when nothing has arrived for QUIET_SECONDS (T118), however
+// long it takes while bytes keep coming. importer(url) imports pyodide.mjs (tests/worker-check.ts gives its own).
+// T129 (2), the owner's choice (2026-09-28): loadPackage fetches NumPy's wheel without integrity (checkIntegrity:
+// false). A fetch with integrity settles only once its whole body is in, so watchArrivals() counted none of the wheel
+// until its end, and where the prefetch had not put it in the HTTP cache (no lock, another shape of it, a CDN that said
+// no, a cache that did not keep it) a line below 0.8 Mbps gave NumPy up after QUIET_SECONDS while it was arriving. The
+// check of the wheel's hash (SRI) goes; the wheel comes from the same CDN and version as the rest of Pyodide.
+export async function pyodideSteps(version: string, importer: (url: string) => Promise<PyodideModule>) {
+  const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
+  const watch = watchArrivals();
+  const step = stepOf(version, watch);
   try {
     // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
     const numpy = prefetchNumpy(base);
@@ -199,35 +205,30 @@ export async function placePython(pyodide: Pyodide, archive: ArrayBuffer | Promi
 
 // T397: jinja2, with which the converter renders a model's own chat template as transformers does (convert/template.py).
 // Pyodide's package of the version that is loaded, by its lock (no version is written here), asked for when a
-// conversion is first made: most visitors never convert anything. Whether it came: where it did not (the CDN said no,
-// nothing arrived for QUIET_SECONDS), the conversion goes on and the converter's own reader reads what it can, so
-// nothing is thrown and nothing is said to the visitor.
+// conversion is first made: most visitors never convert anything. T640.14 (the owner: as the other packages): it is
+// waited for as NumPy is, a step of Pyodide's (stepOf()), and where it
+// does not come the conversion fails as a load without NumPy does. (A package that did not come is said by loadPackage
+// in the console only, and the converter's import of it then fails, as the engine's of NumPy would.)
 // One load at a time for a Pyodide: watchArrivals() wraps self.fetch and puts back the one it found, so two overlapping
 // ones (a conversion that was cancelled while jinja2 came, and the next one) would leave the first's wrapper on every
-// fetch for good (T369 review). A load that did not succeed is forgotten, and the next conversion tries again.
-const templatePackages = new WeakMap<Pyodide, Promise<boolean>>();
+// fetch for good (T369 review). A load that failed is forgotten, and the next conversion tries again.
+const templatePackages = new WeakMap<Pyodide, Promise<void>>();
 export function templatePackage(pyodide: Pyodide) {
   if (!templatePackages.has(pyodide)) {
-    templatePackages.set(pyodide, loadTemplatePackage(pyodide).then((came) => {
-      if (!came) templatePackages.delete(pyodide);
-      return came;
+    templatePackages.set(pyodide, loadTemplatePackage(pyodide).catch((error) => {
+      templatePackages.delete(pyodide);
+      throw error;
     }));
   }
-  return templatePackages.get(pyodide);
+  return templatePackages.get(pyodide)!;
 }
 
 async function loadTemplatePackage(pyodide: Pyodide) {
-  const watch = watchArrivals(), quiet = watch.quiet(QUIET_SECONDS);
+  const watch = watchArrivals();
   try {
-    const stalled = quiet.promise.then(() => { throw new Error(`nothing arrived for ${QUIET_SECONDS} seconds`); });
-    await Promise.race([pyodide.loadPackage("jinja2", { messageCallback: () => {} }), stalled]);
-    pyodide.pyimport("jinja2").destroy();  // (a package that did not come is said by loadPackage in the console only)
-    return true;
-  } catch (error) {
-    console.warn(`jinja2 did not load (${told(error)}): chat templates are read by the converter's own reader`);
-    return false;
+    // (said = false: the conversion says what it does in the status line)
+    await stepOf(pyodide.version, watch, false)("jinja2", pyodide.loadPackage("jinja2", { messageCallback: () => {} }));
   } finally {
-    quiet.cancel();
     watch.stop();
   }
 }
