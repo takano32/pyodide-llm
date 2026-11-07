@@ -478,27 +478,79 @@ const dp4aLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => ` 
 const blockLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
   ? `BLK(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_s_b, ${i}u), own_sums) * own_scale_a;`
   : `BLK(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], blocks_B[base_B + ${i}u], own_sums) * own_scale_a;`)).join("\n");
+// What the tile's text has for each packing of the weights (T642.9: as fused.ts's DP4A_WEIGHTS has for one vector):
+// the bindings of the weights, the functions that read them, the workgroup's memory of a row's scales, loadSHMB's lines
+// that load a step of the weights, the token's sums a row's mins are taken by, the line that takes a row's scales into
+// a subgroup's lanes, and step 2's lines. dp4a fills the text from a row; a packing more is a row here.
+type TileWeights = { bindings: string; helpers: string; shared: string; load: string; sums: string; laneScales: string;
+  lines: (subgroup: boolean) => string };
+const SCALES_B = "@group(0) @binding(1) var<storage, read> scales_b: array<f32>;\n";
+const SCALE_SHARED = "var<workgroup> scale_B: array<f32, tile_size>;                                // 64 x 1\n";
+const SCALE_LANES = "      let own_scale_b: f32 = scale_B[base_B + sg_id];\n";
 // T232, weights "ternary": the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED above, and what
 // is changed for them there). (T379.2: the packing by its name, as fused.ts's fusedDp4aMatVec takes it; a boolean
 // `ternary` until then.)
+const TILE_WEIGHTS: Record<"int8" | "ternary", TileWeights> = {
+  int8: {
+    bindings: "@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>\n" + SCALES_B,
+    helpers: sdp8ai,
+    shared: SCALE_SHARED,
+    load: `  tile_B[col][row] = b[b_global * (shape.words / 4u) + kidx_v + col];
+  if (col == 0u) {
+    scale_B[row] = scales_b[b_global * shape.perRow + kidx_v / 2u];
+  }`,
+    sums: "",
+    laneScales: SCALE_LANES,
+    lines: dp4aLines,
+  },
+  ternary: {
+    bindings: "@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' codes, 16 of two bits to a u32\n" + SCALES_B,
+    helpers: sdp8ai + TERNARY_PACKED,
+    shared: SCALE_SHARED,
+    load: `  // (a row of n weights is n / 16 words of codes, as many as an int8 row's vec4s: the same index)
+  tile_B[col][row] = ternary_packed(b[b_global * (shape.words / 4u) + kidx_v + col]);
+  if (col == 0u) {
+    // a scale a group of 128 weights: four of the activations' groups of 32
+    scale_B[row] = scales_b[b_global * (shape.perRow / 4u) + kidx_v / 8u];
+  }`,
+    sums: "",
+    laneScales: SCALE_LANES,
+    lines: dp4aLines,
+  },
+};
 // T547.2.3, T547.3.3, weights of llama.cpp's blocks (a row of SUPERBLOCKS): the blocks of 256 as the checkpoint holds
 // them (the loader turns a group of 32 into packed int8 and keeps the row's scales and mins of its halves; no scales apart)
+const tileBlocks = (blocks: (typeof SUPERBLOCKS)[BlockPacking]): TileWeights => ({
+  bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' blocks, ${blocks.bytes} bytes each\n`,
+  helpers: BLOCK_COMMON + blocks.helpers + blocks.code,
+  shared: "var<workgroup> blocks_B: array<vec4<f32>, tile_size>;                         // 64 x 4: the row's scales and mins of the group's halves\n",
+  load: `  // (a group of 32 a step: kidx_v / 2 along the row, of the row's perRow / 8 blocks; col's half of its 32 weights)
+  let group = kidx_v / 2u;
+  let block = (b_global * (shape.perRow / 8u) + group / 8u) * ${blocks.bytes}u;
+  tile_B[col][row] = blk_values(block, group % 8u, col);
+  if (col == 0u) {
+    blocks_B[row] = blk_scales(block, group % 8u);
+  }`,
+  sums: `    // (the token's sums of the group's halves: what a row's mins are taken by)
+    let own_sums = vec2<f32>(f32(blk_sum(own_a0)), f32(blk_sum(own_a1)));
+`,
+  laneScales: "      let own_s_b: vec4<f32> = blocks_B[base_B + sg_id];\n",
+  lines: blockLines,
+});
+const tileWeights = (weights: Packing): TileWeights => Object.hasOwn(SUPERBLOCKS, weights)
+  ? tileBlocks(SUPERBLOCKS[weights as BlockPacking]) : TILE_WEIGHTS[weights as "int8" | "ternary"];
 export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
-  const ternary = weights === "ternary", blocks = Object.hasOwn(SUPERBLOCKS, weights) ? SUPERBLOCKS[weights as BlockPacking] : null;
+  const w = tileWeights(weights);
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
 ${TILE_SHAPE}
 ${STEP}
-${blocks ? `@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' blocks, ${blocks.bytes} bytes each\n`
-    : `${ternary ? "@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' codes, 16 of two bits to a u32"
-    : "@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>"}
-@group(0) @binding(1) var<storage, read> scales_b: array<f32>;
-`}@group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized activations (QUANTIZE's xq)
+${w.bindings}@group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized activations (QUANTIZE's xq)
 @group(0) @binding(3) var<storage, read_write> y: array<f32>;
 @group(0) @binding(4) var<uniform> shape: Shape;
 @group(0) @binding(5) var<uniform> step: Step;
 @group(0) @binding(6) var<storage, read> scales_a: array<f32>;       // QUANTIZE's xs: a scale a token and group of 32
-${blocks ? BLOCK_COMMON + blocks.helpers + blocks.code : sdp8ai}${ternary ? TERNARY_PACKED : ""}
+${w.helpers}
 
 const tile_size = 64u;
 const subtile_size = 16u;
@@ -508,8 +560,7 @@ const tile_size_k_vec = 2u;
 var<workgroup> tile_A: array<array<vec4<u32>, tile_size>, tile_size_k_vec>;  // 64 x 32
 var<workgroup> scale_A: array<f32, tile_size>;                                // 64 x 1
 var<workgroup> tile_B: array<array<vec4<u32>, tile_size>, tile_size_k_vec>;  // 64 x 32
-${blocks ? "var<workgroup> blocks_B: array<vec4<f32>, tile_size>;                         // 64 x 4: the row's scales and mins of the group's halves\n"
-    : "var<workgroup> scale_B: array<f32, tile_size>;                                // 64 x 1\n"}
+${w.shared}
 fn loadSHMA(a_global_base: u32, kidx_v: u32, row: u32, col: u32) {
   let a_global = a_global_base + row;
   if (a_global >= step.tokens) {
@@ -526,21 +577,7 @@ fn loadSHMB(b_global_base: u32, kidx_v: u32, row: u32, col: u32) {
   if (b_global >= shape.rows) {
     return;
   }
-${blocks ? `  // (a group of 32 a step: kidx_v / 2 along the row, of the row's perRow / 8 blocks; col's half of its 32 weights)
-  let group = kidx_v / 2u;
-  let block = (b_global * (shape.perRow / 8u) + group / 8u) * ${blocks.bytes}u;
-  tile_B[col][row] = blk_values(block, group % 8u, col);
-  if (col == 0u) {
-    blocks_B[row] = blk_scales(block, group % 8u);
-  }` : ternary ? `  // (a row of n weights is n / 16 words of codes, as many as an int8 row's vec4s: the same index)
-  tile_B[col][row] = ternary_packed(b[b_global * (shape.words / 4u) + kidx_v + col]);
-  if (col == 0u) {
-    // a scale a group of 128 weights: four of the activations' groups of 32
-    scale_B[row] = scales_b[b_global * (shape.perRow / 4u) + kidx_v / 8u];
-  }` : `  tile_B[col][row] = b[b_global * (shape.words / 4u) + kidx_v + col];
-  if (col == 0u) {
-    scale_B[row] = scales_b[b_global * shape.perRow + kidx_v / 2u];
-  }`}
+${w.load}
 }
 
 @compute @workgroup_size(256)
@@ -590,18 +627,16 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
     let own_a0: vec4<u32> = tile_A[0][base_A + a_idx];
     let own_a1: vec4<u32> = tile_A[1][base_A + a_idx];
     let own_scale_a: f32 = scale_A[base_A + a_idx];
-${blocks ? `    // (the token's sums of the group's halves: what a row's mins are taken by)
-    let own_sums = vec2<f32>(f32(blk_sum(own_a0)), f32(blk_sum(own_a1)));
-` : ""}${subgroups ? `    if (sg_size == 16u) {
+${w.sums}${subgroups ? `    if (sg_size == 16u) {
       let own_b0: vec4<u32> = tile_B[0][base_B + sg_id];
       let own_b1: vec4<u32> = tile_B[1][base_B + sg_id];
-${blocks ? "      let own_s_b: vec4<f32> = blocks_B[base_B + sg_id];\n" : "      let own_scale_b: f32 = scale_B[base_B + sg_id];\n"}      // Step 2: Access registers across the subgroup using subgroupShuffle and perform the matmul.
-${(blocks ? blockLines : dp4aLines)(true).replace(/^/gm, "  ")}
+${w.laneScales}      // Step 2: Access registers across the subgroup using subgroupShuffle and perform the matmul.
+${w.lines(true).replace(/^/gm, "  ")}
     } else {
       // Code for other subgroup sizes, simply doesn't use subgroups at all.
-${(blocks ? blockLines : dp4aLines)(false).replace(/^/gm, "  ")}
+${w.lines(false).replace(/^/gm, "  ")}
     }` : `    // Relies on reads from single location tile_B[][base_B + col] by all being optimized by the hardware.
-${(blocks ? blockLines : dp4aLines)(false)}`}
+${w.lines(false)}`}
     workgroupBarrier();
   }
   let a_global = a_global_base + base_A + a_idx;
