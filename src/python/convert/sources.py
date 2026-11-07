@@ -4,7 +4,6 @@ import json
 import math
 import struct
 
-from engine.proxy import plain
 from convert.readers import source_of
 
 ROTATED = "rotated"  # the key of a header's __metadata__ that says a rotated basis (T237)
@@ -80,15 +79,15 @@ class Shards:
 
 
 def joined_shards(headers):
-    """The page's way in for a model split over several files (T105): the JSON headers of the shards, in the order
-    their data will be fed, as the header of one file made of their tensor data one after another (base 0). Returns
-    that header (text) and, for every shard, how many bytes of data it has: feed each shard from its own base (8 +
-    the length of its header) for that many bytes, and Stream sees one file. Nothing of Stream changes."""
+    """The way in for a model split over several files (T105, from conduct's shards()): the JSON headers of the
+    shards (text, or its bytes: Python's values, T640.10), in the order their data will be fed, as the header of one
+    file made of their tensor data one after another (base 0). Returns that header (text) and, for every shard, how
+    many bytes of data it has: feed each shard from its own base (8 + the length of its header) for that many bytes,
+    and Stream sees one file. Nothing of Stream changes."""
     joined, at, lengths = {}, 0, []
     for text in headers:
         try:
-            header = json.loads(bytes(plain(text)).decode()
-                                if not isinstance(text, str) else text)
+            header = json.loads(bytes(text).decode() if not isinstance(text, str) else text)
         except ValueError:
             raise ValueError("A shard of this model is not a safetensors file.") from None
         tensors = {name: info for name, info in header.items() if name != "__metadata__"}
