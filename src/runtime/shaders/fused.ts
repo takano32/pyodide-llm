@@ -24,10 +24,10 @@ import type { BlockPacking, Packing } from "./common.ts";
 // (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
 // names a maker's text branches on. (T379.1) Each a list of values, which the catalogue walks (engine.ts), and the
 // type is made of the list: a name more is written here once
-// (T261.4.2: "geglu", a Gemma 3's gate, the last: the rows before it are where they were)
-const FUSED_INPUTS = ["norm", "plain"] as const, FUSED_OUTPUTS = ["rope", "add", "swiglu", "write", "geglu"] as const;
+// (T642.10: the outputs are the keys of FUSED_WRITES, below, in its order)
+const FUSED_INPUTS = ["norm", "plain"] as const;
 export type FusedInput = (typeof FUSED_INPUTS)[number];
-export type FusedOutput = (typeof FUSED_OUTPUTS)[number];
+export type FusedOutput = keyof typeof FUSED_WRITES;
 // the rows a workgroup has, of the two forms a token's matrix takes: the model's worker dispatches by them, and so does
 // /benchmark/, which runs these two texts (T624.2) and matvec.ts's MMVQ form of the first. (T391.4: here, so that
 // this part reads nothing of matvec.ts)
@@ -116,7 +116,7 @@ export function fusedParams({ rows, n, second = 0, eps = 0, normAt = 0, qRows = 
 // is a function (write_pair), which TOKEN_ROPE below calls too: the same lines where the matrix's write cannot turn
 // the pair yet (a bias or a head's norm comes between)
 // T379.2: the Step struct is declared where the step is bound (the "rope" output), and in no other text
-const fusedOutputs = (output: FusedOutput) => (output === "rope" ? `${STEP}
+const ROPE_OUTPUTS = `${STEP}
 @group(0) @binding(5) var<storage, read_write> q: array<f32>;
 @group(0) @binding(6) var<storage, read_write> keys: array<u32>;
 @group(0) @binding(7) var<storage, read_write> values: array<u32>;
@@ -154,30 +154,45 @@ fn write_pair(row: u32, v0: f32, v1: f32) {
         let j = row - params.qRows - params.kvRows;
         values[step.pos * params.kvRows / 2u + j / 2u] = pack2x16float(vec2<f32>(v0, v1));
     }
-}` : "@group(0) @binding(5) var<storage, read_write> dst: array<f32>;");
+}`;
+const DST_OUTPUT = "@group(0) @binding(5) var<storage, read_write> dst: array<f32>;";
 // The write (the epilogue), T150's and T175's DP4A form's alike: a workgroup's OUTPUTS_PER_WG rows from row_base on,
 // their sums in totals (up's rows' after them, for SwiGLU), each times scale (the norm's, or 1), by thread thread_id
-const fusedWrite = (output: FusedOutput) => (output === "rope" ? `    // a pair of neighbouring rows a thread
+const ROPE_WRITE = `    // a pair of neighbouring rows a thread
     if (thread_id < OUTPUTS_PER_WG / 2u) {
         let row = row_base + 2u * thread_id;
         if (row < params.rows) {
             write_pair(row, totals[2u * thread_id] * scale, totals[2u * thread_id + 1u] * scale);
         }
-    }` : `    if (thread_id < OUTPUTS_PER_WG) {
+    }`;
+// a row a thread, its value written by the output's line
+const rowWrite = (line: string) => `    if (thread_id < OUTPUTS_PER_WG) {
         let row = row_base + thread_id;
         if (row < params.rows) {
-            let value = totals[thread_id] * scale;${output === "swiglu" ? `
+            let value = totals[thread_id] * scale;${line}
+        }
+    }`;
+// (T642.10) Each output of a fused matrix: its bindings (5 on), the write of its rows (the epilogue), and how many
+// matrices it reads (gate's and up's for a GLU). The catalogue walks the keys in this order (engine.ts): an output
+// more is a row here, the last
+const FUSED_WRITES = {
+  rope: { bindings: ROPE_OUTPUTS, write: ROPE_WRITE, matrices: 1 },
+  add: { bindings: DST_OUTPUT, write: rowWrite(`
+            dst[row] = dst[row] + value;`), matrices: 1 },
+  swiglu: { bindings: DST_OUTPUT, write: rowWrite(`
             // llama.cpp's result *= silu(gate_value), as the GLU writes it (glu.wgsl's OP_SWIGLU)
             let gate = value;
             let up = totals[OUTPUTS_PER_WG + thread_id] * scale;
-            dst[row] = gate / (1.0 + exp(-gate)) * up;` : output === "geglu" ? `
+            dst[row] = gate / (1.0 + exp(-gate)) * up;`), matrices: 2 },
+  write: { bindings: DST_OUTPUT, write: rowWrite(`
+            dst[row] = value;`), matrices: 1 },
+  // (T261.4.2: "geglu", a Gemma 3's gate, the last: the rows before it are where they were)
+  geglu: { bindings: DST_OUTPUT, write: rowWrite(`
             let gate = value;
             let up = totals[OUTPUTS_PER_WG + thread_id] * scale;
-            dst[row] = 0.5 * gate * (1.0 + tanh(clamp(0.7978845608028654 * (gate + 0.044715 * gate * gate * gate), -9.010913, 9.010913))) * up;` : output === "write" ? `
-            dst[row] = value;` : `
-            dst[row] = dst[row] + value;`}
-        }
-    }`);
+            dst[row] = 0.5 * gate * (1.0 + tanh(clamp(0.7978845608028654 * (gate + 0.044715 * gate * gate * gate), -9.010913, 9.010913))) * up;`), matrices: 2 },
+};
+const FUSED_OUTPUTS = Object.keys(FUSED_WRITES) as FusedOutput[];
 // T226: RoPE and the cache of a generated token whose q, k and v cannot be turned on their matrix's write: Qwen2's
 // biases (ADD) and Qwen3's norms of the heads (HEAD_NORM) come between, as on the CPU and in a prompt's block (T153:
 // the biases, the norms of the heads, RoPE). The matrix then writes q, k and v as they are into one buffer (output
@@ -189,7 +204,7 @@ export const TOKEN_ROPE = /* wgsl */ `
 ${FUSED_PARAMS}
 @group(0) @binding(2) var<storage, read> src1: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
-${fusedOutputs("rope")}
+${ROPE_OUTPUTS}
 
 @compute @workgroup_size(64)
 fn main(@builtin(local_invocation_index) t: u32) {
@@ -222,8 +237,8 @@ const mulMatVecMain = (subgroups: boolean): string => /* wgsl */ `fn main(
 
     let row_base = wg_linear * OUTPUTS_PER_WG;`;
 export const fusedMatVec =({ input, output, subgroups }: { input: FusedInput; output: FusedOutput; subgroups: boolean }): string => {
-  const norm = input === "norm", glu = output === "swiglu" || output === "geglu";
-  const matrices = glu ? 2 : 1, sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
+  const norm = input === "norm", { matrices } = FUSED_WRITES[output], glu = matrices === 2;
+  const sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
   return /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}
 ${FUSED_PARAMS}
 @group(0) @binding(0) var<storage, read> src0: array<u32>;
@@ -231,7 +246,7 @@ ${FUSED_PARAMS}
 @group(0) @binding(2) var<storage, read> src1: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
 ${norm ? "@group(0) @binding(4) var<storage, read> norm_weight: array<f32>;" : ""}
-${fusedOutputs(output)}
+${FUSED_WRITES[output].bindings}
 
 const WG_SIZE = 256u;
 const OUTPUTS_PER_WG = ${MUL_MAT_VEC_ROWS}u;
@@ -357,7 +372,7 @@ ${subgroups ? `
 
     // the write: the norm's scale on every sum (s × W·(g ⊙ x)), then what the output does with a row
     let scale = ${norm ? "1.0 / sqrt(totals[SQUARES] / f32(params.perRow * BLOCK_SIZE) + params.eps)" : "1.0"};
-${fusedWrite(output)}
+${FUSED_WRITES[output].write}
 }`;
 };
 
@@ -366,7 +381,7 @@ ${fusedWrite(output)}
 // 18.5%. ORT runs it after a dispatch of its own that quantizes the vector (dp4a_matmul_nbits.cc:
 // DP4AMatMulQuantizeProgram, then DP4AMatMulNBitsSmallMProgram), and adds the bias on the write. So here: the vector
 // quantized first (QUANTIZE, T146's, as the CPU's quantize_x makes it), then the matrix, and on its write what
-// T150's fusedMatVec does (fusedWrite: RoPE and the cache, the residual's add, SwiGLU, or the logits). Four
+// T150's fusedMatVec does (FUSED_WRITES' write: RoPE and the cache, the residual's add, SwiGLU, or the logits). Four
 // quantizations a layer, one where a new vector comes in: the normed stream before q, k and v (one for the three),
 // the attention's output before o, the normed stream before gate and up (one for both), silu(gate) × up before down;
 // the classifier's normed stream a fifth, once a token. The norm cannot go on the matrix's read as in T150: the
@@ -486,18 +501,31 @@ ${ROW_RMS}
 // (T379.1) What the text has for each packing of the weights: its lines that read them, and nothing else. One maker
 // makes every packing's text from this table, so a packing more is a row here (and its rows in engine.ts's catalogue).
 //   bindings   bindings 0 and 1: the weights as the shader reads their words, and the scales of their groups
-//   unpacking  what turns a word of the weights into packed int8, after SDP8AI (nothing where they are int8)
+//   unpacking  the functions the reads call: SDP8AI and what turns a word of the weights into packed int8 (T642.10)
 //   rowScales  after K32: how many scales a row has, where that is not the vector's groups of 32
+//   reads      what a thread reads of a row's group and adds to the row's sum (of up's row too where the output has
+//              two matrices: swiglu, geglu). Of int8 and ternary weights scaledReads (T642.10), from:
 //   scale      the index of the scale of a thread's group of 32 (k_offset: of int8 weights the index of its scale in
 //              a row as it is, which ORT's text names block_idx; of ternary ones two words of codes, a quarter of a
 //              scale's group) in a row (b_global, or up's row)
 //   word       a vec4<u32> of 16 packed int8, of the word at an index of b
-//   own, reads (T547.2.4, llama.cpp's blocks: the others' "" and null) what a thread makes of its vector's group once
-//              (the sums of its halves, which a block's mins take), and in the place of the lines above, a row's group
-//              read from its block and added to the row's sum (superblocks.ts's BLOCK_COMMON's BLK, the tiles' own reading);
-//              of up's row too where the output has two matrices (swiglu, geglu). T547.3.3: a row a type of superblocks.ts's
+//   own        (T547.2.4, llama.cpp's blocks: the others' "") what a thread makes of its vector's group once (the sums
+//              of its halves, which a block's mins take); their reads a row's group read from its block (superblocks.ts's
+//              BLOCK_COMMON's BLK, the tiles' own reading). T547.3.3: a row a type of superblocks.ts's
 //              SUPERBLOCKS, its reading of a block its own (blockRows)
 // (T547.3.3: a type's row: its blocks' bytes the step from a block to the next)
+// (T642.10) the reads of int8 and ternary weights: a row's word and its group's scale, by SDP8AI
+const scaledReads = (scaleAt: (row: string) => string, wordAt: (at: string) => string) => (two: boolean) => `
+                let b_offset = b_global * K32 + k_offset;
+                let own_scale_b = scales_b[${scaleAt("b_global")}];
+                let own_b = ${wordAt("b_offset * 2")};
+                let own_b1 = ${wordAt("b_offset * 2 + 1")};
+                inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, own_b, own_a1, own_b1, own_scale_a * own_scale_b);${two ? `
+                // up's row, params.second rows after gate's (mmvq.cu's vgate beside vx), with the same own_a
+                let up_global = b_global + params.second;
+                let up_offset = up_global * K32 + k_offset;
+                let up_scale_b = scales_b[${scaleAt("up_global")}];
+                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, ${wordAt("up_offset * 2")}, own_a1, ${wordAt("up_offset * 2 + 1")}, own_scale_a * up_scale_b);` : ""}`;
 const blockRow = (packing: BlockPacking) => {
   const { bytes, helpers, code } = SUPERBLOCKS[packing];
   return {
@@ -521,24 +549,20 @@ const DP4A_WEIGHTS = {
   int8: {
     bindings: `@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
 @group(0) @binding(1) var<storage, read> scales_b: array<f32>;`,
-    unpacking: "",
+    unpacking: sdp8ai,
     rowScales: "",
-    scale: (row: string) => `${row} * params.perRow + k_offset`,
-    word: (at: string) => `b[${at}]`,
     own: "",
-    reads: null,
+    reads: scaledReads((row) => `${row} * params.perRow + k_offset`, (at) => `b[${at}]`),
   },
   ternary: {
     bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32
 @group(0) @binding(1) var<storage, read> scales_b: array<f32>;       // a scale a group of 128 weights`,
-    unpacking: TERNARY_PACKED,
+    unpacking: sdp8ai + TERNARY_PACKED,
     rowScales: `
     // the scales of a row of the weights: one a group of 128
     let K128 = params.perRow / 4u;`,
-    scale: (row: string) => `${row} * K128 + k_offset / 4u`,
-    word: (at: string) => `ternary_packed(b[${at}])`,
     own: "",
-    reads: null,
+    reads: scaledReads((row) => `${row} * K128 + k_offset / 4u`, (at) => `ternary_packed(b[${at}])`),
   },
   ...blockRows(),
 } satisfies Record<Packing, object>;
@@ -569,21 +593,21 @@ const DP4A_LOAD_VECTOR = /* wgsl */ `fn loadSHMA(kidx_v: u32, col: u32)
 // Bindings: 0 the weights, 1 their scales, 2 the quantized vector (xq), 3 params, 4 its scales (xs); 5 on as
 // fusedMatVec's.
 export const fusedDp4aMatVec = ({ output, weights }: { output: FusedOutput; weights: FusedWeights }): string => {
-  const packing = DP4A_WEIGHTS[weights];
+  const packing = DP4A_WEIGHTS[weights], { matrices } = FUSED_WRITES[output];
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
 ${packing.bindings}
 @group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized vector (xq)
 @group(0) @binding(3) var<uniform> params: Params;
 @group(0) @binding(4) var<storage, read> scales_a: array<f32>;       // its scales (xs), one a group of 32
-${fusedOutputs(output)}
-${packing.reads ? "" : sdp8ai}${packing.unpacking}
+${FUSED_WRITES[output].bindings}
+${packing.unpacking}
 
 const workgroup_size_x = 128u;
 const tile_size = ${ORT_DP4A_MATVEC_ROWS}u;
 const tile_size_k_vec = 32u;
 const sub_tile_count = workgroup_size_x / tile_size_k_vec;
-const MATRICES = ${output === "swiglu" || output === "geglu" ? 2 : 1}u;
+const MATRICES = ${matrices}u;
 // fusedWrite's name for the rows of a workgroup
 const OUTPUTS_PER_WG = tile_size;
 
@@ -629,17 +653,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
         for (var row_offset = 0u; row_offset < tile_size; row_offset += sub_tile_count) {
             let b_global = b_global_base + row_offset + local_row;
             if (b_global < params.rows && k_offset < K32)
-            {${packing.reads ? packing.reads(output === "swiglu" || output === "geglu") : `
-                let b_offset = b_global * K32 + k_offset;
-                let own_scale_b = scales_b[${packing.scale("b_global")}];
-                let own_b = ${packing.word("b_offset * 2")};
-                let own_b1 = ${packing.word("b_offset * 2 + 1")};
-                inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, own_b, own_a1, own_b1, own_scale_a * own_scale_b);${output === "swiglu" || output === "geglu" ? `
-                // up's row, params.second rows after gate's (mmvq.cu's vgate beside vx), with the same own_a
-                let up_global = b_global + params.second;
-                let up_offset = up_global * K32 + k_offset;
-                let up_scale_b = scales_b[${packing.scale("up_global")}];
-                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, ${packing.word("up_offset * 2")}, own_a1, ${packing.word("up_offset * 2 + 1")}, own_scale_a * up_scale_b);` : ""}`}
+            {${packing.reads(matrices === 2)}
             }
         }
         workgroupBarrier();
@@ -659,7 +673,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
     let thread_id = local_idx;
     let row_base = b_global_base;
     let scale = 1.0;  // the norm is the quantizer's (NORM_QUANTIZE)
-${fusedWrite(output)}
+${FUSED_WRITES[output].write}
 }`;
 };
 
