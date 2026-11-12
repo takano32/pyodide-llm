@@ -32,7 +32,7 @@
 - T408 [計測][変換] arm64 のランナーで、段取りを通す道具の変換が 1〜2% 遅く出る run がある訳 — 未着手
 - T410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 未着手
 - T416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
-- T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
+- T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 進行中
 - T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
 - T457 [整理][WebGPU] `forward/gpuside.js` を分ける — 保留の残り
 - T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
@@ -464,8 +464,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **難しい所（見立て）**: (1) **読み手が 10 種類要る。** K 量子化（Q2_K・Q4_K）は 16 個か 32 個の塊ごとの尺度つきの整数、i 量子化（IQ…）は符号表（256〜2048 語の表）を引く形で、llama.cpp の `ggml-quants.c`（MIT）の表を写すことになる（許諾文を残す。方針 10）。(2) **int8 に広げると載らない。** 27B の int8 は約 27 GB で、ブラウザの 1 ページの上限 16 GiB を越える。Bonsai 2 27B と同じく、**ファイルの詰め方のまま持って（約 7.9 GB）、掛けるときに読む新しい dtype とカーネル**が要る。型が 10 種類あるので、行ごとに int8 と尺度へ広げてから今のカーネルに渡す形にするか、型ごとのカーネルにするかを測って決める。(3) **原本との突き合わせができない。** 重みは原本の単純な量子化ではない（GSQ-RCO と Underdog の手入れ）ので、`gguf_check.py tensors` の線には入らない見込み（Bonsai と同じく `rebuilt: true`）。参照は素の llama.cpp の logits にする。(4) 速さは Bonsai 2 27B（本番で 1.1〜2.2 tok/s）より遅い見込み（符号表を引く分。未計測）。
 - **勧める順**: T361 → T362 → T363 → T364。**リファクタリングの組（T346〜T357・T359）が済んでから**（変換器とエンジンの形を替えている最中に dtype を足すと両方が難しくなる）。T361 の調べだけは先にやってもぶつからない。規模は全部で 大が 2 つぶんほど。**副産物**: K 量子化と i 量子化が読めれば、Q4_K_M などの広く配られている GGUF が `?hf=` で開ける道ができる（載る大きさのものに限る）。
 
-### T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 状態: 未着手（2026-10-09、T355 の手元の確かめから。本線も同じ。規模 小）
+### T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 状態: 進行中（2026-11-12、ブランチ `t372-seed-beside-2`: 持ち主が画面を見るのを待つ。前の状態: 未着手、2026-10-09、T355 の手元の確かめから。規模 小）
 - Chrome の Issues が「Interactive element inside of a <summary> element」と言う。押すと内訳が開閉するのと種を固定するのが重なる。見た目のタスクなので `preview.yml` で前後を撮る。
+- **したこと（2026-11-12、古いブランチ `t372-seed-beside`（2026-10-29）の形を今の本線に作り直した）**: 種のボタンを `<summary>` の外に出した（`src/page/draw.ts` の `meta()`）。種のある答えの行は `div.meta-line` に `details.meta` と `span.seed-beside`（「· seed N」）を並べ、CSS は flex の折り返しで要約の最初の行にそろえる（`index.astro` の `.meta-line`）。種の無い答え（greedy）は前と同じ `details.meta` だけ。ボタンは押しても内訳を開かない（`preventDefault` は外した）。言葉は今のまま。
+- **見た目の違い（持ち主が見る）**: PC の幅は前と同じ並び（「… temp 0.7 ▸ · seed N」: 「▸」が要約の終わりに付くので種の前に来る。前は「… · seed N ▸」）で、開いても種は動かない。**スマホの幅（390 px）は折れ方が変わる**: 前は要約の 2 行目の終わりに種が続いていたのが、種が要約の下の自分の行に回り、開くと内訳の下に動く。要約の中に置けない以上、同じ流れに置くには `details` を inline にする必要があり、Safari での動きが読めないのでやめた（古いブランチの決めと同じ）。依頼の線（行の並びや折れ方が目に見えて変わるなら本線に入れない）により、本線に入れずにブランチと画面を残す。
+- 画面: 手元の Chrome 154（`?model=stories260K&temperature=0.7`）で前後を `.tmp/t372/`（`before-*`・`after-*` の `phone`・`desktop` × `closed`・`open`、`-page-` は画面全体）。CDP の `Audits.issueAdded` は前に `InteractiveContentSummaryDescendant` を 2 つの幅とも言い、後は何も言わない。`preview.yml` run 43331543813（成功）の `answer-*.png`。
+- 試験: `page-parts-check` に「summary は文字だけ」の文の検査（`src/page/` で `createElement("summary")` した名前にその関数の中で `append` などをしない、`index.astro` の summary の中に button・a・input などが無い）。壊し方: ボタンを要約の中に戻す（`head.append(" · ", again)`）と「draw.ts: the summary head is given elements」で落ちた。`tests/screenshots.ts` に場面（閉じた行・種を押した後・開いた行を撮り、押しても開かない・種が入る・要約で開く・要約に Enter で開いて種は入らない・Tab で種のボタン・Space で種だけが入る・横にスクロールしない、を見て違えば落ちる）: run 43331543813 で 2 つの幅とも通った。手元: 型・`page-modules-check`・`npm run build && node tests/dist-check.ts`・`node tests/e2e.ts stories260K chrome`。CI を回した。訳: 見た目のタスクで `preview.yml` が要る（手元に Playwright の Chromium を入れず、`screenshots.ts` の場面は CI で回した）。
 
 ### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
