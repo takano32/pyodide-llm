@@ -135,6 +135,31 @@ and 112.0 against 115.1 G weights/s), 0.99 on x86-64. The kernels as built again
 1.02 / 1.02 on arm64 (Neoverse-N2), 1.02 / 1.00 on an EPYC 7763 and 0.96 / 0.96 on an EPYC 9V45; `matmul_t2` 1.00 /
 1.00 on arm64 and 0.97 / 0.99 on the 7763 (TASKS.md's T533 has the runs).
 
+**`matmul_t2` and `matmul_b1` add their int16 sums as a chain and in int16 (T275, 2026-11-12)**: the kernels Safari
+runs (it has no relaxed SIMD). The four planes' products are added as a chain (`acc + product`) and the eight int16 lanes
+of each group of 32 are added in int16 (64-bit lane shuffles, then 32-bit ones) and widened to int32 once a group of 128,
+not four times: the same integers, so the same numbers to the bit. `tests/ternary-browser-bench.ts` times them, one
+thread, in each browser's engine and in Node, against the kernels as built at a commit (`--before`) and against the forms
+of `tests/ternary-plain-forms.ts`; G weights/s and the ratio's median over 15 turns, the geometric mean of the widths of
+Ternary Bonsai 1.7B (2048x2048, 6144x2048, 2048x6144), runs 43257964376 and 43257971334:
+
+| form, against the kernel before | CI arm64 (Neoverse-N2): WebKit 27.2 / Chromium 156 / Node 24 | CI x86-64 (EPYC 9V74): WebKit / Chromium / Node |
+|---|---:|---:|
+| `matmul_t2` before (12.7 / 12.4 / 12.1 G weights/s on arm64, 7.4 / 12.3 / 12.3 on x86-64) | 1.000 | 1.000 |
+| a copy of it in another module (the noise) | 1.000 / 0.999 / 1.000 | 1.001 / 1.000 / 1.000 |
+| the chain and the int16 sums (taken) | 1.082 / 1.163 / 1.172 | 1.023 / 1.029 / 1.029 |
+| the same, the last plane a shift of bytes with no mask | 1.093 / 1.191 / 1.202 | 0.995 / 0.998 / 0.994 |
+| the int16 sums with the tree of adds | 1.044 / 1.071 / 1.083 | 1.044 / 1.024 / 1.025 |
+| `matmul_b1`, taken, against `matmul_b1` before | 1.089 / 1.154 / 1.151 | 1.076 / 1.033 / 1.037 |
+
+And in run 43256814753 and 43256807057 (a first form of the bench, its WebKit clock read too finely): the chain alone
+1.02 / 1.07 / 1.08 on arm64 and 0.97 / 1.00 / 1.00 on x86-64; the products as `i32x4.dot_i16x8_s` of the bytes widened
+to int16 0.47 / 0.48 / 0.49 on arm64 (1.04 / 1.15 / 1.14 on x86-64); two rows at once, the activations loaded once,
+1.07 / 1.14 / 1.16 on arm64 and 0.92 / 0.93 / 0.92 on x86-64. The shift of bytes is not taken: x86-64 has none, and it
+is slower there than the kernel before (Safari on an Intel Mac); nor is it a form of `matmul_b1` (its codes are of bits).
+The int16 sums with the chain are faster everywhere. Against relaxed SIMD (the `matmul_t2r` of Chromium) the kernel is
+still the slower: T231's table, 0.6 of it on arm64.
+
 Two things the review of 2026-10-02 found, which no test in Node can see:
 
 - `interleave` is shifts, masks and narrows, with no shuffle. It was a transpose of three chained shuffles (a byte shuffle

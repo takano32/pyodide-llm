@@ -152,8 +152,10 @@ export function interleave(xq: usize, xs: usize, n: i32): void {
 // (4 x 3 x 128 a lane at most, PQ2_0's fourth code too); then the eight lanes of each of a group's four groups of 32
 // are added in int16 too (at most 8 x 1536), and widened once. T644.7: one kernel for both packings, P (signs.ts).
 // T275 (2026-11-12): the chain and the sums in int16 in place of a tree of adds and four widenings to int32, timed by
-// tests/ternary-browser-bench.ts against tests/ternary-plain-forms.ts's copy of the form before (kernels/README.md has
-// the table): 1.16 to 1.17 times as fast in V8 on arm64, 1.03 on x86-64, 1.07 in WebKit's JavaScriptCore on arm64.
+// tests/ternary-browser-bench.ts against the kernels as built before (kernels/README.md has the table): matmul_t2 1.08
+// times as fast in WebKit's JavaScriptCore on CI's arm64 (Neoverse-N2), 1.16 to 1.17 in V8 there, 1.02 to 1.03 on an
+// EPYC 9V74; matmul_b1 alike.
+
 // the int16 sums of the four planes' products: their low halves (low16) and their high (high16)
 // @ts-ignore: decorator
 @inline function low16(x0: v128, x1: v128, x2: v128, x3: v128, c0: v128, c1: v128, c2: v128, c3: v128): v128 {
