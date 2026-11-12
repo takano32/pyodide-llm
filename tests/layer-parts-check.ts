@@ -378,6 +378,21 @@ const S = 100000;
   second(1, 3);
   assert.deepEqual(said.find(([name]) => name === "phase")[1].slice(2, 4), [states + 2 * stateBytes, states],
     "a layer reads the place it wrote last, which no other layer has written since");
+  // T285's review: the state as the GPU's worker holds it (staging): layer after layer, from the place that holds each now
+  // (here the first layer's is the second place, the second layer's the first, and the third is the spare), and taken
+  // back into those, the spare one untouched
+  const { staging } = layers, [one, two, spareAt] = [0, 1, 2].map((i) => states / 4 + (i * stateBytes) / 4);
+  room.F.fill(1, one, one + stateBytes / 4);
+  room.F.fill(2, two, two + stateBytes / 4);
+  room.F.fill(3, spareAt, spareAt + stateBytes / 4);
+  assert.equal(staging.bytes, 2 * stateBytes + 2 * convBytes, "a layer's state, not a place's, and the convolution's rows");
+  const sent = (kUnit + 32 + 63) & ~63;
+  staging.put(sent);
+  const sentF = (value: number, i: number) => room.F[sent / 4 + (i * stateBytes) / 4 + 5] === value;
+  assert.ok(sentF(2, 0) && sentF(1, 1), "layer 0's state is what the place that holds it holds (the second), layer 1's the first's");
+  room.F.fill(7, sent / 4, sent / 4 + (2 * stateBytes) / 4);
+  staging.take(sent);
+  assert.deepEqual([room.F[one + 5], room.F[two + 5], room.F[spareAt + 5]], [7, 7, 3], "taken back into the places that hold the states now, and not the spare one");
   // position 0: the states and the rows are cleared, and nothing beside them
   room.F.fill(5, states / 4 - 1, (kUnit + 32) / 4 + 1);
   layers.clear();
