@@ -546,11 +546,31 @@ if (process.env.E2E_TWICE && !failures.length) {
     return (await module.keptModels()).map(({ where, manifest }) => `${manifest.name} in ${where}`);
   }).catch((error) => [`(could not list: ${error.message})`]);
   const kept = await listKept();
+  // T296 (its review): where the GPU is on SwiftShader (gpuTest), what the page kept of the GPU's choices for this device before
+  // the second visit (its "gpu:<model>" records, which hold a token's attention), the breakdown's line of the GPU the first
+  // visit showed, and the second's after it: the page's chain from the worker's "ready" through localStorage to the next
+  // visit's init, which no other run reads. The second visit's line says "(remembered)" where the worker took the
+  // forms the page gave it (the attention of a token with them: gpu/tokenattention.ts, whose console is the worker's)
+  const gpuLooked = () => page.evaluate(() => ({
+    kept: Object.fromEntries(Object.keys(localStorage).filter((name) => /^gpu:/.test(name) && name !== "gpu:usage").map((name) => [name, localStorage.getItem(name)])),
+    lines: [...document.querySelectorAll("#load-stats > div")].map((row) => row.textContent).filter((text) => /^WebGPU /.test(text)) })).catch(() => ({ kept: {}, lines: [] }));
+  const gpuBefore = swiftShader && kind === playwright.chromium ? await gpuLooked() : null;
   const reloaded = Date.now();
   await page.reload({ waitUntil: "load" });
   // the new page's own report of ready: the old page's must not count
   await acrossReload(() => page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 }));
   const ready = await page.evaluate(() => window.__ready ?? null).catch(() => null);
+  let gpuAgain = null;
+  if (gpuBefore?.lines.length) {
+    await acrossReload(() => page.waitForFunction(() => /on WebGPU(?! where)|prompts on the CPU \(/.test(document.getElementById("status-text")?.textContent ?? ""), null, { timeout: 0 }));
+    gpuAgain = await gpuLooked();
+    console.log(`again, the GPU: kept before ${JSON.stringify(gpuBefore.kept)}; the first visit's line ${JSON.stringify(gpuBefore.lines)}; ` +
+      `the second's ${JSON.stringify(gpuAgain.lines)}; kept after ${JSON.stringify(gpuAgain.kept)}`);
+    const tokens = (gpu) => gpu.lines.some((line) => / a token by /.test(line));
+    if (tokens(gpuBefore) && !Object.values(gpuBefore.kept).some((text) => /"tokenAttention":/.test(text))) failures.push("the first visit's GPU chose a token's attention and the page kept none of it");
+    if (gpuAgain.lines.length && !gpuAgain.lines.every((line) => / \(remembered\) /.test(line))) failures.push(`the second visit's GPU did not take the forms the page kept (${gpuAgain.lines.join("; ")})`);
+    if (tokens(gpuAgain) && !Object.values(gpuAgain.kept).some((text) => /"tokenAttention":/.test(text))) failures.push("the second visit's GPU chose a token's attention and the page kept none of it");
+  }
   again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null,
     miss: ready?.keptMiss ?? null, kept, keptAfter: await listKept(),
     // T111: the worker's own breakdown of the second load (Pyodide, the model), to see what the browser's cache saved

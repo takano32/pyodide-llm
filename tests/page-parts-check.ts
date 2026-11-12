@@ -411,7 +411,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
     m.rememberThreads(hf, "another", 3);
     const cpu = { gbPerSecond: 9 };
     m.rememberAlone(entry, { key: "k0", cpu });
-    m.rememberGpu(entry, { type: "gpu", load: 1, note: "", key: "k1", matrices: "M", attention: "A", tokens: "T", seconds: 1 });
+    m.rememberGpu(entry, { type: "gpu", load: 1, note: "", key: "k1", matrices: "M", attention: "A", tokens: "T", tokenAttention: "V", seconds: 1 });
     out.chose = JSON.parse(store.items.get("gpu:tiny-lm"));
     m.rememberAlone(entry, { key: "k2", cpu });
     store.setItem("benchmark:cpu", JSON.stringify(cpu));
@@ -432,26 +432,38 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
     out.otherwise = [m.gpuFor(entry), m.threadsFor(entry).remembered];
     m.rememberGpu(entry, { key: "k3", matrices: "M", attention: "A", tokens: "T" });
     m.rememberUsage(1, 1);
-    out.over = [store.items.get("gpu:tiny-lm"), store.items.get("gpu:usage")];`);
+    out.over = [store.items.get("gpu:tiny-lm"), store.items.get("gpu:usage")];
+    // T296: what a page kept before it (no attention of a token) is read as it stands, goes on with the verdict of the GPU alone, and is
+    // written whole when the GPU has chosen a token's attention
+    store.setItem("gpu:tiny-lm", JSON.stringify({ key: "k4", matrices: "M", attention: "A", tokens: "T" }));
+    out.older = m.gpuFor(entry).remembered;
+    m.rememberAlone(entry, { key: "k5", cpu });
+    out.olderAlone = JSON.parse(store.items.get("gpu:tiny-lm"));
+    m.rememberGpu(entry, { key: "k4", matrices: "M", attention: "A", tokens: "T", tokenAttention: "V" });
+    out.olderThen = JSON.parse(store.items.get("gpu:tiny-lm"));`);
   assert.deepEqual(things.before, [0, {}], "nothing kept: no threads, and the GPU's forms, the CPU's speed and the usage unsaid");
   const usage = JSON.parse(things.items["gpu:usage"]);
   delete things.items["gpu:usage"];
   assert.deepEqual(things.items, {
     "threads:tiny-lm": "4", "threads:hf:owner/name@main/m-Q8_0.gguf": "2", "threads:another": "3",
-    "gpu:tiny-lm": JSON.stringify({ key: "k1", matrices: "M", attention: "A", tokens: "T", alone: { key: "k2", cpu: { gbPerSecond: 9 } } }),
+    "gpu:tiny-lm": JSON.stringify({ key: "k1", matrices: "M", attention: "A", tokens: "T", tokenAttention: "V", alone: { key: "k2", cpu: { gbPerSecond: 9 } } }),
     "benchmark:cpu": JSON.stringify({ gbPerSecond: 9 }), model: JSON.stringify({ id: "tiny-lm", kept: true }),
   }, "the names and texts the page keeps (a model of ?hf= by its repository; the GPU's forms keep the verdict of the GPU alone, and it theirs)");
   assert.ok(things.threadsKey, "the threads' name is bench.ts's, which /benchmark/ reads (T190)");
   assert.deepEqual(usage, { prompt: 10 * 0.8 + 1, written: 20 * 0.8 + 2 }, "the usage is added up, the older decayed (bench.ts's USAGE_DECAY)");
-  assert.deepEqual(things.chose, { key: "k1", matrices: "M", attention: "A", tokens: "T", alone: { key: "k0", cpu: { gbPerSecond: 9 } } },
+  assert.deepEqual(things.chose, { key: "k1", matrices: "M", attention: "A", tokens: "T", tokenAttention: "V", alone: { key: "k0", cpu: { gbPerSecond: 9 } } },
     "what the GPU chose keeps the verdict of the GPU alone kept before it (and no more of the report than the forms)");
   assert.deepEqual(things.threads, [4, 2, 3], "the threads read back by the name the next visit asks with");
-  assert.deepEqual(things.after, { remembered: { key: "k1", matrices: "M", attention: "A", tokens: "T", alone: { key: "k2", cpu: { gbPerSecond: 9 } } },
+  assert.deepEqual(things.after, { remembered: { key: "k1", matrices: "M", attention: "A", tokens: "T", tokenAttention: "V", alone: { key: "k2", cpu: { gbPerSecond: 9 } } },
     cpu: { gbPerSecond: 9 }, usage }, "what the worker is told of the GPU");
   assert.equal(things.local, false, "a model of no id of the list is not remembered (the name is taken away)");
   assert.deepEqual(things.otherwise, [{ cpu: { gbPerSecond: 9 } }, 0], "something else under the names: as nothing kept (and the CPU's speed beside them is still read)");
   assert.deepEqual([JSON.parse(things.over[0]), JSON.parse(things.over[1])], [{ key: "k3", matrices: "M", attention: "A", tokens: "T" }, { prompt: 1, written: 1 }],
     "and written over by what is kept now");
+  assert.deepEqual(things.older, { key: "k4", matrices: "M", attention: "A", tokens: "T" }, "T296: what was kept before a token's attention: read as it stands (the worker chooses that attention again)");
+  assert.deepEqual(things.olderAlone, { key: "k4", matrices: "M", attention: "A", tokens: "T", alone: { key: "k5", cpu: { gbPerSecond: 9 } } }, "T296: and its other forms stay under the verdict of the GPU alone");
+  assert.deepEqual(things.olderThen, { key: "k4", matrices: "M", attention: "A", tokens: "T", tokenAttention: "V", alone: { key: "k5", cpu: { gbPerSecond: 9 } } },
+    "T296: written whole once the GPU has chosen a token's attention (under the name the worker's plan.remembered reads)");
   // a storage that throws at every call: nothing is thrown out of the page's parts, and each says its otherwise
   const without = run(`
     globalThis.localStorage = made(true);

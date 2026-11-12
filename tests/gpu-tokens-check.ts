@@ -121,6 +121,22 @@ console.log("ok: each check bites: the decode form a little off in a head, its r
   // nothing of the attention remembered (a page's from before T296: the matrices, the prompt's attention, the layer): chosen again
   const older = await remembering({ key, matrices: "TF.js's tiles" });
   assert.deepEqual(older.m.tokenAttention.attentions.map(({ name }) => name), all, "none remembered: chosen again");
+  // what the page kept that this device does not offer or that is no name (a feature gone under the same key: the subgroups' form on a device
+  // with none; a text kept over by something else: null, a number, an object, another model's name): chosen again, as with none remembered
+  const { m: plain } = await opened({ features: [] });  // (its own key: the features are in a device's key, and the page's is read only under it)
+  for (const kept of [`${VEC}, subgroups`, "llama.cpp flash_attn_vec, nothing", "", null, 3, { name: VEC }]) {
+    const { m } = await opened({ features: [], remembered: { key: plain.key, tokenAttention: kept } as never });
+    assert.ok(m.remembered, "the page's remembered is this device's");
+    await forms_.chooseAttention(m);
+    await tokenAttention_.chooseTokenAttention(m);
+    assert.deepEqual(m.tokenAttention.attentions.map(({ name, remembered }) => [name, Boolean(remembered)]), [[VEC, false], [TILES, false]], `${JSON.stringify(kept)} remembered, not offered here: chosen again`);
+  }
+  // a Gemma 3's remembered decode form that reads every position (its window left out): the window's check of the remembered one bites too
+  const { m: blind } = await opened({ model: "gemma3", features, remembered: { key, tokenAttention: VEC }, spoil: { vec: flashVec(16, { ignoring: true }) } });
+  await forms_.chooseAttention(blind);
+  await tokenAttention_.chooseTokenAttention(blind);
+  assert.match(blind.tokenAttention.attentions[0].none ?? "", /^remembered, but wrong now: .* at 300 positions through a window of 37/, "remembered, a window left out: said so");
+  assert.equal(blind.tokenAttention.attention.name === VEC, false, "remembered, a window left out: not taken");
   // remembered but wrong now (the decode form off in a head, with subgroups and without): the others checked and
   // timed, the tiles taken, the remembered one not checked again
   const wrong = await remembering({ key, tokenAttention: VEC }, { vec: off(flashVec(16), (out) => { out[16] += 0.05; }) });
