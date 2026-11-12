@@ -177,7 +177,7 @@ weights). The geometric mean of the ratios over the widths of Ternary Bonsai 1.7
 | `x16b` | 0.601 / 0.633 / 1.026 / 0.730 | 1.305 / 1.304 / 1.106 / 1.218 | 1.327 / 1.330 / 1.105 / 1.271 |
 | `tl` (its tables made in every call) | 0.940 / 1.006 / 1.809 / 1.112 | 1.272 / 1.301 / 1.275 / 1.093 | 1.063 / 1.078 / 1.043 / 0.980 |
 
-(The second run on the 9V74 gave the same to 0.01.) Neither is taken. `x16` is 1.33 to 1.36 times on AMD's Zen 3 and 4
+(The second run on the 9V74 gave the same to 0.02: `tl` in Firefox 1.043 and 1.065.) The Neoverse-N2 is not the owner's phone's cores (Cortex-X3, A715 and A510: the same Armv9 family, unmeasured there), and one thread is measured: with several threads the gain is bounded by the memory bandwidth too. Neither is taken. `x16` is 1.33 to 1.36 times on AMD's Zen 3 and 4
 in V8, as T231's review found, and 0.63 to 0.65 on arm64's V8, where the owner's phone runs: it would need a choice made
 on the device (a second kernel, its tile, and a timing at the load), which T231's review left to the owner and which
 changes `WORK`. No Zen 5 or Intel CPU came up in three runs (T231 saw V8 make `matmul_t2r`'s dot one VNNI instruction on
