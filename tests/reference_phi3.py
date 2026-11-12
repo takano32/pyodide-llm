@@ -4,7 +4,9 @@
 # itself (Phi3ForCausalLM of 5.16.1). PyTorch is not on the development machine, so this runs in CI:
 #
 #   python tests/reference_phi3.py <directory for the download> [--only=made-up|real|fetch] [--model=phi-3|phi-4]
-#                                  [--positions=96] [--layers=8]
+#                                  [--positions=96] [--layers=8] [--lean=on] [--faults=off]
+#   (--layers=32 --lean=on: every layer, transformers held in bfloat16 as published and each layer made float32 for its own
+#   pass, the faults left off: T258's review)
 #
 #   node tests/ci.ts run tests.yml only_extra=true extra="bash tests/reference_phi3.sh" --ref <branch> --grep "phi3:"
 #
@@ -55,16 +57,26 @@ LOGITS_LINE = 1e-3  # the least of the logits' line (made-up models: 2e-3)
 SEPARATE = True
 # what main() read of the command line (--model, --layers, --positions, --only=fetch), and these where nothing did:
 # the dry run calls real() of its own, whatever another tool's arguments left in sys.argv
-RUN = {"model": "phi-3", "layers": 8, "positions": 96, "fetch": False}
+RUN = {"model": "phi-3", "layers": 8, "positions": 96, "fetch": False, "lean": False, "faults": True}
 
 say = lambda *parts: print("phi3:", *parts, flush=True)
 
 
-def transformers_model(folder):
+def transformers_model(folder, lean=False):
+    """lean (T258 review: every layer of a 3.8B, which in float32 is 15 GB, more than a runner of 16 GB holds beside the
+    engine's file): the model is held as published, in bfloat16 (7.6 GB), and each decoder layer is turned to float32
+    for its own forward pass only and back after it (a bfloat16 weight is exact in float32 and back), the embedding,
+    the final norm and the classifier staying float32: the arithmetic is float32's all the same."""
     import torch
     from transformers import AutoModelForCausalLM
-    model = AutoModelForCausalLM.from_pretrained(folder, dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(folder, dtype=torch.bfloat16 if lean else torch.float32)
     model.eval()
+    if lean:
+        for part in (model.model.embed_tokens, model.model.norm, model.lm_head):
+            part.float()
+        for layer in model.model.layers:
+            layer.register_forward_pre_hook(lambda module, args: module.float() and None)
+            layer.register_forward_hook(lambda module, args, output: module.bfloat16() and None)
     return model
 
 
@@ -187,7 +199,8 @@ def real(directory):
     failed = False
     for phase in ("transformers", "float32", "int8"):
         said = subprocess.run([sys.executable, __file__, str(directory), f"--phase={phase}", f"--model={name}",
-                               f"--positions={RUN['positions']}", f"--layers={RUN['layers']}"])
+                               f"--positions={RUN['positions']}", f"--layers={RUN['layers']}",
+                               f"--lean={'on' if RUN['lean'] else 'off'}", f"--faults={'on' if RUN['faults'] else 'off'}"])
         say(f"real, the phase {phase}: exit {said.returncode}")
         failed |= said.returncode != 0
         if phase == "transformers" and said.returncode != 0:
@@ -206,7 +219,7 @@ def real_transformers(directory, name):
     folder = directory / f"{name}-cut"
     ids = real_ids(folder, MODELS[name][2])
     began = time.perf_counter()
-    model = transformers_model(folder)
+    model = transformers_model(folder, RUN["lean"])
     say(f"real, {name}: transformers loaded {model.config.num_hidden_layers} layers in {time.perf_counter() - began:.0f} s")
     whole, stepped = at_once_and_stepped(model, ids)
     say(f"real, {name}: transformers at once and token by token: {differences(whole, stepped)[0]:.2e} apart")
@@ -249,7 +262,7 @@ def real_engine(directory, name, dtype):
     logits_said(say, f"real, {name}", theirs["stepped"], ours)
     failed = logits_failed(say, f"real, {name}, float32: the engine against transformers", ours, theirs["stepped"], line, gap=True)
     weakest = None
-    for what, make, undo in faults(llama):
+    for what, make, undo in faults(llama) if RUN["faults"] else []:
         make()
         try:
             largest = differences(engine_logits(llama, ids), theirs["stepped"])[0]
@@ -259,7 +272,8 @@ def real_engine(directory, name, dtype):
             f"{'' if largest > line else ' — FAILED: the line lets it through'}")
         failed |= not largest > line
         weakest = min(weakest or (largest, what), (largest, what))
-    say(f"faults: the weakest, {weakest[1]}, is {weakest[0] / line:.1f} times the line")
+    if weakest:
+        say(f"faults: the weakest, {weakest[1]}, is {weakest[0] / line:.1f} times the line")
     path.unlink()
     return failed
 
@@ -268,7 +282,7 @@ def main():
     directory = Path(sys.argv[1])
     directory.mkdir(parents=True, exist_ok=True)
     RUN.update(model=option("model", "phi-3"), layers=int(option("layers", "8")), positions=int(option("positions", "96")),
-               fetch=option("only") == "fetch")
+               fetch=option("only") == "fetch", lean=option("lean") == "on", faults=option("faults") != "off")
     phase, name = option("phase"), RUN["model"]
     if phase:
         failed = real_transformers(directory, name) if phase == "transformers" else real_engine(directory, name, phase)
