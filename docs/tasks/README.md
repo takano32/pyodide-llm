@@ -432,3 +432,4 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T653](T653.md) [モデル][遠隔試験] サイトを小さくする: llm-jp-3 150M と stories42M の原本をサイトから外し、HF から取る — 2026-11-06
 - [T656](T656.md) [追加][モデル] 12B を 3 つ一覧に（Mistral-Nemo-Japanese・Shisa 12B・Gemma 3 12B） — 2026-11-12
 - [T658](T658.md) [文書][その他] AGENTS.md の 5 回目の蒸留: 細部を docs/ に移して約 10 万字に — 2026-11-12
+- [T659](T659.md) [バグ][変換] `?hf=microsoft/Phi-3-mini-4k-instruct` は tokenizer.model を読み、書式の印が無い — 2026-11-12
