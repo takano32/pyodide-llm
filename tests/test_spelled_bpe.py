@@ -403,6 +403,20 @@ def test_a_tokenizer_json_with_marks_its_model_lacks_is_read_at_once():
     assert refused.value.args == last.value.args
 
 
+def test_a_unigram_tokenizer_json_that_reads_like_a_written_out_one_is_put_off_as_before():
+    """T659's review: written_out() looks at the normalizer alone, so a Unigram's tokenizer.json (its vocabulary a list
+    of [piece, score], no ids) with the same two steps got to marks_past() and an AttributeError, which the conduct reads
+    as a refusal: the file, where it was the model's only one, was lost."""
+    from convert.vocabulary import vocabulary_of
+    from convert.tokenizer import PREPENDED, SPACE_WRITTEN
+    unigram = {"normalizer": {"type": "Sequence", "normalizers": [PREPENDED, SPACE_WRITTEN]}, "pre_tokenizer": None,
+               "added_tokens": [{"id": 0, "content": "<unk>", "special": True}],
+               "model": {"type": "Unigram", "unk_id": 0, "vocab": [["<unk>", 0.0], ["\u2581a", -1.0], ["a", -2.0], ["\u2581", -3.0]]}}
+    with pytest.raises(Later):
+        vocabulary_of(json.dumps(unigram).encode(), "tokenizer.json", 4, last=False)
+    assert vocabulary_of(json.dumps(unigram).encode(), "tokenizer.json", 4, last=True).options["prefixed"] == "every"
+
+
 def test_the_conduct_reads_no_other_tokenizer_after_one_with_marks_of_its_own(monkeypatch):
     """T659: the refusal of a tokenizer.json with marks its model's other tokenizers lack (Only) is the conduct's,
     and the tokenizer.model after it is not asked for: read in its place, the format's marks would be text."""

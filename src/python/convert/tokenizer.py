@@ -31,7 +31,10 @@ def marks_past(tokenizer, vocab_size):
     """T659: the added tokens of a tokenizer.json that its model's own vocabulary has not and the model has a row for:
     the marks a chat template writes (Phi-3 mini's 32000 to 32010, past the 32000 pieces of its tokenizer.model), which
     the model's other tokenizers lack. An added token past the model's last row is none of its (with_a_row())."""
-    own = set(tokenizer["model"]["vocab"].values())
+    vocab = tokenizer["model"]["vocab"]
+    if not isinstance(vocab, dict):  # (a Unigram's is a list of [piece, score]: its pieces have no ids to lack)
+        return []
+    own = set(vocab.values())
     return [token["content"] for token in tokenizer.get("added_tokens", [])
             if token.get("id") not in own and isinstance(token.get("id"), int) and token["id"] < vocab_size]
 
