@@ -13,6 +13,7 @@
 //   r16  ch, and a group's four sums of 32 added up in int16 (at most 8192 a group of 32: 4 planes x 8 lanes x 256)
 //        with 64-bit lane shuffles, one widening to int32 a group in place of four
 //   rt   r16 with the copy's tree of adds (what the int16 sums alone are worth)
+//   r16s r16 whose last plane of codes is a shift of bytes (i8x16.shr_u) with no mask
 //   dt   the planes' products as i32x4.dot_i16x8_s of the bytes widened to int16 (no int16 sums to widen)
 //   w2   r16 on two rows at once, the activations loaded once for both
 import { codes } from "../kernels/ternary";
@@ -111,6 +112,22 @@ import { hsum } from "../kernels/kernel/math";
   return sums16(l0, h0, l1, h1);
 }
 
+// ---- r16s: r16 whose last plane is a shift of bytes with no mask (arm64 has one; x86-64 makes it of 16-bit shifts)
+// @ts-ignore: decorator
+@inline function last(v: v128): v128 {
+  return i8x16.shr_u(v, 6);
+}
+// @ts-ignore: decorator
+@inline function shiftedWhole(w: usize, x: usize, mask: v128): v128 {
+  const v0 = v128.load(w), v1 = v128.load(w, 16);
+  const x0 = v128.load(x), x1 = v128.load(x, 16), x2 = v128.load(x, 32), x3 = v128.load(x, 48);
+  const c0 = codes(v0, 0, mask), c1 = codes(v0, 1, mask), c2 = codes(v0, 2, mask), c3 = last(v0);
+  const y0 = v128.load(x, 64), y1 = v128.load(x, 80), y2 = v128.load(x, 96), y3 = v128.load(x, 112);
+  const d0 = codes(v1, 0, mask), d1 = codes(v1, 1, mask), d2 = codes(v1, 2, mask), d3 = last(v1);
+  return sums16(low4(x0, x1, x2, x3, c0, c1, c2, c3), high4(x0, x1, x2, x3, c0, c1, c2, c3),
+                low4(y0, y1, y2, y3, d0, d1, d2, d3), high4(y0, y1, y2, y3, d0, d1, d2, d3));
+}
+
 // ---- dt: dot products of the bytes widened to int16
 // @ts-ignore: decorator
 @inline function dotLow(a: v128, c: v128): v128 {
@@ -139,12 +156,14 @@ class Chain {}
 class R16 {}
 class Dot {}
 class Tree {}
+class Shifted {}
 // @ts-ignore: decorator
 @inline function wholeOf<F>(w: usize, x: usize, mask: v128): v128 {
   if (idof<F>() == idof<Copy>()) return copyWhole(w, x, mask);
   if (idof<F>() == idof<Chain>()) return chainWhole(w, x, mask);
   if (idof<F>() == idof<R16>()) return r16Whole(w, x, mask);
   if (idof<F>() == idof<Tree>()) return rtWhole(w, x, mask);
+  if (idof<F>() == idof<Shifted>()) return shiftedWhole(w, x, mask);
   return dotWhole(w, x, mask);
 }
 // @ts-ignore: decorator
@@ -185,6 +204,9 @@ export function matmul_r16(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
 }
 export function matmul_rt(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
   rows<Tree>(xout, xq, xs, wq, ws, n, r0, r1, three);
+}
+export function matmul_r16s(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  rows<Shifted>(xout, xq, xs, wq, ws, n, r0, r1, three);
 }
 export function matmul_dt(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
   rows<Dot>(xout, xq, xs, wq, ws, n, r0, r1, three);
