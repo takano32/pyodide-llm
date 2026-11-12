@@ -225,6 +225,16 @@ def test_the_specials_are_cut_as_they_were_and_the_pattern_is_made_once():
     with pytest.raises(KeyError):  # a special the vocabulary has no piece for, where it is written (as before)
         engine.encode("the<none>", ("<none>",))
     assert engine.encode("the", ("<none>",)) == engine.encode("the")
+    # T509's review: generate() asks for the model's specials, then for a mark of a thought alone (mark_of()), at every
+    # run: the pattern of the specials is not made again each time (a Gemma 3's 6,415 took 0.5 s native, 1.4 s in Pyodide)
+    made = engine.cut(specials)  # (re.compile() keeps patterns of its own: the tuple is what cut() makes)
+    for mark in ("</think>", "<think>", "<|end|>"):
+        with pytest.raises(KeyError):
+            engine.encode(mark, (mark,))
+    assert engine.cut(specials) is made
+    for count in range(40):  # (and the tuples are not kept without end)
+        engine.cut((f"<{count}>",))
+    assert len(engine.cuts) <= 16 and engine.encode("the</s>dog<s>", specials) == first
 
 
 def test_refuses_what_the_engine_would_not_follow():

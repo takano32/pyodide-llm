@@ -392,7 +392,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **PLaMo の `tokenizer.jsonl`**: 点数は `round(score·1e4)` の整数で足す、同点は最初の語片が長いほう、語片の無い字は 1 字 1e7。**本物の道具を numba 抜きの素の Python で回さない**。
 - **置き換え（options の `replaced`）**: 語彙に無い文字（改行）をカードが別の文字列（`<NL>`）で書くモデルのために、encode の頭で置き換え、`generate()` が出る文を `Unreplaced` で戻す。
 - **added tokens の `rstrip`・`lstrip` は設定 `stripped`**（T258: `{"right": [...], "left": [...]}`。変換器は印の立つ tokenizer.json だけが言い、無ければ鍵を書かない）: 本物は印の右（左）の空白を印に含める（Phi-3 の `<|user|>\n` は 1 トークン）。空白は Unicode の White_Space（Python の `isspace` から \x1c〜\x1f を除く）。**書式の頭の印を BOS にしたモデルは、書式の残りが BOS の後ろから始まる**ので `generate()` が `encode(…, after=bos)` を呼ぶ: 道具でページの送る ID を作るときも BOS を `after` に渡す（`format_check.py`・`conversions_compare.py`）。**一覧で今あるもののうち印の立つ tokenizer.json は Shisa V2.1 unphi4 14B だけ**で、その項目は `stripped: {}`（読まない）で T258 の前の送る ID のまま（持ち主の答え待ち: TASKS.md の T258.1）。
-- **special でない追加のトークンも specials に**（本物は前分割の前にどこでも 1 つに読む）。 並びは長い順・同じ長さは文字の順。specials の多いモデル（Gemma 3 の 6,406 個）は切り分けの型を組ごとに 1 回だけ作る（`Tokenizer.cut()`）。型は trie で、そこに書かれた最も長い special を取る（`longest_written()`、T509: 1 つの選択だった頃は `<` のたびに全部を試し、HTML 4,000 字で Pyodide の中 873 ms）。
+- **special でない追加のトークンも specials に**（本物は前分割の前にどこでも 1 つに読む）。 並びは長い順・同じ長さは文字の順。specials の多いモデル（Gemma 3 の 6,406 個）は切り分けの型を組ごとに 1 回だけ作る（`Tokenizer.cut()`）。型は trie で、そこに書かれた最も長い special を取る（`longest_written()`、T509: 1 つの選択だった頃は `<` のたびに全部を試し、HTML 4,000 字で Pyodide の中 873 ms）。**型は 16 組まで覚える**（`generate()` は答えのたびに、モデルの specials のあとで考えの印を 1 語だけで `mark_of()` が頼む: 1 組しか覚えない形では、Gemma 3 は答えのたびに作り直していた。T509 のレビュー）。
 - **`bpe` の合わせる線は −1e10 のまま**（T509）: sentencepiece のモデル自身が NORMAL の語片に −1e9 を付けることがあり（Mistral と Llama 2 の語彙の空白の並び）、本物はそれも合わせる。線を変換器の `UNMATCHABLE` に上げると、一覧の 17 項目で空白の並びの読みが本物と違う。
 
 ### スレッドとメモリ

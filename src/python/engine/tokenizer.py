@@ -501,7 +501,7 @@ class Tokenizer:
         # tokenizer_config.json's break_around_consecutive_spaces_threshold and break_around_repeated_chars_threshold
         # (T649.3: a dict of the page's options, a JsProxy in Pyodide: unwrapped as every other one, engine/proxy.py)
         self.breaks = plamo_breaks(plain(breaks) or {})
-        self.cuts = {}  # cut()'s, of the specials it was last asked for
+        self.cuts = {}  # cut()'s, of the specials it was asked for (a few)
         # T617: strings the model reads in place of others, written in every text encode() is given before anything
         # else, and turned back in what it writes (Unreplaced, which generate() makes where there are any): rinna's
         # japanese-gpt-neox instruction models read "<NL>" for a newline, which their vocabulary has not
@@ -585,8 +585,10 @@ class Tokenizer:
         among them (a Gemma 3's runs of U+2581)."""
         if specials not in self.cuts:
             spelled = (lambda special: special.replace("\u2581", " ")) if self.spaces else (lambda special: special)
-            self.cuts = {specials: (re.compile("(" + longest_written(specials) + ")"),
-                                    {special: spelled(special).encode("utf-8") for special in specials})}
+            if len(self.cuts) >= 16:  # (a run asks for its model's specials and for each mark of a thought, a few tuples)
+                self.cuts.clear()
+            self.cuts[specials] = (re.compile("(" + longest_written(specials) + ")"),
+                                   {special: spelled(special).encode("utf-8") for special in specials})
         return self.cuts[specials]
 
     def normalized(self, text):
