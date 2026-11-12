@@ -15,8 +15,13 @@
 // b1@before, the bases of this tree's t2 and b1 (b1 reads the first half of the ternary codes as its bits): what a
 // change to kernels/ is worth, each held to its before to the bit and timed against it.
 //
+// T288: --relaxed times the product with relaxed SIMD instead: matmul_t2r (kernel_relaxed.ts) against the forms of
+// tests/ternary-relaxed-forms.ts (default rc,x16,x16b,tl), and with --before t2r@before and b1r@before. A form whose
+// module exports layout_<form> reads its own copies of the weights, written by that function from the base's; every
+// form's call is given a scratch place (tl's tables) after its usual arguments.
+//
 //   node tests/ternary-browser-bench.ts [here] [chromium webkit firefox] [--turns 15] [--megabytes 128] [--weights 2e9]
-//        [--shapes 2048x2048,6144x2048,2048x6144] [--forms t2c,ch,r16,r16s,rt,dt,w2] [--before origin/main]
+//        [--shapes 2048x2048,6144x2048,2048x6144] [--forms t2c,ch,r16,r16s,rt,dt,w2] [--before origin/main] [--relaxed]
 // "here" is the runtime that runs the file (node or bun). Exit 1 where a form's numbers are not its base's.
 // Compiles with AssemblyScript into .tmp/ternary-browser-bench/ (needs `npm ci`); the browsers are playwright-core's.
 import { execFileSync } from "node:child_process";
@@ -32,17 +37,22 @@ const valued = new Set(["--turns", "--megabytes", "--weights", "--shapes", "--fo
 const text = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
 const engines = args.filter((arg, i) => !arg.startsWith("--") && !valued.has(args[i - 1]));
 const before = text("--before", "");
+const relaxed = args.includes("--relaxed");
 const options = {
   turns: Number(text("--turns", 15)),
   megabytes: Number(text("--megabytes", 128)),
   weights: Number(text("--weights", 2e9)),
   shapes: text("--shapes", "2048x2048,6144x2048,2048x6144").split(",").map((shape) => shape.split("x").map(Number)),
-  forms: text("--forms", "t2c,ch,r16,r16s,rt,dt,w2").split(",").filter(Boolean),
+  forms: text("--forms", relaxed ? "rc,x16,x16b,tl" : "t2c,ch,r16,r16s,rt,dt,w2").split(",").filter(Boolean),
+  relaxed,
 };
 
 fs.mkdirSync(work, { recursive: true });
-const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1", "--enable", "simd"];
-const sources = [[root + "kernels/kernel.ts", "plain"], [root + "tests/ternary-plain-forms.ts", "forms"]];
+const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1", "--enable",
+  relaxed ? "simd,relaxed-simd" : "simd"];
+// (the kernels' own module: kernel.ts, or kernel_relaxed.ts with --relaxed; interleave() is kernel.ts's in either)
+const sources = [[root + "kernels/kernel.ts", "plain"], [root + (relaxed ? "tests/ternary-relaxed-forms.ts" : "tests/ternary-plain-forms.ts"), "forms"]];
+if (relaxed) sources.push([root + "kernels/kernel_relaxed.ts", "relaxed"]);
 if (before) {
   // kernels/ as it was at that commit, in a folder of its own
   fs.rmSync(work + "before", { recursive: true, force: true });
@@ -55,7 +65,7 @@ if (before) {
   }
   const archive = execFileSync("git", ["archive", before, "kernels"], { cwd: root, maxBuffer: 1 << 28 });
   execFileSync("tar", ["-x", "-C", work + "before"], { input: archive });
-  sources.push([work + "before/kernels/kernel.ts", "before"]);
+  sources.push([work + (relaxed ? "before/kernels/kernel_relaxed.ts" : "before/kernels/kernel.ts"), "before"]);
   console.log(`before: kernels/ of ${execFileSync("git", ["rev-parse", "--short", before], { cwd: root }).toString().trim()}`);
 }
 for (const [source, name] of sources) execFileSync("npx", [...asc, source, "-o", `${work}${name}.wasm`], { cwd: root, stdio: "inherit" });
@@ -75,20 +85,29 @@ async function timeForms(modules, options) {
   const PAGE = 65536, align = (bytes, to = 4096) => Math.ceil(bytes / to) * to;
   const largest = Math.max(...options.shapes.map(([rows, n]) => rows * n));
   const region = Math.max(options.megabytes * 2 ** 20, 2 * align(largest / 4 + (largest / 128) * 2 + 64));
-  const small = align(64 * 1024 + Math.max(...options.shapes.map(([rows, n]) => 2 * n + rows * 4)) * 2, PAGE);
-  const memory = new WebAssembly.Memory({ initial: Math.ceil((small + region) / PAGE) });
-  const [plain, forms, old] = await Promise.all([modules.plain, modules.forms, modules.before].map(async (m) =>
-    m && (await WebAssembly.instantiate(bytesOf(m), { env: { memory } })).instance.exports));
+  const widest = Math.max(...options.shapes.map(([, n]) => n));
+  const small = align(64 * 1024 + Math.max(...options.shapes.map(([rows, n]) => 2 * n + rows * 4)) * 2 + 1024 + 16 * widest, PAGE);
+  const SCRATCH = small - align(1024 + 16 * widest);  // T288: a form's own place (tl's accumulators and tables)
+  const [plain, forms, old, own] = await Promise.all([modules.plain, modules.forms, modules.before, modules.relaxed].map(async (m) =>
+    m && (await WebAssembly.compile(bytesOf(m)))));
+  // the forms that read weights of their own layout: a second region of copies
+  const laid = options.forms.filter((name) => WebAssembly.Module.exports(forms).some((e) => e.name === `layout_${name}`));
+  const memory = new WebAssembly.Memory({ initial: Math.ceil((small + region * (laid.length ? 2 : 1)) / PAGE) });
+  const instance = async (m) => m && (await WebAssembly.instantiate(m, { env: { memory } })).exports;
+  const [plainK, formsK, oldK, ownK] = await Promise.all([plain, forms, old, own].map(instance));
   // every form: its call, and the form it is timed against and held to (its base)
   const ALL = {}, base = {};
   const add = (name, of, call) => { ALL[name] = call; base[name] = of; };
-  const first = old ? "t2@before" : "t2";
-  if (old) add("t2@before", first, (o, xq, xs, w, s, n, r0, r1) => old.matmul_t2(o, xq, xs, w, s, n, r0, r1, 3));
-  add("t2", first, (o, xq, xs, w, s, n, r0, r1) => plain.matmul_t2(o, xq, xs, w, s, n, r0, r1, 3));
-  for (const name of options.forms) add(name, first, (o, xq, xs, w, s, n, r0, r1) => forms[`matmul_${name}`](o, xq, xs, w, s, n, r0, r1, 3));
-  if (old) {
-    add("b1@before", "b1@before", (o, xq, xs, w, s, n, r0, r1) => old.matmul_b1(o, xq, xs, w, s, n, r0, r1, 2));
-    add("b1", "b1@before", (o, xq, xs, w, s, n, r0, r1) => plain.matmul_b1(o, xq, xs, w, s, n, r0, r1, 2));
+  // (the kernels this tree builds: kernel.ts's, or kernel_relaxed.ts's with --relaxed)
+  const mine = options.relaxed ? ownK : plainK, t2 = options.relaxed ? "matmul_t2r" : "matmul_t2", b1 = options.relaxed ? "matmul_b1r" : "matmul_b1";
+  const tag = options.relaxed ? "r" : "";
+  const first = oldK ? `t2${tag}@before` : `t2${tag}`;
+  if (oldK) add(first, first, (o, xq, xs, w, s, n, r0, r1) => oldK[t2](o, xq, xs, w, s, n, r0, r1, 3));
+  add(`t2${tag}`, first, (o, xq, xs, w, s, n, r0, r1) => mine[t2](o, xq, xs, w, s, n, r0, r1, 3));
+  for (const name of options.forms) add(name, first, (o, xq, xs, w, s, n, r0, r1) => formsK[`matmul_${name}`](o, xq, xs, w, s, n, r0, r1, 3, SCRATCH));
+  if (oldK) {
+    add(`b1${tag}@before`, `b1${tag}@before`, (o, xq, xs, w, s, n, r0, r1) => oldK[b1](o, xq, xs, w, s, n, r0, r1, 2));
+    add(`b1${tag}`, `b1${tag}@before`, (o, xq, xs, w, s, n, r0, r1) => mine[b1](o, xq, xs, w, s, n, r0, r1, 2));
   }
   const names = Object.keys(ALL), bases = [...new Set(Object.values(base))];
   const U = new Uint8Array(memory.buffer), I = new Int8Array(memory.buffer), F = new Float32Array(memory.buffer);
@@ -104,7 +123,7 @@ async function timeForms(modules, options) {
     // the activations: int8 in -127..127 and a positive scale a group of 32, laid out by interleave()
     for (let j = 0; j < n; j++) I[XQ + j] = (next() % 255) - 127;
     for (let g = 0; g < n / 32; g++) F[(XS >> 2) + g] = 0.001 + (next() % 1000) / 100000;
-    plain.interleave(XQ, XS, n);
+    plainK.interleave(XQ, XS, n);
     // a matrix: codes 0..2 (two bits a weight) and float16 scales of either sign, then its copies
     for (let b = 0; b < count * n / 4; b++) {
       let byte = 0;
@@ -112,9 +131,17 @@ async function timeForms(modules, options) {
       U[at + b] = byte;
     }
     for (let g = 0; g < groups; g++) U16[((at + count * n / 4) >> 1) + g] = (next() & 0x8000) | (0x2000 + (next() % 0x1800));
+    // T288: the forms of their own layout, written from the first copy into the second region
+    const second = small + region;
+    if (laid.length > 1) throw new Error(`one form of its own layout at a time: ${laid}`);
+    for (const name of laid) {
+      if (count % 16) throw new Error(`${name}: rows of ${count} are not blocks of 16`);
+      formsK[`layout_${name}`](second, at, at + count * n / 4, count, n);
+    }
     for (let c = 1; c < copies; c++) U.copyWithin(at + c * matrix, at, at + matrix);
+    if (laid.length) for (let c = 1; c < copies; c++) U.copyWithin(second + c * matrix, second, second + matrix);
     const call = (name, copy, r0, r1) => {
-      const w = at + (copy % copies) * matrix;
+      const w = (laid.includes(name) ? second : at) + (copy % copies) * matrix;
       ALL[name](OUT, XQ, XS, w, w + count * n / 4, n, r0, r1);
     };
     // tiered up (thousands of calls of a few rows), then held to its base to the bit on every row
