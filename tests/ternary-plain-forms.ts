@@ -10,7 +10,7 @@
 //   t2c  a copy of matmul_t2 (kernel/matmul.ts's signsRows<Ternary>) in this module: the noise of two copies of one form
 //   ch   the four planes' products added as a chain, acc = acc + product (arm64's smlal and sadalp fold such an add
 //        into the multiply or the widening; the copy adds them as a tree)
-//   r16  ch, and a group's four sums of 32 added up in int16 (at most 8192 a group of 32: 4 planes x 8 lanes x 256)
+//   r16  ch, and a group's four sums of 32 added up in int16 (at most 12288 a group of 32: 4 planes x 8 lanes x 384, PQ2_0's fourth code x |-128|)
 //        with 64-bit lane shuffles, one widening to int32 a group in place of four
 //   rt   r16 with the copy's tree of adds (what the int16 sums alone are worth)
 //   r16s r16 whose last plane of codes is a shift of bytes (i8x16.shr_u) with no mask
