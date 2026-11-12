@@ -35,11 +35,20 @@ assert.equal(rowOf("Llama 3.2 1B w1", SIGNED)[4], "83.9");
 assert.equal(rowOf("Llama 3.2 1B w1", "ORT DP4A 64×64, ternary")[4], "268.4");
 assert.equal(rowOf("Llama 3.2 1B w1", SIGNED)[5], "23.6 (59%)");
 // a form the check found wrong is not timed, and says the word warnings() picks up; an unsteady one says so
-assert.match(rowOf("Ternary Bonsai 8B w1", SUMS)[3], /^WRONG in the check: /);
+// (the mark is on the form's name, where warnings() takes it out as a repeat of the check's verdict: listed once)
+const wrongRow = cellsOf(lines.find((line) => line.includes(`| Ternary Bonsai 8B w1 | ${SUMS} (WRONG in the check) |`))!);
+assert.match(wrongRow[3], /^not timed: 3\.10e-1 of the products off JavaScript's$/);
+assert.deepEqual(wrongRow.slice(4), ["", "", ""]);
 assert.match(rowOf("Llama 3.2 1B, a layer", "DP4A, fused \\(T175\\), ternary \\(engine\\)".replace(/\\/g, ""))[3], /^unsteady: /);
 // the two forms against each other, a shape each where both ran: 0.2 / 0.16; none on the 8B, whose second was wrong
 assert.deepEqual(ternaryForms(found), ["1.3× on Llama 3.2 1B w1"]);
 assert.ok(lines.at(-1).endsWith("1.3× on Llama 3.2 1B w1"), lines.at(-1));
+// the engine's form timed again at the end of its table (gpu/ternary.ts's withControl) goes beside the ratio of the two forms
+const AGAIN = `${SIGNED}, again at the end`;
+const withAgain = { ...found, rows: [...found.rows, matrix("Llama 3.2 1B w1", AGAIN, true, 0.21)] };
+assert.deepEqual(ternaryForms(withAgain), ["1.3× on Llama 3.2 1B w1 (the engine's form against itself 0.95×)"]);
+assert.equal(cellsOf(ternaryTable({ name: "t", result: withAgain }, ceilings).find((line) => line.includes(`| ${AGAIN} |`))!).at(-1), "1.9×", "the second row of the engine's form is held against int8 as the first is");
+assert.deepEqual(ternaryForms({ rows: [...found.rows, matrix("Llama 3.2 1B w1", AGAIN, true, 0.21, { unsteady: true })] }), ["1.3× on Llama 3.2 1B w1"], "an unsteady control is not quoted");
 // no share where the device was lost; why there is no table
 assert.equal(cellsOf(ternaryTable({ name: "t", result: found }, ceilings, { lost: "unknown: gone" }).find((line) => line.includes(SIGNED)))[5], "23.6");
 assert.equal(ternaryTable({ name: "t", error: "the worker stopped" }, ceilings).at(-1), "failed: the worker stopped");

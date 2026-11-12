@@ -7,7 +7,7 @@ import type { GpuCeilings, TernaryFound, TernaryRow } from "../runtime/contracts
 // the tables of the step, in its order, and what a row of each is
 const WHAT: Record<TernaryRow["what"], string> = { matrix: "a token's matrix × vector", tile: "a prompt's tile", layer: "a layer of a token" };
 // the two forms of a ternary matrix × vector the summary holds against each other (gpu/ternary.ts's names)
-const SIGNED = "ternary, the codes made signed (engine)", SUMS = "ternary, the codes as they are less Σa";
+const SIGNED = "ternary, the codes made signed (engine)", SUMS = "ternary, the codes as they are less Σa", AGAIN = `${SIGNED}, again at the end`;
 
 // a ternary tile's int8 row: the same tile with or without subgroups ("ORT DP4A 64×64, subgroups, ternary" and
 // "ORT DP4A 64×64, subgroups, int8")
@@ -18,12 +18,16 @@ const rowOf = (rows: TernaryRow[], { what, shape }: Pick<TernaryRow, "what" | "s
   rows.find((row) => row.what === what && row.shape === shape && form(row.form));
 
 /** How much faster the codes as they are less Σa run than the engine's form (the codes made signed), a shape each, as
- * "1.1× on Llama 3.2 1B w1": above 1 the form the engine did not take is faster here (T232's choice to overturn). */
+ * "1.1× on Llama 3.2 1B w1": above 1 the form the engine did not take is faster here (T232's choice to overturn). With
+ * the engine's form against its own second row (timed at the end of the table: the order and the device's drift), as
+ * "(the engine's form against itself 1.02×)", the noise to read the ratio against. */
 export function ternaryForms(r: TernaryFound | undefined): string[] {
   const rows = r?.rows ?? [];
   return [...new Set(rows.filter((row) => row.what === "matrix").map((row) => row.shape))].flatMap((shape) => {
-    const signed = measured(rowOf(rows, { what: "matrix", shape }, (form) => form === SIGNED)), sums = measured(rowOf(rows, { what: "matrix", shape }, (form) => form === SUMS));
-    return signed && sums && !signed.unsteady && !sums.unsteady ? [`${times(signed.ms! / sums.ms!)} on ${shape}`] : [];
+    const form = (name: string) => measured(rowOf(rows, { what: "matrix", shape }, (one) => one === name));
+    const signed = form(SIGNED), sums = form(SUMS), again = form(AGAIN);
+    if (!signed || !sums || signed.unsteady || sums.unsteady) return [];
+    return [`${times(signed.ms! / sums.ms!)} on ${shape}${again && !again.unsteady ? ` (the engine's form against itself ${times(signed.ms! / again.ms!)})` : ""}`];
   });
 }
 
@@ -40,8 +44,9 @@ export function ternaryTable(s: Step<TernaryFound> | undefined, ceilings: GpuCei
   const head = ["**Ternary weights** (T270): Ternary Bonsai's weights, two bits a weight (-1, 0 or +1 times a scale a group of 128), beside int8 on the same shapes. " +
     "The GPU multiplies them by the packed int8 dot as the int8 rows do, the codes spread to a byte each as they are read. " +
     "Two forms of a token's matrix × vector: the engine's, which makes every code signed as it reads it (an add and an xor a word of 16 codes), " +
-    "and the form Prism ML's llama.cpp and this project's CPU kernel take, which keeps the codes as they are (0, 1 and 2) and takes the vector's sum off the dot (a subtraction a row and group, the sums made once as the vector is loaded). " +
+    "and the form Prism ML's llama.cpp and this project's CPU kernel take, which keeps the codes as they are (0, 1 and 2) and takes the vector's sum off the dot (a subtraction a row and group, the sums made as each workgroup loads the vector). " +
     "Which is faster depends on the device: the engine takes the first until a report says otherwise. " +
+    "The engine's form is timed once more at the end of each such table: the two rows' difference is the noise (the order the forms are timed in, the device's drift) that a ratio between the forms is to be read against. " +
     "The prompt's tile and the layer are the engine's forms (ORT's DP4A, T175's fused layer) on int8 and on ternary weights. " +
     "Each is timed as a submission of 2n of it less one of n, in turn with the other rows of its table, on copies of its weights that make 128 MiB (not from the GPU's caches). " +
     "G weights/s counts a multiply-add for each weight and token; GB/s the weights and their scales read" +
@@ -51,7 +56,8 @@ export function ternaryTable(s: Step<TernaryFound> | undefined, ceilings: GpuCei
   if (r.none) return [...head, "", tableCell(r.none)];
   const cell = (row: TernaryRow) => {
     if (row.none) return [tableCell(row.none), "", "", ""];
-    if (row.wrong) return [tableCell(`WRONG in the check: ${row.wrong}`), "", "", ""];
+    // (the name's "(WRONG in the check)" is what warnings() takes out as a repeat of the check's own verdict, as every table does)
+    if (row.wrong) return [tableCell(`not timed: ${row.wrong}`), "", "", ""];
     if (row.error) return [tableCell(`failed: ${row.error}`), "", "", ""];
     const seconds = row.ms! / 1000, GBps = row.bytes! / seconds / 1e9;
     // the int8 row of the same table and shape (of a tile, the same tile)
@@ -60,7 +66,7 @@ export function ternaryTable(s: Step<TernaryFound> | undefined, ceilings: GpuCei
       `${number(GBps)}${reads ? ` (${number((100 * GBps) / reads, 0)}%)` : ""}`, row.ternary && base ? times(base.ms! / row.ms!) : ""];
   };
   const lines = [...head, "", "| table | shape | form | ms | G weights/s | GB/s | × int8 |", "|---|---|---|---:|---:|---:|---:|",
-    ...r.rows.map((row) => `| ${WHAT[row.what]}${row.what === "tile" ? `, ${row.tokens} tokens` : ""} | ${row.shape} | ${row.form} | ${cell(row).join(" | ")} |`)];
+    ...r.rows.map((row) => `| ${WHAT[row.what]}${row.what === "tile" ? `, ${row.tokens} tokens` : ""} | ${row.shape} | ${row.form}${row.wrong ? " (WRONG in the check)" : ""} | ${cell(row).join(" | ")} |`)];
   const forms = ternaryForms(r);
   lines.push("", `**The codes as they are less Σa against the engine's form** (above 1×: faster than the engine's here): ${forms.length ? forms.join(", ") : "not measured"}`);
   return lines;

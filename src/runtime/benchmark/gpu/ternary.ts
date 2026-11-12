@@ -21,8 +21,9 @@ import { LAYER_POS, LAYER_MOST, LAYER_KINDS, layerShape, layerPipes, layerParts,
 import type { Dispatch, Kind, MatVecShader, Owned, Placed, PromptShader, Shape, Submission, Thrown, Vectors } from "./device.ts";
 import type { Form, MatrixKey, Matrices } from "./layerparts.ts";
 import type { Alive, TernaryFound, TernaryRow, Verdicts } from "../../contracts/benchmark.ts";
-// a form of a table: what it is called, whether its weights are ternary, the shader (kindOf's) or why it cannot run
-type Candidate = { name: string; ternary: boolean; shader: MatVecShader | PromptShader; none?: string };
+// a form of a table: what it is called, whether its weights are ternary, the shader (kindOf's) or why it cannot run;
+// checkedAs: the name of the form whose verdict of the check it has, where it is another row of that form
+type Candidate = { name: string; ternary: boolean; shader: MatVecShader | PromptShader; none?: string; checkedAs?: string };
 
 // the shapes of the matrix × vector, [rows, n] (Ternary Bonsai 8B is Qwen3 8B's shape: hidden 12288, dim 4096)
 const SHAPES: [string, Shape][] = [["Llama 3.2 1B w1", [8192, 2048]], ["Ternary Bonsai 8B w1", [12288, 4096]]];
@@ -50,6 +51,11 @@ const tileForms = (): Candidate[] => {
     ...ternary.map((form) => ({ name: form.name, ternary: true, shader: form, none: form.none ?? (shared.features.packed ? undefined : NO_DOT) }))];
 };
 const verdictOf = (name: string) => `ternary: ${name}`;
+// the engine's ternary form once more at the end of a token's matrix × vector table, as bandwidth() times its first
+// shader again: the interleaving takes the forms in one order every round, so the second row against the first says what
+// that order and the device's drift make of a ratio, which the ratio of the two ternary forms is to be read against
+const AGAIN = ", again at the end";
+const withControl = (forms: Candidate[]): Candidate[] => [...forms, { ...forms[1], name: forms[1].name + AGAIN, checkedAs: forms[1].name }];
 
 // random ternary codes, four a byte, 0 to 2 each (3, which no file has, is left out of the checks)
 function codes(count: number) {
@@ -190,7 +196,7 @@ async function timeRows(timed: { row: TernaryRow; submission?: Submission }[], m
 // a form that cannot be timed: why (it cannot run here, or the check found it wrong or could not run it)
 const notTimed = (form: Candidate): Pick<TernaryRow, "none" | "wrong"> | undefined => {
   if (form.none) return { none: form.none };
-  const verdict = form.ternary ? checked?.[verdictOf(form.name)] : undefined;
+  const verdict = form.ternary ? checked?.[verdictOf(form.checkedAs ?? form.name)] : undefined;
   if (verdict && !verdict.ok) return { wrong: verdict.error ?? `${verdict.worstRelative.toExponential(2)} of the products off JavaScript's` };
   return undefined;
 };
@@ -305,7 +311,7 @@ async function ternary(): Promise<TernaryFound> {
       rows.push({ what, form: "every form", ternary: false, shape, tokens: 0, error: String((error as Thrown)?.message ?? error) });
     }
   };
-  for (const shape of SHAPES) await step(() => matrices("matrix", matVecForms(), shape, 1), "matrix", shape[0]);
+  for (const shape of SHAPES) await step(() => matrices("matrix", withControl(matVecForms()), shape, 1), "matrix", shape[0]);
   await step(() => matrices("tile", tileForms(), TILE_SHAPE, TILE_TOKENS), "tile", TILE_SHAPE[0]);
   await step(layers, "layer", "Llama 3.2 1B, a layer");
   return { rows, pos: LAYER_POS };

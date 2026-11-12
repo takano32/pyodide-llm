@@ -445,7 +445,8 @@ async function kernelRows(memory: WebAssembly.Memory, base: number, size: number
   }
   // the matrices: int8 (values, a float32 scale a group of 32, and relaxed SIMD's correction a group) and ternary (codes,
   // a float16 scale a group of 128), as many copies of each as fit KERNEL_BYTES and the room there is
-  const int8Bytes = rows * n + groups * 8, ternaryBytes = rows * n / 4 + (rows * n / 128) * 2;
+  // (what a pass reads: relaxed SIMD's int8 kernels the correction a group too, the plain one its scales alone)
+  const int8Bytes = rows * n + groups * 8, int8PlainBytes = rows * n + groups * 4, ternaryBytes = rows * n / 4 + (rows * n / 128) * 2;
   const room = base + size - top, copiesOf = (bytes: number) => Math.max(1, Math.min(Math.ceil(KERNEL_BYTES / bytes), Math.floor(room / 2 / (bytes + 64))));
   const noise = new Uint8Array(1 << 16);
   const random = (at: number, bytes: number) => {
@@ -480,7 +481,7 @@ async function kernelRows(memory: WebAssembly.Memory, base: number, size: number
   const all: CpuKernelRow[] = [
     await row("matmul_q8r", "int8", true, 1, int8.length, int8Bytes, rows * n, k && ((c) => k.matmul_q8r(out, q8r, q8r + n, int8[c].w, int8[c].s, int8[c].c, n, 0, rows))),
     await row("matmul_t2r", "ternary", true, 1, ternary.length, ternaryBytes, rows * n, k && ((c) => k.matmul_t2r(out, t2, t2 + n, ternary[c].w, ternary[c].s, n, 0, rows, 3))),
-    await row("matmul_q8", "int8", false, 1, int8.length, int8Bytes, rows * n, (c) => plain.matmul_q8(out, q8, q8 + n, int8[c].w, int8[c].s, n, 0, rows)),
+    await row("matmul_q8", "int8", false, 1, int8.length, int8PlainBytes, rows * n, (c) => plain.matmul_q8(out, q8, q8 + n, int8[c].w, int8[c].s, n, 0, rows)),
     await row("matmul_t2", "ternary", false, 1, ternary.length, ternaryBytes, rows * n, (c) => plain.matmul_t2(out, t2, t2 + n, ternary[c].w, ternary[c].s, n, 0, rows, 3)),
     await row("matmul_q8r_tile", "int8", true, KERNEL_TOKENS, int8.length, int8Bytes, rows * n,
       k && ((c) => k.matmul_q8r_tile(out, q8r, q8r + n, int8[c].w, int8[c].s, int8[c].c, n, 0, rows, KERNEL_TOKENS, rows * 4, frame))),
