@@ -48,7 +48,7 @@
 - T293 [性能][WebGPU] 2 重の線と置き場の見直し — 未着手
 - T294 [追加][WebGPU] GPT-2・NeoX を GPU だけにも置く — 候補
 - T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 候補
-- T296 [性能][WebGPU] 1 トークンの attention の形を覚える — 未着手
+- T296 [性能][WebGPU] 1 トークンの attention の形を覚える — 進行中
 - T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 未着手
 - T298 [運用][変換] 静けさの 30 秒に、モデルの部品の届いたバイトも数える — 未着手
 - T300 [運用][その他] Pyodide のファイルの取得の失敗: 取り直すか、と文面 — 未着手
@@ -531,8 +531,11 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 状態: 候補（2026-10-02 の洗い出しで採番。規模 小〜中）
 - 層の表は Llama の形だけを測る（T226）。足したディスパッチ（Qwen2 +2、Qwen3 +3、GPT-2・NeoX +8）の端末での費用が報告から読めない。
 
-### T296 [性能][WebGPU] 1 トークンの attention の形を覚える — 状態: 未着手（2026-10-02 の洗い出しで採番。T224 のレビューから。規模 小）
+### T296 [性能][WebGPU] 1 トークンの attention の形を覚える — 状態: 進行中（2026-11-12、Opus medium、ブランチ `t296-token-attention-remembered`。前は未着手: 2026-10-02 の洗い出しで採番。T224 のレビューから。規模 小）
 - 形を覚えないので、起動のたびに 4 つのシェーダのコンパイル・検査・計測が足される（見積もり 3〜6 秒、未計測）。形を選ぶ計測がキャッシュ寄りで長い文脈に寄る件も。
+- **やったこと（2026-11-12）**: 新しい仕組みは作らず、T148 の覚え（ページの `localStorage` の `gpu:<モデル>`、鍵は端末の鍵）に鍵 `tokenAttention` を 1 つ足した（`Remembered`・`GpuRemembered`、`remembered.ts` の `rememberGpu()`。GPU の Worker が `ready` で言う名前は T224 から `gpuChosen.tokenAttention` に届いていた）。`gpu/tokenattention.ts` の `chooseTokenAttention()` は行列（`forms.ts` の `chooseMatrices()`）と同じ形: 覚えた形がこの端末で作れるなら、それだけをコンパイルして検査し、通れば測らずに使う（`attentions` は `{ name, remembered: true }` の 1 つ）。検査で落ちたら「remembered, but wrong now: …」と言い、ほかの全部を検査して測って選ぶ（覚えた形はもう試さない）。鍵が違えば `device.ts` が覚えを渡さない（前からの形）。**今ある覚えは無効にならない**: T296 の前の覚えは `tokenAttention` を持たないので、行列・プロンプトの attention・層は覚えたまま、1 トークンの attention だけ選び直し、次の訪問から覚える。シェーダの文と目録は変えていない（端末の鍵は動かない）。
+- **試験**: `tests/gpu-tokens-check.ts` の T296 の節（偽の装置、subgroups あり）: 覚えた形（vec のレーン・vec の subgroups・タイル）はそれだけがコンパイルされ（パイプライン 2・2・0）、測らずに取られる。別の鍵・覚えの無いもの（T296 の前の覚え）は 3 つとも選び直す。覚えた vec が検査で落ちると（head 1 つの出力を 1% ずらす）その旨を言い、残りから選び、覚えた形を 2 度試さない。**壊し方 2 つ**（このワークツリーで 1 本ずつ入れて戻した）: 覚えた形の検査の答えを捨てる（`wrong` を null に）→「remembered, wrong now: said so」で落ちた。`device.ts` が鍵を見ずに覚えを渡す → 「another key: chosen again」で落ちた。gpu-check（CI だけ）は覚えの節を作り物のほかに実物のモデルでも回し、GPU の準備の秒を 3 つ並べて出す（何も覚えていない・T296 の前の覚え・1 トークンの attention も）: `gpu-check-parts-check` に行の形と「覚えた attention と違う attention が取られたら FAILED」を足した。
+- **形を選ぶ計測の偏り（後半）は直さずに残す**（取りまとめ役への申し送り）: 今の `timeTokenAttention()` は (a) 1 つの層の K と V を n 回読み直すのでキャッシュの速さで測り、(b) 128 位置と 2048 位置の ms の和で選ぶので長い文脈の形に寄る。直す形は明らかでない: (a) は層ごとに別の K と V を置けば実物に近いが、2048 位置で 1 層 1〜8 MB（kv head 2〜8 × head 64〜128 × float16 の K と V）を `MOST_PASSES` 層ぶん読み込みの時に作ることになり、大きいモデルで数百 MB の一時の確保になる（`/benchmark/` の「A token's attention alone」は 128 MiB の写しを順に読む形で、その費用はベンチの節だから払える）。(b) は重みを付けるなら、ページの使われ方（`gpu:usage`、今は GPU だけのモデルにだけある）の答えの長さで 2 つの長さの重みを決める案。どちらも端末の数字（`/benchmark/` の「A token's attention alone」の 128・1024・4096 位置のタイルと vec の比と、ページのコンソールの「its attention by」）を見てから決める。**覚えると選びが端末の鍵ごとに固定されるので、偏りの効きは前より長く残る**: 選び直すのは鍵が変わったとき（シェーダの文・ブラウザ・ドライバ）か、覚えた形が検査で落ちたときだけ。
 
 ### T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の PC の報告の後。規模 小）
 - 今は数えて出すだけ（T225 のレビュー）。PC の報告で 0 なら WRONG にする。

@@ -11,9 +11,10 @@
 //                                    adapter, key, bytes, seconds, form, attention, forms, remembered, blocks } or
 //                                    { type: "unusable", reason }. T148: a fallback adapter (the CPU in the GPU's
 //                                    place) is refused before anything is compiled, unless plan.force.fallback
-//                                    (tests); plan.remembered ({ key, matrices, attention }: what the page kept of an
-//                                    earlier visit) spares the timing of the matrices' shaders where key is this
-//                                    adapter's and the shader is still right here; blocks: what a whole block of 16
+//                                    (tests); plan.remembered ({ key, matrices, attention, tokens, tokenAttention }:
+//                                    what the page kept of an earlier visit) spares the timing of the matrices', a
+//                                    token's layer's and its attention's shaders where key is this adapter's and the
+//                                    shader is still right here; blocks: what a whole block of 16
 //                                    and of 64 tokens takes here (forward.ts weighs the GPU against the CPU by it)
 //   { type: "prompt", serial, count, pos }
 //                                    the rows of count tokens at positions pos, pos + 1, ... (embedded by forward.ts,

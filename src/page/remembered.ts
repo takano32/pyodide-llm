@@ -73,12 +73,12 @@ export const gpuFor = (entry: { id: string }) => ({
   cpu: recall(CPU_SPEED_KEY, parsed, undefined),
   usage: recall(USAGE_KEY, parsed, undefined),
 });
-/** T148: what the GPU chose for the model (T152: and the layer of a token), for the next visit on this device (no
+/** T148: what the GPU chose for the model (T152: and the layer of a token; T296: and its attention), for the next visit on this device (no
  * storage here: it times them again). T156: with what was kept of it on the GPU alone, whose own key says when it no
  * longer holds */
-export function rememberGpu(entry: Parameters<typeof keptAs>[0], chose: Pick<GpuChose, "key" | "matrices" | "attention" | "tokens">) {
+export function rememberGpu(entry: Parameters<typeof keptAs>[0], chose: Pick<GpuChose, "key" | "matrices" | "attention" | "tokens" | "tokenAttention">) {
   const alone = recall(gpuKey(entry), parsed, undefined)?.alone;
-  keep(gpuKey(entry), JSON.stringify({ key: chose.key, matrices: chose.matrices, attention: chose.attention, tokens: chose.tokens, alone }));
+  keep(gpuKey(entry), JSON.stringify({ key: chose.key, matrices: chose.matrices, attention: chose.attention, tokens: chose.tokens, tokenAttention: chose.tokenAttention, alone }));
 }
 /** T156: the worker's verdict that the CPU is faster here than the model on the GPU alone, beside what the GPU chose
  * (no storage here: the next visit weighs the two again) */

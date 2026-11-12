@@ -598,7 +598,8 @@ try {
     if (forms.length) gpu.push(await run(openGpu, { matrices: forms[0], attention: "llama.cpp flash attention tiles", quick: true }));
     // T148 (the made-up model only): a fallback adapter refused as the page refuses it, before anything is compiled;
     // the shaders of the first run remembered for this adapter (its key), which are then the only ones compiled, and
-    // not for another key
+    // not for another key (T296: and of the real models too, with the seconds the GPU took to get ready: nothing
+    // remembered, what the page kept before T296, and a token's attention too)
     let refused, remembered;
     if (c.id === "synthetic") {
       const began = performance.now(), engine = createForward({ memory, base, size, kernels, plan, gpu: openGpu });
@@ -607,8 +608,12 @@ try {
       const starting = createForward({ memory, base, size, kernels, plan, gpu: openGpu, gpuForce: TESTS });
       const stopped = performance.now();
       refused.whileStarting = { ended: await starting.release(), seconds: (performance.now() - stopped) / 1000 };
-      const first = gpu[0].ready ?? {}, kept = { key: first.key, matrices: first.matrices, attention: first.attention };
-      remembered = { same: (await run(openGpu, {}, kept)).ready, other: (await run(openGpu, {}, { ...kept, key: kept.key + "|another" })).ready };
+    }
+    if (c.id === "synthetic" || !c.id.startsWith("synthetic")) {
+      const first = gpu[0].ready ?? {}, older = { key: first.key, matrices: first.matrices, attention: first.attention, tokens: first.tokens };
+      const kept = { ...older, tokenAttention: first.tokenAttention };
+      remembered = { first, older: (await run(openGpu, {}, older)).ready, same: (await run(openGpu, {}, kept)).ready,
+        other: (await run(openGpu, {}, { ...kept, key: kept.key + "|another" })).ready };
     }
     const cpu = await run(undefined), lateRun = c.id === "synthetic" ? await late() : undefined;
     // T156: the model on the GPU alone, last (it packs the memory the others read the checkpoint whole from). (T271.5's

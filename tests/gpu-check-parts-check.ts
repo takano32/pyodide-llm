@@ -359,6 +359,12 @@ check("a late GPU, a refused adapter, the shaders remembered, a weight that is n
     line: "  the shaders remembered: for this adapter taken (TF.js's tiles), for another not taken" });
   assert.equal(line({ remembered: { ...remembered, other: { remembered: true } } }, "  the shaders remembered").value, true);
   assert.equal(line({ remembered: { same: {}, other: {} } }, "  the shaders remembered").value, true);
+  // T296: the seconds the GPU took to get ready, and a token's attention taken as it was remembered
+  const timed = { first: { seconds: 3.2, tokenAttention: "vec" }, older: { seconds: 2.1 }, same: { ...remembered.same, seconds: 1.05, tokenAttention: "vec" }, other: { remembered: false } };
+  assert.deepEqual(line({ remembered: timed }, "  the shaders remembered"), { value: false,
+    line: "  the shaders remembered: for this adapter taken (TF.js's tiles), for another not taken; the GPU ready in 3.20 s, 2.10 s, 1.05 s " +
+      "(nothing remembered; the matrices, the prompt's attention and a token's layer; and a token's attention vec too)" });
+  assert.equal(line({ remembered: { ...timed, same: { ...timed.same, tokenAttention: "tiles" } } }, "  the shaders remembered").value, true, "another attention of a token taken");
 
   const status = "prompts on the CPU (the GPU computed logits that are not finite numbers (NaN or infinity)";
   const weight = { form: "ORT's DP4A", name: "w2", value: "NaN", asked: true, taken: null, status };

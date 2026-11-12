@@ -62,8 +62,8 @@ const STALLED_MS = 10000;
  * posts and listens as one). A prompt's blocks then go through the layers there where the model allows it and the GPU
  * is faster; see forwardMany. gpuRoom (T148): the bytes this device can give the GPU's copy of the layers (the
  * worker's reckoning from navigator.deviceMemory, 4 GB where the browser does not say; none handed in: no limit).
- * gpuRemembered: what the page kept of the GPU's shaders on an earlier visit ({ key, matrices, attention },
- * gpu/forms.ts). */
+ * gpuRemembered: what the page kept of the GPU's shaders on an earlier visit ({ key, matrices, attention, tokens,
+ * tokenAttention }: gpu/forms.ts, tokenforms.ts, tokenattention.ts). */
 /** wrap (tests/profile.ts only): gets the kernels' exports and returns what to call instead, to time the forward
  * pass with some kernels replaced by functions that do nothing. */
 /** stalledMs (tests only): how long a phase may make no progress before its software threads are given up (T120) */

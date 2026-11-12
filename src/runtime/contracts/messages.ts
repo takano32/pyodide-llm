@@ -66,7 +66,7 @@ export type Usage = { prompt: number; written: number };
 // T156: the worker's verdict that the CPU is faster here than this model on the GPU alone, under the device's key
 export type Alone = { key: string; cpu: CpuSpeed };
 // what the page kept of the GPU's choices for this model (T148, T152)
-export type GpuRemembered = { key?: string; matrices?: string; attention?: string; tokens?: string; alone?: Alone };
+export type GpuRemembered = { key?: string; matrices?: string; attention?: string; tokens?: string; tokenAttention?: string; alone?: Alone };
 export type GpuAsked = { remembered?: GpuRemembered; cpu?: CpuSpeed; usage?: Usage };
 
 // What a load asks for: the model, the page's own address (its ?without=, ?kernel=, ?gpuTest= and the like), the

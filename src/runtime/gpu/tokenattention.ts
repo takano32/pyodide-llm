@@ -31,9 +31,9 @@ type Io = { q: GPUBuffer; keys: GPUBuffer; values: GPUBuffer; out: GPUBuffer; fl
 // row of four used, a workgroup a head, T150's (a)). Each checked against JavaScript (checkTokenAttention), the right
 // ones timed (timeTokenAttention), the fastest taken: attention, with what each came to (attentions), which
 // T466: this module's record, m.tokenAttention (none where a stop was asked: tokenforms.ts's chooseTokens() ends then).
-// plan.force.tokenAttention (tests): that one alone; plan.force.quick: the first right one, untimed. None is
-// remembered (T148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
-// compiled, checked and timed at every start.
+// plan.force.tokenAttention (tests): that one alone; plan.force.quick: the first right one, untimed. T296: the one the
+// page remembered for this device's key (plan.remembered.tokenAttention, as T148 remembers the matrices, the prompt's
+// attention and the token's layer), alone and untimed where it is still right here; else all of them again
 const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
 async function chooseTokenAttention(m: Model): Promise<void> {
   const { device, plan } = m;
@@ -45,18 +45,33 @@ async function chooseTokenAttention(m: Model): Promise<void> {
   if (plan.force.tokenAttention) candidates = candidates.filter((a) => a.name === plan.force.tokenAttention);
   const right: TokenAttention[] = [];
   const attentions: Tried[] = [];
+  // T296: the remembered one, where this device still makes it: compiled and checked alone (a driver may have changed
+  // under the same key), and taken untimed where right: no other is compiled, checked or timed (as forms.ts's matrices)
+  const kept = !plan.force.tokenAttention && candidates.find((a) => !a.shape?.none && a.name === m.remembered?.tokenAttention);
+  if (kept) {
+    try {
+      const wrong = await madeAndChecked(m, kept);
+      if (!wrong) {
+        attentions.push({ name: kept.name, remembered: true });
+        taken(m, kept, attentions);
+        return;
+      }
+      attentions.push({ name: kept.name, none: `remembered, but wrong now: ${wrong}` });
+    } catch (error) {
+      if (isLate(error)) throw error;
+      attentions.push({ name: kept.name, none: `remembered, but ${whyOf(error)}` });
+    }
+    if (stopping) return;
+  }
   for (const a of candidates) {
     if (plan.force.quick && right.length) break;
+    if (a === kept) continue;  // wrong just now
     if (a.shape?.none) {
       attentions.push({ name: a.name, none: a.shape.none });
       continue;
     }
     try {
-      if (!a.tiles) {
-        a.pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.flashVec(a.shape))), `compiling ${a.name}`);
-        a.reduce = await within(validated(m, () => pipelineOf(m, ENGINE.flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
-      }
-      const wrong = await within(checkTokenAttention(m, a), `checking ${a.name}`);
+      const wrong = await madeAndChecked(m, a);
       if (wrong) attentions.push({ name: a.name, none: `wrong: ${wrong}` });
       else right.push(a);
     } catch (error) {
@@ -71,8 +86,20 @@ async function chooseTokenAttention(m: Model): Promise<void> {
   const ms: (number | undefined)[] = plan.force.quick || right.length === 1 ? right.map(() => undefined) : await within(timeTokenAttention(m, right), "timing the attention of a token");
   const best = ms.reduce((b: number, t, i) => (t !== undefined && (ms[b] === undefined || t < ms[b]) ? i : b), 0);
   right.forEach((a, i) => attentions.push({ name: a.name, ms: ms[i] }));
-  const attention = right[best];
-  // the vec form's parts (every head's, nwg of the most) and its Params a count of parts, made as a run needs them
+  taken(m, right[best], attentions);
+}
+// attention a compiled (the vec form's two pipelines; the tiles' is the prompt's) and checked: why it is wrong, or null
+async function madeAndChecked(m: Model, a: TokenAttention) {
+  if (!a.tiles) {
+    a.pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.flashVec(a.shape))), `compiling ${a.name}`);
+    a.reduce = await within(validated(m, () => pipelineOf(m, ENGINE.flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
+  }
+  return within(checkTokenAttention(m, a), `checking ${a.name}`);
+}
+// the record of attention taken, with what each tried came to: the vec form's parts (every head's, nwg of the most)
+// and its Params a count of parts, made as a run needs them
+function taken(m: Model, attention: TokenAttention, attentions: Tried[]) {
+  const { plan } = m;
   let parts: Chosen["parts"], params: Chosen["params"];
   if (!attention.tiles) {
     parts = buffer(m, flashVecPartsBytes(attention.shape, plan.heads));

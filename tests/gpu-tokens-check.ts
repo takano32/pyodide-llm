@@ -9,6 +9,9 @@
 //     nothing then), or the window left out (a Gemma 3's check through its window), is wrong and the others are taken;
 //     off inside the line is right. The answers take the workgroups as many as the work's, no more, and the reduce reads
 //     the parts the decode wrote, of the nwg and sums' start it had.
+//   - T296: the attention the page remembered for this device's key alone compiled (its pipelines, none of the others'),
+//     checked and taken untimed; under another key, every candidate again; remembered but wrong now (its check off),
+//     the others checked and timed, the remembered one not again.
 //   - T465.4, a token's layer (tokenforms.ts's chooseTokens()) of a Llama: the float forms (with subgroups and without)
 //     and the DP4A ones (the norm with the quantizer, and apart) each checked on the model's own first layer and head,
 //     greedy and sampled with the penalty, timed, one taken (the made-up memory's numbers ones a model could have:
@@ -89,6 +92,46 @@ for (const [model, features] of [["llama", []], ["llama", ["subgroups"]], ["gemm
   assert.deepEqual(llama.tokenAttention.attentions.filter(({ none }) => none), [], "no window: right");
 }
 console.log("ok: each check bites: the decode form a little off in a head, its reduce writing nothing, or its window left out, is wrong and the tiles taken; off inside the line is right");
+// ---- T296: the attention of a token the page remembered (plan.remembered.tokenAttention, under the device's key: device.ts
+// takes it only where the key is this device's)
+{
+  const features = ["subgroups"], all = [`${VEC}, subgroups`, VEC, TILES];
+  const { m: first } = await opened({ features });
+  const key = first.key;
+  // a model opened with the page's remembered attention, its prompt's attention chosen, and then a token's: the
+  // pipelines compiled for a token's attention
+  const remembering = async (remembered, spoil = {}) => {
+    const { m, calls } = await opened({ features, remembered, spoil });
+    await forms_.chooseAttention(m);
+    const before = calls.length;
+    await tokenAttention_.chooseTokenAttention(m);
+    return { m, compiled: calls.slice(before).filter(([what]) => what === "pipeline").length };
+  };
+  for (const [name, pipelines] of [[VEC, 2], [`${VEC}, subgroups`, 2], [TILES, 0]]) {
+    const { m, compiled } = await remembering({ key, tokenAttention: name });
+    assert.equal(m.tokenAttention.attention.name, name, `${name} remembered: taken`);
+    assert.deepEqual(m.tokenAttention.attentions, [{ name, remembered: true }], `${name} remembered: alone, untimed`);
+    assert.equal(compiled, pipelines, `${name} remembered: its own pipelines compiled, none of the others'`);
+    assert.equal(Boolean(m.tokenAttention.parts && m.tokenAttention.params), !m.tokenAttention.attention.tiles, `${name} remembered: the decode form's parts and Params made with it`);
+  }
+  // another device's key: the page's remembered attention not taken, every candidate checked and timed
+  const other = await remembering({ key: `${key}|another`, tokenAttention: VEC });
+  assert.deepEqual(other.m.tokenAttention.attentions.map(({ name, remembered }) => [name, Boolean(remembered)]), all.map((name) => [name, false]), "another key: chosen again");
+  assert.equal(other.compiled, 4, "another key: both decode forms compiled");
+  // nothing of the attention remembered (a page's from before T296: the matrices, the prompt's attention, the layer): chosen again
+  const older = await remembering({ key, matrices: "TF.js's tiles" });
+  assert.deepEqual(older.m.tokenAttention.attentions.map(({ name }) => name), all, "none remembered: chosen again");
+  // remembered but wrong now (the decode form off in a head, with subgroups and without): the others checked and
+  // timed, the tiles taken, the remembered one not checked again
+  const wrong = await remembering({ key, tokenAttention: VEC }, { vec: off(flashVec(16), (out) => { out[16] += 0.05; }) });
+  const [head, ...rest] = wrong.m.tokenAttention.attentions;
+  assert.equal(head.name, VEC);
+  assert.match(head.none ?? "", /^remembered, but wrong now: its output is .* at 40 positions/, "remembered, wrong now: said so");
+  assert.deepEqual(rest.map(({ name }) => name), [`${VEC}, subgroups`, TILES], "remembered, wrong now: the others tried, it not again");
+  assert.equal(wrong.m.tokenAttention.attention.name, TILES, "remembered, wrong now: the right one taken");
+  assert.ok(!wrong.m.tokenAttention.attentions.some(({ remembered }) => remembered), "remembered, wrong now: none said remembered");
+}
+console.log("ok: T296: the attention of a token remembered for this key alone compiled, checked and taken untimed; another key or none remembered: chosen again; remembered but wrong now: the others chosen");
 // ---- T465.4: a token's layer (tokenforms.ts's chooseTokens()): each form checked on the model's own first layer and
 // head (the memory's numbers a model could have: opened's sane), greedy and sampled
 // a Llama's prompt forms chosen and its block made, then a token's forms

@@ -111,9 +111,14 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
     failed ||= !good || !cpuRight;
   }
   if (remembered) {
-    const right = remembered.same?.remembered === true && remembered.other?.remembered === false;
-    console.log(`  the shaders remembered: for this adapter ${remembered.same?.remembered ? "taken" : "not taken"} (${remembered.same?.matrices}), ` +
-      `for another ${remembered.other?.remembered ? "taken" : "not taken"}${right ? "" : " — FAILED"}`);
+    // (T296: the same attention of a token taken where it was remembered; and the seconds the GPU's worker took to get
+    // ready, its "ready"'s, with nothing remembered, with what the page kept before T296 and with a token's attention too)
+    const { first, older, same, other } = remembered;
+    const right = same?.remembered === true && other?.remembered === false && same?.tokenAttention === first?.tokenAttention;
+    const ready = first?.seconds !== undefined ? `; the GPU ready in ${[first, older, same].map((r) => r?.seconds?.toFixed(2)).join(" s, ")} s ` +
+      `(nothing remembered; the matrices, the prompt's attention and a token's layer; and a token's attention ${same?.tokenAttention} too)` : "";
+    console.log(`  the shaders remembered: for this adapter ${same?.remembered ? "taken" : "not taken"} (${same?.matrices}), ` +
+      `for another ${other?.remembered ? "taken" : "not taken"}${ready}${right ? "" : " — FAILED"}`);
     failed ||= !right;
   }
   for (const gpu of runs) {

@@ -209,7 +209,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
         if (data.tokens) {
           tokensOn = true;
           gpuChosen.tokens = data.tokens.form;
-          gpuChosen.tokenAttention = data.tokens.attention;  // T224: the attention of a token chosen here (tests)
+          gpuChosen.tokenAttention = data.tokens.attention;  // T224: the attention of a token chosen here (T296: the page remembers it)
           gpuChosen.tablePieces = data.tokens.pieces;  // T209: the classifier in pieces past what the device binds
           if (data.tokens.ms !== undefined) steps.gpu(data.tokens.ms);
           tokenStatus = always ? "gpu" : "untimed";

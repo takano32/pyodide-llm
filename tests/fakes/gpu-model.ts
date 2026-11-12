@@ -55,10 +55,12 @@ type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Ans
 // (T465.6.5, direct: a model on the GPU alone, its plan as forward/alone.ts makes one: its tables the checkpoint's)
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean; outliers?: boolean; blocks?: Record<string, string>;
   direct?: boolean; costs?: (pipeline: { code: string; constants?: Record<string, number> }) => number;
-  overhead?: (pipeline: { code: string; constants?: Record<string, number> }) => number; fallback?: boolean };
+  overhead?: (pipeline: { code: string; constants?: Record<string, number> }) => number; fallback?: boolean;
+  // (T296: what the page kept of an earlier visit, the plan's: the worker takes it where its key is this device's)
+  remembered?: Record<string, string> };
 // (T465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
 // check (registered before the worker makes its record: start.ts makes it in openDevice()); opened() and start's check
-export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false, blocks = {}, direct = false, costs, overhead, fallback = true }: Opened = {}) {
+export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false, blocks = {}, direct = false, costs, overhead, fallback = true, remembered }: Opened = {}) {
   const answers = await gpuAnswers();
   const { flashTile, quantize, tiled } = answers;
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
@@ -78,6 +80,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   for (const feature of features) device.features.add(feature);
   const { plan, bytes } = planned(MODELS[model], direct);
   plan.force = { fallback: true };
+  if (remembered) plan.remembered = remembered;
   if (outliers) Object.assign(plan.tokens, { outliers: true, channels: [3, 40, 77] });
   // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
   if (weights === "ternary") for (const matrix of Object.values(plan.matrices)) Object.assign(matrix, { packing: "ternary", ternary: true });
@@ -184,15 +187,16 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
       answers.add(code, spoil.block ? spoil.block(block, packing) : block);
     }
   }
-  return { answers, device, adapter, plan, memory, lose, clock };
+  return { answers, device, adapter, plan, memory, lose, clock, calls };
 }
+// (calls: what the device was asked, the stand-in's: T296 counts the pipelines compiled)
 export async function opened(options: Opened = {}) {
-  const { answers, plan, memory, clock } = await made(options);
+  const { answers, plan, memory, clock, calls } = await made(options);
   const m = await device_.openDevice(plan, undefined, clock.now);
   device_.handed(memory, plan);
   await upload(m);
   await block_.prepare(m);
-  return { m, answers, clock };
+  return { m, answers, clock, calls };
 }
 
 // (T465.4) the block's layers bound with the prompt's form chosen, and its cache made, as start.ts has them before a

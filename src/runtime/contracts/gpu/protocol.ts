@@ -100,8 +100,8 @@ export type Force = {
   stateBytes?: number;
 };
 
-// what the page kept of an earlier visit on this device (T148, T152): the shaders chosen then, under the device's key
-export type Remembered = { key?: string; matrices?: string; attention?: string; tokens?: string; alone?: unknown };
+// what the page kept of an earlier visit on this device (T148, T152, T296): the shaders chosen then, under the device's key
+export type Remembered = { key?: string; matrices?: string; attention?: string; tokens?: string; tokenAttention?: string; alone?: unknown };
 
 // T568.4: the numbers of the kinds of layers that keep a state, each under its kind's name (forward/kinds.ts's gpu.plan()
 // says its own: forward/convolution.ts, linear.ts), null where the model has none of that kind. A new kind's numbers are
