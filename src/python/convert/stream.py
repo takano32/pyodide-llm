@@ -242,6 +242,9 @@ class Stream:
             out = transformed(values, resolved(left_to_do(transform, info.get("done")), self.factor), self.head_size)
             self.writer.write(index, first + self.first, out)
             self.done += out.size
+            # T285: let the target go before the next is made of the same tensor (a Qwen3.5's q and its gate of one
+            # q_proj: a 27B's are 120 MiB each in float32, beside the 240 MiB of the whole)
+            del out
         self.first += 0 if whole else values.size
 
     def factor(self, name):
