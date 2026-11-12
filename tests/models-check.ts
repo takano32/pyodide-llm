@@ -127,7 +127,7 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
 // the owner's; this says only that one was not left out
 {
   const MAKERS = ["ABEJA", "Alibaba", "Andrej Karpathy", "Aratako", "Atemoya", "AXCXEPT", "CyberAgent", "DataPilot", "EleutherAI",
-    "Ellis Hoag", "Google", "Hugging Face", "IBM", "LINE", "Lightblue", "Liquid AI", "LocalNovelLLM-project", "Matsuo Lab", "Meta",
+    "Ellis Hoag", "Google", "Hugging Face", "IBM", "LINE", "Lightblue", "Liquid AI", "LocalNovelLLM-project", "Matsuo Lab", "Meta", "Microsoft",
     "Mozilla Firefox", "Nous Research", "OpenAI", "OpenBMB", "PFN", "Prism ML", "SB Intuitions", "Sakana AI", "Science Tokyo",
     "Shanghai AI Lab", "SousiOmine", "Stability AI", "Stockmark", "TokenRhythm", "Underdog", "nitky", "rinna", "umiyuki"];
   const NAMING = ["DeepSeek-R1", "ELYZA-", "EuroLLM", "Llama 3.2 Shisa", "Llama-3-ELYZA-JP", "Mistral", "RakutenAI", "Shisa", "Spark-X", "TinyLlama", "llm-jp-"];
@@ -282,9 +282,9 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
   // says its size by its file or by converted (T643.17: the note's words before). Beside the entries whose blocks are
   // kept, only these (a second copy on purpose: an entry that says loaded for another reason is a choice to name here):
   // Gemma 4's two, whose table of every layer's inputs stays in the kept file (T333: below), and the site's float16
-  // llm-jp-3 150M
+  // llm-jp-3 150M; and (T283) BitNet b1.58 2B4T, whose matrices are kept ternary beside an int8 embedding
   assert.deepEqual(MODELS.filter((entry) => entry.loaded && !entry.conversion?.blocks).map(({ id }) => id).sort(),
-    ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "llm-jp-3-150m-f16"]);
+    ["hf-bitnet-b1.58-2b-4t", "hf-gemma-4-e2b", "hf-gemma-4-e4b", "llm-jp-3-150m-f16"]);
   for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.ok(entry.converted > 0, `${entry.id}: its size is converted`);
 }
 // T333: Gemma 4's E2B and E4B, Google's originals (not gated, Apache 2.0) converted in the page. What they take is the

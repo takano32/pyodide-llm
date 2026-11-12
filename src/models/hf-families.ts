@@ -1,7 +1,7 @@
 // From Hugging Face, converted in the browser: the families that come as one that thinks and one that answers at
 // once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3, Spark-X2.5), MiniCPM5, LFM2, Gemma 3 and Ternary Bonsai.
 import {
-  AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASKED_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
+  AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASKED_ENGLISH, ASKED_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
   QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, QWEN3_THINKING_2507,
   QWEN3_THINKING_AFTER_START, SPARK26_THINKING, SPARK_AT_ONCE, SPARK_THINKING, granite, lfm2Old, qwen35, spark,
 } from "./formats.ts";
@@ -84,6 +84,20 @@ export const HF_FAMILIES: Entry[] = [
   // T286.4: the 1-bit Bonsai 8B, a Qwen3 8B: it begins at <|im_start|> as the ternary 8B does, and answers Japanese
   binaryBonsai("8B", { gguf: "48516770dd04643643e9f9019a2a349cf26c5dbd", original: "376f381570d6115bc03f82adcfa4af0c7672ae54" }, 1158654496,
     "fetches 1.2 GB (GGUF) → 1-bit 1.2 GB", 1.2e9, true, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
+  // T283: Microsoft's BitNet b1.58 2B4T, a Llama trained ternary (every matrix -1, 0 or 1 times one scale, two norms
+  // more, the square of a ReLU in the FFN's gate). Its safetensors hold the matrices packed four values a byte with their
+  // scales (quantization_mode "offline"), which the converter keeps ternary (convert/families/bitnet.py) beside the
+  // embedding, a table of bfloat16s, in int8 (conversion.dtype: ?bits= changes nothing of it; loaded, the checkpoint's
+  // bytes). Its GGUF is of bitnet.cpp's own type (I2_S), which no llama.cpp reads. The model rounds what its matrices read
+  // to 8 bits by the token's largest value; the page's kernels round by groups of 32, as for every int8 model
+  // (docs/notes/t283-bitnet-2026-11-12.md). The BOS (<|begin_of_text|>), the stops and the format ("User: …<|eot_id|>
+  // Assistant: ") are the converter's, of its tokenizer and chat template; the sampling its generation_config.json's
+  { group: "hf", id: "hf-bitnet-b1.58-2b-4t", name: "Microsoft BitNet b1.58 2B4T",
+    note: "answers instructions · English · ternary weights · fetches 1.2 GB, kept mostly as it is: 0.9 GB", japanese: false,
+    hf: hf("microsoft/bitnet-b1.58-2B-4T", "04c3b9ad9361b824064a1f25ea60a8be9599b127"), download: 1178623988,
+    conversion: { dtype: "int8" }, loaded: 924712988, options: {},
+    generation: { steps: 0, temperature: 0.6, topp: 0.9, repetition_penalty: 1.0 },
+    ...ASKED_ENGLISH },
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which

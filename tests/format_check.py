@@ -173,7 +173,10 @@ LENIENT = {
 UNMEASURED = {
     # T617: rinna's card encodes its turns with add_special_tokens=False, nothing in front; the page's <s> in front is
     # the converter's, as LINE's (to measure: tests/start_check.py on the CI)
-    "hf-japanese-gpt-neox-3.6b-instruction-ppo": "the card puts nothing in front (T617)"}
+    "hf-japanese-gpt-neox-3.6b-instruction-ppo": "the card puts nothing in front (T617)",
+    # T283: BitNet b1.58 2B4T's template writes no BOS, and its card encodes the template's text with the tokenizer's,
+    # which puts <|begin_of_text|> in front (the page's: the converter's bos)
+    "hf-bitnet-b1.58-2b-4t": "the template has none, the card's tokenizer puts it in front (T283)"}
 # T233: what an entry's format is the real template's with, besides enable_thinking (or that too, T597.1): Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
 # (T364.3: and Underdog Saluki 27B's, whose template is the same one)

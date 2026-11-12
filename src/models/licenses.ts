@@ -224,6 +224,8 @@ export const LICENSES: Record<string, string> = {
   "prism-ml/Bonsai-1.7B-gguf": APACHE, "prism-ml/Bonsai-1.7B-unpacked": APACHE,
   "prism-ml/Bonsai-4B-gguf": APACHE, "prism-ml/Bonsai-4B-unpacked": APACHE,
   "prism-ml/Bonsai-8B-gguf": APACHE, "prism-ml/Bonsai-8B-unpacked": APACHE,
+  // T283: its card's metadata says mit, and its text "The model weights and code are released under the MIT License"
+  "microsoft/bitnet-b1.58-2B-4T": MIT,
   // T246: the same of the 4B's and the 8B's cards and NOTICE.txt ("built from Qwen3-4B", "from Qwen3-8B")
   "prism-ml/Ternary-Bonsai-4B-gguf": APACHE, "prism-ml/Ternary-Bonsai-4B-unpacked": APACHE,
   "prism-ml/Ternary-Bonsai-8B-gguf": APACHE, "prism-ml/Ternary-Bonsai-8B-unpacked": APACHE,
