@@ -32,6 +32,15 @@ SPARK_PATTERNS = (r"\p{N}{1,3}", "[一-龥぀-ゟ゠-ヿ]+",
 TEKKEN_PATTERN = (r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?"
                   r"[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+"
                   r"|\s+(?!\S)|\s+")
+# T256: GPT-4o's (o200k's: microsoft/Phi-4-mini-instruct's and kakaocorp/kanana-2-3b-instruct's tokenizer.json),
+# Tekken's with a contraction after each word, whatever its case, and the numbers three at a time
+GPT4O_PATTERN = (r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?"
+                 r"|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?"
+                 r"|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+")
+# where GPT-4o's is not Tekken's: contractions after words of each case and of none, after a mark, the folds of (?i)
+# (ſ for s), an apostrophe that is no contraction, numbers of more than three digits
+GPT4OED = ["it's DON'T", "WE'LL we'll We'Ll", "HTTPServer's", "x'ſ X'ſt", "あ's ʰ'd", "e\u0301's", "'s alone", "''s",
+           "can't've", "I'M I'm", "1234567 89", "Don't'", "o'clock", "rock'n'roll", "ǅ'S"]
 # where Tekken's is none of the others: words cut where the case turns, capitals before a word, title case, the
 # letters of no case on both sides, slashes after punctuation, contractions (which it does not name)
 TEKKENED = ["HelloWorld", "HTTPServer", "iPhone", "ǅungla ǈ", "ABCdef GHI", "東京Tower", "カタカナABCdef", "ʰaʰ",
@@ -70,8 +79,8 @@ def trained(pattern, digits):
 @pytest.mark.parametrize("name, pattern, digits", [
     ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False),
     ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after"),
-    ("tekken", TEKKEN_PATTERN, False)])
-@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED + SPARKED + TEKKENED)
+    ("tekken", TEKKEN_PATTERN, False), ("gpt4o", GPT4O_PATTERN, False)])
+@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED + SPARKED + TEKKENED + GPT4OED)
 def test_matches_the_real_tokenizer(name, pattern, digits, text):
     real, spec = trained(pattern, digits)
     options = tokenizer_json_options(spec)
@@ -84,7 +93,8 @@ def test_matches_the_real_tokenizer(name, pattern, digits, text):
 
 @pytest.mark.parametrize("name, pattern, digits", [
     ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False),
-    ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after"), ("tekken", TEKKEN_PATTERN, False)])
+    ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after"), ("tekken", TEKKEN_PATTERN, False),
+    ("gpt4o", GPT4O_PATTERN, False)])
 def test_decodes_every_piece(name, pattern, digits):
     real, spec = trained(pattern, digits)
     vocab_size = real.get_vocab_size()
@@ -116,6 +126,24 @@ def test_spark_follows_its_patterns(text):
 def test_tekken_follows_its_pattern(text):
     regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
     assert pretokenize(text, "tekken") == regex.findall(TEKKEN_PATTERN, text)
+
+
+@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED + SPARKED + TEKKENED + GPT4OED)
+def test_gpt4o_follows_its_pattern(text):
+    regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
+    assert pretokenize(text, "gpt4o") == regex.findall(GPT4O_PATTERN, text)
+
+
+def test_gpt4o_split_removed_and_inverted_is_the_isolated_one():
+    """T256: Phi-4 mini's tokenizer.json has GPT-4o's Split as Removed with invert (keep the matches, remove what lies
+    between), kanana-2's as Isolated. The pattern matches every character, so the real tokenizers cuts the same pieces
+    either way, and the converter reads both as gpt4o (only that name: test_refuses_what_the_engine_cannot_split)."""
+    from tokenizers import Regex, pre_tokenizers
+    isolated = pre_tokenizers.Split(Regex(GPT4O_PATTERN), behavior="isolated")
+    removed = pre_tokenizers.Split(Regex(GPT4O_PATTERN), behavior="removed", invert=True)
+    for text in TEXTS + MARKED + NUMBERED + SPARKED + TEKKENED + GPT4OED + ["\x1c\x1d a\x1fb", "\x00\x7f"]:
+        assert removed.pre_tokenize_str(text) == isolated.pre_tokenize_str(text), text
+        assert [piece for piece, _ in removed.pre_tokenize_str(text)] == pretokenize(text, "gpt4o"), text
 
 
 def sparked(regex, text):
@@ -200,6 +228,19 @@ def test_tekken_follows_its_pattern_on_random_texts():
         assert pretokenize(text, "tekken") == regex.findall(TEKKEN_PATTERN, text), text
 
 
+# T256: and the contractions GPT-4o's pattern takes after a word: an apostrophe and the letters of each, of each case,
+# after letters of each case and of none, after a mark
+GPT4O_PIECES = TEKKEN_PIECES + ["'re", "'RE", "'Ve", "'m", "'M", "'d", "'D", "'ll", "'lL", "ǅ'", "ʰ'", "\u0301'", "''"]
+
+
+def test_gpt4o_follows_its_pattern_on_random_texts():
+    regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
+    rng = random.Random(256)
+    for _ in range(3000):
+        text = "".join(rng.choices(GPT4O_PIECES, k=rng.randrange(0, 16)))
+        assert pretokenize(text, "gpt4o") == regex.findall(GPT4O_PATTERN, text), text
+
+
 def test_minicpm5_is_not_llama3_before_a_number():
     """T254: what one pattern cannot say. Llama 3's \\s+(?!\\S) leaves the last space of a run before a number to
     stand alone; cut off from the number first, the run is one piece. Elsewhere the two are the same pieces."""
@@ -240,6 +281,11 @@ def sparked_around(c):
 def tekkened(c):
     return around(c) + f"A{c}B{c}b{c}Bあ{c}ʰ{c}.{c}/{c}é́{c}y"
 
+
+# T256: and for GPT-4o's, as a contraction's letter after a word of each case and of none, and as the letter before one
+def gpt4oed(c):
+    return tekkened(c) + f"A'{c} b'{c}e ʰ'{c}l x{c}'s X{c}'S あ{c}'d '{c}'{c}{c}y"
+
 def real_pretokenizer(name):
     from tokenizers import Regex, pre_tokenizers
     byte_level = pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=True)
@@ -251,6 +297,8 @@ def real_pretokenizer(name):
         return pre_tokenizers.Sequence([pre_tokenizers.Split(Regex(pattern), behavior="isolated") for pattern in MINICPM5_PATTERNS])
     if name == "tekken":
         return pre_tokenizers.Split(Regex(TEKKEN_PATTERN), behavior="isolated")
+    if name == "gpt4o":
+        return pre_tokenizers.Split(Regex(GPT4O_PATTERN), behavior="isolated")
     if name == "spark2_5":
         return pre_tokenizers.Sequence([*(pre_tokenizers.Split(Regex(pattern), behavior="isolated") for pattern in SPARK_PATTERNS),
                                         pre_tokenizers.Digits(individual_digits=True)])
@@ -260,9 +308,10 @@ def real_pretokenizer(name):
 
 # 17 to 29 s for each of the four on CI's runner, so only the full suite runs it (tests/suite.sh full, T193)
 @pytest.mark.skipif(not os.environ.get("EVERY_CODE_POINT"), reason="EVERY_CODE_POINT=1: tests/suite.sh full runs it")
-@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35", "minicpm5", "spark2_5", "tekken"])
+@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35", "minicpm5", "spark2_5", "tekken",
+                                  "gpt4o"])
 def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
-    real, placed = real_pretokenizer(name), {"spark2_5": sparked_around, "tekken": tekkened}.get(name, around)
+    real, placed = real_pretokenizer(name), {"spark2_5": sparked_around, "tekken": tekkened, "gpt4o": gpt4oed}.get(name, around)
 
     def ends(text):
         """Where the real pieces end, and where the engine's do (the real offsets are the text's characters)."""
@@ -391,7 +440,20 @@ def test_refuses_what_the_engine_cannot_split():
     assert named(tekken, byte_level)["pretokenizer"] == "tekken"
     for steps in ([tekken], [tekken, {**byte_level, "use_regex": True}], [tekken, {**byte_level, "add_prefix_space": True}],
                   [split(TEKKEN_PATTERN, behavior="Removed"), byte_level], [tekken, digits, byte_level],
-                  [byte_level, tekken], [tekken, tekken, byte_level]):
+                  [byte_level, tekken], [tekken, tekken, byte_level],
+                  # T256: Removed with invert is Isolated only for a pattern that matches every character (WHOLE)
+                  [split(TEKKEN_PATTERN, behavior="Removed", invert=True), byte_level]):
+        with pytest.raises(ValueError, match="does not know"):
+            named(*steps)
+    # T256: GPT-4o's one Split, Isolated or Removed with invert (Phi-4 mini's), with the ByteLevel behind it, and
+    # nothing that is that otherwise
+    gpt4o = split(GPT4O_PATTERN)
+    for steps in ([gpt4o, byte_level], [split(GPT4O_PATTERN, behavior="Removed", invert=True), byte_level]):
+        assert named(*steps)["pretokenizer"] == "gpt4o"
+    for steps in ([gpt4o], [gpt4o, {**byte_level, "use_regex": True}], [gpt4o, {**byte_level, "add_prefix_space": True}],
+                  [split(GPT4O_PATTERN, behavior="Removed"), byte_level], [split(GPT4O_PATTERN, invert=True), byte_level],
+                  [split(GPT4O_PATTERN, behavior="MergedWithPrevious", invert=True), byte_level], [gpt4o, digits, byte_level],
+                  [byte_level, gpt4o], [gpt4o, gpt4o, byte_level], [split(GPT4O_PATTERN.replace("{1,3}", "")), byte_level]):
         with pytest.raises(ValueError, match="does not know"):
             named(*steps)
     with pytest.raises(ValueError, match="adds a space"):

@@ -383,7 +383,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **語彙に無いバイトは落とす**（本物と同じく語に入れない）。
 - **`encode()` の BPE は対を heap に入れ、合併した所の両隣だけ入れ直す**（`merged()`: byte-level BPE も同じ輪で、点数の線だけが違う。`bpe` は −1e10 より上、`bytebpe` は `UNMATCHABLE`（−1e8）より上を合わせる）。unigram は語片を辞書で引き、試す長さを `reach` まで。
 - **前分割の文字の種類は本物に合わせてある**（\x1c〜\x1f は空白でない、ſ は `(?i:'s)` で s と読む、`gpt2-digits` の数は `\p{N}`）。Python の Unicode が割り当てていない文字は比べから外す。
-- **Mistral の Tekken**（`tekken`）は字の大文字・小文字を見分ける前分割で、字の種類の表 `TekkenClasses` の上で `STAGES` の 1 段。
+- **Mistral の Tekken**（`tekken`）は字の大文字・小文字を見分ける前分割で、字の種類の表 `TekkenClasses` の上で `STAGES` の 1 段。GPT-4o の型（`gpt4o`: Phi-4 mini・kanana-2）は Tekken の型の語の後ろに `(?i:'s|…)?` が付いたもので、表は `GptFourClasses`。**字の種類の 1 字は、`(?i)` の縮約が名指す字（s・t・r・e・v・m・l・d）と違う字に**（Tekken の小文字の類「l」のままだと `'ll` が類を字の l と読んだ: 小文字は「w」）。**Split の Removed と invert の組は、型が全部の字に当たる名前（`WHOLE`）だけ Isolated と同じ**と読む。
 - **sentencepiece の正規化は model の charsmap そのもので**（`Charsmap` が double array を辿る）。文の中の U+2581「▁」は空白（byte-level BPE を除く）。
 - **sentencepiece の BPE を書き出した tokenizer.json（Gemma 3・Gemma 4 など）は、語片の点数に「最初の merge の順位 × −1」**。変換器が merge の割り方と同じ点数の並びを確かめて、破れていれば断る。**この読み手に触ったら `tests/tokenizer_json_check.py --planes 17` を手で**。GGUF の語彙（`add_space_prefix: false`）は今も断る。
 - **PLaMo の `tokenizer.jsonl`**: 点数は `round(score·1e4)` の整数で足す、同点は最初の語片が長いほう、語片の無い字は 1 字 1e7。**本物の道具を numba 抜きの素の Python で回さない**。

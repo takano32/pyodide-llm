@@ -345,7 +345,22 @@ STAGED_PRETOKENIZERS = {
     (r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}"
      r"\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+",):
         ("tekken", ("ByteLevel",)),
+    # T256: GPT-4o's (o200k's: microsoft/Phi-4-mini-instruct's and kakaocorp/kanana-2-3b-instruct's tokenizer.json),
+    # Tekken's with a contraction after each word and the numbers three at a time. pretokenize's "gpt4o"
+    (r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?"
+     r"|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?"
+     r"|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+",): ("gpt4o", ("ByteLevel",)),
 }
+# T256: the names whose one pattern matches every character (each is a letter, a number, white space, or of
+# [^\s\p{L}\p{N}]), so that nothing lies between two of its matches: a Split of it that keeps the matches and removes
+# what is between (Removed with invert, as Phi-4 mini's tokenizer.json has it) cuts the pieces an Isolated one does
+WHOLE = ("gpt4o",)
+
+
+def isolating(step, name):
+    """Whether a Split keeps every match of its pattern as a piece of its own, and what lies between two as well: an
+    Isolated one that matches what its pattern says (no invert), or, for a name of WHOLE, a Removed one with invert."""
+    return (step.get("behavior"), bool(step.get("invert"))) in (("Isolated", False),) + ((("Removed", True),) if name in WHOLE else ())
 
 
 def pretokenizer_name(spec):
@@ -353,11 +368,11 @@ def pretokenizer_name(spec):
     kinds = [step["type"] for step in steps]
     patterns = [step["pattern"].get("Regex") for step in steps if step["type"] == "Split"]
     if tuple(patterns) in STAGED_PRETOKENIZERS:
-        # every Split keeps what it matches as a piece of its own (Isolated) and matches what its pattern says (no
-        # invert), the steps after them are those of the name (T340: a Digits splits every digit off), and the ByteLevel
-        # last does not split again or put a space in front
+        # every Split keeps what it matches as a piece of its own (isolating()), the steps after them are those of the
+        # name (T340: a Digits splits every digit off), and the ByteLevel last does not split again or put a space in
+        # front
         name, after = STAGED_PRETOKENIZERS[tuple(patterns)]
-        plain = all(step.get("behavior") == "Isolated" and not step.get("invert") for step in steps if step["type"] == "Split")
+        plain = all(isolating(step, name) for step in steps if step["type"] == "Split")
         rest = steps[len(patterns):]
         if plain and kinds == ["Split"] * len(patterns) + list(after) \
                 and all(step.get("individual_digits") is True for step in rest if step["type"] == "Digits") \

@@ -176,13 +176,39 @@ class TekkenClasses(dict):
 
 
 TEKKEN_CLASSES = TekkenClasses()
+# T256: the letters of the contractions, which GPT-4o's pattern takes after a word whatever their case (ſ: (?i) takes
+# it for s, as Oniguruma does)
+CONTRACTION_UPPER, CONTRACTION_LOWER = "STREVMLD", "strevmldſ"
+
+
+class GptFourClasses(TekkenClasses):
+    r"""T256: the classes GPT-4o's pattern (o200k's: Phi-4 mini's and kanana-2's) tells apart: TekkenClasses', with the
+    apostrophe and the letters of the contractions as they are, and any other lower case letter "w" (not Tekken's "l",
+    which (?i:'ll) would take for the letter). An upper case letter of a contraction is still one of the "U" letters, a
+    lower case one or ſ one of the "w" ones: the patterns name them with their classes."""
+
+    def __missing__(self, code):
+        char = chr(code)
+        found = char if char in "'" + CONTRACTION_UPPER + CONTRACTION_LOWER else TEKKEN_CLASSES[code].replace("l", "w")
+        self[code] = found
+        return found
+
+
+GPT4O_CLASSES = GptFourClasses()
+GPT4O_UPPER, GPT4O_LOWER = "Uo~" + CONTRACTION_UPPER, "wo~" + CONTRACTION_LOWER
+GPT4O_LETTERS = "Uwo" + CONTRACTION_UPPER + CONTRACTION_LOWER
 # The pre-tokenizers of their own classes: the classes, and a pattern for each of their stages, each of which cuts
 # every piece of the one before (Split, Isolated: what a pattern matches is a piece, and so is what lies between two
-# matches). Spark-X2.5's (T340) on SparkClasses; Tekken's (T611), one Split, on TekkenClasses
+# matches). Spark-X2.5's (T340) on SparkClasses; Tekken's (T611), one Split, on TekkenClasses; GPT-4o's (T256), one
+# Split, on GptFourClasses
 STAGES = {"spark2_5": (SPARK_CLASSES, (re.compile("0|[^0]+"), re.compile("[kqmz]+|[^kqmz]+"),
                        re.compile("!A+|[^\r\nAak!pq]?[Aak~m]+| ?[!pq]+|[\r\n]|[ \t\r\n]+(?![^ \t\r\n])|[ \t\r\n]+"))),
           "tekken": (TEKKEN_CLASSES, (re.compile("[^\r\nUlo0]?[Uo~]*[lo~]+|[^\r\nUlo0]?[Uo~]+[lo~]*|0"
-                                                 "| ?[^ \t\r\nUlo0]+[\r\n/]*|[ \t\r\n]*[\r\n]+|" + SPACES),))}
+                                                 "| ?[^ \t\r\nUlo0]+[\r\n/]*|[ \t\r\n]*[\r\n]+|" + SPACES),)),
+          "gpt4o": (GPT4O_CLASSES, (re.compile(
+              f"[^\r\n{GPT4O_LETTERS}0]?[{GPT4O_UPPER}]*[{GPT4O_LOWER}]+(?i:{CONTRACTED})?"
+              f"|[^\r\n{GPT4O_LETTERS}0]?[{GPT4O_UPPER}]+[{GPT4O_LOWER}]*(?i:{CONTRACTED})?"
+              f"|0{{1,3}}| ?[^ \t\r\n{GPT4O_LETTERS}0]+[\r\n/]*|[ \t\r\n]*[\r\n]+|" + SPACES),))}
 
 
 def isolated(pattern, classes, start, end):
@@ -227,7 +253,10 @@ def pretokenize(text, pattern):
     "tekken" is Mistral's Tekken (T611: Mistral Nemo's), one Split, whose letters are told apart by their cases
     (TekkenClasses):
         [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+
-    All eight are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
+    "gpt4o" is GPT-4o's (o200k's, T256: Phi-4 mini's and kanana-2's), Tekken's with a contraction after each word,
+    whatever its case, and numbers up to three at a time (GptFourClasses):
+        [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+
+    All nine are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
     """
     if pattern in STAGES:
         table, stages = STAGES[pattern]

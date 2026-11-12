@@ -90,7 +90,7 @@
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
 - T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 未着手
 - T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 候補
-- T256 [追加][解析分割] Mistral の新しいトークナイザと Phi-4 の前分割（大文字と小文字の種類を分ける型 2 つ） — 未着手
+- T256 [追加][解析分割] Mistral の新しいトークナイザと Phi-4 の前分割（大文字と小文字の種類を分ける型 2 つ） — 反映済み
 - T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 未着手
 - T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 未着手
 - T261 [追加][CPU][WebGPU] Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓・2 つの RoPE） — 進行中
@@ -724,14 +724,25 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
 
-### T256 [追加][解析分割] Mistral の新しいトークナイザと Phi-4 の前分割（大文字と小文字の種類を分ける型 2 つ） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+### T256 [追加][解析分割] Mistral の新しいトークナイザと Phi-4 の前分割（大文字と小文字の種類を分ける型 2 つ） — 状態: 反映済み（2026-11-12、Opus medium。前の状態: 未着手、2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```
 - `CharClasses` を Lu・Lt・Lm・Lo・Ll・M まで細かくする。Ministral 8B（研究用のライセンス）、Mistral Nemo の日本語版（12B、メモリは実測）、kanana-2 が開き、Phi-4 mini の前提になる。
+- **結果（2026-11-12、Opus medium、1 コミット）**: 2 つの型のうち Tekken は T611 で済んでいた。残りの GPT-4o の型（o200k: 語の後ろに `(?i:'s|…)?`、数は 3 つずつ）を `gpt4o` として足した。エンジンは字の種類の表 `GptFourClasses`（`TekkenClasses` にアポストロフィと縮約の字をそのまま足し、ほかの小文字を「w」に）の上の `STAGES` の 1 段、変換器は `STAGED_PRETOKENIZERS` の 1 行、GGUF は `GGUF_PRETOKENIZERS` の `gpt-4o`・`kanana2`（`kanana2` は `GGUF_IGNORE_MERGES` にも）。
+  - **実物で何が開くか**（走らせて最初の断りを見た。重みは取っていない）: `?hf=mistralai/Ministral-8B-Instruct-2410`（@2f494a19）は前から開いていた（`tekken`、BOS 1・止まり [1, 2]）。`kakaocorp/kanana-2-3b-instruct`（@6a5d7889、qwen3）は**この回で開く**（`gpt4o`、BOS `<|im_start|>` 128009・止まり [128000, 128010]、yarn）。kanana-nano 2.1B（llama）は前から llama3 の型で開く。**まだ開かないもの**（前分割でなく家族で断る）: Phi-4 mini（phi3: T258）、kanana-2 1.3B（kanana2_tiny）、kanana-2 30B-A3B（deepseek_v3 の MoE）。
+  - **Phi-4 mini の Split は `Removed` と `invert: true`**（kanana-2 は Isolated）。型が全部の字に当たるので Isolated と同じ切れ目（本物の tokenizers で見た）: 変換器は型が全部の字に当たる名前（`WHOLE`）だけこの組を受ける。
+  - **実装で踏んだもの**: 初めは Tekken の小文字の類「l」をそのまま使い、`(?i:'ll)` が類を字の l と読んで「o'clock」を「o'cl」と切った（regex との比べが落とした）。AGENTS.md に決まりとして足した。
+  - **GGUF**: bartowski の Phi-4 mini の Q8_0（@7ff82c2a）は `gpt-4o`、語彙 200,029 と merges 199,742 が原本と同じ順で同じ（後ろに `[PAD…]` 35 個）。unsloth の Q8_0（@78eb92a4）は 3251 番から語片が違うので使わない。kanana-2 の 3 つ（mradermacher の 3B @45a8a3e5・winwinplatform の 1.3B @415d121f・deul の 30B-A3B @075f9674）は `kanana2`、語彙 128,256 と merges 127,744 が原本と同じ。
+  - **試験**: 本物の tokenizers と全符号位置（`EVERY_CODE_POINT=1`、`gpt4o` と `tekken`）が通る（Unicode 16.0.0・tokenizers 0.23.3、3 分 57 秒）。実物の tokenizer.json 2 つは `tokenizer_json_check.py --planes 17` で、kanana-2 3B は 2,333,653 文 0 wrong、Phi-4 mini は added tokens を入れない文が全部 0 wrong で、入れた文に 2,987 wrong（全部 `rstrip: true` の印の後ろの空白: 前分割でなく added tokens の読みの違いで、Phi-4 mini は家族でまだ開かないので T258 に書いた）。regex の型そのものとの比べ（手で選んだ 15 文と乱数 3,000 文）、Removed と invert の組が Isolated と同じこと、断りの組 10 通り。
+  - **今あるモデル**: `conversions_compare.py` で一覧の 210 項目が前と全部同じ（options・tokenizer.bin・送る ID）。`CONVERTER` は上げない。
+  - **壊し方**: `GptFourClasses` から ſ を外すと regex との比べ 3 つが落ち、Removed と invert の組をどの名前にも許すと断りの試験が落ちる。
+  - **CI を省いた。訳**: 触ったのは Python の前分割と変換器の表だけで、手元の pytest（4,238 passed）・全符号位置・実物 2 つ・`conversions_compare`・軽い組（Node 24 で 816 秒。開発機のシェルの既定の `node` が v26.13.0 になっていて、それで回すと `page-parts-check` の `recall()`・`keep()` の `session` の断言が落ちた: Node 24 を PATH の先に置いて回した）が全部踏む。
+  - **残り**: Phi-4 mini 本体は T258（added tokens の `rstrip` もそこに書いた）。一覧には足さない。kanana-2 3B は `?hf=` で開く形になったが、一覧に足すかは別（取りまとめ役の判断）。
 
 ```
 ### T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```
 - Phi-3 mini 4k は文脈を窓の 2047 で切る。Phi-4 mini は前分割の仕事の後。
+- **T256 から（2026-11-12）**: Phi-4 mini の前分割（`gpt4o`）は済んだ。**残るトークナイザの違いが 1 つ**: added tokens の 10 個（`<|assistant|>`・`<|end|>`・`<|user|>`・`<|system|>`・`<|tag|>` と special でない `<|tool|>` など 5 つ）が `rstrip: true` で、本物は印の後ろの空白を食う。エンジンと変換器はこれを読まない（黙って空白を語にする）。`tokenizer_json_check.py --planes 17` は added tokens を入れない文 233 万文で 0 wrong、入れた文で 2,987 wrong（全部この印の後ろの空白）。T610.2（Shisa V2.1 unphi4 14B の lstrip・rstrip）と同じ形で、そこでは「ページのトークナイザに lstrip・rstrip を足すのは、要るモデルが増えたら」と決めた: Phi-4 mini で 2 つ目になるので、開くときに足すかを決める（書式が印の後ろに空白を書くかも見る）。
 
 ```
 ### T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）

@@ -300,7 +300,10 @@ NAMES = {"gpt-2": ("gpt2", False, False), "gpt2": ("gpt2", False, False), "smoll
          # T340: held to XHToken's Q8_0 GGUF of Spark-X2.5 1.7B and its original's tokenizer.json
          "spark2_5": ("spark2_5", False, False),
          # T611: held to two Q8_0 GGUFs of Mistral Nemo (QuantFactory's, mradermacher's) and their originals' tokenizer.json
-         "tekken": ("tekken", False, True)}
+         "tekken": ("tekken", False, True),
+         # T256: held to bartowski's Q8_0 GGUF of Phi-4 mini and three of kanana-2 (1.3B, 3B, 30B-A3B), and their
+         # originals' tokenizer.json
+         "gpt-4o": ("gpt4o", False, False), "kanana2": ("gpt4o", False, True)}
 
 
 def test_the_names_are_the_table():
@@ -316,11 +319,11 @@ def test_a_gguf_says_how_its_text_is_split_by_llama_cpps_name(name):
     assert options["tokenizer_kind"] == "bytebpe" and options["nfkc"] is False
 
 
-@pytest.mark.parametrize("name", ["dbrx", "default", "llama3", "gpt-4o", "falcon3"])
+@pytest.mark.parametrize("name", ["dbrx", "default", "llama3", "falcon3"])
 def test_a_name_no_real_file_was_held_to_is_refused_as_it_was(name):
     """llama.cpp splits dbrx's and falcon3's text by Llama 3's pattern and knows llama3 as a name of it; no real GGUF
-    of the name was held to its original here (HyperCLOVAX's original is gated), and gpt-4o and llama.cpp's default are
-    other patterns than the engine's (tekken was one too, until T611 held two real files of it)."""
+    of the name was held to its original here (HyperCLOVAX's original is gated), and llama.cpp's default is another
+    pattern than the engine's (tekken and gpt-4o were too, until T611 and T256 held real files of them)."""
     config, tensors, published = small()
     file, _ = gguf_file(tensors, published, config["vocab_size"], more=[EPS], pre=name)
     with pytest.raises(ValueError, match=f"This GGUF splits text as {name}, which the engine does not know."):
