@@ -79,7 +79,7 @@
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
 - T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 未着手
 - T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 候補
-- T659 [バグ][変換] `?hf=microsoft/Phi-3-mini-4k-instruct` は tokenizer.model を読み、書式の印が無い — 未着手
+- T659 [バグ][変換] `?hf=microsoft/Phi-3-mini-4k-instruct` は tokenizer.model を読み、書式の印が無い — 反映済み
 - T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 未着手
 - T136 [性能][変換] Hugging Face などからの取得を速くする — 段 ① は済
 - T137 [性能][変換] 変換のレジューム: 取得と変換が途中で止まっても、次は続きから — 第 0 段
@@ -653,9 +653,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
 
-### T659 [バグ][変換] `?hf=microsoft/Phi-3-mini-4k-instruct` は tokenizer.model を読み、書式の印が無い — 状態: 未着手（2026-11-12、T258.1 で見つけた。規模 小〜中）
+### T659 [バグ][変換] `?hf=microsoft/Phi-3-mini-4k-instruct` は tokenizer.model を読み、書式の印が無い — 状態: 反映済み（2026-11-12、Opus medium。前の状態: 未着手、2026-11-12、T258.1 で見つけた。規模 小〜中）
 - 段取りは sentencepiece を書き出した tokenizer.json を後回しにし（T257 の `Later`）、tokenizer.model を先に読む。Phi-3 mini の tokenizer.model は 32000 語片で、書式の印（`<|user|>`・`<|end|>`・`<|assistant|>`、32000〜32010）は tokenizer.json の added tokens にしか無い。だから `?hf=` では BOS が `<s>`、書式 `<|user|>\n{prompt}<|end|>\n<|assistant|>\n` が字で綴られ、止まりに `<|end|>` が無い（手元で `vocabulary_of()` と `beginning_and_stops()` を両方のファイルに当てて見た）。一覧の項目は `tokenizer.json` を名指すので正しい（`format_check.py` 9/9）。
 - 案: tokenizer.json の added tokens に、モデルの語彙（`model.vocab`）に無い番号があれば後回しにしない（書式の印は json にしか無い）。今ある項目の `?hf=` の送る ID が変わりうるので `conversions_compare.py` の hf の欄で前後を見てから。
+- **したこと**: `convert/tokenizer.py` に `marks_past(tokenizer, vocab_size)`（tokenizer.json の added tokens のうち、`model.vocab` に無く、モデルの行のある番号のもの）と例外 `Only`（ValueError）。`convert/vocabulary.py` の `tokenizer_json()` は、ダミーの空白を持つ sentencepiece の書き出しでも `marks_past()` が空でなければ `Later` で後回しにせずその場で読み、読めなければ元の断りの文のまま `Only` で断る。段取りの `tokenized()` とビルドの `convert_hf.convert_tokenizer()` は `Only` を投げ直し、次の候補（tokenizer.model）を読まない。頼みの列は変わらない（同じバイトを 2 度頼まない: `worker-fetches-check` 34 件そのまま）。新しい文は無い。`CONVERTER` は上げない（一覧の項目が送るものは変わらず、変わるのは `?hf=` の Phi-3 系だけ。前に `?hf=` で変換した Phi-3 の保存は前の読みのまま残る: 害は前と同じ）。
+- **前後**（`?hf=` の道: tokenizer を名指さない段取り。`.tmp/hfcheck.py` で重みを取らずに）: 一覧の safetensors の 21 リポジトリは **Phi-3 mini 4K Instruct だけが変わる**（BOS 1 → 32010、止まり [1, 32000] → [1, 32000, 32007]、specials 0 → 4、prefixed なし → every。送る ID と tokenizer.bin が一覧の項目とまったく同じに）。一覧に無い Phi-3.5 mini・Phi-3 medium 4K・Phi-3 mini 128K も同じ形に変わる。Llama 2（NousResearch の chat）・TinyLlama 1.1B Chat・Mistral 7B Instruct v0.2・v0.3 は前と同じ。`conversions_compare.py`（216 項目、一覧と hf の欄）: 216 項目が全部同じ。`format_check.py --hf` を `?hf=` の形（tokenizer を名指さない）で: Phi-3 mini 4K・Phi-3.5 mini・Phi-3 medium 4K・Phi-3 mini 128K の 4 つとも 9/9、9 つとも本物の ID と完全に同じ（前は書式の印を字で綴っていた）。
+- **試験**: `test_spelled_bpe.py` に 2 つ（印を持つ json はその場で読み last=True と同じ値 / 印が無いか行の外なら今までどおり `Later` / 読めない json は同じ文の `Only`。段取りは `Only` の後に tokenizer.model を頼まない）、`test_convert_hf.py` に 1 つ（ビルドも同じ）。壊し方 2 つ（`PYTHONDONTWRITEBYTECODE=1`）: 条件を外す（いつも `Later`）→ 2 つ落ちる、`except Only: raise` を外す → 2 つ落ちる。pytest 4,399 passed、smoke、`make python`、軽い組。
+- CI を省いた。訳: 変換器の Python だけで、pytest・smoke（Pyodide の中）・`conversions_compare.py`・`format_check.py --hf` が手元で全部を踏む。本番の確かめは `models.yml` を 1 本（下）。
 
 ### T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```

@@ -48,7 +48,7 @@ from typing import Any, Callable, NamedTuple
 from convert.conversion import Conversion
 from convert.gguf import Incomplete, gguf_weights
 from convert.sources import joined_shards
-from convert.tokenizer import Later
+from convert.tokenizer import Later, Only
 
 # how much of a file's beginning is asked for first: the JSON header of a safetensors file is a few dozen kilobytes
 HEAD = 512 * 1024
@@ -315,6 +315,10 @@ def tokenized(hf, weights, config, make):
             # model's own file comes before (a Llama's, a Mistral's: read as it was). Read where no candidate after
             # it will do (CAT-Translate 7B: no such file)
             later = later or (tokenizer, candidate)
+        except Only:
+            # T659: a tokenizer.json whose added tokens (the format's marks) the model's other tokenizers lack: its
+            # refusal is the one said, and no other is read in its place
+            raise
         except Exception as error:  # (whatever it was refused with: the next candidate may do)
             refusal = refusal or error
     if later:

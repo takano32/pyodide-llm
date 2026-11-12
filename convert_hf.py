@@ -21,7 +21,7 @@ from llama2_convert import (Arrays, Safetensors, Shards, bfloat16, checkpoint_fo
                             convert_weights, family_of, normalize)
 # (parts, read as the parts read one another: the window does not hand them out)
 from convert.conduct import TOKENIZERS  # noqa: E402
-from convert.tokenizer import Later  # noqa: E402
+from convert.tokenizer import Later, Only  # noqa: E402
 from convert.vocabulary import vocabulary_of  # noqa: E402
 
 
@@ -102,6 +102,8 @@ def convert_tokenizer(directory, out_path, vocab_size):
             break
         except Later as error:
             later = later or (name, data, error)
+        except Only:  # (T659: no other is read in its place)
+            raise
         except Exception as error:  # (whatever it was refused with: the next candidate may do)
             refusal = refusal or error
             left.append((name, error))

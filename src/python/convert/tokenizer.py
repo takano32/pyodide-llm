@@ -16,7 +16,24 @@ class Later(ValueError):
     (T308), a tokenizer.json written by an older transformers prepends to all of them whatever that says, and the
     model's own file, with its scores, is what the list's models of this kind were held to the real tokenizers with.
     Read where no other tokenizer is there, or none that can be read. One without the prefix (a Gemma's) has no such
-    question, and is read at once: the model's own file read here would get a prefix it has not."""
+    question, and is read at once: the model's own file read here would get a prefix it has not.
+    T659: nor is one with added tokens its model's vocabulary lacks (Phi-3 mini's turn marks, <|user|> to <|end|>, which
+    its tokenizer.model has not): read at once, or refused with Only."""
+
+
+class Only(ValueError):
+    """T659: the refusal of a tokenizer.json with added tokens its model's vocabulary lacks (marks_past()), whose own
+    words it carries. No other tokenizer of the model is tried after it: the model's own file would read the
+    conversation's marks as text, and the model would write on past its answer."""
+
+
+def marks_past(tokenizer, vocab_size):
+    """T659: the added tokens of a tokenizer.json that its model's own vocabulary has not and the model has a row for:
+    the marks a chat template writes (Phi-3 mini's 32000 to 32010, past the 32000 pieces of its tokenizer.model), which
+    the model's other tokenizers lack. An added token past the model's last row is none of its (with_a_row())."""
+    own = set(tokenizer["model"]["vocab"].values())
+    return [token["content"] for token in tokenizer.get("added_tokens", [])
+            if token.get("id") not in own and isinstance(token.get("id"), int) and token["id"] < vocab_size]
 
 
 def tokenizer_bin(pieces, vocab_size, spaces=True, charsmap=b""):

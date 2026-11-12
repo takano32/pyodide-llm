@@ -15,7 +15,7 @@ import pytest
 
 import spelled_bpe_cases
 from conftest import CORPUS, TEXTS, detokenize, vocabulary_conversion
-from convert.tokenizer import Later, tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces
+from convert.tokenizer import Later, Only, tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces
 from engine.tokenizer import Tokenizer
 from spelled_bpe_cases import by_the_definition
 
@@ -374,6 +374,48 @@ def test_the_conduct_reads_the_file_where_no_other_tokenizer_will_do(monkeypatch
     # and the one candidate an item names is read at once... after being put off, with nothing asked for twice
     told, last, stand_in = requests(repository(written), HF, monkeypatch)
     assert asked(told) == ["tokenizer.json"] and last[0] == "done"
+
+
+def test_a_tokenizer_json_with_marks_its_model_lacks_is_read_at_once():
+    """T659: a tokenizer.json that writes out a sentencepiece model with its dummy prefix and has added tokens its model's
+    vocabulary has not (Phi-3 mini's turn marks, past the 32000 pieces of its tokenizer.model) is not put off: the
+    model's own file would spell the marks as text and never stop. Marks past the model's last row are none of its, and
+    the file is put off as before. One that cannot be read is refused in its own words, and nothing else is tried."""
+    from convert.vocabulary import vocabulary_of
+    spec, _ = written_out(True)
+    size = len(spec["model"]["vocab"])
+    token = lambda id, content: {**spec["added_tokens"][0], "id": id, "content": content, "special": True}
+    marked = {**spec, "added_tokens": [*spec["added_tokens"], token(size, "<|user|>"), token(size + 1, "<|end|>")]}
+    read = vocabulary_of(json.dumps(marked).encode(), "tokenizer.json", size + 2, last=False)
+    assert read == vocabulary_of(json.dumps(marked).encode(), "tokenizer.json", size + 2, last=True)
+    assert {"<|user|>", "<|end|>"} <= set(read.specials) and read.options["prefixed"] == "every"
+    # without such marks, or with them past the rows of the model: put off as before
+    with pytest.raises(Later):
+        vocabulary_of(json.dumps(spec).encode(), "tokenizer.json", size + 2, last=False)
+    with pytest.raises(Later):
+        vocabulary_of(json.dumps(marked).encode(), "tokenizer.json", size, last=False)
+    # one the engine cannot read: refused with the words of its own refusal, which no other candidate follows
+    unread = {**marked, "model": {**marked["model"], "byte_fallback": False}}
+    with pytest.raises(ValueError, match="spells a character it lacks") as last:
+        vocabulary_of(json.dumps(unread).encode(), "tokenizer.json", size + 2, last=True)
+    with pytest.raises(Only, match="spells a character it lacks") as refused:
+        vocabulary_of(json.dumps(unread).encode(), "tokenizer.json", size + 2, last=False)
+    assert refused.value.args == last.value.args
+
+
+def test_the_conduct_reads_no_other_tokenizer_after_one_with_marks_of_its_own(monkeypatch):
+    """T659: the refusal of a tokenizer.json with marks its model's other tokenizers lack (Only) is the conduct's,
+    and the tokenizer.model after it is not asked for: read in its place, the format's marks would be text."""
+    from conduct_hub import Hub, StandIn, answered
+    from convert.conduct import conduct
+    from test_conduct import HF, repository
+    anyones = {key: value for key, value in HF.items() if key != "tokenizer"}
+    hub = Hub(repository({"tokenizer.json": b"marked, unreadable", "tokenizer.model": b"the model's own"}), anyones)
+    stand_in, told = StandIn().into(monkeypatch), []
+    with pytest.raises(Only, match="tokenizer.json is of a kind the engine does not read"):
+        answered(hub, conduct(anyones), told)
+    assert [request[2] for request in told if request[0] == "bytes"] == ["tokenizer.json"]
+    assert [line for line in stand_in.handed if line.startswith("Conversion(")][-1].endswith(": refused alone")
 
 
 def test_an_added_token_past_the_models_last_row_is_left_out():

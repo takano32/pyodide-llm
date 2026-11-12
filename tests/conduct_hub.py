@@ -19,7 +19,7 @@ import json
 import struct
 
 from convert.gguf import Incomplete
-from convert.tokenizer import Later
+from convert.tokenizer import Later, Only
 
 MiB = 1 << 20
 
@@ -396,6 +396,9 @@ class StandIn:
                 if bytes(tokenizer or b"").startswith(b"written out") and not last:
                     handed.append(f"{what}: put off")
                     raise Later(f"{name} writes out a sentencepiece model")
+                if bytes(tokenizer or b"").startswith(b"marked, unreadable"):  # (T659: with marks the others lack)
+                    handed.append(f"{what}: refused alone")
+                    raise Only(f"This model cannot be converted: {name} is of a kind the engine does not read.")
                 if bytes(tokenizer or b"").startswith(b"unreadable"):
                     handed.append(f"{what}: refused")
                     raise ValueError(f"This model cannot be converted: {name} is of a kind the engine does not read.")

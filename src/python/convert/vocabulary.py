@@ -9,7 +9,7 @@ from typing import NamedTuple
 from convert.template import config_token
 from convert.gguf import gguf_tokenizer
 from engine.tokenizer import PLAMO_SPECIAL
-from convert.tokenizer import (Later, described_options, prefixed_texts, sentencepiece_charsmap, sentencepiece_options,
+from convert.tokenizer import (Later, Only, described_options, marks_past, prefixed_texts, sentencepiece_charsmap, sentencepiece_options,
                                sentencepiece_pieces, sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
                                tokenizer_json_options, tokenizer_json_pieces, with_a_row, written_out)
 
@@ -65,7 +65,18 @@ def tokenizer_json(data, vocab_size, said, last):
     except ValueError:
         raise ValueError("tokenizer.json is not JSON.") from None
     if not last and written_out(parsed) and prefixed_texts(parsed):
-        raise Later("This tokenizer.json writes out a sentencepiece model, whose own file is read first.")
+        if not marks_past(parsed, vocab_size):
+            raise Later("This tokenizer.json writes out a sentencepiece model, whose own file is read first.")
+        # T659: its marks are its own, and nothing else will do: read at once, or refused in its own words
+        try:
+            return json_vocabulary(parsed, vocab_size, said)
+        except ValueError as error:
+            raise Only(*error.args) from error
+    return json_vocabulary(parsed, vocab_size, said)
+
+
+def json_vocabulary(parsed, vocab_size, said):
+    """The vocabulary of a tokenizer.json, parsed."""
     options = tokenizer_json_options(parsed)
     every = list(tokenizer_json_pieces(parsed))
     pieces = with_a_row(every, parsed, vocab_size)

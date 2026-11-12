@@ -165,6 +165,26 @@ def test_the_build_puts_off_a_tokenizer_json_that_writes_out_a_sentencepiece_mod
     assert capsys.readouterr().err == ""
 
 
+def test_the_build_reads_a_tokenizer_json_with_marks_its_model_lacks_as_the_page_does(tmp_path, capsys):
+    """T659: a tokenizer.json with added tokens its tokenizer.model has not (Phi-3 mini's turn marks) is read before the
+    model's own file, and where it cannot be read, its refusal is the build's: the model's file is not read instead."""
+    from convert.tokenizer import Only
+    from test_spelled_bpe import model, written_out
+    spec, _ = written_out(True)
+    size = len(spec["model"]["vocab"])
+    spec["added_tokens"] += [{**spec["added_tokens"][0], "id": size, "content": "<|end|>"}]
+    data = json.dumps(spec).encode()
+    (tmp_path / "tokenizer.json").write_bytes(data)
+    (tmp_path / "tokenizer.model").write_bytes(model(True))
+    convert_hf.convert_tokenizer(tmp_path, tmp_path / "out", size + 1)
+    assert (tmp_path / "out").read_bytes() == convert_hf.tokenizer_of("tokenizer.json", data, size + 1)
+    assert capsys.readouterr().err == ""
+    spec["model"]["byte_fallback"] = False
+    (tmp_path / "tokenizer.json").write_bytes(json.dumps(spec).encode())
+    with pytest.raises(Only, match="spells a character it lacks"):
+        convert_hf.convert_tokenizer(tmp_path, tmp_path / "out", size + 1)
+
+
 def test_the_build_leaves_out_an_added_token_past_the_models_last_row(tmp_path):
     """T257 (with_a_row()): a text-only Gemma 3's <image_soft_token>, one past the model's rows, was refused by the build."""
     from test_spelled_bpe import written_out
