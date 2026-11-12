@@ -220,6 +220,30 @@ def test_phi4_minis_longrope_reads_as_transformers_reads_it():
     assert rope_magnitude(read["rope_scaling"]) == math.sqrt(17 / 12)
 
 
+@pytest.mark.parametrize("original_in", ["the top", "rope_parameters"])
+def test_longrope_in_transformers_5s_rope_parameters_reads_as_the_old_names_do(original_in):
+    """transformers 5 writes theta, the part turned and the scaling as one rope_parameters, read again at every
+    normalize() (the conversion normalizes at several places): the attention factor worked out of the context before it
+    was cut is kept in it (T258's review: the second reading made it 1, and a float32 file's RoPE tables had none)."""
+    tensors, config = phi3_model(**LONGROPE)
+    five = {key: value for key, value in config.items()
+            if key not in ("rope_scaling", "rope_theta", "partial_rotary_factor", "original_max_position_embeddings")}
+    five["rope_parameters"] = {**{key: value for key, value in config["rope_scaling"].items() if key != "type"}, "rope_type": "longrope",
+                               "rope_theta": config["rope_theta"], "partial_rotary_factor": config["partial_rotary_factor"]}
+    if original_in == "the top":
+        five["original_max_position_embeddings"] = config["original_max_position_embeddings"]
+    else:
+        five["rope_parameters"]["original_max_position_embeddings"] = config["original_max_position_embeddings"]
+    read, old = normalize(five), normalize(config)
+    assert read["rope_scaling"] == old["rope_scaling"] and read["rotary_pct"] == old["rotary_pct"] == 0.75
+    assert read["max_position_embeddings"] == old["max_position_embeddings"] == 16
+    assert normalize(read) == read
+    llama, _ = engine(tensors, five)  # float32: its file carries the RoPE tables
+    want = naive_phi3_logits(tensors, config, TOKENS)
+    for pos, token in enumerate(TOKENS):
+        assert close(llama.forward(token, pos), want[pos]), pos
+
+
 @pytest.mark.parametrize("change, reason", [
     ({"short_factor": [1.0] * 47}, "short factor for every pair"), ({"short_factor": [1.0] * 47 + [0.0]}, "short factor for every pair"),
     ({"short_factor": None}, "short factor for every pair"), ({"attention_factor": -1.0}, "no attention factor"),

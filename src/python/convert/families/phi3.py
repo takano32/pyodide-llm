@@ -48,8 +48,14 @@ def phi3_longrope(config):
         magnitude = 1.0 if factor <= 1 else math.sqrt(1 + math.log(factor) / math.log(original))
     made = {"rope_type": "longrope", "short_factor": scaling.get("short_factor"), "attention_factor": magnitude,
             "original_max_position_embeddings": original}
+    # (transformers 5's rope_parameters is read again at every normalize(), over the rope_scaling it made the time
+    # before: what was worked out stays in it too, or the second reading works the attention factor out of a context
+    # already cut to the original one, 1, and a float32 file's RoPE tables lose it)
+    rope = config.get("rope_parameters")
+    kept = {"rope_parameters": {**rope, "attention_factor": magnitude, "original_max_position_embeddings": original}} \
+        if isinstance(rope, dict) else {}
     return {**config, "rope_scaling": made, "max_position_embeddings": min(context, original),
-            "original_max_position_embeddings": original}
+            "original_max_position_embeddings": original, **kept}
 
 
 def phi3_check(config):
