@@ -4,7 +4,7 @@
 //
 //   node tests/screenshots.ts <directory> [url of a deployed site]
 //
-// The scenes: the page with the smallest model ready; the settings sheet open at its engine switches (T75); the
+// The scenes: the page with the smallest model ready; an answer's line under it, closed and open (T372); the settings sheet open at its engine switches (T75); the
 // benchmark's bubble (T76); the sheet that opens any repository, and a repository the converter refuses (T88);
 // /benchmark/ before a run, while "Run all" runs the CPU section (T177: its progress) and after (T134, whole pages: it is
 // a page that scrolls).
@@ -61,6 +61,60 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(directory, `list-${width}.png`), fullPage: true });
   await page.evaluate(() => { document.getElementById("model").size = 0; });
+
+  // T372: an answer's line, with the seed's button beside its summary (not in it): closed, after the button is pressed
+  // (the line stays closed, and the next run is to use the seed), and open. By the keyboard too: Enter on the summary
+  // opens the line and leaves the seed, Space on the button fixes the seed and leaves the line. (stories260K, the one
+  // model preview.yml builds, is greedy, and a greedy answer has no seed: the URL sets a temperature)
+  {
+    const answering = await fresh(viewport);
+    const at = answering.page;
+    await at.goto(`${site}?model=stories260K&temperature=0.7`);
+    await acrossReload(() => at.waitForFunction(() => document.getElementById("run")?.disabled === false || document.querySelector(".error"), null, { timeout: 600000 }));
+    await at.fill("#prompt", "Once upon a time");
+    await at.click("#run");
+    await at.waitForFunction(() => document.querySelector(".model .meta") || document.querySelector(".error"), null, { timeout: 600000 });
+    await at.waitForTimeout(300);
+    await shot(at, "answer", width);
+    const state = () => at.evaluate(() => ({
+      open: document.querySelector(".model .meta-line details")?.open, seed: (document.getElementById("seed") as HTMLInputElement).value,
+      inSummary: document.querySelectorAll("summary button, summary a, summary input, summary select, summary textarea").length,
+      scrolls: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    }));
+    const wrong = [];
+    const before = await state();
+    if (!(await at.$(".model .meta-line .seed"))) wrong.push("no seed's button beside the answer's line");
+    else {
+      await at.click(".model .meta-line .seed");
+      const pressed = await state();
+      await shot(at, "answer-seed", width);
+      await at.click(".model .meta-line summary");
+      await at.waitForTimeout(300);
+      const opened = await state();
+      await shot(at, "answer-open", width);
+      await at.click(".model .meta-line summary");
+      await at.evaluate(() => { (document.getElementById("seed") as HTMLInputElement).value = ""; });
+      await at.focus(".model .meta-line summary");
+      await at.keyboard.press("Enter");
+      const entered = await state();
+      await at.keyboard.press("Tab");
+      const focused = await at.evaluate(() => document.activeElement?.className);
+      await at.keyboard.press("Space");
+      const spaced = await state();
+      console.log(`${width}: the seed's button: line ${pressed.open ? "OPEN" : "closed"}, seed "${pressed.seed}"; the summary: ${opened.open ? "open" : "CLOSED"}; ` +
+        `Enter on the summary: ${entered.open ? "open" : "CLOSED"}, seed "${entered.seed}"; Tab to "${focused}"; Space: line ${spaced.open ? "open" : "CLOSED"}, seed "${spaced.seed}"; ` +
+        `interactive elements in a summary: ${before.inSummary}; the page scrolls sideways: ${opened.scrolls}`);
+      if (pressed.open || !pressed.seed) wrong.push("the seed's button opened the line or fixed no seed");
+      if (!opened.open) wrong.push("the summary did not open the line");
+      if (!entered.open || entered.seed) wrong.push("Enter on the summary did not open the line alone");
+      if (focused !== "seed" || !spaced.open || !spaced.seed) wrong.push("Space on the seed's button did not fix the seed alone");
+      if (before.inSummary) wrong.push("an interactive element in a summary");
+      if (before.scrolls || opened.scrolls) wrong.push("the page scrolls sideways");
+    }
+    for (const one of wrong) console.log(`${width}: WRONG: ${one}`);
+    if (wrong.length) process.exitCode = 1;
+    await closed(() => answering.context.close());
+  }
 
   // 2. the settings sheet, the engine's switches open (T75)
   await page.click("#settings-open");
