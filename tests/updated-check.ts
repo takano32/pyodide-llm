@@ -392,13 +392,13 @@ for (const name of ["src/page/receiver.ts", "src/benchmark/section.ts"]) assert.
 assert.ok(/w\.onerror = async \(event\) => resolve\(\{ error: await workerFailed\(event\) \}\);/.test(code("src/benchmark/model.ts")), "/benchmark/'s model section holds its worker's error to section.ts's workerFailed()");
 assert.ok(/worker\.onerror = async \(event\) => resolve\(\{ error: await workerFailed\(event\) \}\);/.test(code("src/benchmark/section.ts")), "/benchmark/'s sections hold their workers' errors to workerFailed()");
 // /benchmark/'s CPU and device worker says a caught value by one function, which says an update alone, and the rows
-// that catch a failure of their own (the ceilings, a loop's attempt) let an update through to it
+// that catch a failure of their own (the ceilings, a loop's attempt, T270's kernels' rows) let an update through to it
 {
   const text = code("src/runtime/benchmark/sections.ts");
   // (T368.7: the lines as TypeScript has them: a caught value is read through a type, a message says which it is)
   assert.ok(text.includes("const failed = (error: unknown) => saidOf(error, `${(error as Thrown)?.name ?? \"Error\"}: ${(error as Thrown)?.message ?? error}`);"), "sections.ts's failed() says an update alone");
   assert.ok(text.includes("postMessage({ step: data.step, error: failed(error) } satisfies Failed);"), "a step that failed is said by failed()");
-  assert.equal((text.match(/\n {4}unlessUpdated\(error\);\n/g) ?? []).length, 2, "the ceilings' and an attempt's catch let an update through");
+  assert.equal((text.match(/\n {4}unlessUpdated\(error\);\n/g) ?? []).length, 3, "the ceilings', an attempt's and (T270) the kernels' rows' catch let an update through");
   assert.ok(!/\?\.name \?\? "Error"\}/.test(text.replace(/const failed = [^\n]*/, "")), "no other place of sections.ts puts a name before a caught value's words");
 }
 // the kernels of a 64-bit memory are fetched on the same line as the others and are no slower path (without them a
