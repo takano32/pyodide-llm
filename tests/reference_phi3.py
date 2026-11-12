@@ -53,6 +53,9 @@ LOGITS_LINE = 1e-3  # the least of the logits' line (made-up models: 2e-3)
 # the real part's phases each in a process of its own (real()); tests/reference_dry.py runs them in its own, on its
 # stand-ins, which a process of their own would not have
 SEPARATE = True
+# what main() read of the command line (--model, --layers, --positions, --only=fetch), and these where nothing did:
+# the dry run calls real() of its own, whatever another tool's arguments left in sys.argv
+RUN = {"model": "phi-3", "layers": 8, "positions": 96, "fetch": False}
 
 say = lambda *parts: print("phi3:", *parts, flush=True)
 
@@ -167,7 +170,7 @@ def real_folder(directory, name):
     for file in FILES + SHARDS:
         fetch(file, folder, repo, revision)
     config = json.loads((folder / "config.json").read_text())
-    (cut / "config.json").write_text(json.dumps({**config, "num_hidden_layers": int(option("layers", "8"))}))
+    (cut / "config.json").write_text(json.dumps({**config, "num_hidden_layers": RUN["layers"]}))
     for file in FILES[1:] + SHARDS:
         if not (cut / file).exists():
             os.symlink((folder / file).resolve(), cut / file)
@@ -175,16 +178,16 @@ def real_folder(directory, name):
 
 
 def real(directory):
-    name = option("model", "phi-3")
+    name = RUN["model"]
     real_folder(directory, name)
-    if option("only") == "fetch":
+    if RUN["fetch"]:
         return False
     if not SEPARATE:
         return real_transformers(directory, name) or any([real_engine(directory, name, dtype) for dtype in ("float32", "int8")])
     failed = False
     for phase in ("transformers", "float32", "int8"):
         said = subprocess.run([sys.executable, __file__, str(directory), f"--phase={phase}", f"--model={name}",
-                               f"--positions={option('positions', '96')}", f"--layers={option('layers', '8')}"])
+                               f"--positions={RUN['positions']}", f"--layers={RUN['layers']}"])
         say(f"real, the phase {phase}: exit {said.returncode}")
         failed |= said.returncode != 0
         if phase == "transformers" and said.returncode != 0:
@@ -195,7 +198,7 @@ def real(directory):
 def real_ids(folder, bos):
     from tokenizers import Tokenizer
     tokenizer = Tokenizer.from_file(str(folder / "tokenizer.json"))
-    return ([bos] + tokenizer.encode(TEXT, add_special_tokens=False).ids)[:int(option("positions", "96"))]
+    return ([bos] + tokenizer.encode(TEXT, add_special_tokens=False).ids)[:RUN["positions"]]
 
 
 def real_transformers(directory, name):
@@ -264,9 +267,10 @@ def real_engine(directory, name, dtype):
 def main():
     directory = Path(sys.argv[1])
     directory.mkdir(parents=True, exist_ok=True)
-    phase = option("phase")
+    RUN.update(model=option("model", "phi-3"), layers=int(option("layers", "8")), positions=int(option("positions", "96")),
+               fetch=option("only") == "fetch")
+    phase, name = option("phase"), RUN["model"]
     if phase:
-        name = option("model", "phi-3")
         failed = real_transformers(directory, name) if phase == "transformers" else real_engine(directory, name, phase)
         sys.exit(1 if failed else 0)
     only, failed = option("only"), False
