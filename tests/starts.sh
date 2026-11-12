@@ -37,17 +37,20 @@ for model in "$@"; do
     step "$first chat_nll" python3 tests/chat_nll.py "${given[@]}"
     rm -rf "$HF_HOME"
   fi
-  fetched=$(python3 tests/hf_fetch.py "$first" "$room/downloads" | tail -1) &&
-    python3 tests/perplexity_prepare.py "$fetched" "$room/$first" int8 | cut -c1-160
+  IFS='+' read -ra entries <<< "$ids"
+  for id in "${entries[@]}"; do
+    python3 tests/write_options.py "$id" "$room/small" > "$room/$id.page.json" || { failed=$((failed + 1)); echo "starts.sh $id: FAILED"; rm -f "$room/$id.page.json"; }
+  done
+  # the dtype the page keeps the model in, as write_options.py says it (a Bonsai's binary or ternary, not int8: the
+  # engine refuses a checkpoint that is not what its options say)
+  dtype=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["options"].get("dtype", "int8"))' "$room/$first.page.json") &&
+    fetched=$(python3 tests/hf_fetch.py "$first" "$room/downloads" | tail -1) &&
+    python3 tests/perplexity_prepare.py "$fetched" "$room/$first" "$dtype" | cut -c1-160
   if [ $? -ne 0 ]; then
     failed=$((failed + 1))
     echo "starts.sh $first: FAILED to fetch or convert"
   else
     rm -rf "$room/downloads"
-    IFS='+' read -ra entries <<< "$ids"
-    for id in "${entries[@]}"; do
-      python3 tests/write_options.py "$id" "$room/small" > "$room/$id.page.json" || { failed=$((failed + 1)); echo "starts.sh $id: FAILED"; continue; }
-    done
     if [ -n "$starts" ]; then
       echo "start_check $first: Japanese"
       step "$first start_check" node tests/start_check.ts "$room/$first" "$room/$first.page.json" --starts "$starts" --tokens 1500
