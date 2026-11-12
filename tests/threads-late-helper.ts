@@ -3,13 +3,16 @@
 // DeltaNet layer) it takes, it writes the first value head only, and ends without counting the chunk: what a thread
 // that a browser stops half way through its work leaves behind (T120). The coordinator must give it up and run the
 // phase again, to the numbers a single thread computes (the new state is written beside the old one: the spare
-// place of forward/linear.ts's slots).
+// place of forward/linear.ts's slots). skip (T285's review, in the one message): how many delta-rule chunks it takes and
+// does whole before the one it stops in, so that the phase that is run again is a later layer's or a later position's,
+// where the places the layers hold their states in have been turned about (slots and spare are not where they began).
 import { parentPort } from "node:worker_threads";
 import { runtimeUrl } from "./tree.ts";
 
 const started = new Promise((resolve) => parentPort.once("message", resolve));
 const J = await import(runtimeUrl("jobs.ts"));
-const { memory, plain, relaxed, share, wide = false } = await started;
+const { memory, plain, relaxed, share, wide = false, skip = 0 } = await started;
+let deltas = 0;
 const imports = { env: { memory } };
 const k = J.addressed(new WebAssembly.Instance(plain, imports).exports, wide);
 const r = relaxed ? J.addressed(new WebAssembly.Instance(relaxed, imports).exports, wide) : null;
@@ -31,7 +34,7 @@ for (;;) {
       let j = count - 1;
       while (table[j * J.JOB + J.FIRST] > c) j--;
       const at = j * J.JOB, size = table[at + J.SIZE], r0 = (c - table[at + J.FIRST]) * size;
-      if (table[at] === 7) {  // the delta rule: the first value head of the chunk is written, and this thread is gone
+      if (table[at] === 7 && deltas++ >= skip) {  // the delta rule: the first value head of the chunk is written, and this thread is gone
         runRows(table.subarray(at, at + J.SIZE), r0, r0 + 1);
         process.exit(0);
       }

@@ -226,29 +226,36 @@ if (isMainThread) {
   // half written; the coordinator gives it up and runs the whole phase again, to the logits the first count computed. A
   // state written in place would have advanced those heads twice. Where the heads are too small for a thread to get a
   // chunk before the coordinator has run them all, nothing stops and nothing is tested: the line says so.
+  // T285's review: and one that stops in a later delta rule (skip: the chunks of delta rules it does whole first), where
+  // a layer's place and the spare one are not where they began: the phase run again reads the place the layer holds its
+  // state in now and writes the spare, in the layer that stops and the positions after it
   let lateLine = "";
   if (plan.linear) {
-    const late = createForward({ memory, base, size, kernels, plan, stalledMs: 500, spawn: (data) => new Promise((resolve) => {
-      const worker = new Worker(new URL("./threads-late-helper.ts", import.meta.url));
-      worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
-      worker.postMessage(data);
-    }) });
-    await late.setThreads(2);
-    let same = true;
-    console.warn = () => {};
-    token = plan.bos ?? 1;
-    for (let pos = 0; pos < positions && same; pos++) {
-      late.forward(token, pos, true);
-      const logits = late.logits();
-      same = logits.every((v, j) => Object.is(v, reference[pos][j]));
-      token = logits.indexOf(Math.max(...logits));
+    const outcomes = [];
+    for (const skip of [0, 1, 2, 3, 5, 8, 13]) {
+      const late = createForward({ memory, base, size, kernels, plan, stalledMs: 500, spawn: (data) => new Promise((resolve) => {
+        const worker = new Worker(new URL("./threads-late-helper.ts", import.meta.url));
+        worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
+        worker.postMessage({ ...data, skip });
+      }) });
+      await late.setThreads(2);
+      let same = true;
+      console.warn = () => {};
+      token = plan.bos ?? 1;
+      for (let pos = 0; pos < positions && same; pos++) {
+        late.forward(token, pos, true);
+        const logits = late.logits();
+        same = logits.every((v, j) => Object.is(v, reference[pos][j]));
+        token = logits.indexOf(Math.max(...logits));
+      }
+      console.warn = warned;
+      outcomes.push({ skip, same, stopped: late.lostThreads });
+      late.stopThreads();
     }
-    console.warn = warned;
-    const stoppedInDelta = late.lostThreads;
-    late.stopThreads();
-    lateLine = !stoppedInDelta && same ? "no thread stopped in a delta rule (its heads are too small to share: nothing tested); "
-      : same ? "a thread that stops after writing a head of a delta rule is given up and the text is the same; "
-        : "a thread that stops after writing a head of a delta rule DIFFERS; ";
+    const differing = outcomes.filter((o) => !o.same).map((o) => o.skip), stoppedAt = outcomes.filter((o) => o.stopped).map((o) => o.skip);
+    lateLine = differing.length ? `a thread that stops after writing a head of a delta rule (after ${differing.join(", ")} of its chunks of them) DIFFERS; `
+      : !stoppedAt.length ? "no thread stopped in a delta rule (its heads are too small to share: nothing tested); "
+        : `a thread that stops after writing a head of a delta rule (after ${stoppedAt.join(", ")} of its chunks of them) is given up and the text is the same; `;
   }
   // T260's review: an LFM2's convolution layer is two matrix phases with a step of this thread's between them, which writes
   // the layer's state (outside every phase: forward.js's short_conv). The first helper above stops in the very first
