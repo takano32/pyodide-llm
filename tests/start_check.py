@@ -145,14 +145,18 @@ def main():
         reference_llama.float32_arithmetic()
         said = json.loads((Path(original) / "config.json").read_text())
         held = getattr(torch, said.get("dtype") or said.get("torch_dtype") or "float32")
+    # T612.2: a model that caps its attention's scores (Gemma 2's attn_logit_softcapping) is loaded with transformers'
+    # eager attention, the one that caps them (as tests/reference_gemma2.py loads it)
+    capped = json.loads((Path(original) / "config.json").read_text()).get("attn_logit_softcapping")
+    eager = {"attn_implementation": "eager"} if capped else {}
     if args.by_layer:
         import reference_llama
         model = reference_llama.ByLayer(original)
     else:
         try:
-            model = AutoModelForCausalLM.from_pretrained(original, dtype=held).eval()
+            model = AutoModelForCausalLM.from_pretrained(original, dtype=held, **eager).eval()
         except TypeError:  # transformers before 4.56 calls it torch_dtype
-            model = AutoModelForCausalLM.from_pretrained(original, torch_dtype=held).eval()
+            model = AutoModelForCausalLM.from_pretrained(original, torch_dtype=held, **eager).eval()
     limit = getattr(model.config, "n_positions", None) or getattr(model.config, "max_position_embeddings", 2048)
     window = min(args.window, limit - 1)  # (a start takes one place of the model's)
 
