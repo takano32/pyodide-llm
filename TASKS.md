@@ -38,7 +38,7 @@
 - T423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
 - T449 [整理][その他] T367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 進行中
 - T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
-- T270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 進行中
+- T270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 反映済み
 - T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
 - T457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
 - T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
@@ -516,7 +516,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 状態: 未着手（2026-10-09、T355 の手元の確かめから。本線も同じ。規模 小）
 - Chrome の Issues が「Interactive element inside of a <summary> element」と言う。押すと内訳が開閉するのと種を固定するのが重なる。見た目のタスクなので `preview.yml` で前後を撮る。
 
-### T270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 状態: 進行中（2026-10-02、T232 から。規模 小〜中）
+### T270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 状態: 反映済み（2026-10-02、T232 から。規模 小〜中）
 - GPU の節に 3 値の行列 × ベクトル（符号を −1・0・+1 に直す今の形と、0・1・2 のまま −Σa を引く形を並べる）・タイル・層、CPU の節に 3 値のカーネルと回転の行。どちらの形が速いかは未計測で、端末の報告で決める。`public/benchmark/gpu.js` は T232 では触っていない。
 - **実装（2026-11-12、ブランチ `t270-ternary-bench`）**: 測って出すだけで、エンジンの形は変えない（目録 `shaders/engine.ts` の行も文も触らない: 端末の鍵は同じ）。
   - **GPU の節の最後の段 `ternary`**（`src/runtime/benchmark/gpu/ternary.ts`）: (1) 答えのステップの行列 × ベクトルを 3 つの形で交互に（int8 のエンジンの DP4A、3 値のエンジンの文、3 値の −Σa の形）、形は Llama 3.2 1B の w1（帯域の段と同じ）と Ternary Bonsai 8B の w1（12288 × 4096）。(2) プロンプトのタイル（エンジンの `promptForms` の DP4A 64×64 を int8 と 3 値で、subgroups があれば両方、64 トークン、1B の w1）。(3) 層（T175 の融合した DP4A の層を int8 と 3 値で、1B の幅、位置 127）。どれも重みの写しを 128 MiB ぶん順に読み、n と 2n の差で交互に（`interleaved()`）。
@@ -525,7 +525,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **CPU の節の最後**（`sections.ts` の `kernelRows()`、表は `src/bench/cpu.ts` の `kernelsTable()`）: 1 本で、1B の w1 の形の `matmul_t2r`・`matmul_t2`（T275 の後の形）・`matmul_t2r_tile`（16 トークン）を `matmul_q8r`・`matmul_q8`・`matmul_q8r_tile` と並べ、回した基底の `rotate`（27B の幅 5120 と 17408、塊 1024）を µs で。作り物のモデルのメモリの重みの所を書き潰して使う（新しいメモリを取らない: T96）。写しは 64 MB ぶん。
   - **ページに見える文**（取りまとめ役の決め: 今の行に倣った案。英語）: GPU の表の題「**Ternary weights** (T270): …」と列「table | shape | form | ms | G weights/s | GB/s | × int8」、行の名前「int8 (engine)」「ternary, the codes made signed (engine)」「ternary, the codes as they are less Σa」、表の下の 1 行「**The codes as they are less Σa against the engine's form** (above 1×: faster than the engine's here): …」、要約の 1 行「GPU, ternary weights: the codes as they are less Σa against the engine's form …」、段の進みの名前「ternary weights」。CPU の表の題「**Kernels of ternary weights** (T270): …」と列「kernel | weights | relaxed SIMD | tokens a pass | ms a pass | G weights/s | GB/s | × int8」、回転の行「rotate, 5120 values in blocks of 1024」。
   - **試験**: `tests/bench/ternary.ts`（表・比・要約・CPU の表を作り物の答えで）、`tests/bench/gpuplan.ts`（段の並び）、`bench-modules-check`（`"ternary"` を頼んでよいのは `gpu/ternary.ts` だけ: `TERNARY_ASKING`）。壊し方: 表の「× int8」をタイルの subgroups を見ずに最初の int8 の行と比べる形にすると `tests/bench.ts` が「0.50× !== 0.25×」で落ちた。シェーダの文は Dawn（lavapipe）でコンパイルだけ見た（`TERNARY_SUMS_MATVEC` とエンジンの 3 値の文）。
-  - 数は未計測（端末の報告で）。
+  - **確かめ**: `bench.yml`（`build=t270-ternary-bench os=ubuntu-latest browsers=chromium run=cpu,gpu`、run 43278323990、成功）: SwiftShader の段 `check` で 3 値の 4 つ（エンジンの文 worst 2.0e-8・−Σa の形 2.3e-8・タイル 6.3e-8・subgroups のタイル 5.0e-8）がどれも ok、CPU の表が出た（フォールバックのアダプタなので GPU の 3 値の段は測らない: 表は「not measured」）。`tests.yml` の軽い組は 2 回落ちて直した: 台帳の目次（run 43277670945）、`updated-check` が `sections.ts` の `unlessUpdated` の catch を 2 つと数えていた（run 43278431103: 3 つ目は 3 値のカーネルの行。数を 3 に）。直した後は手元で軽い組が通った（1340 秒）。網の `shaders`: 新しい export `TERNARY_SUMS_MATVEC` だけが違い、`deviceKey()` は 192 の端末で同じ。`dist-check` も同じ鍵。手元の Chromium で CPU の節を通しで回した（表が出た）。
+  - 数は未計測（持ち主の端末の報告で。CI の x86-64 の CPU の行は参考: AMD EPYC、1 本で `matmul_t2r` は `matmul_q8r` の 1.9 倍、`matmul_t2` は `matmul_q8` の 1.4 倍、タイルは 1.1 倍、`rotate` は 5120 で 6.6 µs）。
 
 ### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
