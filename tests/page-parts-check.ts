@@ -812,4 +812,31 @@ console.log(`page-parts-check: parameters.ts by itself: the names of the address
   cases += 22;
 }
 console.log(`page-parts-check: choosing.ts by itself: the sheet's entry, the model an entry names, what is asked first, what was kept, the sheet's fields`);
+{
+  // T372: a <summary> holds words only. A button (or a link, a field) in it opens its details too when pressed, and
+  // Chrome's Issues say "Interactive element inside of a <summary> element": the seed's button under an answer stands
+  // beside the line's summary. By the text, as the page's drawing runs in a browser only: a summary the page's parts
+  // make gets its words by textContent and nothing appended, and the markup's summaries hold no interactive tag
+  const fs = await import("node:fs");
+  const folderOfPage = fileURLToPath(new URL("../src/page/", import.meta.url));
+  let summaries = 0;
+  for (const file of fs.readdirSync(folderOfPage).sort()) {
+    const text = fs.readFileSync(folderOfPage + file, "utf8");
+    for (const found of text.matchAll(/(\w+) = document\.createElement\("summary"\)/g)) {
+      const name = found[1];
+      // (from where it is made to the end of its function: the next function at the top level)
+      const after = text.slice(found.index), scope = after.slice(0, (after.search(/\n(export )?(async )?function /) + 1 || after.length + 1) - 1);
+      summaries += 1;
+      assert.ok(!new RegExp(`\\b${name}\\.(append|appendChild|prepend|insertAdjacent\\w*|replaceChildren|innerHTML)\\b`).test(scope),
+        `${file}: the summary ${name} is given elements; a summary holds words only (T372: a button in it opens its details too)`);
+    }
+  }
+  assert.ok(summaries >= 2, `the summaries the page's parts make were found (${summaries})`);
+  const markup = fs.readFileSync(fileURLToPath(new URL("../src/pages/index.astro", import.meta.url)), "utf8");
+  for (const [inside] of markup.matchAll(/<summary\b[^>]*>[\s\S]*?<\/summary>/g)) {
+    assert.ok(!/<(button|a|input|select|textarea|details|label)\b/.test(inside), `index.astro: a summary holds an interactive element: ${inside}`);
+  }
+  cases += 2;
+}
+console.log(`page-parts-check: a summary holds words only (T372)`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);
