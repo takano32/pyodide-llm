@@ -56,7 +56,7 @@ views into the downloaded buffer and are never widened. Per matmul the input is 
 multiplies int8 by 7-bit unsigned values: activations get a bias of 64, and `corrections = -64 * sum of the
 group` (an int32 a group, T197; before it the float32 `scale * sum`) takes it out again, added to the group's
 integer sum before that is scaled. The relaxed module is `src/runtime/forward.ts`'s: a browser without relaxed SIMD
-(shipping Safari) refuses to compile it, and int8 then runs on `matmul_q8` (`?without=relaxed` does the same).
+(Safari 26 and before: Playwright's WebKit 26.4 refused it and 27.2 compiles it; a shipping Safari 27's is unchecked) refuses to compile it, and int8 then runs on `matmul_q8` (`?without=relaxed` does the same).
 (Until T644.2 Python loaded a side module of it as well, in `try/except`, and called nothing of it.)
 
 What quantizing the activations costs (2026-09-19, T55; `node tests/perplexity.ts [model]`, 1499 tokens from the

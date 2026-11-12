@@ -137,7 +137,7 @@
 | 試験の組に無い実ブラウザの道具 | `gemma4-in-browser.ts`・`blocks-in-browser.ts`・`coi-off-in-browser.ts`・`switch-in-browser.ts`・`markdown-in-browser.ts`: **触ったら手で、`npm run build` の後**（何に触ったら回すかは細部の表） |
 | CI だけの実ブラウザの道具 | `saluki_in_browser.sh`・`repository_in_browser.sh`・`gemma4_in_browser.sh`（デプロイされていないブランチの確かめ） |
 | `tests/gpu-check.ts` と `gpu-check/` | GPU の正しさ（CI だけ）。`--engine dawn`・`--forms`・`--nan`・`real=<一覧の ID>`・`--part k/n`、丸めを替えた装置は `GPU_ROUNDING=`。期限は `--minutes`（既定 90） |
-| 速さの道具 | `compare-engines.ts`・`compare-builds.sh`・`threads-compare.ts`・`abba-convert.sh`（前後を同じプロセスで交互に）/ `profile.ts`・`overhead.ts`・`profile-convert.ts` / `*-bench.ts` |
+| 速さの道具 | `compare-engines.ts`・`compare-builds.sh`・`threads-compare.ts`・`abba-convert.sh`（前後を同じプロセスで交互に）/ `profile.ts`・`overhead.ts`・`profile-convert.ts` / `*-bench.ts` / `ternary-browser-bench.ts`（relaxed 無しの 3 値・1 ビットのカーネルを各ブラウザのエンジンで 1 本、`--before <コミット>` のカーネルと交互に。**唯一 WebKit の速さを測れる**。案は `ternary-plain-forms.ts`、組には入らない） |
 | モデルの質の道具 | `perplexity.ts`・`start_check.py`/`.ts`・`chat_nll.py`・`degenerate.ts`・`answers.ts`（12 の問い）・`write.sh`（人が読む）・`rope_compare.sh` |
 | 変換と書式の道具 | `format_check.py`・`template_corpus.py`・`conversions_compare.py`（**変換器を変えたら**一覧の全項目の前後）・`fixed_outputs.py`・`gguf_check.py`・`tokenizer_json_check.py`・`plamo_tokenizer_check.py` |
 | transformers・llama.cpp との比べ（CI だけ） | `reference_<家族>.py`（と `.sh`）・`reference.py`・`reference_dry.py` / `page_27b.sh`・`page_saluki.sh`・`reference_saluki.sh`（`STAGES=dry` は毎晩、本物は頼んだときだけ、参照は `REFERENCES=<run の ID>` で前の run から）/ `page_<家族>.sh`。線は「transformers 自身の 2 つの道の差の 10 倍」で、弱い誤りを毎回入れる |
@@ -352,7 +352,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **`navigator.deviceMemory`** は Chromium 系だけが言い、近い 2 のべきに丸める（6 GB のスマホは 4）。コードは `>= 8` を「8GB 以上」と読む。言わないブラウザは 4 GB と見る。
 - **GPT-2 の外れ値の列**（T92）: 最終 norm の重みの最大/中央値が 4 以上のときだけ（門なしは効かずに約 3% 遅い）。
 - **`?without=kernels,int8,relaxed,sampler` で最適化を 1 つずつ外せる**（知らない名前は `ValueError`）。ステータス行は何が動いたかを必ず言う。
-- **OS 5 種 × ブラウザ 5 種で動く**（`browsers.yml`）。relaxed SIMD の無いブラウザ（本物の Safari）は `matmul_q8` で動く。Windows ARM の Playwright の Chromium と WebKit は x86-64 のエミュレーションで 3 分の 1。ランナーの速さは OS をまたいで比べない。
+- **OS 5 種 × ブラウザ 5 種で動く**（`browsers.yml`）。relaxed SIMD の無いブラウザは `matmul_q8`（3 値・1 ビットは `matmul_t2`・`matmul_b1`）で動く。Playwright の WebKit は 26.4 で無く 27.2 で有る（T247・T290）。本物の Safari 27 が持つかは未確認（持ち主の端末で: TASKS.md）で、`?without=relaxed` がその代わり。Windows ARM の Playwright の Chromium と WebKit は x86-64 のエミュレーションで 3 分の 1。ランナーの速さは OS をまたいで比べない。
 - **ダウンロード。** 分割並列は約 1.8 倍速い。モデルの取得は Pyodide の読み込みより先に始まる。**準備完了の内訳の秒数は、それぞれが実際に動いていた時間だけ**。NumPy の wheel は版を解決した直後に `pyodide-lock.json` から URL を組んで先読みする。
 - **カーネルにアドレスを渡す配列は Python 側で必ず保持する**。Python のサイドモジュールは `simdkernel.so` の 1 つで、relaxed のものは作らない（relaxed は forward.ts が自分でコンパイルする）。
 - **gist**: https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901 （大きな成果が出たら `10-` を更新する）。
