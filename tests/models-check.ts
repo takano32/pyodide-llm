@@ -119,7 +119,7 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
     assert.equal(found[1], (entry.download! / unit).toFixed(digits), `${entry.id}: its note's fetches is download (${entry.download})`);
     assert.equal(Boolean(found[3]), entry.hf!.weights.endsWith(".gguf"), `${entry.id}: its note says (GGUF) where it fetches a GGUF, and only there`);
   }
-  const KEYS = ["bos", "dtype", "replaced", "rope_scaling", "specials", "stop_tokens", "tokenizer_kind"];
+  const KEYS = ["bos", "dtype", "replaced", "rope_scaling", "specials", "stop_tokens", "stripped", "tokenizer_kind"];
   for (const entry of MODELS) for (const key of Object.keys(entry.options)) assert.ok(KEYS.includes(key), `${entry.id}: options.${key} is not a key the list writes`);
 }
 // (iv) T523, T535: a name begins with its maker (docs/notes/t535-maker-names-advice-2026-10-15.md's table, a second
