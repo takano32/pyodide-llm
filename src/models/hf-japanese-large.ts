@@ -305,6 +305,21 @@ export const HF_JAPANESE_LARGE: Entry[] = [
     conversion: {}, options: QWEN3_FROM_IM_START, template: QWEN3_THINKING_AFTER_START,
     generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 },
     prompt: "あなたは魔法学校の新入生「桜」です。桜として、初めて会ったクラスメイトに自己紹介してください。", placeholder: ASK_JAPANESE },
+  // T656: two Mistral NeMo 12B of Japanese (Tekken's pre-tokenizer: T611). CyberAgent's, Mistral NeMo trained further
+  // on Japanese, in ChatML after <s> (the converter reads its template, BOS and all; its stops <s> and <|im_end|>), at its
+  // card's temperature of 0.5; Shisa V2's, Mistral NeMo Instruct 2407 tuned on its Japanese and English data, in NeMo's
+  // own [INST] format (the converter's), at the list's Japanese sampling (its card: a top-p of 0.9 against tokens of
+  // another language). The Q8_0 GGUFs of QuantFactory and mradermacher with the originals' vocabularies. Each int8 with
+  // its forward pass at a context of 4096 is 15.45 GiB, under the 16 GiB of a 64-bit memory (T611)
+  { group: "hf", id: "hf-mistral-nemo-japanese-instruct-2408", name: "CyberAgent Mistral NeMo Japanese Instruct 2408", note: "answers instructions · 日本語 / English · fetches 13.0 GB (GGUF) → int8 13.8 GB", japanese: true, converted: 13.8e9,
+    ...ggufOf("QuantFactory/Mistral-Nemo-Japanese-Instruct-2408-GGUF", "f85f4a1794ea316ee0f4b1931810c94cfe7c71c0", "Mistral-Nemo-Japanese-Instruct-2408.Q8_0.gguf",
+      "cyberagent/Mistral-Nemo-Japanese-Instruct-2408", "8591f78522a5d651209fc9f354c848508db7a3eb"), download: 13022390944,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 },
+    ...ASKED_JAPANESE },
+  { group: "hf", id: "hf-shisa-v2-mistral-nemo-12b", name: "Shisa V2 Mistral NeMo 12B", note: "answers instructions · 日本語 / English · fetches 13.0 GB (GGUF) → int8 13.8 GB", japanese: true, converted: 13.8e9,
+    ...ggufOf("mradermacher/shisa-v2-mistral-nemo-12b-GGUF", "d99e19bd10bc80adba7d0ff698aa598d1dcf4fde", "shisa-v2-mistral-nemo-12b.Q8_0.gguf",
+      "shisa-ai/shisa-v2-mistral-nemo-12b", "63f3d399b0013b868fa1bcd006bf45490cc1579c"), download: 13022373632,
+    conversion: {}, options: {}, generation: JAPANESE_SAMPLING, ...ASKED_JAPANESE },
   // T610.2: Shisa V2.1's 14B, Phi-4 made into a Llama (its int8 passes the 16 GiB a page gets: T610). mradermacher's
   // Q4_K_M with llama.cpp's blocks kept as they are (as Qwen3 14B's); rebuilt: four bits are not held to the original
   // within 1e-3. Its format by hand, as the converter reads it but with the prompt trimmed (UNPHI4)

@@ -116,6 +116,9 @@ export const LICENSES: Record<string, string> = {
   "weblab-GENIAC/Tanuki-8B-dpo-v1.0": APACHE, "team-hatakeyama-phase2/Tanuki-8B-dpo-v1.0-GGUF": APACHE,
   "elyza/Llama-3-ELYZA-JP-8B": LLAMA_3, "mmnga/Llama-3-ELYZA-JP-8B-gguf": LLAMA_3,
   "shisa-ai/shisa-v2.1-qwen3-8b": APACHE, "mradermacher/shisa-v2.1-qwen3-8b-GGUF": APACHE,
+  // T656: the cards say apache-2.0 (Mistral NeMo's), and so does the text of CyberAgent's
+  "cyberagent/Mistral-Nemo-Japanese-Instruct-2408": APACHE, "QuantFactory/Mistral-Nemo-Japanese-Instruct-2408-GGUF": APACHE,
+  "shisa-ai/shisa-v2-mistral-nemo-12b": APACHE, "mradermacher/shisa-v2-mistral-nemo-12b-GGUF": APACHE,
   "cyberagent/CAT-Thinking-8B": APACHE, "mmnga-o/CAT-Thinking-8B-gguf": APACHE,
   // T251 (2026-10-02): the English classics and the Q8_0 GGUFs they are taken from. The cards of GPT-2's medium, large
   // and XL say "License: Modified MIT License" (their metadata, and their GGUFs': mit); DistilGPT2's and Pythia's Apache 2.0
@@ -274,6 +277,7 @@ export const LICENSES: Record<string, string> = {
   "google/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it-GGUF": GEMMA,
   "google/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it-GGUF": GEMMA,
   "google/gemma-3-4b-it": GEMMA, "unsloth/gemma-3-4b-it": GEMMA, "unsloth/gemma-3-4b-it-GGUF": GEMMA,
+  "google/gemma-3-12b-it": GEMMA, "unsloth/gemma-3-12b-it": GEMMA, "unsloth/gemma-3-12b-it-GGUF": GEMMA,
   // T612.2: Gemma 2 2B JPN, Google's original (gated), hpprc's ungated copy (its card: license gemma) and bartowski's GGUF
   "google/gemma-2-2b-jpn-it": GEMMA, "hpprc/gemma-2-2b-jpn-it": GEMMA, "bartowski/gemma-2-2b-jpn-it-GGUF": GEMMA,
   // T333: Gemma 4 is Apache 2.0, not the Gemma Terms of Use: the cards' metadata says apache-2.0 and their text "License:
@@ -297,7 +301,7 @@ const GEMMA_NOTICE = "Gemma is provided under and subject to the Gemma Terms of 
 // the note of each of its entries)
 const PLAMO_NOTICE = "Built with PLaMo";
 export const NOTICES: Partial<Record<string, string>> = { "google/gemma-3-270m-it": GEMMA_NOTICE, "google/gemma-3-1b-it": GEMMA_NOTICE,
-  "google/gemma-3-4b-it": GEMMA_NOTICE, "google/gemma-2-2b-jpn-it": GEMMA_NOTICE,
+  "google/gemma-3-4b-it": GEMMA_NOTICE, "google/gemma-3-12b-it": GEMMA_NOTICE, "google/gemma-2-2b-jpn-it": GEMMA_NOTICE,
   "pfnet/plamo-3-translate-0.8b": PLAMO_NOTICE, "pfnet/plamo-3-translate-2b": PLAMO_NOTICE, "pfnet/plamo-3-translate-8b": PLAMO_NOTICE,
   "pfnet/plamo-3-translate-0.8b-GGUF": PLAMO_NOTICE, "pfnet/plamo-3-translate-2b-GGUF": PLAMO_NOTICE, "pfnet/plamo-3-translate-8b-GGUF": PLAMO_NOTICE,
   "pfnet/plamo-3-610m-fin-instruct": PLAMO_NOTICE };

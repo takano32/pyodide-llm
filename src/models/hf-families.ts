@@ -317,6 +317,10 @@ export const HF_FAMILIES: Entry[] = [
   // own), its full-attention layers' RoPE scaled linearly by 8
   gemma3("4B", { gguf: "5a3566e716d80f709ed7b79817eaf7733d2a1fce", original: "bf46152c47f5dd20b896357cb51abc4c03b8ee8c" }, 4130402176,
     "fetches 4.1 GB (GGUF) → int8 4.4 GB", 4.4e9),
+  // T656: the 12B, the 4B's form (the whole model, linear RoPE scaling by 8 on the full-attention layers); its int8
+  // with its forward pass at a context of 4096 is 15.49 GiB, under the 16 GiB of a 64-bit memory (T613)
+  gemma3("12B", { gguf: "d15e4c7dc21dc55d56bf8549db57a71ad8a2a35d", original: "9478e665381f42974aa06177b019352fb6291876" }, 12510212576,
+    "fetches 12.5 GB (GGUF) → int8 13.2 GB", 13.2e9),
   // T612.2: Gemma 2 2B JPN (Gemma 2: T612.1), bartowski's Q8_0 GGUF with the vocabulary of hpprc's ungated copy of the
   // gated original
   gemma2Jpn({ gguf: "bd1518c8610c36695a89c3d7df74ae8bf61e72c2", original: "4cf0b12a1e7a141ede84d0eebd6102aaebbae65e" }, 2784495776,
