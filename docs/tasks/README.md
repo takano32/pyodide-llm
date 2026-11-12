@@ -132,6 +132,7 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T275](T275.md) [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 2026-11-12
 - [T276](T276.md) [性能][Bonsai] Ternary Bonsai の 1.7B・4B・8B を素の RoPE に — 2026-10-11
 - [T283](T283.md) [追加][モデル] BitNet b1.58（Microsoft の 3 値のモデル） — 2026-11-12
+- [T285](T285.md) [性能][Bonsai][CPU] 27B のメモリの小さな詰め — 2026-11-12
 - [T286](T286.md) [追加][Bonsai] 1-bit Bonsai の一族（1.7B・4B・8B・27B） — 2026-11-03
 - [T287](T287.md) [調査][Bonsai] 前の版 Ternary-Bonsai-27B（「2」でない）が開くか — 2026-11-03
 - [T288](T288.md) [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 2026-11-12
