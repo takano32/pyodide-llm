@@ -139,7 +139,7 @@
 | 試験の組に無い実ブラウザの道具 | `gemma4-in-browser.ts`・`blocks-in-browser.ts`・`coi-off-in-browser.ts`・`switch-in-browser.ts`・`markdown-in-browser.ts`: **触ったら手で、`npm run build` の後**（何に触ったら回すかは細部の表） |
 | CI だけの実ブラウザの道具 | `saluki_in_browser.sh`・`repository_in_browser.sh`・`gemma4_in_browser.sh`（デプロイされていないブランチの確かめ） |
 | `tests/gpu-check.ts` と `gpu-check/` | GPU の正しさ（CI だけ）。`--engine dawn`・`--forms`・`--nan`・`real=<一覧の ID>`・`--part k/n`、丸めを替えた装置は `GPU_ROUNDING=`。期限は `--minutes`（既定 90） |
-| 速さの道具 | `compare-engines.ts`・`compare-builds.sh`・`threads-compare.ts`・`abba-convert.sh`（前後を同じプロセスで交互に）/ `profile.ts`・`overhead.ts`・`profile-convert.ts` / `*-bench.ts` / `ternary-browser-bench.ts`（relaxed 無しの 3 値・1 ビットのカーネルを各ブラウザのエンジンで 1 本、`--before <コミット>` のカーネルと交互に。**唯一 WebKit の速さを測れる**。案は `ternary-plain-forms.ts`、組には入らない） |
+| 速さの道具 | `compare-engines.ts`・`compare-builds.sh`・`threads-compare.ts`・`abba-convert.sh`（前後を同じプロセスで交互に）/ `profile.ts`・`overhead.ts`・`profile-convert.ts` / `*-bench.ts` / `ternary-browser-bench.ts`（relaxed 無しの 3 値・1 ビットのカーネルを各ブラウザのエンジンで 1 本、`--before <コミット>` のカーネルと交互に。**唯一 WebKit の速さを測れる**。案は `ternary-plain-forms.ts`、組には入らない。`--relaxed` で relaxed の `matmul_t2r` を案 `ternary-relaxed-forms.ts` と: T288） |
 | モデルの質の道具 | `perplexity.ts`・`start_check.py`/`.ts`・`chat_nll.py`・`degenerate.ts`・`answers.ts`（12 の問い）・`write.sh`（人が読む）・`rope_compare.sh` |
 | 変換と書式の道具 | `format_check.py`・`template_corpus.py`・`conversions_compare.py`（**変換器を変えたら**一覧の全項目の前後）・`fixed_outputs.py`・`gguf_check.py`・`tokenizer_json_check.py`・`plamo_tokenizer_check.py` |
 | transformers・llama.cpp との比べ（CI だけ） | `reference_<家族>.py`（と `.sh`）・`reference.py`・`reference_dry.py` / `page_27b.sh`・`page_saluki.sh`・`reference_saluki.sh`（`STAGES=dry` は毎晩、本物は頼んだときだけ、参照は `REFERENCES=<run の ID>` で前の run から）/ `page_<家族>.sh`。線は「transformers 自身の 2 つの道の差の 10 倍」で、弱い誤りを毎回入れる |
@@ -417,6 +417,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **forward.ts の外の費用**: llm-jp-3 150M で 3.5〜4.1%、tiny-lm で 16〜20%、その多くが `sample`。Python から JS を呼ぶ 1 回は 1.3〜1.7 µs。
 - **3 値（`ternary`）と 1 ビット（`binary`）の変換は丸めない**（なれない値は断る）。 3 値は 128 個ごとのグループに 32 バイトと float16 のスケール（並びは「値の全部、そのあとスケールの全部」）、1 ビットは 16 バイト（Q1_0 と同じ 18 バイト、群のバイトはカーネルの並び）。速さは同じで、1 ビットの得はメモリ。binary は同じ重みなら 3 値の道の logits とビット単位で同じで、カーネルは 3 値と 1 つ（型引数）。**GPU では binary を 3 値の符号として持ち、シェーダの選びは詰め方の名前でなく `asTernary()` で**（名前で比べると binary が int8 の文で掛けられる）。
 - **llama.cpp の塊のカーネル**: 重み = F·S·W − Fm·M、群の和は整数で厳密。`matmul_sbw_tile` は relaxed SIMD の決まっていない動きに乗るので `signed_dots` が真の所でだけ呼ぶ。表はチェックポイントの `codebooks` の行から実行時に作る（ファイルの形式にカーネルの都合を入れない）。
+- **relaxed の 3 値の形は今の `matmul_t2r` のまま**（T288）: int16 の和の形は AMD の Zen 3・4 で 1.33〜1.36 倍だが arm64 の V8 で 0.63〜0.65 倍、BitNet 流の表は arm64 の V8 で 0.94〜1.01 倍で重みの並びが変わる。数字は `kernels/README.md`。
 - **小さいモデル（350M〜E2B）では int8 がいちばん速い**（6 ビットは 0.52〜0.74 倍、Q4_K_M の塊は 0.76〜0.88 倍）。塊の得は取得とメモリだけ。
 - **attention の点数の頭打ち**（Gemma 2）は別の export `attention_capped`・`attention_f16_capped` で、今までの `attention` は命令単位で同じ。GPU には置かない（シェーダに足すと端末の鍵が動く）。
 - **回した基底**（Bonsai 2 27B）は重みの側には畳めない。外れ値の列は使わない。

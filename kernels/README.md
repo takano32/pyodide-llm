@@ -160,6 +160,32 @@ is slower there than the kernel before (Safari on an Intel Mac); nor is it a for
 The int16 sums with the chain are faster everywhere. Against relaxed SIMD (the `matmul_t2r` of Chromium) the kernel is
 still the slower: T231's table, 0.6 of it on arm64.
 
+**Other forms of `matmul_t2r`, timed and not taken (T288, 2026-11-12).** `tests/ternary-browser-bench.ts --relaxed` times
+the forms of `tests/ternary-relaxed-forms.ts` against `matmul_t2r` as T275's bench times the plain ones (one thread, each
+browser's engine and Node, every form held to `matmul_t2r` to the bit): `x16`, the planes' products as
+`i16x8.relaxed_dot_i8x16_i7x16_s` added in int16 over a group of 128 and widened once (T231's review's `bxa`); `x16b`, the
+same widened a block; `tl`, BitNet's TL1 (the weights of 16 rows a vector, a nibble a pair of weights, a table of 16
+int16 sums a pair of activations made in every call and looked up with `relaxed_swizzle`: its own layout of the
+weights). The geometric mean of the ratios over the widths of Ternary Bonsai 1.7B, runs 43278350428, 43279127526
+(EPYC 9V74, Zen 4), 43278357272 (EPYC 7763, Zen 3) and 43278364945 (Neoverse-N2); a copy of `matmul_t2r` is 0.998 to
+1.003:
+
+| form, against `matmul_t2r` | Neoverse-N2: Node / Chromium 156 / Firefox 157 / WebKit 27.2 | EPYC 7763 | EPYC 9V74 |
+|---|---:|---:|---:|
+| `matmul_t2r` (G weights/s, 2048x2048) | 20.3 / 18.7 / 10.2 / 17.0 | 17.9 / 17.9 / 18.9 / 13.9 | 21.8 / 21.8 / 22.5 / 17.3 |
+| `x16` | 0.626 / 0.654 / 1.046 / 0.742 | 1.332 / 1.327 / 1.118 / 1.294 | 1.357 / 1.362 / 1.105 / 1.350 |
+| `x16b` | 0.601 / 0.633 / 1.026 / 0.730 | 1.305 / 1.304 / 1.106 / 1.218 | 1.327 / 1.330 / 1.105 / 1.271 |
+| `tl` (its tables made in every call) | 0.940 / 1.006 / 1.809 / 1.112 | 1.272 / 1.301 / 1.275 / 1.093 | 1.063 / 1.078 / 1.043 / 0.980 |
+
+(The second run on the 9V74 gave the same to 0.01.) Neither is taken. `x16` is 1.33 to 1.36 times on AMD's Zen 3 and 4
+in V8, as T231's review found, and 0.63 to 0.65 on arm64's V8, where the owner's phone runs: it would need a choice made
+on the device (a second kernel, its tile, and a timing at the load), which T231's review left to the owner and which
+changes `WORK`. No Zen 5 or Intel CPU came up in three runs (T231 saw V8 make `matmul_t2r`'s dot one VNNI instruction on
+a Zen 5, where `x16` would lose). `tl` is no faster on arm64's V8 (0.94 in Node, 1.01 in Chromium) and needs the file's
+layout of the weights changed (`CONVERTER`: every ternary model fetched again). What would turn either: the owner taking
+a choice made by timing on x86-64 (`x16`), or Firefox on arm64 (`matmul_t2r` 10 G weights/s there, half V8's: `tl` 1.81
+times, `x16` 1.05) counting enough to change the layout.
+
 Two things the review of 2026-10-02 found, which no test in Node can see:
 
 - `interleave` is shifts, masks and narrows, with no shuffle. It was a transpose of three chained shuffles (a byte shuffle
