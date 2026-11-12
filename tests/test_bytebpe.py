@@ -146,6 +146,25 @@ def test_gpt4o_split_removed_and_inverted_is_the_isolated_one():
         assert [piece for piece, _ in removed.pre_tokenize_str(text)] == pretokenize(text, "gpt4o"), text
 
 
+def test_a_pattern_of_whole_matches_every_character():
+    """T256 review: what the converter's WHOLE says of a name (nothing lies between two matches of its pattern, so a
+    Removed Split with invert cuts the pieces an Isolated one does) for every character of the Basic Multilingual Plane,
+    alone, between two letters, before a number and before a mark, by the real tokenizers (the other test has hand-picked texts only)."""
+    from tokenizers import Regex, pre_tokenizers
+    from convert.tokenizer import WHOLE
+    patterns = {"gpt4o": GPT4O_PATTERN}
+    assert sorted(patterns) == sorted(WHOLE)
+    for name in WHOLE:
+        isolated = pre_tokenizers.Split(Regex(patterns[name]), behavior="isolated")
+        removed = pre_tokenizers.Split(Regex(patterns[name]), behavior="removed", invert=True)
+        for code in range(0x10000):
+            if 0xD800 <= code < 0xE000:
+                continue
+            for text in (chr(code), f"a{chr(code)}b", f"a{chr(code)}1", f"{chr(code)}\u0301"):
+                same = removed.pre_tokenize_str(text) == isolated.pre_tokenize_str(text)
+                assert same and "".join(piece for piece, _ in removed.pre_tokenize_str(text)) == text, (name, text)
+
+
 def sparked(regex, text):
     """Spark-X2.5's pre_tokenizer (T340) by the regex module's patterns themselves: each Split (Isolated) keeps every
     match and every stretch between two matches of each piece of the one before, and then Digits(individual_digits)
