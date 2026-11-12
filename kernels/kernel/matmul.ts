@@ -149,8 +149,8 @@ export function interleave(xq: usize, xs: usize, n: i32): void {
 // exact integers a group and the same float32 operations in the same order, so the same numbers to the bit (and
 // binary's ternary's for the same weights: signs.ts). A plane's products are widened to int16 (its low eight bytes are
 // of the first group of 32 activations, its high eight of the second) and added over the four planes there as a chain
-// (4 x 2 x 128 a lane at most); then the eight lanes of each of a group's four groups of 32 are added in int16 too (at
-// most 8 x 1024), and widened once. T644.7: one kernel for both packings, P (signs.ts).
+// (4 x 3 x 128 a lane at most, PQ2_0's fourth code too); then the eight lanes of each of a group's four groups of 32
+// are added in int16 too (at most 8 x 1536), and widened once. T644.7: one kernel for both packings, P (signs.ts).
 // T275 (2026-11-12): the chain and the sums in int16 in place of a tree of adds and four widenings to int32, timed by
 // tests/ternary-browser-bench.ts against tests/ternary-plain-forms.ts's copy of the form before (kernels/README.md has
 // the table): 1.16 to 1.17 times as fast in V8 on arm64, 1.03 on x86-64, 1.07 in WebKit's JavaScriptCore on arm64.
