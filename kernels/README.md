@@ -288,8 +288,9 @@ One design at five sizes (Pythia 70M to 1.4B, Q8_0 GGUFs that the page fetches a
 on the deployed site in Playwright's Chromium 156.0.8078.4, the five in one job after one another (models.yml, so
 one runner and one CPU for the five), the same prompt (tests/e2e.ts's) and the same settings (`?threads=4&seed=1`,
 temperature 0.7, at most 256 tokens), on the CPU: the runners have no GPU. Made by `node tests/ladder.ts
-<results.jsonl …>`. int8 MB is the list's `converted` (rounded: 1.1 and 1.6 GB for the two largest); "GB/s of weights"
-is int8 MB × tok/s, the weights read per second if every token reads them once; "fetch and convert" is the wall
+<results.jsonl …>`. int8 MB is the list's `converted` (rounded: 1.1 and 1.6 GB for the two largest; and it is above the int8 file's own
+bytes for the three smaller, see below); "GB/s of weights" is int8 MB × tok/s, the weights read per second if every
+token reads the whole file once (it does not: below); "fetch and convert" is the wall
 time of both (they overlap), "of which converting" the time Python was converting; the memory is the WebAssembly
 memory's size once ready. One run of each, so a cell moves by run (below).
 
@@ -297,7 +298,7 @@ x86-64, AMD EPYC 9V74 (4 vCPUs, 17 GB), run 43291611379:
 
 | model | int8 MB | ready (s) | fetch and convert (s) | of which converting (s) | converting / ready (%) | tokens | tok/s | threads | GB/s of weights | WebAssembly memory MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Pythia 70M | 96 | 8.1 | 3.6 | 0.2 | 3 | 256 | 251.1 | 1 (see below) | 24.11 | 214 |
+| Pythia 70M | 96 | 8.1 | 3.6 | 0.2 | 3 | 256 | 251.1 | 1 (asked 4) | 24.11 | 214 |
 | Pythia 160M | 213 | 7.0 | 2.3 | 0.5 | 8 | 186 | 136.4 | 4 | 29.05 | 408 |
 | Pythia 410M | 506 | 36.9 | 31.6 | 1.2 | 3 | 256 | 49.5 | 4 | 25.05 | 659 |
 | Pythia 1B | 1100 | 33.1 | 25.5 | 2.9 | 9 | 256 | 24.9 | 4 | 27.39 | 1534 |
@@ -313,17 +314,51 @@ arm64 (`ubuntu-24.04-arm`; Node names the CPU "unknown"; 4 vCPUs, 17 GB), run 43
 | Pythia 1B | 1100 | 34.2 | 26.1 | 2.4 | 7 | 256 | 38.5 | 4 | 42.35 | 1534 |
 | Pythia 1.4B | 1600 | 46.7 | 39.1 | 3.4 | 7 | 256 | 26.7 | 4 | 42.72 | 2059 |
 
-How to read it: from 160M to 1.4B the weights grow 7.5 times and tok/s falls 7.9 times on x86-64 (GB/s of weights
-25.0 to 29.1), so there tok/s follows 1 / the weights' bytes within the spread of one run each; on arm64 it falls 5.6
-times (GB/s 31.7 to 42.7: the two largest read faster per byte than the three smallest), so it falls more slowly
-than 1 / bytes, for a reason not measured. Converting is 3 to 9% of ready on both; the rest is the fetch (Hugging
-Face from a US runner) and Pyodide.
+How to read it, first as the table has it: from 160M to 1.4B the weights grow 7.5 times and tok/s falls 7.9 times on
+x86-64 (GB/s of weights 25.0 to 29.1), so there tok/s follows 1 / the weights' bytes as far as one run each can tell:
+the 160M alone took 114.6, 123.4 and 136.4 tok/s on three loads on the same EPYC 9V74 (24.4 to 29.1 GB/s), as wide
+as the whole trend. On arm64 it falls 5.6 times (GB/s 31.7 to 42.7: the two largest read faster per byte than the
+three smallest). Converting is 3 to 9% of ready on both; the rest is the fetch (Hugging Face from a US runner) and
+Pyodide.
+
+Then by what a token reads (2026-11-12, the review of T84; estimates). A token reads one row of the embedding table, not
+the table, and the table is 36%, 24%, 13%, 10% and 7% of the five int8 files (the 70M's two 50,304-row tables are most
+of its weights). The bytes below are the int8 file as `engine/layout.py` rows it for the GPT-NeoX headers (group of
+32 and a float32 scale, 1.125 bytes a weight) less the embedding table; the key-and-value read (about 3% of that at the
+70M and 2% at the 1.4B, at position 128 and keys and values in float16) and the activations are not counted:
+
+| model | int8 file MB | a token reads MB | x86-64 GB/s | arm64 GB/s |
+|---|---:|---:|---:|---:|
+| Pythia 70M | 79.3 | 50.4 | 12.7 (1 thread) | 17.3 |
+| Pythia 160M | 183.0 | 139.5 | 19.0 | 20.7 |
+| Pythia 410M | 456.9 | 399.0 | 19.8 | 25.3 |
+| Pythia 1B | 1139.5 | 1023.6 | 25.5 | 39.4 |
+| Pythia 1.4B | 1593.3 | 1477.4 | 25.4 | 39.4 |
+
+Counted so, from 160M to 1.4B a token reads 10.6 times the bytes and takes 7.9 times as long on x86-64 (time grows as
+bytes to the power 0.88) and 5.6 times on arm64 (0.73): tok/s follows 1 / the bytes read more slowly than that, and
+the small ones are further from reading at the machine's rate than the large ones (x86-64: 19 against 25 GB/s;
+arm64: 21 to 25 against 39). Why is not measured: a cost per layer or per phase that does not grow with the bytes
+(the threads' hand-over, the calls from Python, the sampling: AGENTS.md puts the part outside forward.ts at 16 to 20%
+for tiny-lm) would do it, and the arm64 step between 410M and 1B is where the width goes from 1024 to 2048. The list's
+`converted` is 96, 213 and 506 MB for the three smaller, 17, 30 and 49 MB over the file's rows (the 1B's and 1.4B's
+are within their rounding); the GGUFs the page fetches are 76.7 and 175 MB for the first two, which a float32 scale
+instead of float16 puts at 81 and 185 MB as int8, so the rows are the better count; what `converted` counts beyond
+them is not known.
 
 Unexplained in these runs: the 70M on x86-64 ran on one thread although the URL said `?threads=4` (its status line
-names no threads; the page was cross-origin isolated); the 160M stopped at 186 tokens on both (the same seed), so
-its tok/s is of shorter positions. An earlier pair without `?threads=4` (runs 43290630864 on an AMD EPYC 9V45 and
-43290637418 on arm64; the worker chose 2 threads for the smaller ones) gave GB/s of weights 27.5 to 41.2 and 32.2 to
-40.2: the same shape on arm64, and on x86-64 a spread as wide as the trend.
+names no threads; the page was cross-origin isolated; the console was not kept). It did not happen again in 28 loads of
+the 70M with the same URL and the console kept (run 43307761904 on an EPYC 9V45, runs 43308177681 and 43308193000 on
+EPYC 7763s, runs 43308182563 and 43308186853 on EPYC 9V74s, and 43307776342 on arm64; no warning about threads or
+memory on any console), all on 4 threads. This one was the first load of its job, and the first load was the slowest
+in 4 of those 6 jobs. On 4 threads the 70M took 240 to 298 tok/s on the 9V74 (7763: 265 to 315; 9V45: 348 to 487; arm64: 289 to 360),
+so the 251.1 is inside what 4 threads give there, and one thread and four are not told apart by it. The 160M stopped
+at 186 tokens on both and in all of those (the same seed), so its tok/s is of shorter positions, where attention
+costs less (arm64 again: 147.7 against 148.7). An earlier pair without `?threads=4` (runs 43290630864 on an AMD EPYC
+9V45 and 43290637418 on arm64; the worker chose 2 threads for the 70M on both, and for the 160M on the first) gave GB/s
+of weights 27.5 to 41.2 and 32.2 to 40.2: the same shape on arm64, and on x86-64 a spread as wide as the trend. The
+1B and 1.4B did not keep their conversion in either run ("the origin private file system took only part of a write"),
+which is Playwright's quota and not the speed.
 
 ## Rules that are easy to break
 
