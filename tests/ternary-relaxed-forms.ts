@@ -6,6 +6,8 @@
 // The activations and the float16 scales are matmul_t2r's (kernel/matmul.ts's interleave), and so are the weights but
 // for tl's: every form makes the same exact integers a group of 32 activations (dot(a, w + 1), then the activations'
 // sums that interleave() left) and the same float32 operations in the same order, so the same numbers to the bit.
+// The relaxed operations are used only where no engine may differ: the i7 operand of the dots is a code of 0..3, no pair of
+// them saturates (at most 768 of a pair, x86's pmaddubsw saturates at 32767), and a swizzle's index is 0..15 (a nibble).
 //
 //   rc   a copy of matmul_t2r (relaxed/signs.ts's signsRows<Ternary>) in this module: the noise of two copies of one form
 //   x16  the planes' products as i16x8.relaxed_dot_i8x16_i7x16_s (x86's pmaddubsw alone, no pmaddwd), added in int16
