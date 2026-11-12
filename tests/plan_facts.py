@@ -11,6 +11,8 @@
 # T331.2: and a Gemma 4 (heads of another size in its full-attention layers, turned in part by the whole head's angles,
 # an FFN twice as wide in some layers, the heads of v normalized, a number every layer ends with, the logits capped),
 # with three Llamas that have one of its facts each: the norm of v, the number of every layer, the cap of the logits.
+# T283: and a BitNet b1.58 (the square of a ReLU in the gate, a norm in front of wo and one in front of w2), with two
+# Llamas that have one of those each.
 import json
 import os
 import sys
@@ -28,7 +30,7 @@ GROUPED, FILLED = [64, 128, 4, 4, 2, 320, 48], [64, 128, 3, 4, 4, -320, 48]
 
 
 def cases(L):
-    from engine.layout import gpt2
+    from engine.layout import RELU2, gpt2
     layouts = L.LAYOUTS
     # RMSNorms with GPT-2's FFN (the file's biases of the norms are read by nobody), and LayerNorms with a gated FFN:
     # a GPT-2's rows and a third matrix. Both with GPT-NeoX's parallel residual, by which the FFN's norm, of either
@@ -62,6 +64,12 @@ def cases(L):
     layouts["the exact gelu"] = layouts["llama"]._replace(activation=L.GELU_ERF)
     gated = lambda d: L.after(layouts["llama"].rows(d), "wo", d.stack("head_gate", L.MATRIX, L.ATTENDING, d.n_heads, d.dim))
     layouts["a gate of every head"] = layouts["llama"]._replace(rows=gated)
+    # T283: and a Llama with the square of a ReLU in its gate, and one with a norm in front of wo and one in front of
+    # w2, a BitNet's facts each by itself
+    layouts["the square of a relu"] = layouts["llama"]._replace(activation=RELU2)
+    subs = lambda d: L.after(L.after(layouts["llama"].rows(d), "wo", d.stack("rms_att_sub_weight", L.VECTOR, L.ATTENDING, d.q_dim)),
+                             "w3", d.stack("rms_ffn_sub_weight", L.VECTOR, L.EVERY, d.hidden_dim))
+    layouts["norms in front of wo and w2"] = layouts["llama"]._replace(rows=subs)
     return [
         ("llama", GROUPED, {}, {}),
         ("llama, RoPE leaving two layers alone", GROUPED, {}, {"unturned": (1, 3)}),
@@ -133,6 +141,11 @@ def cases(L):
          {"local": {"layers": [0, 2], "window": 3, "rope_theta": 100.0}, "softcap": 3.0, "score_softcap": 2.0,
           "rms_norm_eps": 1e-6}),
         ("llama, its scores capped", GROUPED, {}, {"score_softcap": 1.5}),
+        # T283: a BitNet b1.58 (heads twice as wide as the stream, so that the norm in front of wo is of another width),
+        # and the Llamas of one of its facts each
+        ("bitnet", [64, 128, 4, 4, 2, 320, 48], {"arch": "bitnet", "head_dim": 32}, {"rope_theta": 500000.0}),
+        ("the square of a relu", GROUPED, {"arch": "the square of a relu"}, {}),
+        ("norms in front of wo and w2", GROUPED, {"arch": "norms in front of wo and w2", "head_dim": 32}, {}),
     ]
 
 

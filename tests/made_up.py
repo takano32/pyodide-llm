@@ -87,11 +87,14 @@ def safetensors_file(tensors, stored="F32", metadata=None):
     """metadata: more of the header's __metadata__ (T237: a rotated basis, as gguf_model() says one)."""
     header, data = {"__metadata__": {"format": "pt", **(metadata or {})}}, b""
     for name, tensor in tensors.items():
-        if stored == "BF16":  # the upper half of the float32: what bfloat16 is
+        if tensor.dtype == np.uint8:  # T283: bytes, whatever the floats are stored as (a BitNet's packed matrices)
+            here, raw = "U8", np.ascontiguousarray(tensor).tobytes()
+        elif stored == "BF16":  # the upper half of the float32: what bfloat16 is
             raw = (np.ascontiguousarray(tensor, dtype=np.float32).view(np.uint32) >> 16).astype(np.uint16).tobytes()
         else:
             raw = np.ascontiguousarray(tensor, dtype={"F32": np.float32, "F16": np.float16}[stored]).tobytes()
-        header[name] = {"dtype": stored, "shape": list(tensor.shape), "data_offsets": [len(data), len(data) + len(raw)]}
+        header[name] = {"dtype": here if tensor.dtype == np.uint8 else stored, "shape": list(tensor.shape),
+                        "data_offsets": [len(data), len(data) + len(raw)]}
         data += raw
     encoded = json.dumps(header).encode()
     return struct.pack("<Q", len(encoded)) + encoded + data
@@ -440,6 +443,63 @@ def plamo3_model(dim=32, hidden_dim=64, layers=4, pattern=4, n_heads=4, n_kv_hea
     if factor != 1:
         config["initial_context_length"] = original
     return tensors, config
+
+
+# ------------------------------------------------------------------------------------- BitNet b1.58 (T283)
+# the matrices a BitNet's file holds packed with a scale beside them, by their names
+BITNET_MATRICES = ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj", "mlp.gate_proj",
+                   "mlp.up_proj", "mlp.down_proj")
+
+
+def bitnet_pack(codes):
+    """A ternary matrix (rows, columns) of -1, 0 and 1 as microsoft/bitnet-b1.58-2B-4T holds it (transformers'
+    pack_weights(), written again from its form): (rows / 4, columns) of bytes, the code of row i rows / 4 + r (the
+    value + 1) in bits 2 i and 2 i + 1 of byte row r."""
+    quarter = codes.shape[0] // 4
+    packed = np.zeros((quarter, codes.shape[1]), dtype=np.uint8)
+    for i in range(4):
+        packed |= (codes[i * quarter:(i + 1) * quarter] + 1).astype(np.uint8) << np.uint8(2 * i)
+    return packed
+
+
+def bitnet_model(dim=128, hidden_dim=256, layers=2, n_heads=4, n_kv_heads=2, head_dim=64, vocab_size=320, seq_len=24,
+                 shared=True, seed=0, eps=1e-5, theta=500000.0, zeros=0.3, spread=0.3):
+    """Random Hugging Face tensors of a tiny BitNet b1.58, with the names, shapes and types of
+    microsoft/bitnet-b1.58-2B-4T's model.safetensors (every matrix packed four values a byte, U8, with its scale beside
+    it, weight_scale: a bfloat16 of one value; the norms of what o_proj and down_proj read, attn_sub_norm and
+    ffn_sub_norm), and its config.json. Returns (tensors, codes, config): codes, every matrix's ternary values and
+    scale by its name (what the file's bytes and scale say). The widths are whole groups of 128 (the ternary dtype's),
+    and the heads fill twice the stream. zeros: how many of a matrix's values are 0."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * spread).astype(np.float32)
+    around = lambda *shape: (1.0 + rng.standard_normal(shape) * spread).astype(np.float32)
+    tensors, codes = {"model.embed_tokens.weight": normal(vocab_size, dim), "model.norm.weight": around(dim)}, {}
+    shapes = {"self_attn.q_proj": (n_heads * head_dim, dim), "self_attn.k_proj": (n_kv_heads * head_dim, dim),
+              "self_attn.v_proj": (n_kv_heads * head_dim, dim), "self_attn.o_proj": (dim, n_heads * head_dim),
+              "mlp.gate_proj": (hidden_dim, dim), "mlp.up_proj": (hidden_dim, dim), "mlp.down_proj": (dim, hidden_dim)}
+    for layer in range(layers):
+        p = f"model.layers.{layer}."
+        tensors[p + "input_layernorm.weight"] = around(dim)
+        tensors[p + "post_attention_layernorm.weight"] = around(dim)
+        tensors[p + "self_attn.attn_sub_norm.weight"] = around(n_heads * head_dim)
+        tensors[p + "mlp.ffn_sub_norm.weight"] = around(hidden_dim)
+        for name in BITNET_MATRICES:
+            values = rng.choice(np.array([-1, 0, 1], dtype=np.int8), size=shapes[name], p=[(1 - zeros) / 2, zeros, (1 - zeros) / 2])
+            # (a number a bfloat16 holds as it is, as the file's are; small, so that what a matrix gives is about 1)
+            scale = np.float32(int(rng.integers(2, 9)) / 64)
+            codes[p + name] = (values, scale)
+            # (the scale first: the published file has every float before every byte)
+            tensors[p + name + ".weight_scale"] = np.array([scale], dtype=np.float32)
+            tensors[p + name + ".weight"] = bitnet_pack(values)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    config = dict(model_type="bitnet", architectures=["BitNetForCausalLM"], hidden_size=dim, intermediate_size=hidden_dim,
+                  num_hidden_layers=layers, num_attention_heads=n_heads, num_key_value_heads=n_kv_heads, head_dim=head_dim,
+                  hidden_act="relu2", max_position_embeddings=seq_len, rms_norm_eps=eps, rope_theta=theta,
+                  vocab_size=vocab_size, tie_word_embeddings=shared, bos_token_id=0, eos_token_id=1,
+                  quantization_config={"quant_method": "bitnet", "linear_class": "autobitlinear",
+                                       "quantization_mode": "offline"})
+    return tensors, codes, config
 
 
 # ------------------------------------------------------------------------------------- Gemma 4 (T331)

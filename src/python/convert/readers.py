@@ -2,7 +2,7 @@
 # two ternary types and ggml's Q1_0 of signs (T286.1), llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T362, and its older types of
 # blocks of 32, T505.1), one entry for each (SOURCES), to float32. A new one is a reader here and its entry (T359): the GGUF's type id, the size of its
 # blocks and its reader on the kernels come from the entry (a refusal names no type: T501).
-from typing import Callable, NamedTuple
+from typing import Callable, NamedTuple, Optional
 
 import numpy as np
 
@@ -157,14 +157,19 @@ def float16(raw):
     return np.frombuffer(raw, dtype=np.float16)
 
 
+def bytes_of(raw):
+    """T283: a safetensors' U8, bytes as they are (a BitNet's packed matrices, which the plan unpacks: "planes")."""
+    return np.frombuffer(raw, dtype=np.uint8)
+
+
 class Source(NamedTuple):
     """A type a file stores a tensor in. name: what a safetensors file calls it, and gguf_model() a GGUF's. ggml: the
-    type's id in a GGUF. A tensor is whole blocks of values values in size bytes (a row is whole blocks too). read(the
-    bytes of whole blocks) -> the values, float32 or float16: NumPy's. kernel: the export of the SIMD kernels that
+    type's id in a GGUF (None: no GGUF's type, T283). A tensor is whole blocks of values values in size bytes (a row is whole blocks too). read(the
+    bytes of whole blocks) -> the values, float32 or float16 (T283: U8's, uint8): NumPy's. kernel: the export of the SIMD kernels that
     reads it to the same float32 (kernel(float32 out, blocks in, how many blocks); kernel_readers()), where there is
     one."""
     name: str
-    ggml: int
+    ggml: Optional[int]
     values: int
     size: int
     read: Callable
@@ -195,9 +200,11 @@ SOURCES = {source.name: source for source in (
     Source("Q5_0", 6, 32, 22, of_32(22, q5_0)),
     Source("Q5_1", 7, 32, 24, of_32(24, q5_1)),
     Source("IQ4_NL", 20, 32, 18, of_32(18, iq4_nl)),
+    # T283: a safetensors' bytes, which no GGUF stores a tensor in (ggml has no such type)
+    Source("U8", None, 1, 1, bytes_of),
 )}
 # a GGUF's type id -> the name
-GGUF_TENSORS = {source.ggml: name for name, source in SOURCES.items()}
+GGUF_TENSORS = {source.ggml: name for name, source in SOURCES.items() if source.ggml is not None}
 
 
 def source_of(name, dtype):

@@ -28,9 +28,9 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, SETTINGS, Tokenizer
-from engine.layout import (GELU, GELU_ERF, PARTLY, PROPORTIONAL, Dims, FORM, file_size, form_of, linear_widths, local_layers,
+from engine.layout import (GELU, GELU_ERF, PARTLY, RELU2, PROPORTIONAL, Dims, FORM, file_size, form_of, linear_widths, local_layers,
                            stateful_kinds, unturned_layers)
-from engine.layers import (RMS_EPS, delta_rule, gelu, gelu_erf, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
+from engine.layers import (RMS_EPS, delta_rule, gelu, gelu_erf, head_norm, l2_heads, layernorm, partial_rope, relu2, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
                            unrotate)
 from engine.kernels import load_kernels
@@ -352,8 +352,8 @@ class Llama:
         # what of the forward pass differs by the architecture, as the reference reads it at every token: the kind of
         # its norms and of its FFN, and whether RoPE turns the heads of q and k whole, in part or not at all
         self.layer_norm, self.gated_ffn = layout.layer_norm, layout.gated_ffn
-        # (the activation of the FFN: a SiLU, a GELU, or T342 the exact GELU)
-        self.activation = {GELU: gelu, GELU_ERF: gelu_erf}.get(layout.activation, silu)
+        # (the activation of the FFN: a SiLU, a GELU, T342 the exact GELU, or T283 the square of a ReLU)
+        self.activation = {GELU: gelu, GELU_ERF: gelu_erf, RELU2: relu2}.get(layout.activation, silu)
         self.turning, self.partly = layout.rope is not None, layout.rope in (PARTLY, PROPORTIONAL)
         # T331: what the attention reads of v is normalized head by head, without a weight
         self.value_norm = layout.value_norm
@@ -365,6 +365,7 @@ class Llama:
         self.head_gate = None  # T342
         self.q_norm_wide = self.k_norm_wide = None  # (T331: of the wide layers)
         self.rms_att_post_weight = self.rms_ffn_post_weight = None
+        self.rms_att_sub_weight = self.rms_ffn_sub_weight = None  # T283
         self.layer_scale = None  # T331
         self.per_layer_table = self.ple_gate = None  # T329
         self.per_layer = dims.per_layer
@@ -539,6 +540,8 @@ class Llama:
                     attended = attended / (1.0 + np.exp(-(self.wg[a] @ xr)))
                 if self.head_gate is not None:  # T342: a Spark-X2.5 gates each head of it by a value of its own
                     attended = (attended.reshape(-1, size) / (1.0 + np.exp(-(self.head_gate[a] @ xr)))[:, None]).reshape(-1)
+                if self.rms_att_sub_weight is not None:  # T283: a BitNet normalizes what wo reads
+                    attended = rmsnorm(attended, self.rms_att_sub_weight[a], eps)
                 # Output projection and residual connection
                 attended = wo[at] @ turned(attended)
                 if self.bo is not None:  # GPT-2 and GPT-NeoX, after every projection
@@ -558,7 +561,10 @@ class Llama:
             w1, w2, w3 = (getattr(self, name + named) for name in ("w1", "w2", "w3")) if named else (self.w1, self.w2, self.w3)
             hb = w1[at] @ xr
             if gated_ffn:
-                hb = w2[at] @ turned(activation(hb) * (w3[at] @ xr))
+                hb = activation(hb) * (w3[at] @ xr)
+                if self.rms_ffn_sub_weight is not None:  # T283: a BitNet normalizes what w2 reads
+                    hb = rmsnorm(hb, self.rms_ffn_sub_weight[l], eps)
+                hb = w2[at] @ turned(hb)
                 if self.rms_ffn_post_weight is not None:
                     hb = rmsnorm(hb, self.rms_ffn_post_weight[l], eps)
                 x = x + hb

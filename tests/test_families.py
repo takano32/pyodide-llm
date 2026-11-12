@@ -63,7 +63,7 @@ class Facts(NamedTuple):
 
 LLAMAS = {"free_heads", "scaled", "rotatable", "rms_norm"}
 # the families that are no other's name and whose GGUF the converter does not read (yet)
-NO_GGUF_YET = set()
+NO_GGUF_YET = {"bitnet"}  # (T283: its published GGUF is of bitnet.cpp's own type I2_S, which no llama.cpp reads)
 # The table as it stands, written a second time on purpose (as the order of the rows is in test_layout.py): a
 # family's fact changed by mistake changes which models convert and how, and few of the facts have a test of their
 # own. By model_type, in the order of the table (the order the refusals name the titles in)
@@ -87,6 +87,7 @@ FACTS = {
     "spark2_5": Facts("Spark-X2.5", "spark", "spark2_5", "lm_head.weight", {"free_heads", "rms_norm", "partly"}, "", set(), {}),
     "plamo3": Facts("PLaMo 3", "plamo3", "plamo3", "lm_head.weight", {"free_heads", "scaled", "rms_norm"}, "", set(),
                     PLAMO3_MARKS),
+    "bitnet": Facts("BitNet", "bitnet", None, "lm_head.weight", LLAMAS),
     "gpt2": Facts("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}, "", set(), GPT2_MARKS),
     "gpt_neox": Facts("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}, "", set(), NEOX_MARKS),
 }
@@ -123,6 +124,7 @@ LAYOUTS = {
     "spark": ([256, 768, 4, 4, 2, -2048, 320], {"arch": "spark", "head_dim": 128}, (128, 128, 128, 32)),
     "plamo3": ([256, 768, 8, 4, 1, -2048, 320], {"arch": "plamo3", "head_dim": 128}, 0),
     "gemma2": ([256, 768, 6, 4, 2, -2048, 320], {"arch": "gemma2", "head_dim": 128}, 0),
+    "bitnet": ([256, 768, 4, 4, 2, -2048, 320], {"arch": "bitnet", "head_dim": 128}, 0),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
         "max_position_embeddings": 4096}
@@ -366,7 +368,8 @@ def test_what_only_a_family_says_is_asked_of_no_other(model_type):
     assert ("linear" in family.form and family.form["linear"](config) is not None) == (family.arch == "qwen35")
     assert ("convolution" in family.form and family.form["convolution"](config) is not None) == (family.arch == "lfm2")
     assert set(family.form) == {"qwen35": {"linear"}, "lfm2": {"convolution"},
-                                "gemma4": {"wide", "double", "kv_shared", "per_layer"}}.get(family.arch, set()) <= set(FORM)
+                                "gemma4": {"wide", "double", "kv_shared", "per_layer"},
+                                "bitnet": {"kinds"}}.get(family.arch, set()) <= set(FORM)
     assert set(family.options(config)) == {"smollm3": {"unturned"}, "gpt_neox": {"parallel_residual"},
                                            "gemma4_text": {"rotary"}, "gemma4": {"rotary"}}.get(model_type, set())
 

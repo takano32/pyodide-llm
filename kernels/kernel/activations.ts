@@ -136,6 +136,23 @@ export function geglu_erf(out: usize, h1: usize, h3: usize, n: i32): void {
   }
 }
 
+// T283: a BitNet b1.58's gated FFN, relu(h1)^2 * h3 (engine/layers.py's relu2() times the other input): one max and
+// two products a value, in the same order four at a time and one at a time, so that the two are the same to the bit.
+export function reglu2(out: usize, h1: usize, h3: usize, n: i32): void {
+  const zero = f32x4.splat(0.0);
+  let j = 0;
+  for (; j + 4 <= n; j += 4) {
+    const o = <usize>j << 2;
+    const r = f32x4.max(v128.load(h1 + o), zero);
+    v128.store(out + o, f32x4.mul(f32x4.mul(r, r), v128.load(h3 + o)));
+  }
+  for (; j < n; j++) {
+    const o = <usize>j << 2;
+    const r = max<f32>(load<f32>(h1 + o), <f32>0.0);
+    store<f32>(out + o, r * r * load<f32>(h3 + o));
+  }
+}
+
 export function add_inplace(x: usize, y: usize, n: i32): void {
   for (let j = 0; j < n; j++) { const o = <usize>j << 2; store<f32>(x + o, load<f32>(x + o) + load<f32>(y + o)); }
 }

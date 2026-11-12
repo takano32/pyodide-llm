@@ -10,7 +10,8 @@ from convert.checkpoint import Writer, checkpoint_size
 from convert.readers import SOURCES, source_of
 from convert.sources import header_rotated
 from convert.config import check_config, checkpoint_header, head_size, normalize
-from convert.plan import checkpoint_form, made, model_plan, source_shape, steps_of, transform_of, transformed
+from convert.plan import (checkpoint_form, factors, made, model_plan, resolved, source_shape, steps_of, transform_of,
+                          transformed)
 from convert.gguf import rope_freqs_agree
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
@@ -52,6 +53,8 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None, 
 
     plan, shapes = model_plan(config, source, header, form)
     total, done = sum(math.prod(shape) for shape in shapes), 0
+    # (T283: the number of a tensor a transform multiplies by, a tensor of one value)
+    factor = lambda name: number_of(name, source.shape(name) if name in source else None, lambda: source.rows(name, 0, 1))
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
         if not isinstance(parts, list):
@@ -73,12 +76,20 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None, 
             for start in range(0, rows, step):
                 stop = min(start + step, rows)
                 values = source.rows(name, 0, found[0]) if len(found) == 1 else source.rows(name, start, stop)
-                values = transformed(values, transform, size)
+                values = transformed(values, resolved(transform, factor), size)
                 writer.write(index, first, values)
                 first += values.size
                 done += values.size
                 yield done, total
         assert first == math.prod(shape), name
+
+
+def number_of(name, shape, read):
+    """T283: the one number of a tensor of the file a transform multiplies by (a BitNet's scale of a matrix): shape, the
+    tensor's (None: the file has it not), read() its values."""
+    if shape is None or math.prod(shape) != 1:
+        raise ValueError(f"This model cannot be converted: {name} is {shape or 'missing'}, not one number.")
+    return float(np.asarray(read(), dtype=np.float32).reshape(-1)[0])
 
 
 class Stream:
@@ -122,7 +133,7 @@ class Stream:
         self.writer = Writer(self.out, self.header, dtype, self.form, sink=sink, quantize_rows=quantize_rows)
         plan, shapes = model_plan(config, self, self.header, self.form)
         self.total, self.done = sum(math.prod(shape) for shape in shapes), 0
-        wanted = {}
+        wanted, self.factors = {}, {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
             if not isinstance(parts, list):
                 self.writer.write(index, 0, made(config, self.header, plan, index))
@@ -135,6 +146,12 @@ class Stream:
                 if found != expected:
                     raise ValueError(f"This model cannot be converted: {name} is {found or 'missing'}, not {expected}.")
                 source_of(name, self.tensors[name]["dtype"])
+                # T283: the tensors it multiplies by, each one number, read as they pass (factor())
+                for by in factors(transform):
+                    info = self.tensors.get(by)
+                    number_of(by, info and tuple(info["shape"]), lambda: [0.0])
+                    source_of(by, info["dtype"])
+                    self.factors.setdefault(by, None)
                 # GPT-2's c_attn holds q, k and v in one matrix, so one tensor of the file can feed several
                 wanted.setdefault(name, []).append((index, first, transform))
                 first += math.prod(shape[1:] if len(parts) > 1 else shape)
@@ -142,8 +159,8 @@ class Stream:
         self.steps = []
         for name, info in sorted(self.tensors.items(), key=lambda item: item[1]["data_offsets"][0]):
             begin, end = info["data_offsets"]
-            # T136: a table to check as it passes, not to convert (gguf_weights)
-            target = wanted.get(name) or ("check" if info.get("rope_freqs") else None)
+            # T136: a table to check as it passes, not to convert (gguf_weights); T283: a number to multiply by
+            target = wanted.get(name) or ("check" if info.get("rope_freqs") else "factor" if name in self.factors else None)
             self.steps.append((base + begin, base + end, name, target))
         self.position, self.step, self.pending, self.first = start, 0, bytearray(), 0
         self.config = config
@@ -173,6 +190,12 @@ class Stream:
                 self.pending += data[offset:offset + take]
                 if here + take == end:
                     rope_freqs_agree(np.frombuffer(bytes(self.pending), dtype=np.float32), self.config)
+            elif target == "factor":
+                self.pending += data[offset:offset + take]
+                if here + take == end:
+                    info = self.tensors[name]
+                    read = lambda: SOURCES[info["dtype"]].read(bytes(self.pending))
+                    self.factors[name] = number_of(name, tuple(info["shape"]), read)
             elif target is not None:
                 self.pending += data[offset:offset + take]
                 self.convert(name, target, last=here + take == end)
@@ -216,10 +239,16 @@ class Stream:
         if info.get("tiled"):
             values = untiled(values, *info["tiled"])
         for index, first, transform in targets:
-            out = transformed(values, left_to_do(transform, info.get("done")), self.head_size)
+            out = transformed(values, resolved(left_to_do(transform, info.get("done")), self.factor), self.head_size)
             self.writer.write(index, first + self.first, out)
             self.done += out.size
         self.first += 0 if whole else values.size
+
+    def factor(self, name):
+        """T283: the number a tensor of the file holds that a transform multiplies by, which has passed already."""
+        if self.factors.get(name) is None:
+            raise ValueError(f"This model cannot be converted: {name} comes after the tensor it multiplies.")
+        return self.factors[name]
 
     def finish(self):
         if self.step < len(self.steps) or self.done != self.total:

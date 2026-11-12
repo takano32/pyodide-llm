@@ -49,6 +49,7 @@ def load_kernels(path):
                           rotate=[p, p, p, i32, i32], unrotate=[p, p, p, i32, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32], geglu=[p, p, p, i32], geglu_erf=[p, p, p, i32],
+                          reglu2=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float, ctypes.c_float],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p, i32, ctypes.c_float],
                           affine_q8=[p, p, p, i32, i32, p, i32, ctypes.c_float, p, ctypes.c_float, p])

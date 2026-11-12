@@ -58,6 +58,24 @@ def same_shape(shape, step):
     return tuple(shape)
 
 
+def planes_of(values, step, head_size):
+    """T283: a BitNet's packed matrix, four values a byte, back to its rows: (rows / 4, columns) of bytes -> (rows,
+    columns). Bits 2 i and 2 i + 1 of byte row r are a code of row i rows / 4 + r (the quarters of the rows one after the
+    other), the value the code - 1: transformers' unpack_weights() (integrations/bitnet.py of transformers 5.16.1, the
+    form; no line of it)."""
+    packed = np.asarray(values).astype(np.uint8)
+    return np.concatenate([((packed >> np.uint8(2 * i)) & np.uint8(3)).astype(np.float32) - np.float32(1.0)
+                           for i in range(4)])
+
+
+def by_factor(values, step, head_size):
+    """T283: every value times a number another tensor of the file holds (("by", its name, the number): resolved()
+    puts the number in, as the tensor is read)."""
+    if len(step) < 3:
+        raise ValueError(f"The conversion multiplies by {step[1]}, which it has not read.")
+    return np.asarray(values, dtype=np.float32) * np.float32(step[2])
+
+
 # The transforms by the name a step of the plan begins with (see transformed()). A new one is a line here; whoever
 # reads a step (transformed(), source_shape(), convert/stream.py's piecewise() and stays()) looks it up.
 TRANSFORMS = {
@@ -86,6 +104,9 @@ TRANSFORMS = {
     # conv1d.weight is (channels, 1, taps): a row of all the channels for each tap, the oldest token's first
     "taps": Transform(lambda values, step, head_size: np.asarray(values).reshape(values.shape[0], -1).T,
                       lambda shape, step: (shape[1], 1, shape[0])),
+    # T283: a BitNet's packed matrix unpacked, and multiplied by its scale, a tensor of its own (a number)
+    "planes": Transform(planes_of, lambda shape, step: (shape[0] // 4, *shape[1:])),
+    "by": Transform(by_factor, same_shape, piecewise=True),
 }
 
 
@@ -114,11 +135,26 @@ def transformed(values, transform, head_size):
     c (T649.2: a PLaMo 3's norms, stored around zero, whose c is not always 1). A tuple of transforms is
     one after the other. ("permute" and "heads" move whole rows and change no value: what a row kept in a GGUF's blocks
     may come by, T363.) ("rows", start, stop, total): rows start to stop of a tensor of total rows (T342: a Spark-X2.5's
-    q_k_v_proj, q, k and v one after the other, which are not of one size). Each is a line of TRANSFORMS (T640.2).
+    q_k_v_proj, q, k and v one after the other, which are not of one size). ("planes",): a BitNet's matrix of bytes
+    unpacked, ("by", name, number): every value times a number another tensor holds (T283: resolved() puts it in).
+    Each is a line of TRANSFORMS (T640.2).
     """
     for step in steps_of(transform):
         values = transform_of(step).apply(values, step, head_size)
     return values
+
+
+def factors(transform):
+    """T283: the tensors of the file a transform multiplies by, by their names (its "by" steps)."""
+    return [step[1] for step in steps_of(transform) if step[0] == "by"]
+
+
+def resolved(transform, factor):
+    """transform with the number of every tensor it multiplies by, factor(its name), in its "by" steps (T283)."""
+    if not factors(transform):
+        return transform
+    put = lambda step: ("by", step[1], factor(step[1])) if step[0] == "by" else step
+    return put(transform) if not isinstance(transform[0], tuple) else tuple(put(step) for step in transform)
 
 
 def source_shape(shape, transform):

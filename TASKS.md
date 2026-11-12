@@ -47,7 +47,7 @@
 - T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 未着手
 - T281 [追加][Bonsai] 27B の文脈の長さ — 未着手
 - T282 [描画][Bonsai] Bonsai をページの入口（イントロ）に置くか — 候補
-- T283 [追加][モデル] BitNet b1.58（Microsoft の 3 値のモデル） — 未着手
+- T283 [追加][モデル] BitNet b1.58（Microsoft の 3 値のモデル） — 進行中
 - T284 [追加][Bonsai] 27B の画像の入力（mmproj） — 候補
 - T285 [性能][Bonsai][CPU] 27B のメモリの小さな詰め — 未着手
 - T288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 未着手
@@ -557,8 +557,14 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T282 [描画][Bonsai] Bonsai をページの入口（イントロ）に置くか — 状態: 候補（2026-10-02 の洗い出しで採番。持ち主の判断。文面は実装の前に見せる）
 - いまイントロのボタンは llm-jp-3 150M。Ternary Bonsai 1.7B（484 MB、日本語と英語、CI で 16.9 tok/s）を並べる案。
 
-### T283 [追加][モデル] BitNet b1.58（Microsoft の 3 値のモデル） — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 中）
+### T283 [追加][モデル] BitNet b1.58（Microsoft の 3 値のモデル） — 状態: 進行中（2026-11-12、Opus medium、ブランチ `t283-bitnet`。前の状態: 未着手、2026-10-02 の洗い出しで採番。規模 中）
 - 3 値の型とカーネル（T230・T231）で重みは載る。モデルの形の違いの対応が要る（T248 の調べでは下位の穴）。
+- **子タスクの番号**（取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位が 2 つ）: **T283.1** エンジンと変換器（アーキテクチャ `bitnet`・カーネル `reglu2`・家族 `bitnet`・U8 の読み手と段 `planes`・`by`。一覧に無くても `?hf=microsoft/bitnet-b1.58-2B-4T` で開ける）— 進行中。**T283.2** 一覧の項目 `hf-bitnet-b1.58-2b-4t`（ライセンス・作り手 Microsoft・`format_check` の `UNMEASURED`）— 進行中。
+- **調べ（2026-11-12、実物の最初の断りから。全文は docs/notes/t283-bitnet-2026-11-12.md）**: 3 値のまま読めるのは原本 `microsoft/bitnet-b1.58-2B-4T`（1.18 GB、行列は U8 に 4 値ずつ + 行列ごとの `weight_scale`、`quantization_mode: offline`）。`-bf16`（4.8 GB、`online`: 走るときに丸める）は断る（取得 4 倍、丸めた符号は詰めた原本と 98.7% 同じ）。公式の GGUF は bitnet.cpp の I2_S（型 36、`general.architecture` は `bitnet-b1.58`）で読まない。`weight_scale` は掛ける数（bf16 の層 0 の v_proj の absmean 2.2931 に対し 2.296875）。
+- **形**: Llama に wo の前の RMSNorm（attention の幅）・w2 の前の RMSNorm（hidden_dim）・ReLU の 2 乗の gate。新しいカーネルは要素ごとの gate の `reglu2` だけ（T342 の `geglu_erf` と同じ形の小さなもの。取りまとめ役の決め: 「新しいカーネル」で止める線は行列の積やシェーダの規模のことと読み、進めた）。`CONVERTER` は上げない（今ある項目の変換は変わらない: 家族と行が増えただけ）。今ある 3 値のモデルの答えは変わらない（カーネルは足しただけ）。GPU には置かない（今ある訳 `REASONS.pair`・`aloneActivation`）。
+- **活性値の丸め**: モデルは行列の入力をトークンの最大値で 8 ビットに丸める（transformers の `ActQuant`）。エンジンは丸めない（NumPy は浮動小数、ページのカーネルは 32 ずつ: ほかの int8・3 値のモデルと同じ）。作り物では、モデル自身の丸めが logits を最大の logit の約 2% 動かし、32 ずつは約 0.9%。
+- **手元**: 実物を ページの道（int8、行列 3 値）で変換して 94 秒・924,712,988 バイト、ページのエンジン（Node、カーネル、32 ビットのメモリ、1 本）で 2.4 tok/s（手元の数字で速さは決めない）、答えは読める英語（「Predicting the future can be challenging, but here are three trends that are currently gaining popularity: 1. **Sustainability and Eco-Friendly Products**: …」）。`format_check.py` 9/9（前に BOS が 1 つ多い: テンプレートは BOS を書かず、カードはトークナイザに通して `<|begin_of_text|>` を前に置く。`UNMEASURED`）、`--hf` 9/9。
+- **取りまとめ役の決め（訳）**: (1) 名前「Microsoft BitNet b1.58 2B4T」、note「answers instructions · English · ternary weights · fetches 1.2 GB, kept mostly as it is: 0.9 GB」（PLaMo 3 Translate の「kept mostly as it is」の形: 行列は原本のまま 3 値、埋め込みは bf16 → int8）。(2) 英語だけ（カードのとおり。日本語の問いは測っていない）。(3) `conversion.dtype: "int8"`（埋め込みを int8 に固定、`?bits=` は効かない）と `loaded`。(4) 標本抽出は generation_config.json の 0.6・0.9。(5) BOS は変換器の `<|begin_of_text|>`（カードの使い方）。効きは未計測（`UNMEASURED`）。
 
 ### T284 [追加][Bonsai] 27B の画像の入力（mmproj） — 状態: 候補（2026-10-02 の洗い出しで採番。規模 大）
 - いまは文字だけ。視覚の塔（0.46B）とページの画像の入口が要る。

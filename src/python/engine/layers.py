@@ -128,6 +128,13 @@ def silu(x):
     return x / (1.0 + np.exp(-x))
 
 
+def relu2(x):
+    """T283: the square of the ReLU (transformers' "relu2", a BitNet b1.58's gate), as the kernel computes it: max(x,
+    0) times itself."""
+    positive = np.maximum(x, np.float32(0.0))
+    return positive * positive
+
+
 def softplus(x):
     """log(1 + exp(x)), and x itself past 20: torch's softplus as Qwen3.5 calls it."""
     return np.where(x > 20.0, x, np.log1p(np.exp(np.minimum(x, 20.0)))).astype(np.float32)
@@ -254,6 +261,24 @@ def delta_rule(state, q, k, v, beta, decay):
 # (engine/layout.py's Layout: activation) and the sliding-attention layers as its local layers, as a Gemma 3's
 # (local_layers(): the options say which they are, their window and their base); the others turn part of each head as
 # a GPT-NeoX's do (rope PARTLY, the options' rotary).
+
+
+# Microsoft's BitNet b1.58 (config.json's model_type bitnet; arch="bitnet" here, T283): a Llama whose matrices are
+# ternary, one scale a matrix, with a norm in front of wo and one in front of w2, and the square of the ReLU in the
+# FFN's gate. By transformers' models/bitnet/modular_bitnet.py (BitNetMLP, BitNetAttention: the formulas, no line of
+# it) and integrations/bitnet.py (AutoBitLinear) of transformers 5.16.1:
+#   for every layer:
+#     xb = norm(x)
+#     q, k, v = wq xb, wk xb, wv xb        a Llama's: GQA, RoPE over the whole head
+#     x += wo attn_sub_norm(the attention's output)          an RMSNorm of the attention's width
+#     xn = norm(x)
+#     x += w2 ffn_sub_norm(relu2(w1 xn) * w3 xn)            an RMSNorm of hidden_dim; relu2 = relu(x)^2
+#   logits = embedding (the same table) times norm(x)
+# The model rounds the input of every ternary matrix to 8 bits, by the largest value of the token's row (ActQuant):
+# the engine does not. Its NumPy forward pass multiplies floats, the page's kernels round by groups of 32, as for every
+# int8 or ternary model (docs/notes/t283-bitnet-2026-11-12.md has how far that is from transformers' numbers). The
+# engine has the two norms as rows of the file (rms_att_sub_weight, rms_ffn_sub_weight) and the ReLU's square as a
+# fact of the architecture (engine/layout.py's Layout: activation).
 
 
 # Ternary Bonsai 2 27B (prism-ml/Ternary-Bonsai-2-27B-gguf) stores its matrices in a rotated basis. With R = H S,

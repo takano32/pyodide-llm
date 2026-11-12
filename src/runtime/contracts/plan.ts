@@ -47,10 +47,13 @@ export type TensorName =
   // T363: the codebooks of llama.cpp's blocks, of a file with rows of such types
   | "codebooks"
   // T342: a Spark-X2.5's gate of each head of the attention's output (a value a head)
-  | "head_gate";
+  | "head_gate"
+  // T283: a BitNet b1.58's norms of what wo and w2 read
+  | "rms_att_sub_weight" | "rms_ffn_sub_weight";
 
-// the activation of an FFN (engine/layout.py's SILU, GELU and, T342, GELU_ERF: the exact GELU, by erf)
-export type Activation = "silu" | "gelu" | "gelu_erf";
+// the activation of an FFN (engine/layout.py's SILU, GELU and, T342, GELU_ERF: the exact GELU, by erf; T283, RELU2: the
+// square of a ReLU)
+export type Activation = "silu" | "gelu" | "gelu_erf" | "relu2";
 
 // where every tensor of a model is: the plan's, and what Python's external_tensors() places before a model is built
 export type Tensors = Partial<Record<TensorName, Tensor>>;

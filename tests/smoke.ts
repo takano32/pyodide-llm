@@ -532,8 +532,9 @@ with open("superblocks.json") as f:
     read_natively, widened_natively = (lambda fixture: (fixture["read"], {**fixture["widened"], **fixture["signs"]}))(json.load(f))
 assert set(read_natively) == set(SUPERBLOCKS) and not set(read_natively) & set(widened_natively), \
     f"the fixture has {sorted(read_natively)}, the readers are {sorted(SUPERBLOCKS)}"
-# (every type of ggml's that has no kernel to read it: F32 and F16 are NumPy's own, BF16 and Q8_0 have kernels)
-assert set(read_natively) | set(widened_natively) == {name for name, source in llama2_convert.SOURCES.items() if not source.kernel} - {"F32", "F16"}, \
+# (every type of ggml's that has no kernel to read it: F32 and F16 are NumPy's own, BF16 and Q8_0 have kernels; T283: and a
+# safetensors' U8, which is no ggml type, NumPy's own too)
+assert set(read_natively) | set(widened_natively) == {name for name, source in llama2_convert.SOURCES.items() if not source.kernel and source.ggml is not None} - {"F32", "F16"}, \
     f"the fixture has {sorted(widened_natively)} besides, the readers are {sorted(llama2_convert.SOURCES)}"
 for name, natively in {**read_natively, **widened_natively}.items():
     source = llama2_convert.SOURCES[name]
@@ -593,6 +594,21 @@ with np.errstate(over="ignore", invalid="ignore"):
     assert np.all(np.abs(exact_gated[exact_finite] - erf_said * others[exact_finite]) <= 5e-7 * np.maximum(np.abs(others[exact_finite]), 1) * np.maximum(1, np.abs(inputs[exact_finite]) / 4)), \
         "geglu_erf is not the exact GELU times the other input"
     assert np.array_equal(np.signbit(exact_gated[inputs == 0]), np.signbit(inputs[inputs == 0] * others[inputs == 0])), "geglu_erf's zeros"
+# T283: and reglu2, a BitNet's gate, the square of a ReLU times the other input: four at a time is one at a time, and
+# NumPy's relu2() times it (the same max and the same two products in float32), to the bit
+from engine.layers import relu2 as numpy_relu2
+squared, squared_single = np.empty_like(inputs), np.empty_like(inputs)
+simd["reglu2"](squared.ctypes.data, inputs.ctypes.data, others.ctypes.data, inputs.size)
+for j in range(inputs.size):
+    simd["reglu2"](squared_single[j:].ctypes.data, inputs[j:].ctypes.data, others[j:].ctypes.data, 1)
+assert np.array_equal(squared.view(np.uint32), squared_single.view(np.uint32)), "reglu2 four at a time is not reglu2 one at a time"
+with np.errstate(over="ignore", invalid="ignore"):
+    squared_said = numpy_relu2(inputs) * others
+assert np.array_equal(np.isnan(squared), np.isnan(squared_said)) and \
+    np.array_equal(squared[~np.isnan(squared)].view(np.uint32), squared_said[~np.isnan(squared)].view(np.uint32)), \
+    "reglu2 is not NumPy's relu2() times the other input"
+assert (squared[inputs < 0] == 0).all() and np.array_equal(squared[(inputs > 0) & (inputs < 1e3)], (inputs * inputs * others)[(inputs > 0) & (inputs < 1e3)]), \
+    "reglu2 is not the square of a ReLU times the other input"
 # T237: the rotated basis's kernels are NumPy's rotate() and unrotate() to the bit: every block from 1 to 4096, one to
 # five blocks of it (lengths that are no multiple of four too, for blocks of 1 and 2), large and small numbers and
 # both zeros, into another place and in place, and nothing written past n

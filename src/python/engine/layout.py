@@ -476,6 +476,13 @@ def spark(d):
     return after(llama(d), "wo", d.stack("head_gate", MATRIX, ATTENDING, d.n_heads, d.dim))
 
 
+def bitnet(d):
+    """A BitNet b1.58 (T283): a Llama's tensors and two more norms, of what the attention gives before wo (of the
+    attention's width) and of what the gate makes before w2 (of hidden_dim), behind the matrices they are in front of."""
+    rows = after(llama(d), "wo", d.stack("rms_att_sub_weight", VECTOR, ATTENDING, d.q_dim))
+    return after(rows, "w3", d.stack("rms_ffn_sub_weight", VECTOR, EVERY, d.hidden_dim))
+
+
 def gpt2(d):
     """A GPT-2: LayerNorm (a weight and a bias), a bias after every projection, a learned table of positions instead
     of RoPE, and an FFN of two matrices instead of three (no gate). Same attention, of heads that fill dim.
@@ -498,8 +505,9 @@ def gpt2(d):
 # PARTLY's are of the width it turns)
 WHOLE, PARTLY, PROPORTIONAL = "whole", "partly", "proportional"
 # The activation of an FFN (Layout's activation): a SiLU, or a GELU (its tanh form, which GPT-2 calls gelu_new), or
-# (T342) a GELU of its exact form, by erf (transformers' "gelu": a Spark-X2.5's)
-SILU, GELU, GELU_ERF = "silu", "gelu", "gelu_erf"
+# (T342) a GELU of its exact form, by erf (transformers' "gelu": a Spark-X2.5's), or (T283) the square of a ReLU
+# (transformers' "relu2": a BitNet b1.58's)
+SILU, GELU, GELU_ERF, RELU2 = "silu", "gelu", "gelu_erf", "relu2"
 
 
 class Layout(NamedTuple):
@@ -510,7 +518,8 @@ class Layout(NamedTuple):
     for a fact is that one's record with the fact replaced (LAYOUTS["llama"]._replace(...)).
     What the rows already say is no fact here: a bias is added where the file has one (bq, bo), the heads of q and k
     are normalized where it has those norms, a position's row is added where it has the table, and what the attention
-    and the FFN give is normalized where it has the norms for that (rms_att_post_weight, rms_ffn_post_weight)."""
+    and the FFN give is normalized where it has the norms for that (rms_att_post_weight, rms_ffn_post_weight), and what
+    wo and w2 read where it has those (T283: rms_att_sub_weight, rms_ffn_sub_weight)."""
     # (the Dims) -> the tensors of the file as rows, in file order
     rows: Callable
     # the kind of its layers that keep a state in place of keys and values, where it has such layers
@@ -528,8 +537,9 @@ class Layout(NamedTuple):
     rotatable: bool = False
     # some of its layers may be ones RoPE leaves alone (T255)
     unturned: bool = False
-    # the activation of its FFN, SILU, GELU or GELU_ERF: of the gate of a gated one (a Llama's is a SiLU, T261: a
-    # Gemma's a GELU, T342: a Spark-X2.5's the exact GELU), of the one matrix's output of GPT-2's. Another fact than
+    # the activation of its FFN, SILU, GELU, GELU_ERF or RELU2: of the gate of a gated one (a Llama's is a SiLU, T261: a
+    # Gemma's a GELU, T342: a Spark-X2.5's the exact GELU, T283: a BitNet's the ReLU's square), of the one matrix's
+    # output of GPT-2's. Another fact than
     # gated_ffn: a Gemma's FFN is gated as a Llama's is
     activation: str = SILU
     # some of its layers may be local ones (T261): they attend a window of the last positions, and RoPE turns their q
@@ -561,6 +571,9 @@ LAYOUTS["plamo3"] = LAYOUTS["gemma3"]._replace(activation=SILU, yarn_magnitude=T
 # T612: Gemma 2, a Gemma 3's layers without the norms of the heads of q and k (its caps of the scores and of the logits,
 # and its one local layer of every two, are the options': no fact of the layout)
 LAYOUTS["gemma2"] = LAYOUTS["gemma3"]._replace(rows=gemma2)
+# T283: BitNet b1.58, a Llama's layers with a norm in front of wo and one in front of w2 (rows of its file) and the
+# square of a ReLU in the gate of its FFN
+LAYOUTS["bitnet"] = LAYOUTS["llama"]._replace(rows=bitnet, activation=RELU2)
 
 
 def layout_of(arch):

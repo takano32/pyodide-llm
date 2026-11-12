@@ -21,6 +21,7 @@
 // head, multiplied with q, k and v). The values go to the first of the frame's gate, are spread there over their heads
 // (the last head's first, so that none is written over before it is read), and the kernel that gates a Qwen3.5's
 // output value by value then gates every value of a head by the same one.
+// T283: what wo reads may be normalized first (a BitNet b1.58's rms_att_sub_weight, of the attention's width).
 import { BATCH, KIND } from "../jobs.ts";
 import type { Core, Kind, Layers, Product } from "./kinds.ts";
 import type { Footprint } from "./memory.ts";
@@ -78,6 +79,9 @@ export const attention: Kind = {
     const cosTable = floats("freq_cis_real"), sinTable = floats("freq_cis_imag");
     const wg = matrix("wg");  // T229
     const headGate = matrix("head_gate");  // T342
+    // T283: the norm of what wo reads (a BitNet's: the attention's width a layer; 0: none)
+    const sub = floats("rms_att_sub_weight");
+    if (sub && wider) throw new Error("This engine has no norm in front of wo of layers whose heads are wide.");
     // T261: the tables of the local layers (0: the model has none, and no layer of its plan says it is one)
     const localCos = floats("local_cis_real"), localSin = floats("local_cis_imag");
     // where these layers' keys and values are in the cache: the place-th layer's are the (first + place)-th (T510.1:
@@ -183,6 +187,7 @@ export const attention: Kind = {
           phase(jobs);
           if (wg) for (let t = 0; t < count; t++) k.gate(xb + t * S, xb + t * S, gate + t * S, qDim);
           if (headGate) gateHeads(count);
+          if (sub) for (let t = 0; t < count; t++) k.rmsnorm(xb + t * S, xb + t * S, sub + a * QF, qDim, eps);
           matmuls(xb, count, out);
         };
       },

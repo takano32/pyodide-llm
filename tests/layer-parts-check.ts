@@ -283,6 +283,15 @@ const S = 100000;
     // (and no gate of the heads where the model has none: a Llama's layer above)
     assert.ok(!said.some(([name]) => name === "gate"));
   }
+  // T283: a BitNet's norm of what wo reads: every token's output of the attention, by the layer's weights (the
+  // attention's width of them), after the heads and before wo
+  {
+    const normed = stand(["wq", "wk", "wv", "wo", "rms_att_sub_weight", "freq_cis_real", "freq_cis_imag"]);
+    normed.layers.layer(1, att({ kind: "attention", place: 1, rope: true }))(2, 3);
+    assert.deepEqual(names(normed.said), ["matmuls", "rope", "rope", "rope", "rope", "phase", "rmsnorm", "rmsnorm", "matmuls"]);
+    assert.deepEqual(normed.said.slice(6, 8), [0, 1].map((t) => ["rmsnorm", normed.at.xb + t * S, normed.at.xb + t * S, normed.vector("rms_att_sub_weight") + 64 * 4, 64, 1e-5]));
+    assert.ok(!said.some(([name]) => name === "rmsnorm"), "no such norm where the model has none: a Llama's layer above");
+  }
   // T510.1: the layers of a kind whose facts give windows: those whose ring is shorter than the context (5 of 48: 42
   // positions) write each token's key and value twice into it, at p mod 21 and 21 after, and hand the kernels the run
   // of the ring from where each token's window begins. Four tokens at 19 to 22: slots 19, 20, 0 and 1; their windows
@@ -477,6 +486,15 @@ const S = 100000;
   assert.deepEqual(exact.said, [["matmuls", at.xb, 2, ["w1", at.hb, S, 1], ["w3", at.hb2, S, 1]],
     ["geglu_erf", at.hb, at.hb, at.hb2, 48], ["geglu_erf", at.hb + S, at.hb + S, at.hb2 + S, 48],
     ["matmuls", at.hb, 2, ["w2", at.xb2, S, 1]], ["add_inplace", at.x, at.xb2, 16], ["add_inplace", at.x + S, at.xb2 + S, 16]]);
+  // T283: a BitNet's: the square of a ReLU, by its own kernel, and what w2 reads normalized first (the layer's weights,
+  // hidden_dim of them)
+  const bitnet = coreOf({ ...plan, activation: "relu2" }, { has: ["w1", "w2", "w3", "rms_ffn_sub_weight"] });
+  gatedFfn(bitnet.core)(2, 2);
+  assert.deepEqual(bitnet.said, [["matmuls", at.xb, 2, ["w1", at.hb, S, 2], ["w3", at.hb2, S, 2]],
+    ["reglu2", at.hb, at.hb, at.hb2, 48], ["reglu2", at.hb + S, at.hb + S, at.hb2 + S, 48],
+    ["rmsnorm", at.hb, at.hb, bitnet.vector("rms_ffn_sub_weight") + 2 * 48 * 4, 48, 1e-5],
+    ["rmsnorm", at.hb + S, at.hb + S, bitnet.vector("rms_ffn_sub_weight") + 2 * 48 * 4, 48, 1e-5],
+    ["matmuls", at.hb, 2, ["w2", at.xb2, S, 2]], ["add_inplace", at.x, at.xb2, 16], ["add_inplace", at.x + S, at.xb2 + S, 16]]);
   const normed = coreOf(plan, { has: ["w1", "w2", "w3", "rms_ffn_post_weight"] });
   gatedFfn(normed.core)(0, 1);
   assert.deepEqual(names(normed.said), ["matmuls", "swiglu", "matmuls", "rmsnorm", "add_inplace"]);

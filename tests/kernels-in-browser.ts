@@ -651,6 +651,31 @@ async function inPage({ plain, relaxed }) {
     });
   }
 
+  // ---- reglu2 (T283: the gate of a BitNet's FFN, the square of a ReLU of h1 times h3). Four at a time is held to the
+  // kernel one value at a time (its scalar tail) to the bit, and to max(x, 0)² times h3 in float32 (Math.fround after
+  // each product: the kernel's two products) to the bit. The same values as geglu_erf's, at places of their own
+  {
+    const at = extra + 3145728 + 49152, count = 259, h1 = at, h3 = at + 2048, out = at + 4096, one = at + 6144;
+    const edges = [0, -0, 1e-30, -1e-30, 0.5, -0.5, 3, -3, 1e19, -1e19, 3e38, -3e38];
+    const first = Float32Array.from({ length: count }, (_, j) => (j < edges.length ? edges[j] : f(((next() % 24001) - 12000) / 1000)));
+    const other = Float32Array.from({ length: count }, () => f(((next() % 8001) - 4000) / 1000));
+    const call = () => { F.set(first, h1 / 4); F.set(other, h3 / 4); k.reglu2(out, h1, h3, count); };
+    await check("reglu2", call, () => {
+      F.fill(-7, out / 4, out / 4 + count + 4);
+      call();
+      const got = new Uint32Array(memory.buffer, out, count), alone = new Uint32Array(memory.buffer, one, 1);
+      let bad = 0;
+      for (let j = 0; j < count; j++) {
+        k.reglu2(one, h1 + 4 * j, h3 + 4 * j, 1);
+        if (got[j] !== alone[0]) bad++;
+        const r = Math.max(first[j], 0), exact = Math.fround(Math.fround(r * r) * other[j]);
+        if (!Object.is(F[out / 4 + j], exact) && !(F[out / 4 + j] === 0 && exact === 0)) bad++;
+      }
+      for (let j = count; j < count + 4; j++) if (F[out / 4 + j] !== -7) bad++;
+      return bad ? `${bad} of ${count} values wrong` : null;
+    });
+  }
+
   // ---- T612: attention with its scores capped (a Gemma 2's), over float32 keys and values and over float16 ones: two
   // heads of 24 (a rest of 0 after the fours, and the scores' rest of 3) of one key head, 23 positions, scores of -24 to
   // 24 capped by 4. Held to the first call's output to the bit (the arithmetic does not change as the engine compiles it

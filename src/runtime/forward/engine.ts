@@ -295,7 +295,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // T261.4: every layer's window and the layers the local tables turn (the GPU's plan has them), and what a Gemma 4's
     // layers have besides, which the GPU's have not
     windows: facts.map(({ window }) => window), locals: facts.flatMap(({ local }, l) => (local ? [l] : [])),
-    extras: Boolean(plan.value_norm || softcap || layerScale || perLayered) ||
+    // (T283: and a BitNet's norms in front of wo and w2, which the GPU's layers have not)
+    extras: Boolean(plan.value_norm || softcap || layerScale || perLayered || floats("rms_att_sub_weight") || floats("rms_ffn_sub_weight")) ||
       facts.some(({ wide, double, kept, reads, place }) => wide || double || kept !== place || reads !== place),
     // T612: a Gemma 2's cap of the scores
     scoresCapped: Boolean(plan.score_softcap) };
