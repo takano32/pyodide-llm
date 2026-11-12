@@ -280,7 +280,7 @@
 
 ### 家族（config.json の `model_type`）を足す（変換器）
 
-変換器に新しい `model_type` を読ませるとき。`convert/families/` に `Family` を 1 つと `FAMILIES` に 1 行、試験は `test_families.py` の `FACTS` の 1 行。**`_replace` は GGUF の名前も引き継ぐ**。全文は [docs/notes/adding/family.md](docs/notes/adding/family.md)。
+変換器に新しい `model_type` を読ませるとき。`convert/families/` に `Family` を 1 つと `FAMILIES` に 1 行、試験は `test_families.py` の `FACTS` の 1 行。**`_replace` は GGUF の名前も引き継ぐ**。llama.cpp が値や並びを変えて書くテンソルは家族の `gguf_marks(config)` の表（印は `convert/gguf.py` の `MARKS`。名前を `endswith` で選ばない: 書き忘れるとエラーにならず値が違う）。全文は [docs/notes/adding/family.md](docs/notes/adding/family.md)。
 
 ### アーキテクチャを足す（`LAYOUTS`）
 
@@ -288,7 +288,7 @@ forward の計算が違うモデルのとき。`engine/layout.py` の `LAYOUTS` 
 
 ### ファイルの形式を変える・行を足す
 
-legacy 形式の行を足す・動かすとき。行は `layout.py` のそのレイアウトの関数だけで、**行を動かしたらファイルの形式の変更: `CONVERTER`**（入れ替えは `ORDER` と本物のファイルだけが落とす）。全文は [docs/notes/adding/file-format.md](docs/notes/adding/file-format.md)。
+legacy 形式の行を足す・動かすとき。行は `layout.py` のそのレイアウトの関数だけで、**行を動かしたらファイルの形式の変更: `CONVERTER`**（入れ替えは `ORDER` と本物のファイルだけが落とす）。**層によって形の違う行は、形ごとに別の名前の束にする**（1 層だけの束は変換器が束と読まない）。設定は変換器から `footprint()` まで 1 つの辞書で渡る（`worker-sink-check`）。全文は [docs/notes/adding/file-format.md](docs/notes/adding/file-format.md)。
 
 ### 層の種類（状態を持つ層）を足す
 
@@ -300,11 +300,11 @@ LFM2 の畳み込みや Qwen3.5 の linear のような層のとき。Python は
 
 ### カーネル・仕事の種類を足す
 
-wasm のカーネルと段の仕事のとき。静的データを置けない、relaxed SIMD は別ファイル、`WORK` の最後に 1 行、**`tests/kernels-in-browser.ts` に足す**、ctypes の署名は `kernel_signatures.py` が見る。全文は [docs/notes/adding/kernel.md](docs/notes/adding/kernel.md)。
+wasm のカーネルと段の仕事のとき。静的データを置けない、relaxed SIMD は別ファイル、`WORK` の最後に 1 行、**`tests/kernels-in-browser.ts` に足す**、ctypes の署名は `kernel_signatures.py` が見る。**塊の型（`BLOCKS`）を足すなら、型の番号で分ける並びが 4 か所（`rowsOf`・`tileOf`・`matmul_sbw_tile`・`sb_row`）で、1 行忘れるとその型は何も書かない**（`blocks-check` が落とす）。全文は [docs/notes/adding/kernel.md](docs/notes/adding/kernel.md)。
 
 ### GGUF の型・取り込み元の種類・トークナイザの候補を足す
 
-GGUF の型・段取りの取り込み元・置き場・トークナイザの候補・語彙の読み手・量子化の札のとき。読み手は変換器の側に置く、同じ番号で塊の大きさが 2 通りある型は読まない、元の実装から写したら許諾文の全文。全文は [docs/notes/adding/gguf-sources-tokenizers.md](docs/notes/adding/gguf-sources-tokenizers.md)。
+GGUF の型・段取りの取り込み元・置き場・トークナイザの候補・語彙の読み手・量子化の札のとき。読み手は変換器の側に置く、同じ番号で塊の大きさが 2 通りある型は読まない、元の実装から写したら許諾文の全文。トークナイザの候補を足すと、ページの `folder.ts` の `TOKENIZERS`（`python_facts.py` が書き出す）の門の文が名前から組まれて変わる: **訪問者に見える文なので持ち主に見せてから**。全文は [docs/notes/adding/gguf-sources-tokenizers.md](docs/notes/adding/gguf-sources-tokenizers.md)。
 
 ### 標本抽出の規則を足す
 
