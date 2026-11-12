@@ -347,6 +347,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **なぜ Pyodide か。** WASM の上の Python で NumPy と動的リンク（ctypes）の両方があるのは Pyodide だけだった。数値の処理を全部カーネルにして、ネイティブの llama2.c `-Ofast` と並んだ。
 - **エンジンの正しさ。** llama2.c の C 実装と 5 プロンプト × 256 トークンでバイト単位一致。
 - **速さ（Chromium、カーネルあり）**: tiny-lm 約 270〜295、stories15M 約 300（int8）、llm-jp-3-150m 75〜79 tok/s（256 トークン）。カーネルなしは約 40・50・8.5。位置とともに遅くなる: 文書の tok/s は 256 トークンでの値。小さいモデルは greedy だと反復するので、日本語モデルは temperature 0.7 / top-p 0.9 / 繰り返しペナルティ。
+- **大きさと速さ（Pythia の梯子、T84）**: 5 段（70M〜1.4B）を 1 つのジョブで測るのは `models.yml`（`browsers.yml` は段を 2 つのランナーに分ける）。毎秒読む重み（int8 MB × tok/s）は x86-64 の EPYC 9V74 で 25〜29 GB/s、arm64 で 32〜43 GB/s（4 本）。準備完了のうち変換は 3〜9%。表は `kernels/README.md`、道具は `tests/ladder.ts`。
 - **int8 の品質は原本と区別できない**（stories15M +0.04%）。int4 は +16.8% で不可。活性値も 8 ビットに量子化する経路は原本と ±0.1%、7 ビット（relaxed）で +0.39%、速度は 3 割増し。
 - **1 トークンの内訳**（`tests/profile.ts`）: llm-jp-3 150M は行列積 92%（分類器 46%）・attention 3%（位置 2000 で 48%、4000 で 65%）。
 - **tokenizer.bin は llama2.c 本家のもの**（llama2.py 付属のものは語彙が 204 個重複）。**プロンプトの先頭に空白を付ける**（sentencepiece のダミープレフィックス。付けないと perplexity が 8.5% 悪化）。

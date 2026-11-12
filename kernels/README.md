@@ -282,6 +282,49 @@ estimate): 0.98 s on 4 threads of the Neoverse-N2 and 3.90 s on 1; 0.87 s and 1.
 T363.1's forms the kernels are the same within 2% but for Q2_K on arm64 (0.94) and IQ1_M on arm64 (0.97): a type's
 scales are read as a vector and the units' sums made one lane each, for every type alike.
 
+## Size against speed: the Pythia ladder (2026-11-12, T84)
+
+One design at five sizes (Pythia 70M to 1.4B, Q8_0 GGUFs that the page fetches and converts to int8), each run once
+on the deployed site in Playwright's Chromium 156.0.8078.4, the five in one job after one another (models.yml, so
+one runner and one CPU for the five), the same prompt (tests/e2e.ts's) and the same settings (`?threads=4&seed=1`,
+temperature 0.7, at most 256 tokens), on the CPU: the runners have no GPU. Made by `node tests/ladder.ts
+<results.jsonl …>`. int8 MB is the list's `converted` (rounded: 1.1 and 1.6 GB for the two largest); "GB/s of weights"
+is int8 MB × tok/s, the weights read per second if every token reads them once; "fetch and convert" is the wall
+time of both (they overlap), "of which converting" the time Python was converting; the memory is the WebAssembly
+memory's size once ready. One run of each, so a cell moves by run (below).
+
+x86-64, AMD EPYC 9V74 (4 vCPUs, 17 GB), run 43291611379:
+
+| model | int8 MB | ready (s) | fetch and convert (s) | of which converting (s) | converting / ready (%) | tokens | tok/s | threads | GB/s of weights | WebAssembly memory MB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Pythia 70M | 96 | 8.1 | 3.6 | 0.2 | 3 | 256 | 251.1 | 1 (see below) | 24.11 | 214 |
+| Pythia 160M | 213 | 7.0 | 2.3 | 0.5 | 8 | 186 | 136.4 | 4 | 29.05 | 408 |
+| Pythia 410M | 506 | 36.9 | 31.6 | 1.2 | 3 | 256 | 49.5 | 4 | 25.05 | 659 |
+| Pythia 1B | 1100 | 33.1 | 25.5 | 2.9 | 9 | 256 | 24.9 | 4 | 27.39 | 1534 |
+| Pythia 1.4B | 1600 | 55.4 | 48.7 | 4.1 | 7 | 256 | 17.2 | 4 | 27.52 | 2059 |
+
+arm64 (`ubuntu-24.04-arm`; Node names the CPU "unknown"; 4 vCPUs, 17 GB), run 43291616223:
+
+| model | int8 MB | ready (s) | fetch and convert (s) | of which converting (s) | converting / ready (%) | tokens | tok/s | threads | GB/s of weights | WebAssembly memory MB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Pythia 70M | 96 | 8.4 | 1.9 | 0.2 | 3 | 256 | 343.2 | 4 | 32.95 | 214 |
+| Pythia 160M | 213 | 7.7 | 2.8 | 0.5 | 6 | 186 | 148.7 | 4 | 31.67 | 408 |
+| Pythia 410M | 506 | 26.9 | 21.0 | 1.0 | 4 | 256 | 63.4 | 4 | 32.08 | 736 |
+| Pythia 1B | 1100 | 34.2 | 26.1 | 2.4 | 7 | 256 | 38.5 | 4 | 42.35 | 1534 |
+| Pythia 1.4B | 1600 | 46.7 | 39.1 | 3.4 | 7 | 256 | 26.7 | 4 | 42.72 | 2059 |
+
+How to read it: from 160M to 1.4B the weights grow 7.5 times and tok/s falls 7.9 times on x86-64 (GB/s of weights
+25.0 to 29.1), so there tok/s follows 1 / the weights' bytes within the spread of one run each; on arm64 it falls 5.6
+times (GB/s 31.7 to 42.7: the two largest read faster per byte than the three smallest), so it falls more slowly
+than 1 / bytes, for a reason not measured. Converting is 3 to 9% of ready on both; the rest is the fetch (Hugging
+Face from a US runner) and Pyodide.
+
+Unexplained in these runs: the 70M on x86-64 ran on one thread although the URL said `?threads=4` (its status line
+names no threads; the page was cross-origin isolated); the 160M stopped at 186 tokens on both (the same seed), so
+its tok/s is of shorter positions. An earlier pair without `?threads=4` (runs 43290630864 on an AMD EPYC 9V45 and
+43290637418 on arm64; the worker chose 2 threads for the smaller ones) gave GB/s of weights 27.5 to 41.2 and 32.2 to
+40.2: the same shape on arm64, and on x86-64 a spread as wide as the trend.
+
 ## Rules that are easy to break
 
 - **No static data.** The side module has no relocations, so a data segment would be written over Pyodide's own
