@@ -115,3 +115,16 @@ def test_the_engine_refuses_a_stripped_it_cannot_read(stripped):
     spec, _ = marked()
     with pytest.raises(ValueError, match="Unsupported stripped"):
         engine_of(spec, stripped)
+
+
+def test_generate_encodes_the_prompt_after_the_bos():
+    """Whether the BOS takes in the whitespace its prompt begins with is decided where the prompt is encoded, in
+    generate(): it hands encode() the BOS (a Phi-3's prompt is the rest of a format whose first mark is the BOS). The
+    tokenizer's own part is held above; this holds the call (T258's review: generate() passing no BOS broke none)."""
+    from made_up import phi3_model
+    from test_phi3 import engine
+    llama, _ = engine(*phi3_model())
+    seen, encode = [], llama.tokenizer.encode
+    llama.tokenizer.encode = lambda text, specials=(), after=None: seen.append(after) or encode(text, specials, after)
+    list(llama.generate("w1 w2", steps=12))
+    assert llama.bos is not None and seen[:1] == [llama.bos]  # (the prompt's is the first call: others come after it)
