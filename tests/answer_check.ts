@@ -6,7 +6,10 @@
 //   - the same answer is read again with the page's BOS in front of the format: its perplexity there against the natural one, how
 //     often the likeliest next token is the same, and the KL divergence of the page's next-token distribution from the natural one;
 //   - the model writes greedily again with the page's BOS in front: where its answer first differs from the natural one, and both
-//     answers' beginnings (what a visitor would see differ).
+//     answers' beginnings (what a visitor would see differ);
+//   - (T399) that answer, written with the BOS in front, is read again without it, the other way round: an answer is always the
+//     likelier in the context that wrote it (AGENTS.md), so the two readings together say which context the model prefers
+//     where neither wrote the text. The lines "the other way" and "all the other way".
 // The lines are `answer_check <id>: ...` (ci.ts's --grep "answer_check"): a line for each question and one for all.
 //
 //   node tests/answer_check.ts <out of tests/perplexity_prepare.py> <JSON of tests/write_options.py> [answer tokens = 60]
@@ -91,13 +94,23 @@ for text in TEXTS:
         nll_p -= lp[token]
         agree += int(np.argmax(rows_natural[k]) == np.argmax(rows_page[k]))
         kl += float((np.exp(ln) * (ln - lp)).sum())
-    written_page, _ = greedy(paged)  # what the model writes with the page's start in front
+    written_page, rows_paged = greedy(paged)  # what the model writes with the page's start in front
     same = 0
     while same < min(len(written), len(written_page)) and written[same] == written_page[same]:
         same += 1
+    # (T399) the page's answer read the other way: without the start in front, against the context that wrote it
+    back = {"back_nll_page": 0.0, "back_nll_natural": 0.0, "back_agree": 0, "back_kl": 0.0}
+    if written_page:
+        rows_back = logits_from(natural + written_page, len(natural) - 1)[:len(written_page)]
+        for k, token in enumerate(written_page):
+            lp, ln = log_softmax(rows_paged[k]), log_softmax(rows_back[k])
+            back["back_nll_page"] -= float(lp[token])
+            back["back_nll_natural"] -= float(ln[token])
+            back["back_agree"] += int(np.argmax(rows_paged[k]) == np.argmax(rows_back[k]))
+            back["back_kl"] += float((np.exp(lp) * (lp - ln)).sum())
     answers.append({"tokens": len(written), "nll_natural": float(nll_n), "nll_page": float(nll_p), "agree": agree, "kl": kl,
                     "text": text_of(natural[-1], written), "page_tokens": len(written_page), "same": same,
-                    "page_text": text_of(natural[-1], written_page)})
+                    "page_text": text_of(natural[-1], written_page), **back})
     print(f"answer {len(answers)}/{len(TEXTS)} done, {time.perf_counter() - began:.0f} s", flush=True)
 json.dumps({"answers": answers, "bos": start, "stops": sorted(stops), "seconds": time.perf_counter() - began})
 `));
@@ -105,6 +118,7 @@ const id = page.id;
 console.log(`answer_check ${id}: ${result.answers.length} answers of up to ${count} tokens written greedily from the real format (nothing in front), ` +
   `read again with ${result.bos} in front and written again with it in front, ${result.seconds.toFixed(0)} s`);
 let tokens = 0, natural = 0, paged = 0, agree = 0, kl = 0, same = 0, differ = 0;
+let backTokens = 0, backPaged = 0, backNatural = 0, backAgree = 0, backKl = 0;
 result.answers.forEach((row, k) => {
   tokens += row.tokens; natural += row.nll_natural; paged += row.nll_page; agree += row.agree; kl += row.kl; same += row.same;
   const alike = row.same === row.tokens && row.same === row.page_tokens;
@@ -114,9 +128,20 @@ result.answers.forEach((row, k) => {
     `${row.agree}/${row.tokens}, KL ${(row.kl / row.tokens).toFixed(4)} a token; written again with the start in front: ${alike ? "the same answer" : `the same for ${row.same} tokens, then another (${row.page_tokens} tokens)`}`);
   console.log(`answer_check ${id}:   natural: ${JSON.stringify(row.text.slice(0, 100))}`);
   if (!alike) console.log(`answer_check ${id}:   with the start: ${JSON.stringify(row.page_text.slice(0, 100))}`);
+  if (row.page_tokens) {
+    console.log(`answer_check ${id}:   the other way: the answer written with the start in front, ${row.page_tokens} tokens, nll a token ` +
+      `${(row.back_nll_page / row.page_tokens).toFixed(3)} with the start, ${(row.back_nll_natural / row.page_tokens).toFixed(3)} without it ` +
+      `(${(Math.exp((row.back_nll_page - row.back_nll_natural) / row.page_tokens) * 100 - 100).toFixed(1)}% in perplexity with the start), likeliest token the same ` +
+      `${row.back_agree}/${row.page_tokens}, KL ${(row.back_kl / row.page_tokens).toFixed(4)} a token`);
+    backTokens += row.page_tokens; backPaged += row.back_nll_page; backNatural += row.back_nll_natural; backAgree += row.back_agree; backKl += row.back_kl;
+  }
 });
 console.log(`answer_check ${id}: all: ${tokens} tokens, perplexity ${Math.exp(natural / tokens).toFixed(3)} natural, ${Math.exp(paged / tokens).toFixed(3)} with ${result.bos} in front ` +
   `(${(Math.exp((paged - natural) / tokens) * 100 - 100).toFixed(1)}%), likeliest token the same ${agree}/${tokens} (${(agree / tokens * 100).toFixed(1)}%), KL ${(kl / tokens).toFixed(4)} a token; ` +
   `${differ} of ${result.answers.length} answers written again differ, the same for ${same} of ${tokens} tokens`);
+// (T399: the answers written with the start in front, the context that wrote them now the start's)
+console.log(`answer_check ${id}: all the other way: ${backTokens} tokens written with ${result.bos} in front, perplexity ${Math.exp(backPaged / backTokens).toFixed(3)} ` +
+  `with it, ${Math.exp(backNatural / backTokens).toFixed(3)} without it (${(Math.exp((backPaged - backNatural) / backTokens) * 100 - 100).toFixed(1)}% with it), likeliest token ` +
+  `the same ${backAgree}/${backTokens} (${(backAgree / backTokens * 100).toFixed(1)}%), KL ${(backKl / backTokens).toFixed(4)} a token`);
 // (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.ts)
 await leave(0);
