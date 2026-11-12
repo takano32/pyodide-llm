@@ -156,6 +156,11 @@ for (const entry of MODELS.filter((entry) => LICENSES[sourceOf(entry)!] === "PLa
   // (T649.4: and the line of the original its vocabulary comes from)
   if (entry.original) assert.ok(NOTICES[entry.original] === "Built with PLaMo" && LICENSE_TEXTS[entry.original], entry.id);
 }
+// T656's review: the Gemma Terms of Use want their notice with every Gemma's weights too (as the PLaMo line above:
+// a Gemma added without its NOTICES row went through before)
+for (const entry of MODELS.filter((entry) => LICENSES[entry.original ?? sourceOf(entry)!] === "Gemma Terms of Use")) {
+  assert.ok(NOTICES[entry.original ?? sourceOf(entry)!], `${entry.id}: a Gemma's line in NOTICES`);
+}
 const listed = sources();
 assert.equal(listed.length, used.size, "one line per source");
 assert.equal(listed.reduce((n, { names }) => n + names.length, 0),
