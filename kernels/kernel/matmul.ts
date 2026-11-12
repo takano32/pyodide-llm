@@ -5,7 +5,6 @@
 // outliers' columns of the classifier (add_columns).
 
 import { sixFirst, sixSecond, sixTops } from "../six";
-import { fourSums } from "../ternary";
 import { Ternary, Binary, groupBytes, rowBytes, blockBytes, codesOf } from "../signs";
 import { half, halves4 } from "./halves";
 import { GS, hsum, laneSum } from "./math";
@@ -149,24 +148,45 @@ export function interleave(xq: usize, xs: usize, n: i32): void {
 // matmul_t2r and matmul_b1r (relaxed/signs.ts) without relaxed SIMD: the same weights, activations and sums, the same
 // exact integers a group and the same float32 operations in the same order, so the same numbers to the bit (and
 // binary's ternary's for the same weights: signs.ts). A plane's products are widened to int16 (its low eight bytes are
-// of the first group of 32 activations, its high eight of the second) and added over the four planes there
-// (4 x 2 x 128 a lane at most), then widened once. T644.7: one kernel for both packings, P (signs.ts).
+// of the first group of 32 activations, its high eight of the second) and added over the four planes there as a chain
+// (4 x 2 x 128 a lane at most); then the eight lanes of each of a group's four groups of 32 are added in int16 too (at
+// most 8 x 1024), and widened once. T644.7: one kernel for both packings, P (signs.ts).
+// T275 (2026-11-12): the chain and the sums in int16 in place of a tree of adds and four widenings to int32, timed by
+// tests/ternary-browser-bench.ts against tests/ternary-plain-forms.ts's copy of the form before (kernels/README.md has
+// the table): 1.16 to 1.17 times as fast in V8 on arm64, 1.03 on x86-64, 1.07 in WebKit's JavaScriptCore on arm64.
+// the int16 sums of the four planes' products: their low halves (low16) and their high (high16)
 // @ts-ignore: decorator
-@inline function plain64<P>(v: v128, x: usize, h: i32, mask: v128): v128 {
-  const x0 = v128.load(x), x1 = v128.load(x, 16), x2 = v128.load(x, 32), x3 = v128.load(x, 48);
-  const c0 = codesOf<P>(v, h, 0, mask), c1 = codesOf<P>(v, h, 1, mask), c2 = codesOf<P>(v, h, 2, mask), c3 = codesOf<P>(v, h, 3, mask);
-  const low = i16x8.add(i16x8.add(i16x8.extmul_low_i8x16_s(x0, c0), i16x8.extmul_low_i8x16_s(x1, c1)),
-                        i16x8.add(i16x8.extmul_low_i8x16_s(x2, c2), i16x8.extmul_low_i8x16_s(x3, c3)));
-  const high = i16x8.add(i16x8.add(i16x8.extmul_high_i8x16_s(x0, c0), i16x8.extmul_high_i8x16_s(x1, c1)),
-                         i16x8.add(i16x8.extmul_high_i8x16_s(x2, c2), i16x8.extmul_high_i8x16_s(x3, c3)));
-  // lanes 0 and 1 the first group's, 2 and 3 the second's, as the relaxed dot product leaves them
-  const first = i32x4.extadd_pairwise_i16x8_s(low), second = i32x4.extadd_pairwise_i16x8_s(high);
-  return i32x4.add(v128.shuffle<i32>(first, second, 0, 1, 4, 5), v128.shuffle<i32>(first, second, 2, 3, 6, 7));
+@inline function low16(x0: v128, x1: v128, x2: v128, x3: v128, c0: v128, c1: v128, c2: v128, c3: v128): v128 {
+  let sum = i16x8.extmul_low_i8x16_s(x0, c0);
+  sum = i16x8.add(sum, i16x8.extmul_low_i8x16_s(x1, c1));
+  sum = i16x8.add(sum, i16x8.extmul_low_i8x16_s(x2, c2));
+  return i16x8.add(sum, i16x8.extmul_low_i8x16_s(x3, c3));
+}
+// @ts-ignore: decorator
+@inline function high16(x0: v128, x1: v128, x2: v128, x3: v128, c0: v128, c1: v128, c2: v128, c3: v128): v128 {
+  let sum = i16x8.extmul_high_i8x16_s(x0, c0);
+  sum = i16x8.add(sum, i16x8.extmul_high_i8x16_s(x1, c1));
+  sum = i16x8.add(sum, i16x8.extmul_high_i8x16_s(x2, c2));
+  return i16x8.add(sum, i16x8.extmul_high_i8x16_s(x3, c3));
+}
+// the int16 sums of a group's four groups of 32 (l0 h0 of its first block of 64, l1 h1 of its second) to their four
+// int32 sums: the halves of 64 bits added, then the pairs of 32, then the int16 pairs widened
+// @ts-ignore: decorator
+@inline function sums16(l0: v128, h0: v128, l1: v128, h1: v128): v128 {
+  const u = i16x8.add(v128.shuffle<i64>(l0, h0, 0, 2), v128.shuffle<i64>(l0, h0, 1, 3));  // lanes 0..3 group 0, 4..7 group 1
+  const t = i16x8.add(v128.shuffle<i64>(l1, h1, 0, 2), v128.shuffle<i64>(l1, h1, 1, 3));  // groups 2 and 3
+  return i32x4.extadd_pairwise_i16x8_s(i16x8.add(v128.shuffle<i32>(u, t, 0, 2, 4, 6), v128.shuffle<i32>(u, t, 1, 3, 5, 7)));
 }
 // @ts-ignore: decorator
 @inline function plain128<P>(facc: v128, w: usize, x: usize, sums: usize, xs: usize, at: usize, d: v128, mask: v128): v128 {
-  const v = v128.load(w);
-  const whole = i32x4.add(fourSums(plain64<P>(v, x, 0, mask), plain64<P>(blockBytes<P>(w, v, 1), x + 64, 1, mask)), v128.load(sums + at));
+  const v = v128.load(w), u = blockBytes<P>(w, v, 1);
+  const x0 = v128.load(x), x1 = v128.load(x, 16), x2 = v128.load(x, 32), x3 = v128.load(x, 48);
+  const c0 = codesOf<P>(v, 0, 0, mask), c1 = codesOf<P>(v, 0, 1, mask), c2 = codesOf<P>(v, 0, 2, mask), c3 = codesOf<P>(v, 0, 3, mask);
+  const y0 = v128.load(x, 64), y1 = v128.load(x, 80), y2 = v128.load(x, 96), y3 = v128.load(x, 112);
+  const e0 = codesOf<P>(u, 1, 0, mask), e1 = codesOf<P>(u, 1, 1, mask), e2 = codesOf<P>(u, 1, 2, mask), e3 = codesOf<P>(u, 1, 3, mask);
+  const integers = sums16(low16(x0, x1, x2, x3, c0, c1, c2, c3), high16(x0, x1, x2, x3, c0, c1, c2, c3),
+                          low16(y0, y1, y2, y3, e0, e1, e2, e3), high16(y0, y1, y2, y3, e0, e1, e2, e3));
+  const whole = i32x4.add(integers, v128.load(sums + at));
   return f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d));
 }
 // (T533: the float16 scales as matmul_t2r reads them)
