@@ -149,6 +149,8 @@ def main():
     # eager attention, the one that caps them (as tests/reference_gemma2.py loads it)
     capped = json.loads((Path(original) / "config.json").read_text()).get("attn_logit_softcapping")
     eager = {"attn_implementation": "eager"} if capped else {}
+    if args.by_layer and capped:  # (reference_llama.ByLayer builds its layer from the config: not the eager one)
+        sys.exit(f"{args.model}: config.json caps the attention's scores ({capped}), which --by-layer does not hold to transformers'")
     if args.by_layer:
         import reference_llama
         model = reference_llama.ByLayer(original)
@@ -169,7 +171,7 @@ def main():
     print(f"start_check {args.model}: {len(ids)} tokens of about {characters:.0f} characters, windows of {window}, "
           f"{type(model).__name__} {'held as ' + str(held) + ', every product' if args.stored else 'a layer at a time,' if args.by_layer else ''} in float32 from "
           f"{source['repo']}@{source['revision'][:8]}; the page's BOS {bos} {piece(bos)!r}, "
-          f"stops {options.get('stop_tokens')}", flush=True)
+          f"stops {options.get('stop_tokens')}; attention {getattr(model.config, '_attn_implementation', None)}", flush=True)
     windows = [window_ids for window_ids in (ids[i:i + window] for i in range(0, len(ids), window)) if len(window_ids) >= 64]
     totals, scored = score_by_layer(model, windows, starts) if args.by_layer else score(model, windows, starts, stored=args.stored)
     per_character = characters * scored / len(ids)  # the characters the scored targets stand for
