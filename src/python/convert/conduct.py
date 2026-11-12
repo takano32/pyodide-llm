@@ -315,10 +315,11 @@ def tokenized(hf, weights, config, make):
             # model's own file comes before (a Llama's, a Mistral's: read as it was). Read where no candidate after
             # it will do (CAT-Translate 7B: no such file)
             later = later or (tokenizer, candidate)
-        except Only:
+        except Only as error:
             # T659: a tokenizer.json whose added tokens (the format's marks) the model's other tokenizers lack: its
-            # refusal is the one said, and no other is read in its place
-            raise
+            # refusal is the one said, and no other is read in its place. A plain ValueError past here: the worker
+            # tells a visitor the sentence of a ValueError by Pyodide's type of the exception, "Only" is none
+            raise ValueError(*error.args) from None
         except Exception as error:  # (whatever it was refused with: the next candidate may do)
             refusal = refusal or error
     if later:

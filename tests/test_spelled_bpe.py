@@ -412,8 +412,11 @@ def test_the_conduct_reads_no_other_tokenizer_after_one_with_marks_of_its_own(mo
     anyones = {key: value for key, value in HF.items() if key != "tokenizer"}
     hub = Hub(repository({"tokenizer.json": b"marked, unreadable", "tokenizer.model": b"the model's own"}), anyones)
     stand_in, told = StandIn().into(monkeypatch), []
-    with pytest.raises(Only, match="tokenizer.json is of a kind the engine does not read"):
+    with pytest.raises(ValueError, match="tokenizer.json is of a kind the engine does not read") as refused:
         answered(hub, conduct(anyones), told)
+    # (the worker says a visitor the sentence of a ValueError by Pyodide's `type` of it, the name of its own class: an
+    # Only that crossed would be told with its traceback)
+    assert type(refused.value) is ValueError
     assert [request[2] for request in told if request[0] == "bytes"] == ["tokenizer.json"]
     assert [line for line in stand_in.handed if line.startswith("Conversion(")][-1].endswith(": refused alone")
 
