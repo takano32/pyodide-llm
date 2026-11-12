@@ -119,6 +119,7 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T255](T255.md) [追加][CPU][WebGPU] SmolLM3（4 層に 1 つ RoPE を使わない層） — 2026-10-08
 - [T256](T256.md) [追加][解析分割] Mistral の新しいトークナイザと Phi-4 の前分割（大文字と小文字の種類を分ける型 2 つ） — 2026-11-12
 - [T257](T257.md) [追加][変換] tokenizer.json の sentencepiece 流の BPE を読む（CAT-Translate 7B、Gemma 4 の前提） — 2026-10-14
+- [T258](T258.md) [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 2026-11-12
 - [T260](T260.md) [追加][CPU] LFM2.5（畳み込みの層と attention の層）を CPU で: 350M と 1.2B-JP を一覧に — 2026-10-02
 - [T261](T261.md) [追加][CPU][WebGPU] Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓・2 つの RoPE） — 2026-11-12
 - [T262](T262.md) [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 2026-10-02
