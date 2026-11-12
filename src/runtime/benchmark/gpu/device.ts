@@ -231,36 +231,41 @@ function quantizer(io: Vectors, n: number): { dispatch: Dispatch; owned: GPUBuff
 // x, workgroups y, workgroups z] each. kind "batched" or a tiled one (kindOf): by io.tokens vectors at once (x and y
 // hold them io.xStride and io.yStride floats apart); add: the products added to what y holds (the residual stream of
 // the model's layers), for the checks
-function matrix([rows, n]: Shape, io: Vectors, kind: Kind = "widen", data?: Weights, { add = false, chunk }: { add?: boolean; chunk?: number } = {}): Bound {
-  const held = placed([rows, n], io, data, { add, chunk });
+function matrix([rows, n]: Shape, io: Vectors, kind: Kind = "widen", data?: Weights, { add = false, chunk, ternary = false }: Placing = {}): Bound {
+  const held = placed([rows, n], io, data, { add, chunk, ternary });
   return { ...bound(held, io, kind), owned: held.owned, bytes: held.bytes };
 }
 // the weights of a matrix on the GPU, in chunks of rows that each fit a binding, with each chunk's Shape (T149: placed
 // once and bound by every shader of a matrix × vector). T624.2: a chunk's first row is a multiple of CHUNK_ROWS (the
 // engine's texts write their rows from y's binding on, which starts on a binding's alignment, 256 bytes at most)
-const CHUNK_ROWS = 64;
-function placed([rows, n]: Shape, io: Vectors, data?: Weights, { add = false, chunk }: { add?: boolean; chunk?: number } = {}): Placed {
-  const words = n / 4, perRow = n / shared.GROUP, rowBytes = n;
+// T270, ternary: the weights are ternary codes as the engine holds them (shaders/prompt.ts's TERNARY_PACKED: a row of n
+// weights n / 4 bytes, a float32 scale a group of TERNARY_GROUP; data's w the codes and s those scales), under the same
+// Shape as int8's (words and perRow of the vector's width: the ternary texts read them so)
+const CHUNK_ROWS = 64, TERNARY_GROUP = 128;
+type Placing = { add?: boolean; chunk?: number; ternary?: boolean };
+const ternaryBytes = ([rows, n]: Shape) => rows * n / 4 + (rows * n / TERNARY_GROUP) * 4;
+function placed([rows, n]: Shape, io: Vectors, data?: Weights, { add = false, chunk, ternary = false }: Placing = {}): Placed {
+  const words = n / 4, perRow = n / shared.GROUP, rowBytes = ternary ? n / 4 : n, scales = ternary ? n / TERNARY_GROUP : perRow;
   const fit = Math.floor(Math.min(shared.device.limits.maxStorageBufferBindingSize, shared.device.limits.maxBufferSize) / rowBytes);
   const most = chunk ?? (fit >= rows ? rows : Math.max(CHUNK_ROWS, Math.floor(fit / CHUNK_ROWS) * CHUNK_ROWS));
   const chunks: Placed["chunks"] = [], owned: GPUBuffer[] = [];
   for (let first = 0; first < rows; first += most) {
     const count = Math.min(most, rows - first);
-    const w = buffer(count * rowBytes), s = buffer(count * perRow * 4), shape = buffer(48, UNIFORM | COPY_DST);
+    const w = buffer(count * rowBytes), s = buffer(count * scales * 4), shape = buffer(48, UNIFORM | COPY_DST);
     owned.push(w, s, shape);
     if (data) {
       shared.device.queue.writeBuffer(w, 0, data.w, first * rowBytes, count * rowBytes);
-      shared.device.queue.writeBuffer(s, 0, data.s, first * perRow, count * perRow);
+      shared.device.queue.writeBuffer(s, 0, data.s, first * scales, count * scales);
     } else {
       fill(w, count * rowBytes);
-      shared.device.queue.writeBuffer(s, 0, floats(count * perRow, 0.002));
+      shared.device.queue.writeBuffer(s, 0, floats(count * scales, 0.002));
     }
     // the batched and tiled shaders' shape goes on with the strides of the tokens and "add", the others read four; the
     // engine's Params (T624.2) is 48 bytes, of which its "write" reads the first three (rows, words, perRow)
     shared.device.queue.writeBuffer(shape, 0, new Uint32Array([count, words, perRow, first, io.xStride ?? 0, io.yStride ?? 0, add ? 1 : 0, 0, 0, 0, 0, 0]));
     chunks.push({ w, s, shape, first, count });
   }
-  return { chunks, owned, bytes: matrixBytes([rows, n]) };
+  return { chunks, owned, bytes: ternary ? ternaryBytes([rows, n]) : matrixBytes([rows, n]) };
 }
 // the dispatches that multiply placed weights by x into y for a shader: [pipeline, bind group, workgroups x, y, z] each
 function bound({ chunks }: Pick<Placed, "chunks">, io: Vectors, kind: Kind = "widen"): { dispatches: Dispatch[] } {
@@ -472,7 +477,7 @@ async function scoped<Made>(fn: (owned: Owned[]) => Made | Promise<Made>): Promi
   return result as Made;
 }
 
-export { shared, load, MODELS, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, gpu, info, STORAGE,
+export { shared, load, MODELS, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, TERNARY_GROUP, ternaryBytes, gpu, info, STORAGE,
   COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, noise, fill, floats, pipelinesFor, promptShaders, matVecShaders,
   kindOf, quantizer, matrix, placed, bound, vectors, destroyVectors, run, argmaxOf, readBack, median, validated,
   PAIRS, DISPATCH_MS, SUBMISSION_MS, CEILING_GROUPS, FIRST_LOOPS, MOST_LOOPS, MOST_DISPATCHES, GLOBAL_BYTES, middle,

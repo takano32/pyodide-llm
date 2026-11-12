@@ -8,7 +8,8 @@
 //                                               made-up int8 model of Llama 3.2 1B's width (random weights, two
 //                                               layers), one token at a time at each count of software threads, and
 //                                               a prompt's tokens 16 at a time (T108), as the GPU section does them;
-//                                               and the CPU's ceilings beside them (T163)
+//                                               and the CPU's ceilings beside them (T163); T270: the kernels of
+//                                               ternary weights beside int8's on one thread, and a rotated basis's turn
 //   { step: "line", site, hf, rates, seconds }  the line: a part of the site's model and a range of a model on
 //                                               huggingface.co, how long until the first byte and how fast; then
 //                                               huggingface.co read no faster than each of rates (MB/s)
@@ -26,7 +27,7 @@ import type { MadeName, Model } from "./madeup.ts";
 import type * as Forward from "../forward.ts";
 import type { Compiled, Spawn } from "../forward.ts";
 import type { Built } from "../built.ts";
-import type { Alive, Answer, CpuCeiling, CpuCeilings, CpuFound, CpuRow, DeviceFound, Failed, LineFetched, LineFound, SectionsResults, Staged, ToSections } from "../contracts/benchmark.ts";
+import type { Alive, Answer, CpuCeiling, CpuCeilings, CpuFound, CpuKernelRow, CpuKernels, CpuRow, DeviceFound, Failed, LineFetched, LineFound, SectionsResults, Staged, ToSections } from "../contracts/benchmark.ts";
 // a caught value, where its words are read
 type Thrown = { name?: string; message?: string } | null | undefined;
 // a loop of the ceilings' modules, as it is called here: by numbers, for a checksum
@@ -133,7 +134,8 @@ async function cpu(counts = [1, 2, 4]): Promise<CpuFound> {
   const kernels = shared ? await kernelsOf(forward, "shared") : await kernelsOf(forward, "plain");
   if (!kernels) return { none: "no WebAssembly SIMD in this browser: the model page runs on NumPy here" };
   // T177: making the model, then each count of software threads (one only without shared memory)
-  const stages = 1 + counts.filter((asked) => shared || asked === 1).length;
+  // (T270: and the kernels of ternary weights, last)
+  const stages = 2 + counts.filter((asked) => shared || asked === 1).length;
   let done = 0;
   stage("making the model", ++done, stages);
   const model = madeUpModel();
@@ -195,9 +197,18 @@ async function cpu(counts = [1, 2, 4]): Promise<CpuFound> {
     engine.release();
     ceilings?.stop();
   }
+  // T270: the kernels of ternary weights, on the memory the model leaves (its forward pass and reading threads are done)
+  stage("the kernels of ternary weights, one thread", ++done, stages);
+  let kernelsFound: CpuKernels;
+  try {
+    kernelsFound = await kernelRows(memory, base, model.size, kernels);
+  } catch (error) {
+    unlessUpdated(error);
+    kernelsFound = { rows: [], error: failed(error) };
+  }
   const { read, dot, dotRegisters, fma } = (ceilings ?? {}) as Partial<Ceilings>;
   return { backend: engine.backend, shared, megabytes: model.size / 1e6, tokenMegabytes: tokenBytes(model, kernels) / 1e6,
-           layerWeights: layerWeights(model), rows, ceilings: ceilings ? { read, dot, dotRegisters, fma } : { error: ceilingsFailed } };
+           layerWeights: layerWeights(model), rows, ceilings: ceilings ? { read, dot, dotRegisters, fma } : { error: ceilingsFailed }, kernels: kernelsFound };
 }
 
 // what a token reads: the checkpoint, and with relaxed SIMD matmul_q8r's corrections too (an int32 for each group of
@@ -394,6 +405,96 @@ function dotRegistersSum(n: number) {
   for (let i = 0; i < n % 256; i++) sum += int8(3 + i);
   const start = 4 * 28000 + 8 * 6;  // the accumulators' lanes: 1000k + j, k 0 to 7, j 0 to 3
   return (start + Math.imul(32 * 20, sum | 0)) | 0;
+}
+
+// ---- T270: the kernels of ternary weights (T231, Ternary Bonsai's) beside int8's, one thread, on a matrix of Llama 3.2
+// 1B's w1 (the GPU section's shape): a token (matmul_t2r with relaxed SIMD and matmul_t2 without, T275, against
+// matmul_q8r and matmul_q8) and a prompt's KERNEL_TOKENS tokens at once (the tiles, relaxed SIMD only: matmul_t2r_tile
+// against matmul_q8r_tile); and the turn of a rotated basis (T237, Ternary Bonsai 2 27B's: rotate, its blocks of 1024
+// on the widths the 27B's matrices read). On the made-up model's memory after its rows (nothing new is reserved: T96),
+// its weights' bytes overwritten: copies of each matrix up to KERNEL_BYTES, read in turn so that no cache holds them,
+// as a token reads its weights once. Timed as the ceilings are (paired(): 2n passes less n); a pass's output must be
+// finite numbers (its check: the kernels' numbers are their tests', tests/ternary-check.ts and others).
+const KERNEL_SHAPE: [rows: number, n: number] = [8192, 2048], KERNEL_TOKENS = 16, KERNEL_BYTES = 64e6;
+const ROTATED: [width: number, block: number][] = [[5120, 1024], [17408, 1024]];
+type Exports = Record<string, (...numbers: number[]) => number | void>;
+async function kernelRows(memory: WebAssembly.Memory, base: number, size: number, kernels: Compiled): Promise<CpuKernels> {
+  const [rows, n] = KERNEL_SHAPE, groups = (rows * n) / GROUP;
+  const plain = new WebAssembly.Instance(kernels.plain, { env: { memory } }).exports as Exports;
+  const relaxed = kernels.relaxed ? new WebAssembly.Instance(kernels.relaxed, { env: { memory } }).exports as Exports : null;
+  const U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer), H = new Uint16Array(memory.buffer);
+  const align = (at: number) => Math.ceil(at / 64) * 64;
+  let top = align(base);
+  const take = (bytes: number) => {
+    const at = top;
+    top = align(top + bytes);
+    return at;
+  };
+  // the activations: KERNEL_TOKENS of n floats, and each token's frame of its values quantized (n bytes) and its
+  // groups' scales and sums (8 bytes a group of 32: ternary's interleaved form has both), three times: int8's for
+  // relaxed SIMD (7 bits with a bias), int8's without, ternary's
+  const frame = align(n + (n / GROUP) * 8), x = take(KERNEL_TOKENS * n * 4), out = take(KERNEL_TOKENS * rows * 4);
+  const [q8r, q8, t2] = [take(KERNEL_TOKENS * frame), take(KERNEL_TOKENS * frame), take(KERNEL_TOKENS * frame)];
+  for (let i = 0; i < KERNEL_TOKENS * n; i++) F[x / 4 + i] = (Math.random() - 0.5) * 4;
+  for (let t = 0; t < KERNEL_TOKENS; t++) {
+    const from = x + t * n * 4;
+    plain.quantize_x(q8r + t * frame, q8r + t * frame + n, from, n, 64);
+    plain.quantize_x(q8 + t * frame, q8 + t * frame + n, from, n, 0);
+    plain.quantize_x(t2 + t * frame, t2 + t * frame + n, from, n, 0);
+    plain.interleave(t2 + t * frame, t2 + t * frame + n, n);
+  }
+  // the matrices: int8 (values, a float32 scale a group of 32, and relaxed SIMD's correction a group) and ternary (codes,
+  // a float16 scale a group of 128), as many copies of each as fit KERNEL_BYTES and the room there is
+  const int8Bytes = rows * n + groups * 8, ternaryBytes = rows * n / 4 + (rows * n / 128) * 2;
+  const room = base + size - top, copiesOf = (bytes: number) => Math.max(1, Math.min(Math.ceil(KERNEL_BYTES / bytes), Math.floor(room / 2 / (bytes + 64))));
+  const noise = new Uint8Array(1 << 16);
+  const random = (at: number, bytes: number) => {
+    for (let i = 0; i < bytes; i += noise.length) U.set(crypto.getRandomValues(noise).subarray(0, Math.min(noise.length, bytes - i)), at + i);
+  };
+  const int8 = [...Array(copiesOf(int8Bytes))].map(() => {
+    const w = take(rows * n), s = take(groups * 4), c = take(groups * 4);
+    random(w, rows * n);
+    F.fill(1 / (64 * Math.sqrt(n)), s / 4, s / 4 + groups);
+    plain.int8_sums(c, w, groups);
+    return { w, s, c };
+  });
+  const ternary = [...Array(copiesOf(ternaryBytes))].map(() => {
+    const w = take(rows * n / 4), s = take((rows * n / 128) * 2);
+    random(w, rows * n / 4);
+    H.fill(0x2000, s / 2, s / 2 + rows * n / 128);  // 2^-7, a float16
+    return { w, s };
+  });
+  if (top > base + size) throw new Error(`the kernels' rows need ${((top - base) / 1e6).toFixed(0)} MB, past the model's ${(size / 1e6).toFixed(0)}`);
+  const finite = (tokens: number) => F.subarray(out / 4, out / 4 + tokens * rows).every(Number.isFinite);
+  // a row: n passes of pass(copy) on the copies in turn
+  const row = async (kernel: string, weights: CpuKernelRow["weights"], isRelaxed: boolean, tokens: number, copies: number, bytes: number, values: number,
+    pass: ((copy: number) => unknown) | null, right: () => boolean = () => finite(tokens)): Promise<CpuKernelRow> => {
+    const made = { kernel, weights, relaxed: isRelaxed, tokens, values, bytes, copies };
+    if (!pass) return { ...made, none: "no relaxed SIMD in this browser" };
+    const r = await attempt(() => paired(timed((count) => {
+      for (let i = 0; i < count; i++) pass(i % copies);
+    }), right));
+    return { ...made, ...r };
+  };
+  const k = relaxed;
+  const all: CpuKernelRow[] = [
+    await row("matmul_q8r", "int8", true, 1, int8.length, int8Bytes, rows * n, k && ((c) => k.matmul_q8r(out, q8r, q8r + n, int8[c].w, int8[c].s, int8[c].c, n, 0, rows))),
+    await row("matmul_t2r", "ternary", true, 1, ternary.length, ternaryBytes, rows * n, k && ((c) => k.matmul_t2r(out, t2, t2 + n, ternary[c].w, ternary[c].s, n, 0, rows, 3))),
+    await row("matmul_q8", "int8", false, 1, int8.length, int8Bytes, rows * n, (c) => plain.matmul_q8(out, q8, q8 + n, int8[c].w, int8[c].s, n, 0, rows)),
+    await row("matmul_t2", "ternary", false, 1, ternary.length, ternaryBytes, rows * n, (c) => plain.matmul_t2(out, t2, t2 + n, ternary[c].w, ternary[c].s, n, 0, rows, 3)),
+    await row("matmul_q8r_tile", "int8", true, KERNEL_TOKENS, int8.length, int8Bytes, rows * n,
+      k && ((c) => k.matmul_q8r_tile(out, q8r, q8r + n, int8[c].w, int8[c].s, int8[c].c, n, 0, rows, KERNEL_TOKENS, rows * 4, frame))),
+    await row("matmul_t2r_tile", "ternary", true, KERNEL_TOKENS, ternary.length, ternaryBytes, rows * n,
+      k && ((c) => k.matmul_t2r_tile(out, t2, t2 + n, ternary[c].w, ternary[c].s, n, 0, rows, KERNEL_TOKENS, rows * 4, frame, 3)))];
+  // the turn of a rotated basis, in place on the first floats of the output (its signs ±1 / sqrt(block) in front)
+  for (const [width, block] of ROTATED) {
+    const signs = take(width * 4);
+    for (let i = 0; i < width; i++) F[signs / 4 + i] = (Math.random() < 0.5 ? -1 : 1) / Math.sqrt(block);
+    F.set(F.subarray(x / 4, x / 4 + Math.min(width, KERNEL_TOKENS * n)), out / 4);
+    const right = () => F.subarray(out / 4, out / 4 + width).every(Number.isFinite);
+    all.push(await row(`rotate, ${width} values in blocks of ${block}`, "rotate", false, 1, 1, width * 8, width, () => plain.rotate(out, out, signs, width, block), right));
+  }
+  return { shape: KERNEL_SHAPE, rows: all };
 }
 
 // ---- the line. A fetch read to its end, or read no faster than rate (MB/s): each piece is taken only when the bytes

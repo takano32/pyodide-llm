@@ -677,4 +677,6 @@ ${FUSED_WRITES[output].write}
 }`;
 };
 
-export { FUSED_INPUTS, FUSED_OUTPUTS, mulMatVecMain };
+// (T270: FUSED_PARAMS and FUSED_WRITES to matvec.ts too, whose ternary text without its codes made signed, /benchmark/'s
+// alone, is bound and written as fusedDp4aMatVec's "write")
+export { FUSED_INPUTS, FUSED_OUTPUTS, mulMatVecMain, FUSED_PARAMS, FUSED_WRITES };

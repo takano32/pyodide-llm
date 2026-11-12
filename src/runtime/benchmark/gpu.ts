@@ -32,6 +32,9 @@
 //   { step: "ceilings" }                  T168: the device's ceilings: f32 and f16 multiply-adds (GFLOPS), dot4I8Packed
 //                                         (GOPS), reading the workgroup's memory and a storage buffer (GB/s), each a
 //                                         loop of that alone (shaders.ts), for the share of them the prompt's shaders reach
+//   { step: "ternary" }                   T270: ternary weights (T232) beside int8's: a token's matrix × vector in the
+//                                         engine's form and in the form that keeps the codes and takes the vector's sum
+//                                         off, a prompt's tile and a layer, ms each (gpu/ternary.ts)
 //   { step: "bridge", memory, rounds }    the round trip of a worker that waits with Atomics.wait and this one, which
 //                                         answers with Atomics.waitAsync (stage 1's design), in microseconds
 //
@@ -53,6 +56,7 @@ import { generate } from "./gpu/generate.ts";
 import { check } from "./gpu/check.ts";
 import { overhead, ceilings } from "./gpu/ceilings.ts";
 import { prompt } from "./gpu/prompt.ts";
+import { ternary } from "./gpu/ternary.ts";
 // T368.7: what the page asks and what it is answered (contracts/benchmark.ts): a step's result by the step's name, or
 // what failed (T643.12: a step that is none of them is answered so)
 import type { Thrown } from "./gpu/device.ts";
@@ -101,6 +105,7 @@ const STEPS: { [Name in Step]: (message: Asked<Name>) => Promise<BenchGpuResults
   overhead: () => overhead(),
   prompt: ({ counts }) => prompt(counts),
   ceilings: () => ceilings(),
+  ternary: () => ternary(),
   bridge: ({ memory, rounds }) => bridge(memory, rounds),
 };
 function stepOf<Name extends Step>(message: Asked<Name>): Promise<BenchGpuResults[Name]> | undefined {

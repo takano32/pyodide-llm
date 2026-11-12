@@ -8,6 +8,7 @@ import { matrixOf } from "../runtime/benchmark/gpu/models.ts";
 import { layerStepsTable } from "./layersteps.ts";
 import { generateTable } from "./generate.ts";
 import { overheadMarkdown, ceilingsMarkdown, promptMarkdown } from "./prompt.ts";
+import { ternaryTable } from "./ternary.ts";
 import { REASONS } from "../runtime/forward/reasons.ts";
 import type { Step } from "./cells.ts";
 import type { Result } from "./sections.ts";
@@ -56,7 +57,9 @@ export function gpuPlan({ packed, fallback }: Pick<GpuInfo, "packed" | "fallback
     { name: "what a token costs besides the weights", message: { step: "overhead" } },
     // T168: the ceilings just before the prompt, so that both are measured as warm as each other
     { name: "the device's ceilings", message: { step: "ceilings" } },
-    { name: "a prompt all at once", message: { step: "prompt", counts: PROMPT_COUNTS } }];
+    { name: "a prompt all at once", message: { step: "prompt", counts: PROMPT_COUNTS } },
+    // T270: ternary weights beside int8's (after the ceilings, which its table holds its reads against)
+    { name: "ternary weights", message: { step: "ternary" } }];
 }
 
 /** found with a step kept under its key: bandwidth and token at the end of their lists, the others in their place */
@@ -111,7 +114,8 @@ export function gpuMarkdown(found: GpuFound, bridge: Bridge, lost: string | unde
   lines.push("", ...generateTable(found.generate, check?.result, gpu));
   lines.push("", ...overheadMarkdown(found.overhead),
     "", ...ceilingsMarkdown(found.ceilings),
-    "", ...promptMarkdown(found.prompt, check?.result, ceilings, baseline, gpu, cpu));
+    "", ...promptMarkdown(found.prompt, check?.result, ceilings, baseline, gpu, cpu),
+    "", ...ternaryTable(found.ternary, ceilings, gpu));
   lines.push("", `**Bridge** (Atomics.wait ↔ Atomics.waitAsync, ${BRIDGE_ROUNDS} round trips): ${bridge.error ?? `${fixed(bridge.microseconds)} µs each`}`);
   return { markdown: lines.join("\n"), said };
 }

@@ -42,8 +42,14 @@ export type CpuCeilings = { read?: ({ threads: number } & CpuCeiling<"GBps">)[];
 // a row of the CPU's table: a count of software threads asked for, and what it measured (none: why it did not)
 export type CpuRow = { asked: number; threads: number; none: string; msPerToken?: undefined; GBps?: undefined; finite?: undefined; promptMsPerToken?: undefined }
   | { asked: number; threads: number; msPerToken: number; GBps: number; promptMsPerToken: number; finite: boolean; none?: undefined };
-export type CpuFound = { none: string; rows?: undefined; ceilings?: undefined }
-  | { backend: string; shared: boolean; megabytes: number; tokenMegabytes: number; layerWeights: number; rows: CpuRow[]; ceilings: CpuCeilings; none?: undefined };
+// T270: a kernel on one thread: the weights it multiplies (or the values a rotated basis turns), their bytes and the copies
+// read in turn, the tokens of a pass, and its time as a ceiling's (ms of passes passes), or none (why it cannot run
+// here) or error
+export type CpuKernelRow = { kernel: string; weights: "int8" | "ternary" | "rotate"; relaxed: boolean; tokens: number; values: number; bytes: number; copies: number;
+  ms?: number; passes?: number; ratio?: number; unsteady?: boolean; none?: string; error?: string; cutShort?: boolean };
+export type CpuKernels = { shape?: [rows: number, n: number]; rows: CpuKernelRow[]; error?: string };
+export type CpuFound = { none: string; rows?: undefined; ceilings?: undefined; kernels?: undefined }
+  | { backend: string; shared: boolean; megabytes: number; tokenMegabytes: number; layerWeights: number; rows: CpuRow[]; ceilings: CpuCeilings; kernels?: CpuKernels; none?: undefined };
 // a fetch of the line, measured, or what failed
 export type LineFetched = { status: number; headersMs: number; firstByteMs: number; bytes: number; MBps: number; error?: undefined }
   | { error: string; status?: undefined; headersMs?: undefined; firstByteMs?: undefined; bytes?: undefined; MBps?: undefined };
@@ -72,7 +78,7 @@ export type Waited = { microseconds: number };
 export type GpuModel = "llm-jp-3 150M" | "Llama 3.2 1B" | "Llama 3.2 3B";
 export type ToBenchGpu = { step: "info" } | { step: "check" } | { step: "bandwidth"; shape: [rows: number, n: number] }
   | { step: "token"; model: GpuModel; kind?: "widen" | "packed"; sample?: boolean } | { step: "layer" } | { step: "layer steps" } | { step: "generate" }
-  | { step: "overhead" } | { step: "prompt"; counts?: number[] } | { step: "ceilings" } | { step: "bridge"; memory: SharedArrayBuffer; rounds: number };
+  | { step: "overhead" } | { step: "prompt"; counts?: number[] } | { step: "ceilings" } | { step: "ternary" } | { step: "bridge"; memory: SharedArrayBuffer; rounds: number };
 // the adapter: whether a worker has WebGPU at all, and what the adapter says of itself
 export type GpuAbout = { adapter: string; fallback: boolean | null; maxStorageBufferBindingSize: number; maxBufferSize: number; maxComputeWorkgroupsPerDimension: number;
   maxComputeWorkgroupStorageSize: number; maxComputeInvocationsPerWorkgroup: number; subgroupSizes: [number, number] | null; features: string[]; wgsl: string[]; packed: boolean };
@@ -135,10 +141,16 @@ export type SamplingAlone = SamplingTimed & { over: number; chunks: SamplingTime
 export type GenerateFound = { model: string; layer: string; layers: number; vocab: number; GB: number; dispatches: number; chunkDispatches: number; tokens: number;
   settings: { temperature: number; topp: number; penalty: number }; work?: TokenWork; chunkWork?: TokenWork;
   rows: { perSubmission: number; msPerToken: number; fixedMs?: number; chunks: number }[]; sampling?: SamplingAlone & { vocab: number; flat: SamplingAlone } };
+// T270: ternary weights beside int8's, a row a form of a table (what: a token's matrix × vector, a prompt's tile, a
+// layer of a token): the shape it ran on, its weights and the bytes they take (a dispatch's, of tokens tokens), and ms a
+// dispatch where it ran (none: why it cannot run here; wrong: the check found it wrong; error: what failed)
+export type TernaryRow = { what: "matrix" | "tile" | "layer"; form: string; ternary: boolean; shape: string; tokens: number; weights?: number; bytes?: number;
+  copies?: number; layerDispatches?: number; none?: string; wrong?: string; error?: string; ms?: number; dispatches?: number; ratio?: number; unsteady?: boolean };
+export type TernaryFound = { rows: TernaryRow[]; pos?: number; none?: string };
 // the bridge: whether this worker has Atomics.waitAsync to answer the waiter with
 export type Bridged = { waitAsync: boolean };
 export type BenchGpuResults = { info: GpuInfo; check: Verdicts; bandwidth: Bandwidth; token: TokenFound; layer: LayerFound; "layer steps": LayerStepsFound;
-  generate: GenerateFound; overhead: Overhead; prompt: PromptFound; ceilings: GpuCeilings; bridge: Bridged };
+  generate: GenerateFound; overhead: Overhead; prompt: PromptFound; ceilings: GpuCeilings; ternary: TernaryFound; bridge: Bridged };
 // what a worker's steps are asked and answer, by the worker: for the page's ask()
 export type Asked = { "benchmark/sections.js": { to: ToSections; results: SectionsResults }; "benchmark/storage.js": { to: ToStorage; results: StorageResults };
   "benchmark/memory.js": { to: ToMemory; results: MemoryResults }; "benchmark/gpu.js": { to: ToBenchGpu; results: BenchGpuResults } };

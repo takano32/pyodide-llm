@@ -448,6 +448,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **GPU の節の段は表**（`gpuPlan()`・`STEPS`）: 段を足すなら契約の `ToBenchGpu` と `BenchGpuResults`、`STEPS`、`gpuPlan()` に 1 行ずつ。
 - **報告の URL は 7,000 文字まで**（超えると return_to が黙って落ちる）。**ページに失敗を書くときは WRONG・failed・unsteady・skipped のどれかの語を入れる**（`warnings()` が拾う）。**Worker に答えでない知らせを足すときは、`ask()` の除く条件に入れる**。
 - **GPU の節の計測は n と 2n の差で取り、形を交互に測る**。**ビット一致を求めてはいけない**（WGSL は並べ替えを許す）。端末の機能はエンジンの `deviceFeatures()` で読む（組ごとの形は `tests/bench-features-check.ts`）。行列 × ベクトルの 2 つはエンジンの文そのもので、**T624.2 より前の報告のこの 2 つの数とは比べない**。
+- **3 値の行（T270）**: GPU の節の最後の段 `ternary`（行列 × ベクトルの 2 つの形・タイル・層を int8 と交互に）と CPU の節の最後のカーネルの表。符号を 0・1・2 のまま −Σa を引く形はベンチだけの文 `TERNARY_SUMS_MATVEC`（目録に足さない: 端末の鍵が動く）。どちらが速いかは端末の報告で決める。ベンチのワーカーで `fusedDp4aMatVec` に `"ternary"` を頼んでよいのは `gpu/ternary.ts` だけ。
 - **メモリを言わない端末は NumPy のラウンドを飛ばす**（iPhone でタブを落とした）。
 - **節は止まっても次へ進む**（節の Worker が 5 分何も言わなければ failed）。節の進みの知らせは `{stage, at, of}`。実行中は Screen Wake Lock を頼み、隠れていた秒は報告の頭に 1 行。
 - **「GPU ÷ CPU」は CPU の節の実測と比べる**。デバイスを失った後・フォールバックのアダプタ・WRONG の形では比を出さない。**モデルの節はページの本当の経路を測る**。

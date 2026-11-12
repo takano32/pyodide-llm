@@ -1,7 +1,7 @@
 // The CPU section's table (T134, T158), and what it leaves for the model page to estimate a CPU's speed from (T157).
 // (T353: a part of src/bench.ts, which is the window that exports every name of these)
-import { number, tableCell, unmeasured } from "./cells.ts";
-import type { Answer, CpuCeilings, CpuFound, CpuRow } from "../runtime/contracts/benchmark.ts";
+import { number, times, tableCell, unmeasured } from "./cells.ts";
+import type { Answer, CpuCeilings, CpuFound, CpuKernelRow, CpuKernels, CpuRow } from "../runtime/contracts/benchmark.ts";
 import { STATE } from "./sections.ts";
 import type { Result } from "./sections.ts";
 
@@ -76,12 +76,52 @@ export function cpuTable(r: CpuMeasured): string[] {
     "Reading alone reads the model's weights above, a megabyte at a time taken in turn by the threads. " +
     "relaxed_dot with its two loads reads 8 KB that stay in the first cache, a weight and an activation for each dot, as the one-token kernel (matmul_q8r) does. " +
     "On registers alone it is the instruction's own rate, which no kernel that loads its weights and tokens reaches; a prompt's tiles, with half a load of data for each dot, lie between the two.");
-  if (c.error) return [...lines, "", tableCell(unmeasured(c.error))];
-  lines.push("", "| loop | software threads | ceiling |", "|---|---:|---:|",
-    ...(c.read ?? []).map((one) => `| reading alone | ${one.threads} | ${ceiling(one, "GBps", "GB/s")} |`),
-    `| relaxed_dot with its two loads (int8) | 1 | ${ceiling(c.dot, "GMACs", "G MAC/s")} |`,
-    `| relaxed_dot, registers only | 1 | ${ceiling(c.dotRegisters, "GMACs", "G MAC/s")} |`,
-    `| f32 multiply + add, registers only | 1 | ${ceiling(c.fma, "GMACs", "G MAC/s")} |`);
+  if (c.error) lines.push("", tableCell(unmeasured(c.error)));
+  else {
+    lines.push("", "| loop | software threads | ceiling |", "|---|---:|---:|",
+      ...(c.read ?? []).map((one) => `| reading alone | ${one.threads} | ${ceiling(one, "GBps", "GB/s")} |`),
+      `| relaxed_dot with its two loads (int8) | 1 | ${ceiling(c.dot, "GMACs", "G MAC/s")} |`,
+      `| relaxed_dot, registers only | 1 | ${ceiling(c.dotRegisters, "GMACs", "G MAC/s")} |`,
+      `| f32 multiply + add, registers only | 1 | ${ceiling(c.fma, "GMACs", "G MAC/s")} |`);
+  }
+  if (r.kernels) lines.push("", ...kernelsTable(r.kernels, readAt(1)));
+  return lines;
+}
+
+/**
+ * T270: the kernels of ternary weights beside int8's, one thread (kernels: the worker's rows, each timed as a ceiling
+ * is): a pass's ms, the weights it multiplies a second (times its tokens: a multiply-add each), the GB/s of the weights
+ * and scales it reads with their share of reading alone on one thread (read: that ceiling, where it was steady), and how
+ * many times as fast as the int8 kernel of the same tokens and SIMD; and the turn of a rotated basis, µs a call.
+ */
+export function kernelsTable(kernels: CpuKernels, read?: number): string[] {
+  const [rows, n] = kernels.shape ?? [0, 0];
+  const lines = ["**Kernels of ternary weights** (T270): one thread, on a matrix of Llama 3.2 1B's w1" + (rows ? ` (${rows} × ${n})` : "") +
+    ", ternary (two bits a weight and a float16 scale a group of 128, Ternary Bonsai's) beside int8 (a byte a weight and a float32 scale a group of 32). " +
+    "A token is one pass over the matrix; a prompt's tile takes 16 tokens a pass, each row read once for four tokens. " +
+    "Each matrix is read from copies of it that make 64 MB in turn, as a token reads its weights once, and each row is timed as the ceilings are (2n passes less n). " +
+    "G weights/s counts a multiply-add for each weight and token; GB/s the weights and scales read" +
+    `${read ? `, with its share of reading alone on one thread (${number(read)} GB/s)` : ""}; × int8, how many times as fast as the int8 kernel beside it. ` +
+    "The last rows turn a vector of Ternary Bonsai 2 27B's rotated basis (T237: the signs, then a Walsh-Hadamard transform of each block), once for each matrix that reads it.", ""];
+  if (kernels.error) return [...lines, tableCell(unmeasured(kernels.error))];
+  const measured = (row: CpuKernelRow | undefined) => (row && row.ms! > 0 && row.passes ? row : undefined);
+  const each = (row: CpuKernelRow) => row.ms! / row.passes!;
+  lines.push("| kernel | weights | relaxed SIMD | tokens a pass | ms a pass | G weights/s | GB/s | × int8 |", "|---|---|---|---:|---:|---:|---:|---:|");
+  for (const row of kernels.rows) {
+    const head = `| ${row.kernel} | ${row.weights === "rotate" ? "" : row.weights} | ${row.relaxed ? "yes" : "no"} | ${row.weights === "rotate" ? "" : row.tokens}`;
+    if (row.none || row.error) {
+      lines.push(`${head} | ${tableCell(row.none ?? `failed: ${row.error}`)} | | | |`);
+      continue;
+    }
+    const seconds = each(row) / 1000, GBps = row.bytes / seconds / 1e9;
+    if (row.weights === "rotate") {
+      lines.push(`${head} | ${row.unsteady ? "unsteady: " : ""}${number(each(row) * 1000, 2)} µs a call | | | |`);
+      continue;
+    }
+    const int8 = measured(kernels.rows.find((one) => one.weights === "int8" && one.relaxed === row.relaxed && one.tokens === row.tokens));
+    lines.push(`${head} | ${row.unsteady ? "unsteady: " : ""}${number(each(row), 3)} | ${number((row.values * row.tokens) / seconds / 1e9)} | ` +
+      `${number(GBps)}${read ? ` (${number((100 * GBps) / read, 0)}%)` : ""} | ${row.weights === "ternary" && int8 ? times(each(int8) / each(row)) : ""} |`);
+  }
   return lines;
 }
 

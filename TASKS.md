@@ -516,8 +516,16 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 状態: 未着手（2026-10-09、T355 の手元の確かめから。本線も同じ。規模 小）
 - Chrome の Issues が「Interactive element inside of a <summary> element」と言う。押すと内訳が開閉するのと種を固定するのが重なる。見た目のタスクなので `preview.yml` で前後を撮る。
 
-### T270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 状態: 未着手（2026-10-02、T232 から。規模 小〜中）
+### T270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 状態: 進行中（2026-10-02、T232 から。規模 小〜中）
 - GPU の節に 3 値の行列 × ベクトル（符号を −1・0・+1 に直す今の形と、0・1・2 のまま −Σa を引く形を並べる）・タイル・層、CPU の節に 3 値のカーネルと回転の行。どちらの形が速いかは未計測で、端末の報告で決める。`public/benchmark/gpu.js` は T232 では触っていない。
+- **実装（2026-11-12、ブランチ `t270-ternary-bench`）**: 測って出すだけで、エンジンの形は変えない（目録 `shaders/engine.ts` の行も文も触らない: 端末の鍵は同じ）。
+  - **GPU の節の最後の段 `ternary`**（`src/runtime/benchmark/gpu/ternary.ts`）: (1) 答えのステップの行列 × ベクトルを 3 つの形で交互に（int8 のエンジンの DP4A、3 値のエンジンの文、3 値の −Σa の形）、形は Llama 3.2 1B の w1（帯域の段と同じ）と Ternary Bonsai 8B の w1（12288 × 4096）。(2) プロンプトのタイル（エンジンの `promptForms` の DP4A 64×64 を int8 と 3 値で、subgroups があれば両方、64 トークン、1B の w1）。(3) 層（T175 の融合した DP4A の層を int8 と 3 値で、1B の幅、位置 127）。どれも重みの写しを 128 MiB ぶん順に読み、n と 2n の差で交互に（`interleaved()`）。
+  - **−Σa の形はベンチだけの文** `shaders/matvec.ts` の `TERNARY_SUMS_MATVEC`（取りまとめ役の決め・訳: 元は ORT の DP4A small M = エンジンの `fusedDp4aMatVec` の "write" と同じ束縛と書き出しで、符号の展開は Prism ML の fork の 2 行（`ternary_codes()`、足し算と xor なし）。ベクトルを workgroup のメモリに読む所で 16 個ずつの和を `dot4I8Packed(·, 0x01010101)` で作り、各スレッドは自分の 32 個の和を段ごとに 1 回読んで行ごとに `dot − Σa` を引く。T232 の見積もりの「ワークグループのメモリの読み 2 つ・足し算・引き算」の形）。著作権の行は ORT と ggml の 2 つを `/*! */` で。`fused.ts` は `FUSED_PARAMS`・`FUSED_WRITES` を隣に出すだけ（文は同じ）。
+  - **正しさ**: 3 値の 2 つの行列 × ベクトルとタイルを JavaScript と比べる `checkTernary()` を段 `check` からも呼ぶ（CI の SwiftShader の `bench.yml` で正しさが分かる）。比べは `checkMatVec`・`checkTiled` と同じ線（`TILED_LINE`、`tiledOff()` に `group: 128`）、幅 640 と 2176、301 行を 128 行の塊で、番兵つき。WRONG の形は測らない。層は検査しない（行列の読みは行列 × ベクトルの検査が、層まるごとは gpu-check が持つ）。
+  - **CPU の節の最後**（`sections.ts` の `kernelRows()`、表は `src/bench/cpu.ts` の `kernelsTable()`）: 1 本で、1B の w1 の形の `matmul_t2r`・`matmul_t2`（T275 の後の形）・`matmul_t2r_tile`（16 トークン）を `matmul_q8r`・`matmul_q8`・`matmul_q8r_tile` と並べ、回した基底の `rotate`（27B の幅 5120 と 17408、塊 1024）を µs で。作り物のモデルのメモリの重みの所を書き潰して使う（新しいメモリを取らない: T96）。写しは 64 MB ぶん。
+  - **ページに見える文**（取りまとめ役の決め: 今の行に倣った案。英語）: GPU の表の題「**Ternary weights** (T270): …」と列「table | shape | form | ms | G weights/s | GB/s | × int8」、行の名前「int8 (engine)」「ternary, the codes made signed (engine)」「ternary, the codes as they are less Σa」、表の下の 1 行「**The codes as they are less Σa against the engine's form** (above 1×: faster than the engine's here): …」、要約の 1 行「GPU, ternary weights: the codes as they are less Σa against the engine's form …」、段の進みの名前「ternary weights」。CPU の表の題「**Kernels of ternary weights** (T270): …」と列「kernel | weights | relaxed SIMD | tokens a pass | ms a pass | G weights/s | GB/s | × int8」、回転の行「rotate, 5120 values in blocks of 1024」。
+  - **試験**: `tests/bench/ternary.ts`（表・比・要約・CPU の表を作り物の答えで）、`tests/bench/gpuplan.ts`（段の並び）、`bench-modules-check`（`"ternary"` を頼んでよいのは `gpu/ternary.ts` だけ: `TERNARY_ASKING`）。壊し方: 表の「× int8」をタイルの subgroups を見ずに最初の int8 の行と比べる形にすると `tests/bench.ts` が「0.50× !== 0.25×」で落ちた。シェーダの文は Dawn（lavapipe）でコンパイルだけ見た（`TERNARY_SUMS_MATVEC` とエンジンの 3 値の文）。
+  - 数は未計測（端末の報告で）。
 
 ### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。

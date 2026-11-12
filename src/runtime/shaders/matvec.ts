@@ -1,6 +1,7 @@
 // shaders/matvec.ts (T351): T149's matrix times one vector in the forms of public implementations that the engine has
 // no text of: llama.cpp's mul_mat_vec in its MMVQ form (the int8 dot) and ONNX Runtime's MatMulNBits, each under its
-// notice below. /benchmark/'s GPU section alone runs these two. (T624.2: the other two forms T149 measured, llama.cpp's
+// notice below. /benchmark/'s GPU section alone runs these two, and (T270) a ternary form the engine did not take,
+// TERNARY_SUMS_MATVEC (its notices beside it). (T624.2: the other two forms T149 measured, llama.cpp's
 // widened mul_mat_vec and ORT's DP4A for small M, were copies here of what the fused layer of a generated token,
 // fused.ts, is made from; /benchmark/ runs the engine's own texts of them now, fusedMatVec and fusedDp4aMatVec with the
 // output "write", and this part takes from fused.ts the start of mul_mat_vec's main() and the rows a workgroup has.
@@ -8,7 +9,7 @@
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { MUL_MAT_VEC_ROWS, mulMatVecMain } from "./fused.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVecMain, FUSED_PARAMS, FUSED_WRITES } from "./fused.ts";
 
 // ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
 // section of /benchmark/ to measure beside WIDEN and PACKED and the engine's two forms (T624.2). WIDEN and PACKED give
@@ -277,4 +278,193 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
       output[uniforms.first + b_global] = output_value;
     }
   }
+}`;
+
+// ---- T270: ternary weights (T232) times a generated token's vector, the other form T232 weighed and did not take: the
+// codes kept as they are (0, 1, 2 for -1, 0, +1) and the vector's sum taken off, as Prism ML's fork of llama.cpp and
+// this project's CPU kernel (kernels/ternary.ts, T231) do, where the engine's text (fusedDp4aMatVec's ternary,
+// prompt.ts's TERNARY_PACKED) makes every code signed as it reads it. /benchmark/'s GPU section alone runs this, beside
+// the engine's text on the same weights, so that a device says which of the two is faster (T232: not measured, and the
+// engine's choice is to be overturned where this one is faster on the owner's Android). The engine's catalogue is
+// untouched (shaders/engine.ts: the device's key holds its texts).
+// The form is the engine's fusedDp4aMatVec with the output "write" (ORT's DP4A for small M: its Params, bindings,
+// dispatch and write, so that /benchmark/ binds both alike), changed where the codes are read: a word of 16 codes
+// spread to 16 bytes of 0 to 2 (ternary_codes: TERNARY_PACKED's first two lines, without the add and the xor that make
+// them signed), their dot with the quantized vector by dot4I8Packed (the codes are below 128: signed or not, the same
+// bytes), and the vector's sum of the 32 values a thread takes off it before the scales: Σ (code - 1) a = Σ code a - Σ a.
+// The sums are made where the vector is loaded into the workgroup's memory (loadSHMA: a vec4<u32> of 16 values, its
+// sum by dot4I8Packed with 0x01010101 four times, into sum_A), and each thread reads its group's two once a step of
+// the width: the inner loop, a row's 32 weights, is then 4 vector instructions shorter (the add and the xor of two
+// words) and one subtraction longer.
+//
+// Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
+// 8, as fused.ts's fusedDp4aMatVec has it) with the parameters dp4a_matmul_nbits.cc gives it
+// (https://github.com/microsoft/onnxruntime, commit 3756d4dc, 2026-09-26), under the MIT License:
+//
+/*! Copyright (c) Microsoft Corporation
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+ * persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+ * WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+//
+// ternary_codes() is adapted from PrismML-Eng/llama.cpp, ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vecq_funcs.glsl
+// (unpack_pq2_0 and repack4; https://github.com/PrismML-Eng/llama.cpp, commit 88c4bc60), under the MIT License:
+//
+/*! Copyright (c) 2023-2026 The ggml authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+ * persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+ * WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+//
+// Changed: the four bytes of a word at once (unpack4xU8 and vec4<u32>, where the fork calls it a byte at a time), as
+// prompt.ts's TERNARY_PACKED has it. Bindings: 0 the codes, 1 their scales (a float32 a group of 128), 2 the quantized
+// vector (xq), 3 params, 4 its scales (xs), 5 the output.
+export const TERNARY_SUMS_MATVEC = /* wgsl */ `requires packed_4x8_integer_dot_product;
+${FUSED_PARAMS}
+@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32
+@group(0) @binding(1) var<storage, read> scales_b: array<f32>;       // a scale a group of 128 weights
+@group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized vector (xq)
+@group(0) @binding(3) var<uniform> params: Params;
+@group(0) @binding(4) var<storage, read> scales_a: array<f32>;       // its scales (xs), one a group of 32
+${FUSED_WRITES.write.bindings}
+
+// a word of 16 ternary codes (two bits each, the first in the lowest bits) as 16 bytes of 0 to 2, four to a u32 with
+// the first in the lowest byte
+fn ternary_codes(codes: u32) -> vec4<u32> {
+  // Move bit pairs [1:0], [3:2], [5:4], [7:6] to [1:0], [9:8], [17:16], [25:24].
+  var bits = unpack4xU8(codes);
+  bits = (bits | (bits << vec4<u32>(12u))) & vec4<u32>(0x000f000fu);
+  return (bits | (bits << vec4<u32>(6u))) & vec4<u32>(0x03030303u);
+}
+
+// the integer dot product of 32 packed int8 (SDP8AI's, before its scale)
+fn dot32(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>) -> i32 {
+  var local_sum = dot4I8Packed(a1[0], b1[0]);
+  local_sum += dot4I8Packed(a1[1], b1[1]);
+  local_sum += dot4I8Packed(a1[2], b1[2]);
+  local_sum += dot4I8Packed(a1[3], b1[3]);
+  local_sum += dot4I8Packed(a2[0], b2[0]);
+  local_sum += dot4I8Packed(a2[1], b2[1]);
+  local_sum += dot4I8Packed(a2[2], b2[2]);
+  local_sum += dot4I8Packed(a2[3], b2[3]);
+  return local_sum;
+}
+
+const workgroup_size_x = 128u;
+const tile_size = ${ORT_DP4A_MATVEC_ROWS}u;
+const tile_size_k_vec = 32u;
+const sub_tile_count = workgroup_size_x / tile_size_k_vec;
+// the writes' name (FUSED_WRITES) for the rows of a workgroup
+const OUTPUTS_PER_WG = tile_size;
+
+const double_tile_size_k_vec = 2 * tile_size_k_vec;
+
+var<workgroup> inter_results: array<array<f32, tile_size_k_vec>, tile_size>;
+var<workgroup> tile_A : array<vec4<u32>, double_tile_size_k_vec>;
+// the sum of each vec4<u32> of tile_A's 16 values: two a group of 32
+var<workgroup> sum_A : array<i32, double_tile_size_k_vec>;
+const scale_a_size_in_tile_a = double_tile_size_k_vec / 2;
+var<workgroup> scale_A : array<f32, scale_a_size_in_tile_a>;
+// what the reduction leaves: each row's sum, for the write
+var<workgroup> totals: array<f32, tile_size>;
+
+fn loadSHMA(kidx_v: u32, col: u32)
+{
+    let K16 = params.words / 4u;
+    let k_offset = kidx_v + col;
+    if (k_offset >= K16) {
+    return;
+    }
+
+    let own = a[k_offset];
+    tile_A[col] = own;
+    let ones = 0x01010101u;
+    sum_A[col] = dot4I8Packed(own[0], ones) + dot4I8Packed(own[1], ones) + dot4I8Packed(own[2], ones) + dot4I8Packed(own[3], ones);
+    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < params.perRow)
+    {
+    // kidx_v - covers 16 values of k in input_a
+    scale_A[col] = scales_a[kidx_v / 2u + col];
+    }
+}
+
+@compute @workgroup_size(workgroup_size_x)
+fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg: vec3<u32>,
+        @builtin(local_invocation_index) local_idx: u32) {
+    let workgroup_idx = wg_id.y * num_wg.x + wg_id.x;
+    let num_N_tile = (params.rows + tile_size - 1u) / tile_size;
+    if (workgroup_idx >= num_N_tile) {
+        return;
+    }
+    let K32 = params.perRow;
+    // the scales of a row of the weights: one a group of 128
+    let K128 = params.perRow / 4u;
+    let b_global_base = workgroup_idx * tile_size;
+    // Handle each workgroup threads as a block of [sub_tile_count][tile_size_k_vec]
+    let local_col = local_idx % tile_size_k_vec;
+    let local_row = local_idx / tile_size_k_vec;
+
+    for (var kidx_v:u32 = 0; kidx_v < K32; kidx_v += tile_size_k_vec)
+    {
+        // Load Phase: Populate shared memory for the workgroup.
+        if (local_idx < double_tile_size_k_vec)
+        {
+        loadSHMA(kidx_v * 2, local_idx);
+        }
+        workgroupBarrier();
+        var own_a: vec4<u32> = tile_A[local_col * 2];
+        var own_a1: vec4<u32> = tile_A[local_col * 2 + 1];
+        var own_scale_a = scale_A[local_col];
+        // the sum of the thread's 32 values of the vector, which each code's 1 too many takes once
+        let own_sum = sum_A[local_col * 2] + sum_A[local_col * 2 + 1];
+        let k_offset = kidx_v + local_col;
+        // k_offset - covers 32 values of k in input_b
+        // calculate intermediate results into inter_results.
+        for (var row_offset = 0u; row_offset < tile_size; row_offset += sub_tile_count) {
+            let b_global = b_global_base + row_offset + local_row;
+            if (b_global < params.rows && k_offset < K32)
+            {
+                let b_offset = b_global * K32 + k_offset;
+                let own_scale_b = scales_b[b_global * K128 + k_offset / 4u];
+                let codes_dot = dot32(own_a, ternary_codes(b[b_offset * 2]), own_a1, ternary_codes(b[b_offset * 2 + 1]));
+                inter_results[row_offset + local_row][local_col] += f32(codes_dot - own_sum) * (own_scale_a * own_scale_b);
+            }
+        }
+        workgroupBarrier();
+    }
+
+    if (local_idx < tile_size) {
+      // Do reduce sum to get final output.
+      var output_value = f32(0);
+      for (var b = 0u; b < tile_size_k_vec; b++) {
+        output_value += inter_results[local_idx][b];
+      }
+      totals[local_idx] = output_value;
+    }
+
+    workgroupBarrier();
+
+    let thread_id = local_idx;
+    let row_base = b_global_base;
+    let scale = 1.0;
+${FUSED_WRITES.write.write}
 }`;

@@ -15,6 +15,7 @@ import "./bench/summary.ts";
 import "./bench/warnings.ts";
 import "./bench/sections.ts";
 import "./bench/gpuplan.ts";
+import "./bench/ternary.ts";
 import "./bench/speed.ts";
 
 console.log("ok");

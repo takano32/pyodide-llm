@@ -5,6 +5,7 @@ import { shared, gpu, MAP_READ, COPY_DST, buffer, floats, promptShaders, matVecS
   vectors, destroyVectors, run, argmaxOf, readBack, validated } from "./device.ts";
 import { checkLayer, checkTokenAttentions } from "./layercheck.ts";
 import { checkSampling, checkGeneration } from "./generatecheck.ts";
+import { checkTernary } from "./ternary.ts";
 import type { Owned, Thrown } from "./device.ts";
 import type { Alive, Verdict, Verdicts } from "../../contracts/benchmark.ts";
 
@@ -51,6 +52,8 @@ async function check(): Promise<Verdicts> {
   verdicts.batched = await checkBatched(w, s, rows, n);
   Object.assign(verdicts, await checkMatVec());
   Object.assign(verdicts, await checkTiled());
+  // T270: the ternary texts of a matrix × vector and of the tiles (gpu/ternary.ts, whose step times only those found right)
+  Object.assign(verdicts, await checkTernary());
   verdicts.argmax = await checkArgmax();
   Object.assign(verdicts, await checkLayer());
   Object.assign(verdicts, await checkTokenAttentions());
