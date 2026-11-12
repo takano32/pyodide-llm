@@ -5,7 +5,7 @@
 # writes: this scores the same targets under every start, on the original in float32 with transformers.
 #
 #   python3 tests/start_check.py <model id of src/models.ts> [--also <token id> ...] [--tokens N = 1500] [--window W = 512]
-#                                [--text <file>] [--directory <where the downloads go> = .tmp/start-check] [--stored | --by-layer]
+#                                [--text <file> | --english] [--directory <where the downloads go> = .tmp/start-check] [--stored | --by-layer]
 #
 # The ids are the page's (the converter's tokenizer.bin through llama2_numpy.Tokenizer, which tests/format_check.py and
 # its sentencepiece comparisons hold to the real one), the weights are the original's at the revision the list pins
@@ -38,12 +38,14 @@ import format_check  # noqa: E402
 import llama2_numpy  # noqa: E402
 
 ARTICLES = ["富士山", "夏目漱石", "新幹線"]  # tests/wikipedia.ts's ARTICLES.ja
+# T283: the same three of the English Wikipedia (--english: a model that writes English alone, BitNet b1.58 2B4T)
+ENGLISH = ["Mount Fuji", "Natsume Sōseki", "Shinkansen"]
 
 
-def wikipedia(titles):
+def wikipedia(titles, language="ja"):
     text = ""
     for title in titles:
-        url = ("https://ja.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsectionformat=plain&format=json"
+        url = (f"https://{language}.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsectionformat=plain&format=json"
                f"&titles={urllib.parse.quote(title)}")
         pages = json.loads(fetched(url, headers={"User-Agent": "pyodide-llm start measurement"}, timeout=60))["query"]["pages"]  # (tests/fetching.py, T496)
         text += next(iter(pages.values()))["extract"][:6000] + "\n"
@@ -115,6 +117,7 @@ def main():
     parser.add_argument("--tokens", type=int, default=1500)
     parser.add_argument("--window", type=int, default=512)
     parser.add_argument("--text")
+    parser.add_argument("--english", action="store_true")
     parser.add_argument("--directory", default=str(HERE.parent / ".tmp" / "start-check"))
     # T253's review: a model whose float32 is more than a runner has (Granite 4.2 3B: 14.6 GB) is held as the original
     # stores it (bfloat16), every product in float32 (reference_llama.float32_arithmetic: the same float32 arithmetic)
@@ -128,7 +131,7 @@ def main():
     accepted = set(inspect.signature(llama2_numpy.Tokenizer.__init__).parameters) - {"self", "data", "vocab_size", "kind"}
     tokenizer = llama2_numpy.Tokenizer(made.tokenizer, abs(made.stream.header[5]), kind=options["tokenizer_kind"],
                                        **{key: value for key, value in options.items() if key in accepted})
-    text = Path(args.text).read_text() if args.text else wikipedia(ARTICLES)
+    text = Path(args.text).read_text() if args.text else wikipedia(ENGLISH, "en") if args.english else wikipedia(ARTICLES)
     every = tokenizer.encode(text, tuple(options.get("specials", ())))
     ids = every[:args.tokens]
     characters = len(text) * len(ids) / len(every)  # of the text, as far as ids go

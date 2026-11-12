@@ -27,6 +27,7 @@ import json
 import re
 import sys
 import traceback
+import types
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -48,6 +49,7 @@ def no_network(url, target, tries=3, timeout=60, optional=False):
 fetching.download = no_network  # (before the tools take the name)
 import made_up  # noqa: E402
 import reference  # noqa: E402
+import reference_bitnet  # noqa: E402
 import reference_gemma2  # noqa: E402
 import reference_gemma3  # noqa: E402
 import reference_gemma4  # noqa: E402
@@ -91,7 +93,7 @@ def put(folder, files):
 
 
 # the directories directories() makes, in the mark: a name more here and every checkout makes them again
-MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "gemma2", "llama")
+MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "gemma2", "bitnet", "llama")
 
 
 def directories(work):
@@ -135,6 +137,11 @@ def directories(work):
                                   "generation_config.json": "{}", "chat_template.jinja": "", "special_tokens_map.json": "{}", "modeling_plamo.py": "",
                                   "tokenization_plamo.py": "", "tokenizer.jsonl": "",
                                   "model.safetensors": made_up.safetensors_file(tensors)})
+    # (T283) a BitNet b1.58, its matrices packed as the published file has them (made_up.bitnet_model())
+    tensors, _, config = made_up.bitnet_model(vocab_size=VOCAB, seq_len=CONTEXT, layers=3)
+    put(work / "bitnet" / "real", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
+                                   "tokenizer_config.json": said(), "generation_config.json": "{}",
+                                   "model.safetensors": made_up.safetensors_file(tensors)})
     # (T612) a Gemma 2 of the 2B's caps, its kinds unsaid
     tensors, config = made_up.gemma2_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="slslslsl", listed=False,
                                            scores_cap=50.0, logits_cap=30.0, spread=0.1)
@@ -284,6 +291,13 @@ def parts(work):
             for at, name in enumerate(reference_gemma2.MADE_UP)]
     out.append(("gemma2 real", lambda: reference_gemma2.real(work / "gemma2" / "dry", 96, "dry"), right,
                 fine + [("the same ids", 1), ("the two wrote the same", 1)], {}))
+    # (T283: the real part's phases in this process, on the made-up directory)
+    bitnet = len(reference_bitnet.faults(types.SimpleNamespace(wo=[0, 0])))
+    out += [(f"bitnet made-up, {name}", lambda name=name: reference_bitnet.made_up_one(name, reference_bitnet.MADE_UP[name]), right, fine, {})
+            for name in reference_bitnet.MADE_UP]
+    out.append(("bitnet real, with the faults", lambda: reference_bitnet.real(work / "bitnet"), right,
+                fine + [(r"real, float32: the engine against transformers in floats", 1), (r"times the line\)$", bitnet),
+                        ("faults: the weakest", 1), ("real, int8: the engine's greedy", 1)], {}))
     out.append(("llama real, a Granite with the weak faults", llama_real("granite", True), right,
                 fine + [("the same ids", 2), ("the two wrote the same", 1), (": a fault, ", WEAK), ("must see and did not: none", 1)], {}))
     out.append(("llama real, a SmolLM3", llama_real("smollm3", False), right,
@@ -342,6 +356,11 @@ def parts(work):
         out.append((f"WRONG ({what}): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): gemma4 real", lambda: reference_gemma4.real(work / "gemma4" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): gemma2 real", lambda: reference_gemma2.real(work / "gemma2" / "dry", 96, "dry"), ("returned", True), said, wrong))
+        if "logits" in wrong:  # (T283: a BitNet's tool holds no states)
+            first = next(iter(reference_bitnet.MADE_UP))
+            out.append((f"WRONG ({what}): bitnet made-up", lambda first=first: reference_bitnet.made_up_one(first, reference_bitnet.MADE_UP[first]),
+                        ("returned", True), said, wrong))
+            out.append((f"WRONG ({what}): bitnet real", lambda: reference_bitnet.real(work / "bitnet"), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): spark real", lambda: reference_spark.real(work / "spark" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         # (PLaMo 3's long text measures its own line by the code's two ways through it: a transformers off everywhere is
         # off in one of them, and that line says FAILED too)
@@ -396,6 +415,8 @@ def main():
     reference_gemma2.MODELS["dry"] = ("made/gemma2", REVISION)
     reference_gemma2.BOS, reference_gemma2.BEGINS, reference_gemma2.CHAT = 1, "<|startoftext|>", reference_lfm2.CHAT
     reference_gemma2.SPECIALS, reference_gemma2.STOPS = reference_lfm2.SPECIALS, (1, 7)
+    # (T283: the BitNet's BOS, the real one past the made-up vocabulary, and its real part in this process)
+    reference_bitnet.BOS, reference_bitnet.SEPARATE = 1, False
     reference_plamo3.MODELS["dry"] = ("made/plamo3", REVISION, None)
     reference_plamo3.STOPS = (1, 7)
     reference_plamo3.LONG, reference_plamo3.LONG_AT = LONG, (0, 1, 62, 63, 64, 65, 66, 200, 298, 299)

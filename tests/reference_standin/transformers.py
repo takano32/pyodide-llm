@@ -74,6 +74,24 @@ def held(llama, count, stepped, wrong=0.0):
     return types.SimpleNamespace(layers=layers, llama=llama, count=count)
 
 
+# (T283) transformers' integrations.bitnet, as reference_bitnet.py takes it: its ActQuant, whose apply the tool puts aside
+# to leave the model's rounding out. While it is this one, a BitNet's passes are the model's rounded ones: the unit
+# tests' reference (test_bitnet.naive_bitnet_logits, quantized) of every token so far, in place of the engine, which
+# rounds nothing
+def rounding_of_the_model(activation):
+    return activation
+
+
+integrations = types.ModuleType("transformers.integrations")
+integrations.bitnet = types.ModuleType("transformers.integrations.bitnet")
+integrations.bitnet.ActQuant = type("ActQuant", (), {"apply": staticmethod(rounding_of_the_model)})
+sys.modules["transformers.integrations"], sys.modules["transformers.integrations.bitnet"] = integrations, integrations.bitnet
+
+
+def rounded(model):
+    return model.published.get("model_type") == "bitnet" and integrations.bitnet.ActQuant.apply is rounding_of_the_model
+
+
 class Model:
     def __init__(self, tensors, published, config=None, context=None):
         self.tensors, self.published = tensors, published
@@ -130,14 +148,19 @@ class Model:
         start = past_key_values.count if past_key_values is not None else 0
         stepped = len(ids) == 1
         logits = np.stack([llama.forward(token, start + at).copy() for at, token in enumerate(ids)])
+        so_far = (past_key_values.ids if past_key_values is not None else []) + ids
+        if rounded(self):
+            from test_bitnet import naive_bitnet_logits
+            logits = np.stack(naive_bitnet_logits(self.tensors, self.published, so_far, quantized=True)[-len(ids):]).astype(np.float32)
         wave = np.cos(np.arange(logits.shape[-1], dtype=np.float32))
         some = logits_to_keep is not None
         logits = logits * (1 + 3e-6 * wave if stepped else 1) + WRONG.get("kept" if some else "logits", 0.0) * wave
         if logits_to_keep is not None:
             logits = logits[np.asarray(logits_to_keep)]
-        return types.SimpleNamespace(logits=view(logits.astype(np.float32)[None]),
-                                     past_key_values=held(llama, start + len(ids), stepped, 0.0 if some else WRONG.get("states", 0.0))
-                                     if use_cache else None)
+        past = held(llama, start + len(ids), stepped, 0.0 if some else WRONG.get("states", 0.0)) if use_cache else None
+        if past is not None:
+            past.ids = so_far
+        return types.SimpleNamespace(logits=view(logits.astype(np.float32)[None]), past_key_values=past)
 
     def generate(self, ids, max_new_tokens=16, **more):
         ids, llama = [int(token) for token in np.asarray(ids)[0]], self.engine()
@@ -160,7 +183,9 @@ class Model:
             for key, said in json.loads(data[8:8 + size]).items():
                 if key != "__metadata__":
                     begin, end = said["data_offsets"]
-                    tensors[key] = np.frombuffer(data[8 + size + begin:8 + size + end], dtype=np.float32).reshape(said["shape"])
+                    # (T283: a BitNet's packed matrices are bytes)
+                    kind = np.uint8 if said["dtype"] == "U8" else np.float32
+                    tensors[key] = np.frombuffer(data[8 + size + begin:8 + size + end], dtype=kind).reshape(said["shape"])
         published = json.loads((directory / "config.json").read_text())
         if config is not None and getattr(config, "num_hidden_layers", None):
             published["num_hidden_layers"] = config.num_hidden_layers
