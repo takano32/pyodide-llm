@@ -610,10 +610,19 @@ try {
       refused.whileStarting = { ended: await starting.release(), seconds: (performance.now() - stopped) / 1000 };
     }
     if (c.id === "synthetic" || !c.id.startsWith("synthetic")) {
+      // (the GPU got ready and let go, no run on it: what the GPU chose is all these are read for, and a real model's
+      // whole run takes some 135 s on lavapipe, which three of them a model took past the tool's 90 minutes)
+      const readied = async (gpuRemembered) => {
+        const engine = createForward({ memory, base, size, kernels, plan, gpu: openGpu, gpuForce: TESTS, gpuRemembered });
+        await engine.gpu;
+        const ready = engine.gpuReady;
+        await engine.release();
+        progress(`${c.id}: the GPU ready, ${ready?.remembered ? "remembered" : "chosen"}, in ${ready?.seconds?.toFixed(1)} s`);
+        return ready;
+      };
       const first = gpu[0].ready ?? {}, older = { key: first.key, matrices: first.matrices, attention: first.attention, tokens: first.tokens };
       const kept = { ...older, tokenAttention: first.tokenAttention };
-      remembered = { first, older: (await run(openGpu, {}, older)).ready, same: (await run(openGpu, {}, kept)).ready,
-        other: (await run(openGpu, {}, { ...kept, key: kept.key + "|another" })).ready };
+      remembered = { first, older: await readied(older), same: await readied(kept), other: await readied({ ...kept, key: kept.key + "|another" }) };
     }
     const cpu = await run(undefined), lateRun = c.id === "synthetic" ? await late() : undefined;
     // T156: the model on the GPU alone, last (it packs the memory the others read the checkpoint whole from). (T271.5's
