@@ -215,11 +215,12 @@ def test_the_specials_are_cut_as_they_were_and_the_pattern_is_made_once():
     first = engine.encode("the</s>dog<s>", specials)
     pattern = engine.cut(specials)[0]
     assert engine.encode("the</s>dog<s>", list(specials)) == first and engine.cut(specials)[0] is pattern
-    # the first of the alternatives that matches, as before: a list that names a shorter one first is cut at that one
+    # T509: the longest that is written there, in whatever order they are named (the real tokenizers' added tokens are
+    # found leftmost-longest; as one alternation, a list that named a shorter one first was cut at that one)
     vocab = spec["model"]["vocab"]
     short, long = next((short, long) for long in vocab for short in vocab if long.startswith(short) and len(long) > len(short) > 1
                        and "▁" not in long and "<" not in long and long[len(short):] in vocab)
-    assert engine.encode("x" + long, (short, long)) == [*engine.encode("x"), vocab[short], *engine.encode(long[len(short):])]
+    assert engine.encode("x" + long, (short, long)) == [*engine.encode("x"), vocab[long]]
     assert engine.encode("x" + long, (long, short)) == [*engine.encode("x"), vocab[long]]
     with pytest.raises(KeyError):  # a special the vocabulary has no piece for, where it is written (as before)
         engine.encode("the<none>", ("<none>",))

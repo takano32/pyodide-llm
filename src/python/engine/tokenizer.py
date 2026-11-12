@@ -35,6 +35,28 @@ from engine.proxy import plain
 BOS = 1  # beginning-of-sequence token, also what the model emits when a story is over
 
 
+def longest_written(words):
+    """A regular expression that matches the longest of the words written at a place: the words as a trie, each
+    character one branch, a word that ends where longer ones go on an optional rest (greedy, so the longer is tried
+    first). T509: as one alternation of the words, the longest first, re tried every word at each place a word could
+    begin: a Gemma 3's 6,242 <unusedN> at each "<", 88 µs, and 32 ms for an HTML text of 4,000 characters."""
+    trie = {}
+    for word in words:
+        node = trie
+        for char in word:
+            node = node.setdefault(char, {})
+        node[""] = {}
+
+    def written(node):
+        branches = [re.escape(char) + written(rest) for char, rest in sorted(node.items()) if char]
+        if not branches:
+            return ""
+        body = branches[0] if len(branches) == 1 else "(?:" + "|".join(branches) + ")"
+        return f"(?:{body})?" if "" in node else body
+
+    return written(trie)
+
+
 def byte_chars():
     """GPT-2's byte <-> character table: every byte becomes one printable character, so that a byte-level BPE
     vocabulary is plain text. 0x20 is "\u0120", 0x0A is "\u010a"."""
@@ -429,7 +451,10 @@ class Tokenizer:
     """
 
     UNMATCHABLE = -1e8  # convert_hf.py gives control and byte pieces a score below this
-    UNMERGED = -1e10  # llama2.c's line: "bpe" merges a pair that scores above it (an unmatchable piece's -1e9 too)
+    # llama2.c's line: "bpe" merges a pair that scores above it (an unmatchable piece's -1e9 too). Not UNMATCHABLE
+    # (T509): a sentencepiece model's own normal pieces may score -1e9 (a Mistral vocabulary's runs of spaces), and
+    # sentencepiece merges them
+    UNMERGED = -1e10
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
                  collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False, breaks=None, replaced=None):
@@ -513,12 +538,12 @@ class Tokenizer:
     def cut(self, specials):
         """(the pattern that cuts a text at these specials, {a special: its piece as the vocabulary spells it}), made
         once for a tuple of them (T257: a Gemma 3 has 6,406 added tokens, and writing the pattern out for each text
-        took 2 ms). The first of the alternatives that matches is taken, so the converter names the longest first. A
+        took 2 ms). Where several begin at a place, the longest is taken (longest_written()), whatever their order. A
         sentencepiece vocabulary's pieces spell U+2581 as a space (the converter's tokenizer_bin()), a special's
         among them (a Gemma 3's runs of U+2581)."""
         if specials not in self.cuts:
             spelled = (lambda special: special.replace("\u2581", " ")) if self.spaces else (lambda special: special)
-            self.cuts = {specials: (re.compile("(" + "|".join(re.escape(special) for special in specials) + ")"),
+            self.cuts = {specials: (re.compile("(" + longest_written(specials) + ")"),
                                     {special: spelled(special).encode("utf-8") for special in specials})}
         return self.cuts[specials]
 

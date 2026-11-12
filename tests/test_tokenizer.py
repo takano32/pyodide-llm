@@ -105,6 +105,19 @@ def test_special_tokens_inside_a_prompt_become_their_token():
     assert tokenizer.encode("hello", ("</s>",)) == tokenizer.encode("hello")
 
 
+def test_the_specials_are_cut_at_the_longest_written_there():
+    """T509: the trie of longest_written() cuts a text where one alternation of the words, the longest first, cuts it
+    (re takes the first alternative that matches), on made-up words that begin one another and texts of them"""
+    from engine.tokenizer import longest_written
+    rng = random.Random(509)
+    for _ in range(300):
+        words = list({"".join(rng.choice("<a>b|") for _ in range(rng.randint(1, 6))) for _ in range(rng.randint(1, 12))})
+        longest_first = re.compile("(" + "|".join(map(re.escape, sorted(words, key=lambda word: (-len(word), word)))) + ")")
+        trie = re.compile("(" + longest_written(words) + ")")
+        for text in ["".join(rng.choice("<a>b|x") for _ in range(rng.randint(0, 30))) for _ in range(20)]:
+            assert trie.split(text) == longest_first.split(text), (words, text)
+
+
 # ---------------------------------------------------------- the definitions, on made-up vocabularies (T200)
 # encode_bpe() keeps the pairs in a heap from one merge to the next (T207), and encode_unigram() tries a piece at i only as far
 # as the reach of text[i:i + 2]. Both must give what the plain definitions below give (the engine's own loops before
