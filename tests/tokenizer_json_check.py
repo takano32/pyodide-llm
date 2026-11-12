@@ -29,6 +29,7 @@ from tree import python_folder
 sys.path.insert(0, python_folder())
 from conftest import CORPUS, TEXTS, detokenize  # noqa: E402
 from convert.tokenizer import tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces  # noqa: E402
+from convert.vocabulary import stripping  # noqa: E402
 from engine.tokenizer import Tokenizer  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -51,7 +52,8 @@ def read(folder):
     added tokens, the pieces' texts) of a folder's files."""
     from tokenizers import Tokenizer as Real
     spec = json.loads((folder / "tokenizer.json").read_text(encoding="utf-8"))
-    options = tokenizer_json_options(spec)
+    # (T258: and the added tokens that take in the whitespace beside them, as the converter reads them)
+    options = {**tokenizer_json_options(spec), **stripping(spec["added_tokens"])}
     pieces = list(tokenizer_json_pieces(spec))
     started = time.perf_counter()
     engine = Tokenizer(tokenizer_bin(pieces, len(pieces), spaces=options["tokenizer_kind"] != "bytebpe"), len(pieces),

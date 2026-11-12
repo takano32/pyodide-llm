@@ -53,8 +53,8 @@ class Spelled(Letters):
     """Letters with "<NL>" for a newline, as the options of rinna's entry make the real Tokenizer"""
     replaced = (("\n", "<NL>"),)
 
-    def encode(self, text, specials=()):
-        return super().encode(text.replace("\n", "<NL>"), specials)
+    def encode(self, text, specials=(), after=None):
+        return super().encode(text.replace("\n", "<NL>"), specials, after)
 
 
 def test_generate_writes_a_newline_where_the_model_wrote_it_over_four_tokens():

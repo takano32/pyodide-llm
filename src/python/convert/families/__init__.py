@@ -9,6 +9,7 @@ from convert.families.gemma4 import GEMMA4, GEMMA4_WHOLE
 from convert.families.gpt2 import GPT2, NEOX
 from convert.families.lfm2 import LFM2
 from convert.families.llama import GRANITE, LLAMA, MISTRAL, QWEN2, QWEN3, SMOLLM3
+from convert.families.phi3 import PHI3
 from convert.families.plamo3 import PLAMO3
 from convert.families.qwen35 import QWEN35, QWEN35_WHOLE
 from convert.families.spark import SPARK
@@ -18,7 +19,7 @@ from engine.layout import layout_of
 FAMILIES = {"llama": LLAMA, "mistral": MISTRAL, "granite": GRANITE, "smollm3": SMOLLM3, "qwen2": QWEN2, "qwen3": QWEN3,
             "qwen3_5_text": QWEN35, "qwen3_5": QWEN35_WHOLE, "lfm2": LFM2, "gemma2": GEMMA2, "gemma3_text": GEMMA3,
             "gemma3": GEMMA3_WHOLE, "gemma4_text": GEMMA4, "gemma4": GEMMA4_WHOLE, "spark2_5": SPARK, "plamo3": PLAMO3, "bitnet": BITNET,
-            "gpt2": GPT2, "gpt_neox": NEOX}
+            "phi3": PHI3, "gpt2": GPT2, "gpt_neox": NEOX}
 
 
 def by_gguf(families):

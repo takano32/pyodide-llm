@@ -402,7 +402,7 @@ def main():
         known = KNOWN.get(entry["id"], {})
         same, explained, diffs, exact, fronts = 0, 0, [], 0, set()
         for prompt in prompts:
-            page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())))
+            page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())), options["bos"])
             messages = ([{"role": "system", "content": SYSTEM[entry["id"]]}] if entry["id"] in SYSTEM else []) \
                 + [{"role": "user", "content": prompt}]
             # (T517: no template to render where the card writes the format: the card's text, through the real sentencepiece)

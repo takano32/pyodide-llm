@@ -9,7 +9,7 @@ class Marked(Letters):
     """Letters, with the marks of a thought as one token each where they are specials (as T143 makes them)."""
     MARKS = {"<think>": 200, "</think>": 201}
 
-    def encode(self, text, specials=()):
+    def encode(self, text, specials=(), after=None):
         tokens = []
         while text:
             mark = next((mark for mark in self.MARKS if mark in specials and text.startswith(mark)), None)

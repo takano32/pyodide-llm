@@ -527,7 +527,8 @@ class Layout(NamedTuple):
     # how much of each head of q and k RoPE turns: WHOLE, PARTLY or PROPORTIONAL (the options say how many values:
     # "rotary"; T331: a local layer turns its whole head all the same), or None
     rope: Optional[str] = WHOLE
-    # yarn's magnitude is in the RoPE tables the engine makes for a file that has none (rope_magnitude())
+    # yarn's magnitude is in the RoPE tables the engine makes for a file that has none (rope_magnitude(); T258: and
+    # longrope's attention factor, of the same place)
     yarn_magnitude: bool = False
     # its norms are LayerNorms, of a weight and a bias (RMSNorms, of a weight, otherwise)
     layer_norm: bool = False
@@ -574,6 +575,10 @@ LAYOUTS["gemma2"] = LAYOUTS["gemma3"]._replace(rows=gemma2)
 # T283: BitNet b1.58, a Llama's layers with a norm in front of wo and one in front of w2 (rows of its file) and the
 # square of a ReLU in the gate of its FFN
 LAYOUTS["bitnet"] = LAYOUTS["llama"]._replace(rows=bitnet, activation=RELU2)
+# T258: Phi-3 and Phi-4 mini (Microsoft's, model_type "phi3"), a Llama's layers whose RoPE may turn the first values of
+# each head only (Phi-4 mini's partial_rotary_factor 0.75; a Phi-3 mini's turns all of them). Its tables carry the
+# magnitude of the RoPE scaling (longrope's attention factor) as a Llama's do yarn's
+LAYOUTS["phi3"] = LAYOUTS["llama"]._replace(rope=PARTLY)
 
 
 def layout_of(arch):

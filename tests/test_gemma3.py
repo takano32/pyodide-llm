@@ -306,7 +306,7 @@ def test_the_facts_of_the_architecture():
                for arch, layout in LAYOUTS.items() if arch not in ("gemma3", "gemma4", "spark", "plamo3", "gemma2"))
     assert {arch: layout.activation for arch, layout in LAYOUTS.items()} == {
         "llama": SILU, "gpt2": GELU, "neox": GELU, "qwen35": SILU, "lfm2": SILU, "gemma3": GELU, "gemma4": GELU,
-        "spark": "gelu_erf", "plamo3": SILU, "gemma2": GELU, "bitnet": "relu2"}
+        "spark": "gelu_erf", "plamo3": SILU, "gemma2": GELU, "bitnet": "relu2", "phi3": SILU}
     names = [row.name for row in tensor_rows((32, 64, 6, 4, 1, 320, 24), {"arch": "gemma3", "head_dim": 16})]
     assert {"rms_att_post_weight", "rms_ffn_post_weight", "q_norm", "k_norm"} <= set(names)
     for arch in ("llama", "qwen35", "lfm2", "gpt2", "neox"):

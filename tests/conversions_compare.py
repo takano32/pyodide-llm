@@ -46,8 +46,10 @@ def dump(tree, directory, out, only):
             template = (entry.get("template") if own else None) or made.options.get("template")
             tokenizer = numpy_engine.Tokenizer(made.tokenizer, abs(made.stream.header[5]), kind=options["tokenizer_kind"],
                                                **{key: value for key, value in options.items() if key in accepted})
+            # (T258: after the BOS, as generate() encodes the prompt, in a tree whose engine knows of it)
+            after = {"after": options["bos"]} if "after" in inspect.signature(tokenizer.encode).parameters else {}
             ids = [[options["bos"]] + tokenizer.encode(check.filled(template, prompt) if template else prompt,
-                                                      tuple(options.get("specials", ())))
+                                                      tuple(options.get("specials", ())), **after)
                    for prompt in check.PROMPTS]
             sent[name] = {"ids": hashlib.sha256(json.dumps(ids).encode()).hexdigest()[:16], "first": ids[0][:6],
                           "stop_tokens": sorted(set(options["stop_tokens"])), "template": template}

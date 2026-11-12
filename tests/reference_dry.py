@@ -53,6 +53,7 @@ import reference_bitnet  # noqa: E402
 import reference_gemma2  # noqa: E402
 import reference_gemma3  # noqa: E402
 import reference_gemma4  # noqa: E402
+import reference_phi3  # noqa: E402
 import reference_lfm2  # noqa: E402
 import reference_llama  # noqa: E402
 import reference_plamo3  # noqa: E402
@@ -93,7 +94,7 @@ def put(folder, files):
 
 
 # the directories directories() makes, in the mark: a name more here and every checkout makes them again
-MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "gemma2", "bitnet", "llama")
+MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "gemma2", "bitnet", "phi3", "llama")
 
 
 def directories(work):
@@ -142,6 +143,14 @@ def directories(work):
     put(work / "bitnet" / "real", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
                                    "tokenizer_config.json": said(), "generation_config.json": "{}",
                                    "model.safetensors": made_up.safetensors_file(tensors)})
+    # (T258) a Phi-3 of nine layers in two shards, of which the tool reads the first eight (its --layers)
+    tensors, config = made_up.phi3_model(vocab_size=VOCAB, seq_len=CONTEXT, layers=9, rotary=0.75, spread=0.1)
+    names = sorted(tensors)
+    halves = [{name: tensors[name] for name in names[:len(names) // 2]}, {name: tensors[name] for name in names[len(names) // 2:]}]
+    put(work / "phi3" / "phi-3", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True), "tokenizer_config.json": said(),
+                                  "model.safetensors.index.json": json.dumps({"weight_map": {name: reference_phi3.SHARDS[at]
+                                                                                             for at, half in enumerate(halves) for name in half}}),
+                                  **{reference_phi3.SHARDS[at]: made_up.safetensors_file(half) for at, half in enumerate(halves)}})
     # (T612) a Gemma 2 of the 2B's caps, its kinds unsaid
     tensors, config = made_up.gemma2_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="slslslsl", listed=False,
                                            scores_cap=50.0, logits_cap=30.0, spread=0.1)
@@ -298,6 +307,13 @@ def parts(work):
     out.append(("bitnet real, with the faults", lambda: reference_bitnet.real(work / "bitnet"), right,
                 fine + [(r"real, float32: the engine against transformers in floats", 1), (r"times the line\)$", bitnet),
                         ("faults: the weakest", 1), ("real, int8: the engine's greedy", 1)], {}))
+    # (T258: the real part's phases in this process, on the made-up directory, its first eight layers of nine)
+    phi3 = len(reference_phi3.faults(types.SimpleNamespace(wk=[0, 0])))
+    out += [(f"phi3 made-up, {name}", lambda name=name: reference_phi3.made_up_one(name, reference_phi3.MADE_UP[name]), right, fine, {})
+            for name in reference_phi3.MADE_UP]
+    out.append(("phi3 real, with the faults", lambda: reference_phi3.real(work / "phi3"), right,
+                fine + [("transformers loaded 8 layers", 1), (r"real, phi-3, float32: the engine against transformers", 1),
+                        (r"times the line\)$", phi3), ("faults: the weakest", 1), ("real, phi-3, int8: the engine", 2)], {}))
     out.append(("llama real, a Granite with the weak faults", llama_real("granite", True), right,
                 fine + [("the same ids", 2), ("the two wrote the same", 1), (": a fault, ", WEAK), ("must see and did not: none", 1)], {}))
     out.append(("llama real, a SmolLM3", llama_real("smollm3", False), right,
@@ -361,6 +377,10 @@ def parts(work):
             out.append((f"WRONG ({what}): bitnet made-up", lambda first=first: reference_bitnet.made_up_one(first, reference_bitnet.MADE_UP[first]),
                         ("returned", True), said, wrong))
             out.append((f"WRONG ({what}): bitnet real", lambda: reference_bitnet.real(work / "bitnet"), ("returned", True), said, wrong))
+            first = next(iter(reference_phi3.MADE_UP))
+            out.append((f"WRONG ({what}): phi3 made-up", lambda first=first: reference_phi3.made_up_one(first, reference_phi3.MADE_UP[first]),
+                        ("returned", True), said, wrong))
+            out.append((f"WRONG ({what}): phi3 real", lambda: reference_phi3.real(work / "phi3"), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): spark real", lambda: reference_spark.real(work / "spark" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         # (PLaMo 3's long text measures its own line by the code's two ways through it: a transformers off everywhere is
         # off in one of them, and that line says FAILED too)
@@ -417,6 +437,8 @@ def main():
     reference_gemma2.SPECIALS, reference_gemma2.STOPS = reference_lfm2.SPECIALS, (1, 7)
     # (T283: the BitNet's BOS, the real one past the made-up vocabulary, and its real part in this process)
     reference_bitnet.BOS, reference_bitnet.SEPARATE = 1, False
+    # (T258: the Phi-3's real part in this process, on the made-up directory, its BOS within the made-up vocabulary)
+    reference_phi3.MODELS["phi-3"], reference_phi3.SEPARATE = ("made/phi3", REVISION, 1), False
     reference_plamo3.MODELS["dry"] = ("made/plamo3", REVISION, None)
     reference_plamo3.STOPS = (1, 7)
     reference_plamo3.LONG, reference_plamo3.LONG_AT = LONG, (0, 1, 62, 63, 64, 65, 66, 200, 298, 299)

@@ -47,6 +47,17 @@ def named_bos(pieces, said):
     return next((id for id, (text, _, _) in enumerate(pieces) if named and text == named), None)
 
 
+def stripping(added):
+    """T258: the engine's "stripped" of a tokenizer.json's added tokens (engine/tokenizer.py's strippings()): those
+    whose rstrip and lstrip take in the whitespace on their right and on their left (Phi-3's and Phi-4 mini's turn
+    marks eat the newline their templates write after them). Nothing where none does, so that the options of a
+    tokenizer without such tokens stay what they were."""
+    sides = {side: sorted(token["content"] for token in added if token.get(strip) and token.get("content"))
+             for side, strip in (("right", "rstrip"), ("left", "lstrip"))}
+    sides = {side: tokens for side, tokens in sides.items() if tokens}
+    return {"stripped": sides} if sides else {}
+
+
 def tokenizer_json(data, vocab_size, said, last):
     """The vocabulary of a tokenizer.json (its bytes). last (T257): see Conversion."""
     try:
@@ -63,6 +74,7 @@ def tokenizer_json(data, vocab_size, said, last):
     tokenizer = tokenizer_bin(pieces, vocab_size, spaces=options["tokenizer_kind"] != "bytebpe",
                               charsmap=tokenizer_json_charsmap(parsed))
     added = [token for token in parsed.get("added_tokens", []) if token.get("id", 0) < vocab_size]
+    options = {**options, **stripping(added)}
     specials = [token["content"] for token in added if token.get("special")]
     # T143: the added tokens it does not call special are read as one token wherever they are too, by the real
     # tokenizers before it splits the text: Qwen3's <think>, Pythia's runs of 2 to 24 spaces (T215's finding)

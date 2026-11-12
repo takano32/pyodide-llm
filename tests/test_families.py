@@ -63,7 +63,8 @@ class Facts(NamedTuple):
 
 LLAMAS = {"free_heads", "scaled", "rotatable", "rms_norm"}
 # the families that are no other's name and whose GGUF the converter does not read (yet)
-NO_GGUF_YET = {"bitnet"}  # (T283: its published GGUF is of bitnet.cpp's own type I2_S, which no llama.cpp reads)
+NO_GGUF_YET = {"bitnet", "phi3"}  # (T283: its published GGUF is of bitnet.cpp's own type I2_S, which no llama.cpp reads;
+# T258: a Phi-3's, which the list takes from the original's safetensors)
 # The table as it stands, written a second time on purpose (as the order of the rows is in test_layout.py): a
 # family's fact changed by mistake changes which models convert and how, and few of the facts have a test of their
 # own. By model_type, in the order of the table (the order the refusals name the titles in)
@@ -88,6 +89,7 @@ FACTS = {
     "plamo3": Facts("PLaMo 3", "plamo3", "plamo3", "lm_head.weight", {"free_heads", "scaled", "rms_norm"}, "", set(),
                     PLAMO3_MARKS),
     "bitnet": Facts("BitNet", "bitnet", None, "lm_head.weight", LLAMAS),
+    "phi3": Facts("Phi-3", "phi3", None, "lm_head.weight", {"rotatable", "rms_norm", "partly"}),
     "gpt2": Facts("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}, "", set(), GPT2_MARKS),
     "gpt_neox": Facts("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}, "", set(), NEOX_MARKS),
 }
@@ -125,6 +127,7 @@ LAYOUTS = {
     "plamo3": ([256, 768, 8, 4, 1, -2048, 320], {"arch": "plamo3", "head_dim": 128}, 0),
     "gemma2": ([256, 768, 6, 4, 2, -2048, 320], {"arch": "gemma2", "head_dim": 128}, 0),
     "bitnet": ([256, 768, 4, 4, 2, -2048, 320], {"arch": "bitnet", "head_dim": 128}, 0),
+    "phi3": ([256, 768, 4, 4, 2, -2048, 320], {"arch": "phi3"}, 48),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
         "max_position_embeddings": 4096}

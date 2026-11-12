@@ -80,7 +80,7 @@
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
 - T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 未着手
 - T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 候補
-- T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 未着手
+- T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 進行中
 - T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 未着手
 - T136 [性能][変換] Hugging Face などからの取得を速くする — 段 ① は済
 - T137 [性能][変換] 変換のレジューム: 取得と変換が途中で止まっても、次は続きから — 第 0 段
@@ -657,12 +657,15 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
 
-### T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
-```
+### T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 状態: 進行中（2026-11-12、Opus medium。前の状態: 未着手、2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md、この回の記録は docs/notes/t258-phi-2026-11-12.md）
 - Phi-3 mini 4k は文脈を窓の 2047 で切る。Phi-4 mini は前分割の仕事の後。
 - **T256 から（2026-11-12）**: Phi-4 mini の前分割（`gpt4o`）は済んだ。**残るトークナイザの違いが 1 つ**: added tokens の 10 個（`<|assistant|>`・`<|end|>`・`<|user|>`・`<|system|>`・`<|tag|>` と special でない `<|tool|>` など 5 つ）が `rstrip: true` で、本物は印の後ろの空白を食う。エンジンと変換器はこれを読まない（黙って空白を語にする）。`tokenizer_json_check.py --planes 17` は added tokens を入れない文 233 万文で 0 wrong、入れた文で 2,987 wrong（全部この印の後ろの空白）。T610.2（Shisa V2.1 unphi4 14B の lstrip・rstrip）と同じ形で、そこでは「ページのトークナイザに lstrip・rstrip を足すのは、要るモデルが増えたら」と決めた: Phi-4 mini で 2 つ目になるので、開くときに足すかを決める（書式が印の後ろに空白を書くかも見る）。
+- **子タスクの番号**（取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位が 2 つ）: T258.1 Phi-3 mini 4K Instruct（家族 `phi3`・アーキテクチャ `phi3`・added tokens の `rstrip`・`lstrip`・一覧）、T258.2 Phi-4 mini Instruct（longrope・一覧）。
 
-```
+#### T258.1 Phi-3 mini 4K Instruct — 状態: 進行中（2026-11-12、Opus medium）
+- **したこと**: 家族 `phi3`（`convert/families/phi3.py`: `qkv_proj` と `gate_up_proj` を `rows` で割り、q と k は `heads` で回す行だけ並べ替える。窓 `sliding_window` があれば文脈をそれに切る（Mistral v0.1 と同じ扱い: Phi-3 mini 4k は 2047）。GGUF は読まない（llama.cpp の phi3 は行列を 1 つのまま、longrope を自分のテンソルで持つ））。アーキテクチャ `phi3` = `LAYOUTS["llama"]._replace(rope=PARTLY)`（Phi-4 mini の回す割合 0.75 のため。Phi-3 mini は頭の全部を回すので `rotary` が頭の大きさ）。**新しい事実は無い**: 回す割合の表に Llama と同じく倍率（`yarn_magnitude`）を載せるよう `partial_tables()` に `magnitude` を足しただけ（今ある PARTLY の 3 つは倍率を持たないので変わらない）。
+- **added tokens の `rstrip`・`lstrip`**（T610.2 の「要るモデルが増えたら」の 2 つ目）: Phi-3 mini も Phi-4 mini も書式の印（`<|user|>`・`<|end|>`・`<|assistant|>`）が `rstrip: true` で、書式が印の後ろに書く改行を本物は食う（`<|user|>\nHello<|end|>\n<|assistant|>\n` は本物で 4 トークン）。トークナイザの設定 `stripped`（`{"right": [...], "left": [...]}`、エンジンの `SETTINGS` に 1 行）、変換器は tokenizer.json の added tokens のうち印の立つものだけを言う（無ければ鍵を書かない）。空白は Unicode の White_Space（本物の `char::is_whitespace`: Python の `isspace` から \x1c〜\x1f を除く。試験が全符号位置で本物と比べる）。**書式の頭の印を BOS にしたモデル**は書式の残りが BOS の後ろから始まるので、`generate()` が BOS を `encode(…, after=bos)` に渡し、BOS が右を食う印なら頭の空白を落とす。
+
 ### T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```
 - transformers は読まない名前。llama.cpp が読むかを確かめ、カードの勧める実行のしかたと、両方の読みの perplexity で決める。

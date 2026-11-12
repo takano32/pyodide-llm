@@ -132,6 +132,8 @@ const returned = (fn) => {
       more: { local: { layers: [0, 2], window: 96, rope_theta: 10000 }, softcap: 30, score_softcap: 50 } },
     // T283: a BitNet b1.58: a Llama's layers, a norm in front of wo and one in front of w2, the square of a ReLU
     { name: "bitnet", header: [256, 768, 4, 4, 2, 2048, 320], form: { arch: "bitnet", head_dim: 128 }, more: {} },
+    // T258: a Phi-3: a Llama's layers whose RoPE turns the first values of each head (Phi-4 mini's three quarters)
+    { name: "phi3", header: [256, 768, 4, 4, 2, 2048, 320], form: { arch: "phi3" }, more: { rotary: 48 } },
     // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
     // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order
     { name: "qwen35, of llama.cpp's blocks", header: [256, 768, 8, 4, 2, -2048, 320], more: { rotary: 32 },
@@ -143,7 +145,7 @@ const returned = (fn) => {
   // is added without a line here is held to Python's plan alone)
   const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
     neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], gemma3: [true, false, true], gemma4: [true, false, true],
-    spark: [true, false, true], plamo3: [true, false, true], gemma2: [true, false, true], bitnet: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
+    spark: [true, false, true], plamo3: [true, false, true], gemma2: [true, false, true], bitnet: [true, false, true], phi3: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary", "binary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());

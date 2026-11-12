@@ -408,7 +408,23 @@ def plamo_breaks(breaks):
 # default is the default
 SETTINGS = {"tokenizer_kind": "kind", "nfkc": "nfkc", "nfc": "nfc", "pretokenizer": "pretokenizer",
             "ignore_merges": "ignore_merges", "collapse": "collapse", "unknown": "unknown", "lowercase": "lowercase",
-            "prefixed": "prefixed", "spaced": "spaced", "breaks": "breaks", "replaced": "replaced"}
+            "prefixed": "prefixed", "spaced": "spaced", "breaks": "breaks", "replaced": "replaced", "stripped": "stripped"}
+# T258: the whitespace an added token with lstrip or rstrip takes in with it (the real tokenizers' char::is_whitespace,
+# Unicode's White_Space: str.isspace less \x1c to \x1f, which tests/test_stripped.py holds this to)
+WHITE_SPACE = "\x09\x0a\x0b\x0c\x0d \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+
+
+def strippings(stripped):
+    """T258: a Tokenizer's stripped, checked: {"right": the specials that take in the whitespace after them (a
+    tokenizer.json's rstrip), "left": those that take in the whitespace before them (lstrip)}, each a list of strings
+    (an entry's options, a JsProxy in Pyodide: unwrapped as every other one). Nothing: ((), ())."""
+    said = plain(stripped) or {}
+    sides = tuple(said.get(side) or () for side in ("right", "left")) if isinstance(said, dict) else None
+    if sides is None or set(said) - {"right", "left"} or not all(isinstance(side, (list, tuple)) for side in sides) \
+            or not all(isinstance(s, str) and s for side in sides for s in side):
+        raise ValueError(f"Unsupported stripped: {stripped!r} (the specials that take in the whitespace on their right "
+                         "and on their left: {\"right\": [...], \"left\": [...]})")
+    return frozenset(sides[0]), frozenset(sides[1])
 
 
 def replacements(replaced):
@@ -457,7 +473,8 @@ class Tokenizer:
     UNMERGED = -1e10
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
-                 collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False, breaks=None, replaced=None):
+                 collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False, breaks=None, replaced=None,
+                 stripped=None):
         if kind not in TOKENIZER_KINDS:
             raise ValueError(f"Unsupported tokenizer kind: {kind!r} (the engine reads {', '.join(TOKENIZER_KINDS)})")
         # T639.4: what the kind does, from its row of TOKENIZER_KINDS, taken apart once (encode() and decode() read it)
@@ -489,6 +506,12 @@ class Tokenizer:
         # else, and turned back in what it writes (Unreplaced, which generate() makes where there are any): rinna's
         # japanese-gpt-neox instruction models read "<NL>" for a newline, which their vocabulary has not
         self.replaced = replacements(replaced)
+        # T258: the specials that take in the whitespace on their right and on their left, as the real tokenizers'
+        # added tokens with rstrip and lstrip do (Phi-3's <|user|>, <|end|> and <|assistant|> eat the newline the
+        # template writes after them): strippings()
+        self.right, self.left = strippings(stripped)
+        # (and the pieces of those on the right, for the token a text follows: as cut() spells a special)
+        self.right_pieces = frozenset((s.replace("\u2581", " ") if self.spaces else s).encode("utf-8") for s in self.right)
         self.collapse = collapse  # a sentencepiece model's remove_extra_whitespaces: see normalized()
         # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run
         # of them as one; the others spell it in bytes
@@ -514,14 +537,19 @@ class Tokenizer:
             made(self)
         self.unknown_score = min(score for score in self.scores if score > self.UNMATCHABLE) - 10.0
 
-    def encode(self, text, specials=()):
+    def encode(self, text, specials=(), after=None):
         """specials: pieces such as "</s>" that stand for their token wherever they are written (a chat template
-        puts them between the turns). As plain text they would be spelled out letter by letter."""
+        puts them between the turns). As plain text they would be spelled out letter by letter. after (T258): the
+        token the text follows (the BOS the engine begins with), which takes in the whitespace the text begins with
+        where it is a special that strips on its right."""
         tokens, first = [], True
         for said, read in self.replaced:
             text = text.replace(said, read)
         pattern, pieces = self.cut(tuple(specials)) if specials else (None, ())
-        for part in pattern.split(text) if specials else [text]:
+        parts = pattern.split(text) if specials else [text]
+        if self.right or self.left:
+            parts = self.stripped(parts, after)
+        for part in parts:
             if part in pieces:
                 tokens.append(self.index[pieces[part]])
             elif part and (part := self.normalized(part)):
@@ -534,6 +562,20 @@ class Tokenizer:
                 tokens += self.encoding(self, part)
             first = False
         return tokens
+
+    def stripped(self, parts, after):
+        """T258: the parts of a text cut at its specials (text, special, text, …), with the whitespace taken off the
+        text after a special that strips on its right and before one that strips on its left, as the real tokenizers
+        take it into the added token. after: the token in front of the text (see encode())."""
+        parts = list(parts)
+        if after is not None and 0 <= after < len(self.vocab) and self.vocab[after] in self.right_pieces:
+            parts[0] = parts[0].lstrip(WHITE_SPACE)
+        for i in range(1, len(parts), 2):
+            if parts[i] in self.right:
+                parts[i + 1] = parts[i + 1].lstrip(WHITE_SPACE)
+            if parts[i] in self.left:
+                parts[i - 1] = parts[i - 1].rstrip(WHITE_SPACE)
+        return parts
 
     def cut(self, specials):
         """(the pattern that cuts a text at these specials, {a special: its piece as the vocabulary spells it}), made

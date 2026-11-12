@@ -86,7 +86,8 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     prompt_block() for a prompt's blocks, gpu_steps() and token_block() for steps on the GPU, where there are)
     and the sampler (its drawing()). What the run took is left in its stats."""
     sampling = Sampling(**settings)
-    prompt_tokens = model.tokenizer.encode(prompt, model.specials) if prompt else []
+    # (T258: after the BOS, which may take in the whitespace the prompt begins with)
+    prompt_tokens = model.tokenizer.encode(prompt, model.specials, model.bos) if prompt else []
     # Right now we cannot run for more than seq_len steps
     if steps <= 0 or steps > model.seq_len:
         steps = model.seq_len

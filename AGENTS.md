@@ -391,6 +391,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **sentencepiece の BPE を書き出した tokenizer.json（Gemma 3・Gemma 4 など）は、語片の点数に「最初の merge の順位 × −1」**。変換器が merge の割り方と同じ点数の並びを確かめて、破れていれば断る。**この読み手に触ったら `tests/tokenizer_json_check.py --planes 17` を手で**。GGUF の語彙（`add_space_prefix: false`）は今も断る。
 - **PLaMo の `tokenizer.jsonl`**: 点数は `round(score·1e4)` の整数で足す、同点は最初の語片が長いほう、語片の無い字は 1 字 1e7。**本物の道具を numba 抜きの素の Python で回さない**。
 - **置き換え（options の `replaced`）**: 語彙に無い文字（改行）をカードが別の文字列（`<NL>`）で書くモデルのために、encode の頭で置き換え、`generate()` が出る文を `Unreplaced` で戻す。
+- **added tokens の `rstrip`・`lstrip` は設定 `stripped`**（T258: `{"right": [...], "left": [...]}`。変換器は印の立つ tokenizer.json だけが言い、無ければ鍵を書かない）: 本物は印の右（左）の空白を印に含める（Phi-3 の `<|user|>\n` は 1 トークン）。空白は Unicode の White_Space（Python の `isspace` から \x1c〜\x1f を除く）。**書式の頭の印を BOS にしたモデルは、書式の残りが BOS の後ろから始まる**ので `generate()` が `encode(…, after=bos)` を呼ぶ: 道具でページの送る ID を作るときも BOS を `after` に渡す（`format_check.py`・`conversions_compare.py`）。
 - **special でない追加のトークンも specials に**（本物は前分割の前にどこでも 1 つに読む）。 並びは長い順・同じ長さは文字の順。specials の多いモデル（Gemma 3 の 6,406 個）は切り分けの型を組ごとに 1 回だけ作る（`Tokenizer.cut()`）。型は trie で、そこに書かれた最も長い special を取る（`longest_written()`、T509: 1 つの選択だった頃は `<` のたびに全部を試し、HTML 4,000 字で Pyodide の中 873 ms）。
 - **`bpe` の合わせる線は −1e10 のまま**（T509）: sentencepiece のモデル自身が NORMAL の語片に −1e9 を付けることがあり（Mistral と Llama 2 の語彙の空白の並び）、本物はそれも合わせる。線を変換器の `UNMATCHABLE` に上げると、一覧の 17 項目で空白の並びの読みが本物と違う。
 
@@ -480,6 +481,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
   - PLaMo 3（Translate 0.8B・2B・8B・610M Fin Instruct）: **モデル自身のコードは config.json の `layer_types`・`rope_parameters` を読まず、平らな鍵から作る**。重みは PFN の Q4_K_M を塊のまま。 norm は c + w（後ろの 2 つは c が 1 でない）を変換器が畳む。**PFN の GGUF の最初のリビジョンの LFS の写しは 403**。書式は向きごとに手書きで、`format_check.py` は `reference_of()` がリポジトリ自身のトークナイザを読む（numba が要る）。PLaMo Community License の表示の決まり（名前・「Built with PLaMo」・契約の写し）は `models-check` が見る。
   - Underdog Saluki 27B: 10 種類の K / i 量子化の塊のまま持つ。**素の llama.cpp の logits は道と CPU で 0.3〜0.8 動く**: 細い線の相手は活性値を丸めない llama.cpp とエンジンの NumPy。 チャットのターンの印の後の logits は最後の 1 ビットで大きく動く（落とし穴の「計測とモデルの質」）。塊でない道は広げる変換になり、カーネルの無い読み込みは持ち主の文で断られる。
   - 日本語と英語の古典のモデル: **transformers 5 は `LlamaTokenizerFast` で byte-level のモデルに sentencepiece 流のトークナイザを作ることがある**（`format_check.py` が 0/9 のとき参照を疑う）。 rinna japanese-gpt2 xsmall は greedy で `<unk>` をくり返す。h2o-danube3 は本物が BOS もダミーの空白も置かないので入れなかった。置き場（`deviceMemory` 8）: 1.8B までは両方に置いて測り、3B 以上は GPU だけ。
+  - Phi-3 mini（T258.1）: `qkv_proj` と `gate_up_proj` を `rows` で割る（PLaMo 3 と同じ）。アーキテクチャ `phi3` は Llama の回す割合つき（`PARTLY`、Phi-3 mini は頭の全部）で、表に Llama と同じく倍率を載せる。transformers は `sliding_window`（2047）を掛けるので文脈を窓に切る。**tokenizer.model には書式の印が無い**（added tokens は tokenizer.json だけ）: 一覧の項目は `tokenizer.json` を名指す。書式の印は `rstrip`（上の「トークナイザ」）。GGUF は読まない（llama.cpp の phi3 は行列を 1 つのまま持つ）。
   - rinna japanese-gpt-neox 3.6B instruction-ppo: 改行を `<NL>` に（`replaced`）。**transformers 5 の `T5Tokenizer` はカードのトークナイザではない**: 参照は本物の sentencepiece。
   - 調べの記録（T81・T249〜T252・T517・T511）の置き場は全文に。
 

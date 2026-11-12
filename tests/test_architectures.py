@@ -46,6 +46,8 @@ FACTS = {
                    rotatable=False, unturned=False, activation=GELU, local=True, value_norm=False, wide=False),
     "bitnet": dict(rows="bitnet", stateful=None, rope=WHOLE, yarn_magnitude=True, layer_norm=False, gated_ffn=True,
                    rotatable=True, unturned=True, activation=RELU2, local=False, value_norm=False, wide=False),
+    "phi3": dict(rows="llama", stateful=None, rope=PARTLY, yarn_magnitude=True, layer_norm=False, gated_ffn=True,
+                 rotatable=True, unturned=True, activation=SILU, local=False, value_norm=False, wide=False),
 }
 # (a header and the form each architecture needs to be laid out)
 HEADER = [64, 128, 4, 4, 2, 320, 48]
@@ -55,9 +57,10 @@ FORMS = {"llama": {}, "gpt2": {"arch": "gpt2"}, "neox": {"arch": "neox"},
          "gemma3": {"arch": "gemma3", "head_dim": 32},
          "gemma4": {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}, "double": [2, 3]},
          "spark": {"arch": "spark", "head_dim": 32}, "plamo3": {"arch": "plamo3", "head_dim": 32},
-         "gemma2": {"arch": "gemma2", "head_dim": 32}, "bitnet": {"arch": "bitnet", "head_dim": 32}}
+         "gemma2": {"arch": "gemma2", "head_dim": 32}, "bitnet": {"arch": "bitnet", "head_dim": 32},
+         "phi3": {"arch": "phi3"}}
 # what an engine is told of a model of each, besides the form (Llama's arguments)
-OPTIONS = {"qwen35": {"rotary": 4}, "neox": {"rotary": 4},
+OPTIONS = {"qwen35": {"rotary": 4}, "neox": {"rotary": 4}, "phi3": {"rotary": 4},
            "gemma3": {"local": {"layers": [0, 1, 3], "window": 2, "rope_theta": 100.0}},
            "gemma4": {"local": {"layers": [0, 2], "window": 2, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0},
            "spark": {"local": {"layers": [0, 1, 2], "window": 2, "rope_theta": 100.0}, "rotary": 8},
@@ -185,7 +188,7 @@ ENTRANCES = {
 def test_a_name_that_is_no_architectures_is_refused_wherever_it_comes_in(entrance):
     """It was read as a Llama until T359.6: a mistyped name ran another model's forward pass without a word."""
     for arch in ("llama3", "LLAMA", "qwen3", "", "gpt-2"):
-        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3, gemma4, spark, plamo3, gemma2, bitnet."
+        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3, gemma4, spark, plamo3, gemma2, bitnet, phi3."
     for arch in FACTS:  # (and a name it has is not what is refused there)
         try:
             ENTRANCES[entrance](arch)
@@ -263,12 +266,14 @@ def test_the_tables_the_engine_makes_are_what_the_facts_of_rope_say(arch):
         return
     assert make("float32") is None  # the file has them
     cos, sin = make("int8", 1.5)
+    magnitude = 1.5 if FACTS[arch]["yarn_magnitude"] else 1.0
     if FACTS[arch]["rope"] == PARTLY:
+        # (T258: a Phi-3's tables carry the magnitude as a Llama's do, the others' none)
         part = np.arange(48)[:, None] * frequencies(4)
         cos, sin = make("int8", 1.5, 4)
-        assert np.array_equal(cos[:, :2], np.cos(part).astype(np.float32)) and not cos[:, 2:].any() and not sin[:, 2:].any()
+        assert np.array_equal(cos[:, :2], (np.cos(part) * magnitude).astype(np.float32)) and not cos[:, 2:].any() and not sin[:, 2:].any()
+        assert np.array_equal(sin[:, :2], (np.sin(part) * magnitude).astype(np.float32))
     else:
-        magnitude = 1.5 if FACTS[arch]["yarn_magnitude"] else 1.0
         assert np.array_equal(cos, (np.cos(angles) * magnitude).astype(np.float32))
         assert np.array_equal(sin, (np.sin(angles) * magnitude).astype(np.float32))
 

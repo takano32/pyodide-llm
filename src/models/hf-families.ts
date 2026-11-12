@@ -1,5 +1,6 @@
 // From Hugging Face, converted in the browser: the families that come as one that thinks and one that answers at
-// once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3, Spark-X2.5), MiniCPM5, LFM2, Gemma 3 and Ternary Bonsai.
+// once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3, Spark-X2.5), MiniCPM5, LFM2, Gemma 3, Ternary Bonsai,
+// BitNet and Phi.
 import {
   AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASKED_ENGLISH, ASKED_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
   QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, QWEN3_THINKING_2507,
@@ -7,7 +8,7 @@ import {
 } from "./formats.ts";
 import {
   AGENTS_A1_SAMPLING, BONSAI_27B_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING,
-  SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
+  SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, greedy, thinking,
 } from "./sampling.ts";
 import { binaryBonsai, gemma2Jpn, gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
@@ -97,6 +98,17 @@ export const HF_FAMILIES: Entry[] = [
     hf: hf("microsoft/bitnet-b1.58-2B-4T", "04c3b9ad9361b824064a1f25ea60a8be9599b127"), download: 1178623988,
     conversion: { dtype: "int8" }, loaded: 924712988, options: {},
     generation: { steps: 0, temperature: 0.6, topp: 0.9, repetition_penalty: 1.0 },
+    ...ASKED_ENGLISH },
+  // T258.1: Microsoft's Phi-3 mini 4K Instruct, a Llama whose q, k and v are one matrix and whose gate and up are
+  // another (convert/families/phi3.py cuts them). transformers masks a sliding window of 2047 positions: the context is
+  // cut to it. Its safetensors, in two shards (llama.cpp's phi3 GGUFs keep the matrices as one, which the converter
+  // does not read). The tokenizer.json, not the tokenizer.model: only the former has the turn marks (<|user|>, <|end|>,
+  // <|assistant|>), which take in the newline the template writes after them (its added tokens' rstrip, T258). The BOS
+  // (<|user|>, the format's first token), the stops and the format are the converter's; greedy, as its card's example
+  { group: "hf", id: "hf-phi-3-mini-4k-instruct", name: "Microsoft Phi-3 mini 4K Instruct",
+    note: "answers instructions · English · fetches 7.6 GB → int8 4.3 GB", japanese: false, converted: 4.3e9,
+    hf: hf("microsoft/Phi-3-mini-4k-instruct", "f39ac1d28e925b323eae81227eaba4464caced4e"), download: 7642181880,
+    conversion: {}, options: {}, generation: greedy,
     ...ASKED_ENGLISH },
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).

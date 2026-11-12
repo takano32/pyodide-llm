@@ -90,14 +90,14 @@ def rope_tables(arch, seq_len, head_size, rotary, magnitude, dtype, frequencies)
         return zeros, zeros
     if dtype == "float32":
         return None
-    if layout.rope == PARTLY:
-        return partial_tables(seq_len, head_size, rotary, frequencies)
     if layout.rope == PROPORTIONAL:
         # T331: the first rotary values, by the first angles of the whole head (transformers' proportional RoPE: the
         # pairs past them turn by an angle of 0, which is none)
         return partial_tables(seq_len, head_size, rotary, lambda width: frequencies(head_size)[:width // 2])
-    # (yarn's magnitude is in a Llama's tables alone, as it always was)
+    # (yarn's magnitude is in a Llama's tables alone, as it always was; T258: and a Phi-3's, which turns part of a head)
     magnitude = magnitude if layout.yarn_magnitude else 1.0
+    if layout.rope == PARTLY:
+        return partial_tables(seq_len, head_size, rotary, frequencies, magnitude)
     angles = np.arange(seq_len)[:, None] * frequencies(head_size)
     return tuple((turn(angles) * magnitude).astype(np.float32) for turn in (np.cos, np.sin))
 
@@ -109,11 +109,12 @@ def local_tables(seq_len, head_size, theta, frequencies):
     return tuple(turn(angles).astype(np.float32) for turn in (np.cos, np.sin))
 
 
-def partial_tables(seq_len, head_size, rotary, frequencies):
+def partial_tables(seq_len, head_size, rotary, frequencies, magnitude=1.0):
     """The RoPE tables of a model that turns the first rotary values of a head only: the angles of that part, in
-    tables of the shape the file has (the rest is never read)."""
+    tables of the shape the file has (the rest is never read). magnitude: what cos and sin are multiplied by (T258: a
+    Phi-4 mini's longrope attention factor; 1 for the others)."""
     angles = np.arange(seq_len)[:, None] * frequencies(rotary)
     tables = [np.zeros((seq_len, head_size // 2), dtype=np.float32) for _ in range(2)]
     for table, values in zip(tables, (np.cos(angles), np.sin(angles))):
-        table[:, :rotary // 2] = values
+        table[:, :rotary // 2] = values * magnitude if magnitude != 1.0 else values
     return tables

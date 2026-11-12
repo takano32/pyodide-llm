@@ -1152,6 +1152,21 @@ out = Unreplaced(MADE.tokenizer.replaced)
   if (!read[0] || !read[1]) throw new Error(`T617: the replaced handed from JavaScript are not read (in ${read[0]}, out ${read[1]})`);
   console.log("T617: an entry's replaced handed from JavaScript are read");
 }
+// T258: the tokenizer's stripped (a dict of arrays: the specials that take in the whitespace beside them, a Phi-3's
+// <|user|> and <|end|>) as the worker hands it to the engine, through Pyodide's proxies
+{
+  const llama = pyodide.pyimport("llama2_numpy").Llama.callKwargs(pyodide.runPython('read("tiny-lm.bin")'), pyodide.runPython('read("tiny-lm.tokenizer.bin")'),
+    { dtype: "int8", tokenizer_kind: "unigram", stripped: { right: ["</s>"] } });
+  pyodide.globals.set("MADE", llama);
+  const read = pyodide.runPython(`
+specials = ("</s>",)
+(MADE.tokenizer.encode("a</s> \\n b", specials) == MADE.tokenizer.encode("a</s>b", specials),
+ MADE.tokenizer.encode("a \\n</s>b", specials) != MADE.tokenizer.encode("a</s>b", specials))`).toJs();
+  pyodide.runPython("del MADE");
+  llama.destroy();
+  if (!read[0] || !read[1]) throw new Error(`T258: the stripped handed from JavaScript are not read (right ${read[0]}, left alone ${read[1]})`);
+  console.log("T258: the tokenizer's stripped handed from JavaScript are read");
+}
 // T235: an entry's rope_scaling: {} (src/models/formats.ts's PLAIN_ROPE) as the worker hands it to the engine: a
 // JavaScript object among the keyword arguments of Llama.callKwargs(), which Python sees as a proxy. The tables are the
 // plain ones to the bit, and yarn's magnitude is off; the same object with yarn in it scales them

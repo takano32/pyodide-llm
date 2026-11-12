@@ -445,6 +445,42 @@ def plamo3_model(dim=32, hidden_dim=64, layers=4, pattern=4, n_heads=4, n_kv_hea
     return tensors, config
 
 
+# ------------------------------------------------------------------------------------- Phi-3 (T258)
+def phi3_model(dim=64, hidden_dim=96, layers=2, n_heads=4, n_kv_heads=2, vocab_size=320, seq_len=24, window=None,
+               rotary=1.0, shared=False, seed=0, eps=1e-5, theta=10000.0, scaling=None, original=None, spread=0.3):
+    """Random Hugging Face tensors of a tiny Phi-3, with the names and shapes of microsoft/Phi-3-mini-4k-instruct's
+    model.safetensors (q, k and v in one matrix, self_attn.qkv_proj: q's rows, then k's, then v's; the gate and the up
+    of the FFN in one, mlp.gate_up_proj: the gate's rows first), and its config.json as Phi3Config reads it. window: its
+    sliding_window (None: none said). rotary: its partial_rotary_factor (Phi-4 mini's 0.75; the heads are 16 wide, so
+    that three quarters of one are whole pairs). scaling: its rope_scaling (T258.2: longrope's), original: its
+    original_max_position_embeddings at the top, as Phi-3's and Phi-4 mini's say it."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * spread).astype(np.float32)
+    around = lambda *shape: (1.0 + rng.standard_normal(shape) * spread).astype(np.float32)
+    head = dim // n_heads
+    tensors = {"model.embed_tokens.weight": normal(vocab_size, dim), "model.norm.weight": around(dim)}
+    for layer in range(layers):
+        p = f"model.layers.{layer}."
+        tensors[p + "input_layernorm.weight"] = around(dim)
+        tensors[p + "self_attn.qkv_proj.weight"] = normal((n_heads + 2 * n_kv_heads) * head, dim)
+        tensors[p + "self_attn.o_proj.weight"] = normal(dim, n_heads * head)
+        tensors[p + "post_attention_layernorm.weight"] = around(dim)
+        tensors[p + "mlp.gate_up_proj.weight"] = normal(2 * hidden_dim, dim)
+        tensors[p + "mlp.down_proj.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    config = dict(model_type="phi3", architectures=["Phi3ForCausalLM"], hidden_size=dim, intermediate_size=hidden_dim,
+                  num_hidden_layers=layers, num_attention_heads=n_heads, num_key_value_heads=n_kv_heads,
+                  hidden_act="silu", max_position_embeddings=seq_len, rms_norm_eps=eps, rope_theta=theta,
+                  rope_scaling=scaling, sliding_window=window, vocab_size=vocab_size, tie_word_embeddings=shared,
+                  attention_bias=False, bos_token_id=1, eos_token_id=2, pad_token_id=2)
+    if rotary != 1.0:
+        config["partial_rotary_factor"] = rotary
+    if original is not None:
+        config["original_max_position_embeddings"] = original
+    return tensors, config
+
+
 # ------------------------------------------------------------------------------------- BitNet b1.58 (T283)
 # the matrices a BitNet's file holds packed with a scale beside them, by their names
 BITNET_MATRICES = ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj", "mlp.gate_proj",
