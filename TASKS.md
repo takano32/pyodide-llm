@@ -38,7 +38,7 @@
 - T423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
 - T449 [整理][その他] T367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 進行中
 - T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
-- T270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 未着手
+- T270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 進行中
 - T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
 - T457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
 - T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
