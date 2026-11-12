@@ -10,7 +10,7 @@
 #
 # small (the default): a context of 1024, heads and states of a few kilobytes: for the numbers.
 # state: a context of 4096 and value heads as large as the real models' (16 of 128 by 128), so that the state of the
-# linear-attention layers (6.3 MB, held twice) and the keys and values of the two attending layers (8.4 MB in
+# linear-attention layers (6.3 MB, in one place a layer and a spare) and the keys and values of the two attending layers (8.4 MB in
 # float32) outweigh the rest: for what forward.js puts after the checkpoint against footprint().
 # wide (the review of T229): heads of 256, as every real Qwen3.5 has.
 # rotated (T237): the same model folded into a rotated basis (blocks of 16 with random signs: 4 blocks of the residual

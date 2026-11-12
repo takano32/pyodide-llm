@@ -294,7 +294,7 @@ legacy 形式の行を足す・動かすとき。行は `layout.py` のそのレ
 
 ### 層の種類（状態を持つ層）を足す
 
-LFM2 の畳み込みや Qwen3.5 の linear のような層のとき。Python は `Stateful` と `STATEFUL_LAYERS`、JavaScript は `forward/<種類>.ts` と `forward/kinds.ts` の表の**最後**に 1 行。状態を読んで書く段をスレッドに出すなら 2 枚持つ。全文は [docs/notes/adding/layer-kind.md](docs/notes/adding/layer-kind.md)。
+LFM2 の畳み込みや Qwen3.5 の linear のような層のとき。Python は `Stateful` と `STATEFUL_LAYERS`、JavaScript は `forward/<種類>.ts` と `forward/kinds.ts` の表の**最後**に 1 行。状態を読んで書く段をスレッドに出すなら、読む置き場と書く置き場を分ける（`linear.ts` は層の数 + 1 の置き場を回す: T285）。全文は [docs/notes/adding/layer-kind.md](docs/notes/adding/layer-kind.md)。
 
 ### dtype（詰め方）を足す
 

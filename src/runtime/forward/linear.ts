@@ -4,12 +4,13 @@
 //
 // Their tensors: q, k and v in one matrix (wqkv), z, the output (wout); in float32 the two small matrices of the gates
 // (wb, wa), the taps of the convolution, dt_bias, the decay and the norm of a value head.
-// Their state: for each layer a matrix (keyDim, valueDim) a value head, twice (flips: which of the two holds the
-// state now; the delta rule reads it and writes the other, T120: a phase that is run again after a software thread
-// stopped then reads what it read; position 0 clears both), and the last conv tokens' q, k and v before the
-// convolution (the oldest first, the token under way last). And the two weights rmsnorm takes the l2 norm of a head
-// with: x / sqrt(sum(x * x) + 1e-6) is rmsnorm's w * x / sqrt(mean(x * x) + eps) with w = 1 / sqrt(n) and
-// eps = 1e-6 / n; q is divided by sqrt(n) more.
+// Their state: for each layer a matrix (keyDim, valueDim) a value head, in one of count + 1 places (slots: which place
+// holds a layer's state now, and spare the one none holds; the delta rule reads a layer's place and writes the spare,
+// which then holds it, and the place it read is the spare: T120, a phase that is run again after a software thread
+// stopped then reads what it read. T285: a place a layer and one more, not two a layer; position 0 clears all), and
+// the last conv tokens' q, k and v before the convolution (the oldest first, the token under way last). And the two
+// weights rmsnorm takes the l2 norm of a head with: x / sqrt(sum(x * x) + 1e-6) is rmsnorm's w * x /
+// sqrt(mean(x * x) + eps) with w = 1 / sqrt(n) and eps = 1e-6 / n; q is divided by sqrt(n) more.
 import { KIND } from "../jobs.ts";
 import { REASONS } from "./reasons.ts";
 import type { Kind, Layers } from "./kinds.ts";
@@ -26,7 +27,7 @@ const linearNumbers = ({ numbers: { linear }, widths }: Sizes) => {
 const kept = (sizes: Sizes, count: number) => {
   const { value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: tapsCount, mixed } = linearNumbers(sizes);
   const stateBytes = valueHeads * keyDim * valueDim * 4, convBytes = tapsCount * mixed * 4;
-  return { stateBytes, convBytes, blocks: [2 * count * stateBytes, count * convBytes, keyDim * 4, keyDim * 4] };
+  return { stateBytes, convBytes, blocks: [(count + 1) * stateBytes, count * convBytes, keyDim * 4, keyDim * 4] };
 };
 
 // T271.2: the widest key dim and value dim the GPU's delta rule takes (a thread a value of a head, its state's column in
@@ -89,7 +90,7 @@ export const linear: Kind = {
       ...(sizes.numbers.tiled ? [["tiled", read * 4]] satisfies Framed[] : [])], widest: read };
   },
   state: (sizes, count) => kept(sizes, count).blocks,
-  // T271.2: the GPU's worker has these layers too: their states (one of the two a layer, the one that holds it now)
+  // T271.2: the GPU's worker has these layers too: their states (the place that holds each layer's now)
   // and their convolution's rows go up to it and come back (make()'s staging)
   staged: (sizes, count) => {
     const { stateBytes, convBytes } = kept(sizes, count);
@@ -107,13 +108,15 @@ export const linear: Kind = {
     const deltaNorm = floats("delta_norm");
     const { stateBytes, convBytes, blocks } = kept(sizes, count);
     const [statesAt, convRows, qUnit, kUnit] = blocks.map((bytes) => room.alloc(bytes));
-    const flips = new Uint8Array(count);
+    // (place a holds layer a's state at first, and place count is the spare)
+    const slots = Uint32Array.from({ length: count }, (_, a) => a);
+    let spare = count;
     room.F.fill(1 / keyDim, qUnit / 4, qUnit / 4 + keyDim);
     room.F.fill(1 / Math.sqrt(keyDim), kUnit / 4, kUnit / 4 + keyDim);
     const C = mixedWidth * 4, KD = keyDim * 4, VD = valueDim * 4, l2 = 1e-6 / keyDim;
-    // T271.2: the state as the GPU's worker holds it: every layer's matrices (the one of its two that holds them now:
-    // flips), place after place, then the convolution's rows as they lie here
-    const states = count * stateBytes, now = (a: number) => statesAt + (2 * a + flips[a]) * stateBytes;
+    // T271.2: the state as the GPU's worker holds it: every layer's matrices (from the place that holds them now:
+    // slots), layer after layer, then the convolution's rows as they lie here
+    const states = count * stateBytes, now = (a: number) => statesAt + slots[a] * stateBytes;
     return {
       staging: {
         bytes: states + count * convBytes,
@@ -130,7 +133,7 @@ export const linear: Kind = {
       },
       clear() {
         const { F } = room;
-        F.fill(0, statesAt / 4, (statesAt + 2 * count * stateBytes) / 4);
+        F.fill(0, statesAt / 4, (statesAt + (count + 1) * stateBytes) / 4);
         F.fill(0, convRows / 4, (convRows + count * convBytes) / 4);
       },
       // count tokens through the a-th layer, from xb (the norm of x) into xb2, as the output projection of an attending
@@ -161,9 +164,10 @@ export const linear: Kind = {
             k.rmsnorm(ct + h * KD, ct + h * KD, qUnit, keyDim, l2);
             k.rmsnorm(ct + (keyHeads + h) * KD, ct + (keyHeads + h) * KD, kUnit, keyDim, l2);
           }
-          const now = statesAt + (2 * a + flips[a]) * stateBytes, next = statesAt + (2 * a + 1 - flips[a]) * stateBytes;
-          phase([[KIND.delta_rule, xt, now, next, ct, wt, keyHeads, keyDim, valueDim, valueHeads, 1, 0, 0, 0]]);
-          flips[a] ^= 1;
+          const read = slots[a];
+          phase([[KIND.delta_rule, xt, statesAt + read * stateBytes, statesAt + spare * stateBytes, ct, wt, keyHeads, keyDim, valueDim, valueHeads, 1, 0, 0, 0]]);
+          slots[a] = spare;
+          spare = read;
           // the norm of every value head, and z's gate
           for (let h = 0; h < valueHeads; h++) k.rmsnorm(xt + h * VD, xt + h * VD, deltaNorm + a * VD, valueDim, eps);
           k.swiglu(xt, z + t * S, xt, readWidth);

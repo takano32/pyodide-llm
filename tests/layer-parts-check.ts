@@ -346,18 +346,19 @@ const S = 100000;
   const { core, said, room, at, vector } = coreOf(plan, { sizes, has: ["wqkv", "wz", "wout", "wb", "wa", "conv", "dt_bias", "decay", "delta_norm"] });
   const layers = linear.make(core, 2);
   const stateBytes = 4 * 8 * 8 * 4, convBytes = 3 * 64 * 4;
-  assert.deepEqual(room.taken.map(([, size]) => size), [2 * 2 * stateBytes, 2 * convBytes, 32, 32], "two states a layer, the convolution's rows, the two weights of the l2 norms");
+  assert.deepEqual(room.taken.map(([, size]) => size), [3 * stateBytes, 2 * convBytes, 32, 32], "a state's place a layer and a spare one (T285), the convolution's rows, the two weights of the l2 norms");
   assert.deepEqual(linear.state(sizes, 2), room.taken.map(([, size]) => size), "what it says it keeps (footprint() counts that) is what it takes of the memory");
   const [[states], [rows], [qUnit], [kUnit]] = room.taken;
   assert.deepEqual([...room.F.subarray(qUnit / 4, qUnit / 4 + 8)], Array(8).fill(Math.fround(1 / 8)));
   assert.deepEqual([...room.F.subarray(kUnit / 4, kUnit / 4 + 8)], Array(8).fill(Math.fround(1 / Math.sqrt(8))));
-  // three tokens through the second layer: the delta rule reads one of the layer's two states and writes the other, turn about
+  // three tokens through the second layer: the delta rule reads the place that holds the layer's state and writes the
+  // spare one, which then holds it (the second layer's place first, then the spare, the third)
   const second = layers.layer(1, { kind: "linear", place: 1, rope: false });
   room.F.fill(3, (at.mixed + S) / 4, (at.mixed + S) / 4 + 64);  // (the second token's q, k and v)
   second(3, 0);
   const rules = said.filter(([name]) => name === "phase").map(([, job]) => job);
   assert.equal(rules.length, 3, "a phase a token");
-  const mine = states + 2 * stateBytes;
+  const mine = states + stateBytes;
   assert.deepEqual(rules.map(([kind, , now, next]) => [kind, now, next]), [[7, mine, mine + stateBytes], [7, mine + stateBytes, mine], [7, mine, mine + stateBytes]],
     "what a token wrote is what the next one reads, and never the state it reads itself (T120)");
   assert.deepEqual(rules[1].slice(4), [at.conv + S, at.work + S, 2, 8, 8, 4, 1, 0, 0, 0]);
@@ -368,18 +369,23 @@ const S = 100000;
   // (after the third token the rows hold the last three tokens' values, the oldest first: the second token's are in the middle)
   const row = (i) => [...room.F.subarray((rows + convBytes) / 4 + i * 64, (rows + convBytes) / 4 + (i + 1) * 64)];
   assert.ok(row(1).every((value) => value === 3) && row(0).every((value) => value === 0) && row(2).every((value) => value === 0), "the rows move up by one a token");
-  // the first layer has its own states: its first token reads the first of them
+  // the first layer has its own place: its first token reads the first and writes the spare one (the second layer's
+  // place before), and then the second layer reads its own (the third) and writes the first, which the first left
   said.length = 0;
   layers.layer(0, { kind: "linear", place: 0, rope: false })(1, 3);
   assert.deepEqual(said.find(([name]) => name === "phase")[1].slice(2, 4), [states, states + stateBytes]);
+  said.length = 0;
+  second(1, 3);
+  assert.deepEqual(said.find(([name]) => name === "phase")[1].slice(2, 4), [states + 2 * stateBytes, states],
+    "a layer reads the place it wrote last, which no other layer has written since");
   // position 0: the states and the rows are cleared, and nothing beside them
   room.F.fill(5, states / 4 - 1, (kUnit + 32) / 4 + 1);
   layers.clear();
   const F = room.F;
-  assert.ok(F.subarray(states / 4, (states + 4 * stateBytes) / 4).every((value) => value === 0), "the states");
+  assert.ok(F.subarray(states / 4, (states + 3 * stateBytes) / 4).every((value) => value === 0), "the states");
   assert.ok(F.subarray(rows / 4, (rows + 2 * convBytes) / 4).every((value) => value === 0), "the rows");
   assert.deepEqual([F[states / 4 - 1], F[qUnit / 4], F[kUnit / 4 + 8]], [5, 5, 5], "and nothing else");
-  console.log("ok: linear attention: its frame and its numbers; two states a layer, read and written turn about; the convolution's rows; what position 0 clears");
+  console.log("ok: linear attention: its frame and its numbers; a state's place a layer and a spare, read and written in turn; the convolution's rows; what position 0 clears");
 
   // T363.5: a model whose output matrix has its columns in llama.cpp's order of the value heads (the plan's tiled, the
   // form's): what the matrix reads is the value heads put in that order, every key head's first one, then every key

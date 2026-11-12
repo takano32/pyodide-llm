@@ -12,7 +12,7 @@
 //       of model (a key for every head and grouped-query, biases, heads of another size than dim / heads, GPT-2, GPT-NeoX),
 //       int8, six bits, float16 and float32, with and without relaxed SIMD, on a shared memory (its base, and the type of
 //       the keys and values keysInHalf says) and on a plain one. T229's review: and a Qwen3.5's hybrid attention, whose
-//       linear layers keep a state (twice) and no keys and values (a small one with a state that outweighs the rest, the
+//       linear layers keep a state (in count + 1 places, T285) and no keys and values (a small one with a state that outweighs the rest, the
 //       0.8B whole, four layers of the 27B's shape). The worker sizes the memory by footprint(); an engine
 //       that put more after the checkpoint than it counted runs out of memory near the end of its context.
 //   (3) the memory of a cache that doubles never holds more than the whole context's: it has the size footprint() counts
@@ -157,7 +157,8 @@ function halfToFloat(h) {
     // less, so only the bound is held
     ...big("int8 kernels cannot run (dim 200)", [200, 400, 8, 4, 4, 1000, 4096], {}, ["int8"], true),
     // T229, the review: Qwen3.5's hybrid attention. A linear-attention layer keeps a state of a size the context does not
-    // change (twice: the delta rule reads one and writes the other), and no keys and values; only the full-attention layers do.
+    // change (in one of count + 1 places, T285: the delta rule reads a layer's and writes the spare one), and no keys and
+    // values; only the full-attention layers do.
     // One whose state (12.6 MB) and keys and values (2 of 8 layers) outweigh the rest, in every dtype:
     ...big("qwen3.5, a state of 12.6 MB", [256, 512, 8, 4, 2, 20000, 4096], { arch: "qwen35", head_dim: 64, linear: LINEAR_SMALL },
       ["int8", "int6", "float32", "float16"]),

@@ -220,9 +220,9 @@ if (isMainThread) {
   console.warn = warned;
   went &&= stopped.lostThreads && stopped.threads === 1 && (await stopped.setThreads(4)) === 1;
   stopped.stopThreads();
-  // T229's review: a hybrid model's delta rule reads a state and writes it (the new state beside the old, forward.js's
-  // flips), so a phase that is run again must compute the same. A thread that stops after it has written the first value
-  // head of its chunk of a delta rule's phase, never counting the chunk (threads-late-helper.ts), leaves the new state
+  // T229's review: a hybrid model's delta rule reads a state and writes it (the new state beside the old, in the spare
+  // place of forward/linear.ts's slots, T285), so a phase that is run again must compute the same. A thread that stops
+  // after it has written the first value head of its chunk of a delta rule's phase, never counting the chunk (threads-late-helper.ts), leaves the new state
   // half written; the coordinator gives it up and runs the whole phase again, to the logits the first count computed. A
   // state written in place would have advanced those heads twice. Where the heads are too small for a thread to get a
   // chunk before the coordinator has run them all, nothing stops and nothing is tested: the line says so.
