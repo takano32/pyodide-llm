@@ -90,7 +90,10 @@ if by_layer:
     model = reference_llama.ByLayer(directory)
     fidelity = 0
 else:
-    model = (Qwen3_5ForConditionalGeneration if hybrid else AutoModelForCausalLM).from_pretrained(str(directory), dtype=kept).eval()
+    # (T612.2's review: a model that caps its attention's scores, Gemma 2's, is loaded with the eager attention, the one that
+    # caps them: as tests/start_check.py and tests/reference_gemma2.py load it)
+    eager = {"attn_implementation": "eager"} if configured.get("attn_logit_softcapping") else {}
+    model = (Qwen3_5ForConditionalGeneration if hybrid else AutoModelForCausalLM).from_pretrained(str(directory), dtype=kept, **eager).eval()
 say(f"{target}: {type(model).__name__}, the BOS {bos}, the end of a turn {end}, weights held as {kept}"
     f"{', every product in float32' if stored else ''}{', enable_thinking said' if thinks else ''}")
 pairs = [json.loads(line) for line in PAIRS.read_text().splitlines()]
