@@ -273,7 +273,9 @@ function record(entry) {
   // (T233's review: a results file in a folder that was not there threw here, in the very handler that records what threw: the
   // handler ran again and again, 15,694 lines of "FAILED" in a log)
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, JSON.stringify({ engine, browserVersion, model, os: `${os.platform()} ${os.arch()}`, ...extra, ...entry }) + "\n");
+  // (T84: the CPU's name too, since GitHub's runners differ from run to run; "unknown" on arm64, AGENTS.md)
+  fs.appendFileSync(file, JSON.stringify({ engine, browserVersion, model, os: `${os.platform()} ${os.arch()}`, cpu: os.cpus()[0]?.model ?? null,
+    ...extra, ...entry }) + "\n");
 }
 
 // Anything that throws (a navigation that fails, a closed page) is a failed run too, and must be recorded as one
