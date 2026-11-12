@@ -38,12 +38,14 @@ from conducting import Directory, Mapped, converted  # noqa: E402
 from made_up import phi3_model, safetensors_file  # noqa: E402
 from reference import (TEXT, differences, ended, engine_logits, fetch, float32_file, line_of, logits_failed,  # noqa: E402
                        logits_said, made_up_engine, option, options_shown)
-from test_phi3 import naive_phi3_logits  # noqa: E402
+from test_phi3 import LONGROPE, naive_phi3_logits  # noqa: E402
 
 # by --model: the repository, its revision, its two shards, and its BOS (the converter's: the format's first token,
 # which a plain text has not, so the text begins with the tokenizer's own <s> or <|endoftext|>)
 MODELS = {
     "phi-3": ("microsoft/Phi-3-mini-4k-instruct", "f39ac1d28e925b323eae81227eaba4464caced4e", 1),
+    # (T258.2: three quarters of a head turned, longrope's attention factor of 1.190 in cos and sin)
+    "phi-4": ("microsoft/Phi-4-mini-instruct", "cfbefacb99257ffa30c83adab238a50856ac3083", 199999),
 }
 SHARDS = ["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]
 FILES = ["config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors.index.json"]
@@ -79,7 +81,10 @@ def at_once_and_stepped(model, ids):
 
 # ------------------------------------------------------------------------------------------------------ made-up
 MADE_UP = {"a Phi-3 mini's": dict(), "three quarters of a head turned, tied": dict(rotary=0.75, shared=True),
-           "one key head, three layers": dict(n_kv_heads=1, layers=3), "a quarter turned, another base": dict(rotary=0.25, theta=500.0)}
+           "one key head, three layers": dict(n_kv_heads=1, layers=3), "a quarter turned, another base": dict(rotary=0.25, theta=500.0),
+           # (T258.2: longrope, as tests/test_phi3.py's; transformers reads its short factors within the original context)
+           "longrope, three quarters turned": LONGROPE,
+           "longrope, its factor said": {**LONGROPE, "scaling": {**LONGROPE["scaling"], "factor": 2.0}}}
 
 
 def made_up(directory):
@@ -93,8 +98,9 @@ def made_up_one(name, settings, directory=HERE.parent / ".tmp" / "reference-phi3
     """One made-up model, written to a folder and loaded by transformers as a published one is: the unit tests'
     reference and the engine are held to ten times what transformers' own two ways differ by."""
     rng = np.random.default_rng(0)
-    ids = [int(token) for token in rng.integers(0, 320, 40)]
-    tensors, config = phi3_model(seq_len=64, **settings)
+    # (within a longrope model's original context of 16, past which transformers turns by its long factors)
+    ids = [int(token) for token in rng.integers(0, 320, 16 if "scaling" in settings else 40)]
+    tensors, config = phi3_model(**{"seq_len": 64, **settings})
     folder = directory / "made-up" / name.replace(" ", "-").replace(",", "").replace("'", "")
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "model.safetensors").write_bytes(safetensors_file(tensors))
@@ -143,7 +149,12 @@ def faults(llama):
             ("RoPE turning nothing", *replaced(*tables, made=unturned)),
             ("RoPE a position behind", *replaced(*tables, made=behind)),
             ("the first layer's v a quarter larger", *scaled("wv", 0, 1.25)),
-            ("the last layer's k a quarter larger", *scaled("wk", len(llama.wk) - 1, 1.25))]
+            ("the last layer's k a quarter larger", *scaled("wk", len(llama.wk) - 1, 1.25)),
+            # (T258.2: a longrope model's tables without its attention factor, where it has one)
+            *([("RoPE without longrope's attention factor",
+                *replaced(*tables, made=lambda real, imag: {name: table / np.float32(llama.rope_magnitude)
+                                                            for name, table in zip(tables, (real, imag))}))]
+              if getattr(llama, "rope_magnitude", 1.0) != 1.0 else [])]
 
 
 def real_folder(directory, name):

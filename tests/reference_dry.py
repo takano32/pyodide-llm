@@ -94,7 +94,7 @@ def put(folder, files):
 
 
 # the directories directories() makes, in the mark: a name more here and every checkout makes them again
-MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "gemma2", "bitnet", "phi3", "llama")
+MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "gemma2", "bitnet", "phi3-longrope", "llama")
 
 
 def directories(work):
@@ -144,7 +144,9 @@ def directories(work):
                                    "tokenizer_config.json": said(), "generation_config.json": "{}",
                                    "model.safetensors": made_up.safetensors_file(tensors)})
     # (T258) a Phi-3 of nine layers in two shards, of which the tool reads the first eight (its --layers)
-    tensors, config = made_up.phi3_model(vocab_size=VOCAB, seq_len=CONTEXT, layers=9, rotary=0.75, spread=0.1)
+    # (T258.2: and longrope, the context four times its original one: the tool's 96 positions are within the latter)
+    tensors, config = made_up.phi3_model(vocab_size=VOCAB, seq_len=CONTEXT, layers=9, rotary=0.75, spread=0.1, original=CONTEXT // 4,
+                                         scaling={"type": "longrope", "short_factor": [1.0, 1.1, 1.3, 1.6, 2.0, 2.5], "long_factor": [3.0] * 6})
     names = sorted(tensors)
     halves = [{name: tensors[name] for name in names[:len(names) // 2]}, {name: tensors[name] for name in names[len(names) // 2:]}]
     put(work / "phi3" / "phi-3", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True), "tokenizer_config.json": said(),
@@ -308,7 +310,7 @@ def parts(work):
                 fine + [(r"real, float32: the engine against transformers in floats", 1), (r"times the line\)$", bitnet),
                         ("faults: the weakest", 1), ("real, int8: the engine's greedy", 1)], {}))
     # (T258: the real part's phases in this process, on the made-up directory, its first eight layers of nine)
-    phi3 = len(reference_phi3.faults(types.SimpleNamespace(wk=[0, 0])))
+    phi3 = len(reference_phi3.faults(types.SimpleNamespace(wk=[0, 0], rope_magnitude=1.2)))
     out += [(f"phi3 made-up, {name}", lambda name=name: reference_phi3.made_up_one(name, reference_phi3.MADE_UP[name]), right, fine, {})
             for name in reference_phi3.MADE_UP]
     out.append(("phi3 real, with the faults", lambda: reference_phi3.real(work / "phi3"), right,

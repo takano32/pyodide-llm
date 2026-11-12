@@ -30,6 +30,17 @@ MODELS = {
     "another epsilon and base": dict(eps=1e-6, theta=500.0, rotary=0.5),
     "a window past the text": dict(window=40),
 }
+# (T258.2) longrope as Phi-4 mini says it (its type, the factors of the pairs turned, the original context at the top),
+# with short factors that are not 1 (Phi-3.5 mini's are not) and a context four times the original one
+SHORT, LONG = [1.0, 1.3, 1.7, 2.0, 3.1, 4.2], [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
+LONGROPE = dict(rotary=0.75, seq_len=64, original=16, scaling={"type": "longrope", "short_factor": SHORT, "long_factor": LONG})
+MODELS.update({
+    "longrope, three quarters turned": LONGROPE,
+    "longrope, its attention factor said": {**LONGROPE, "scaling": {**LONGROPE["scaling"], "attention_factor": 0.8}},
+    "longrope, its factor said, tied": {**LONGROPE, "shared": True, "scaling": {**LONGROPE["scaling"], "factor": 2.0}},
+    "longrope, whole heads, all ones": dict(seq_len=64, original=16, scaling={"type": "longrope", "short_factor": [1.0] * 8,
+                                                                             "long_factor": [2.0] * 8}),
+})
 
 
 def naive_phi3_logits(tensors, config, tokens):
@@ -183,3 +194,55 @@ def test_a_phi3_the_engine_cannot_run_is_refused():
 def test_the_form_is_a_phi3s():
     tensors, config = phi3_model(rotary=0.75)
     assert checkpoint_form(config, tensors)["arch"] == "phi3"
+
+
+# ---- T258.2: longrope
+# microsoft/Phi-4-mini-instruct's config.json at cfbefacb, the keys of its RoPE (its short factors are all 1)
+PHI4_MINI = {"model_type": "phi3", "hidden_size": 3072, "intermediate_size": 8192, "num_hidden_layers": 32, "num_attention_heads": 24,
+             "num_key_value_heads": 8, "vocab_size": 200064, "max_position_embeddings": 131072, "original_max_position_embeddings": 4096,
+             "partial_rotary_factor": 0.75, "rope_theta": 10000.0, "sliding_window": 262144, "hidden_act": "silu",
+             "tie_word_embeddings": True, "lm_head_bias": False, "mlp_bias": False, "attention_bias": False,
+             "rope_scaling": {"type": "longrope", "short_factor": [1.0] * 48, "long_factor": [1.0 + at for at in range(48)]}}
+
+
+def test_phi4_minis_longrope_reads_as_transformers_reads_it():
+    """Its context cut to the original 4096 (the long factors are past it), its short factors, which are all 1 (the
+    plain angles), and the attention factor of 131072 / 4096 = 32, sqrt(1 + ln 32 / ln 4096) = sqrt(17 / 12), which
+    multiplies cos and sin at every length: the scores 17 / 12 times sharper than a plain RoPE's."""
+    read = normalize(PHI4_MINI)
+    check_config(read)
+    assert read["max_position_embeddings"] == 4096 and read["rotary_pct"] == 0.75
+    assert read["rope_scaling"] == {"rope_type": "longrope", "short_factor": [1.0] * 48, "attention_factor": math.sqrt(17 / 12),
+                                    "original_max_position_embeddings": 4096}
+    assert normalize(read) == read  # (twice is once: the attention factor is not made again of the context cut)
+    from engine.layers import rope_frequencies, rope_magnitude
+    assert np.array_equal(rope_frequencies(96, 10000.0, read["rope_scaling"]), rope_frequencies(96, 10000.0))
+    assert rope_magnitude(read["rope_scaling"]) == math.sqrt(17 / 12)
+
+
+@pytest.mark.parametrize("change, reason", [
+    ({"short_factor": [1.0] * 47}, "short factor for every pair"), ({"short_factor": [1.0] * 47 + [0.0]}, "short factor for every pair"),
+    ({"short_factor": None}, "short factor for every pair"), ({"attention_factor": -1.0}, "no attention factor"),
+    ({"type": "yarn", "factor": 4.0}, "RoPE scaling of the yarn kind")])
+def test_a_longrope_the_engine_cannot_read_is_refused(change, reason):
+    with pytest.raises(ValueError, match=reason):
+        check_config(normalize({**PHI4_MINI, "rope_scaling": {**PHI4_MINI["rope_scaling"], **change}}))
+
+
+def test_longrope_is_a_phi3s_alone():
+    """A Llama's config.json that says longrope is refused as before: its family reads no such scaling."""
+    llama = {key: value for key, value in PHI4_MINI.items() if key != "partial_rotary_factor"}
+    with pytest.raises(ValueError, match="longrope kind"):
+        check_config(normalize({**llama, "model_type": "llama"}))
+
+
+def test_the_options_carry_the_scaling_and_the_engine_its_magnitude():
+    tensors, config = phi3_model(**LONGROPE)
+    made = conversion(tensors, config, "int8")
+    assert made.options["rope_scaling"] == {"rope_type": "longrope", "short_factor": SHORT, "attention_factor": math.sqrt(1.5),
+                                            "original_max_position_embeddings": 16}
+    assert struct.unpack_from("<7i", made.checkpoint, 0)[6] == 16
+    llama, _ = engine(tensors, config, "int8")
+    written, _ = engine(tensors, config)
+    assert llama.rope_magnitude == math.sqrt(1.5)
+    assert np.array_equal(llama.freq_cis_real, written.freq_cis_real) and np.array_equal(llama.freq_cis_imag, written.freq_cis_imag)

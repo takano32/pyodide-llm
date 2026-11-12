@@ -99,6 +99,9 @@ class Family(NamedTuple):
     free_heads: bool = False
     # its RoPE may be scaled (the kinds the tables know: Llama 3's, linear, yarn)
     scaled: bool = False
+    # (T258) the kinds of RoPE scaling it may have where it is scaled: a Phi-3's longrope alone (transformers' Phi3Config
+    # refuses any other), whose numbers its own check() holds
+    scalings: tuple = ("llama3", "linear", "yarn")
     # (config) -> how many values of each layer's heads RoPE turns, a number for every layer (a tuple), where the layers
     # differ in it: what sources() is handed as its rotary in place of the one number (T341: a Spark-X2.5's local
     # layers turn the whole head, the others a quarter of it). None: every layer the same

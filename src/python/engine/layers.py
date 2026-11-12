@@ -372,7 +372,7 @@ def rope(x, cos, sin):
 def rope_frequencies(width, theta, scaling=None):
     """The angle per position of each pair of a head's first width values (float64), for the RoPE tables.
 
-    scaling: config.json's rope_scaling, of three kinds. "linear" (T126: deepseek-coder): every pair turns factor times
+    scaling: config.json's rope_scaling, of three kinds (T258: and longrope's table, below). "linear" (T126: deepseek-coder): every pair turns factor times
     slower, as if the positions were divided by factor. "llama3": the pairs that turn slowly (a wavelength past
     original_max_position_embeddings / low_freq_factor) turn factor times slower, the fast ones (shorter than
     original / high_freq_factor) as before, and the ones between are a blend of the two (transformers'
@@ -390,6 +390,14 @@ def rope_frequencies(width, theta, scaling=None):
     kind = scaling.get("rope_type", scaling.get("type"))
     if kind == "linear":
         return frequencies / float(scaling["factor"])
+    if kind == "longrope":
+        # T258 (Phi-4 mini's): every pair turns its own short_factor times slower, the table of a context within the
+        # original one (transformers' _compute_longrope_parameters; the converter cuts the context to it, so that its
+        # long_factor, of the longer ones, is never the table). Its attention factor scales cos and sin: rope_magnitude()
+        factors = np.asarray(scaling["short_factor"], dtype=np.float64)
+        if factors.shape != frequencies.shape:
+            raise ValueError(f"A longrope RoPE scaling of {factors.size} short factors turns no {width} values of a head.")
+        return frequencies / factors
     if kind == "yarn":
         original = float(scaling["original_max_position_embeddings"])
         # the pair whose angle makes this many turns in the original context (a real number: the pairs slow down evenly)
@@ -420,7 +428,12 @@ def rope_magnitude(scaling=None):
     5.16.1's _compute_yarn_parameters, the form of ssig33/pyodide-llm's bddde105): config.json's attention_factor is
     the magnitude itself, and mscale with mscale_all_dim (both, and neither 0) make it the ratio
     (0.1 mscale ln(factor) + 1) / (0.1 mscale_all_dim ln(factor) + 1)."""
-    if not scaling or scaling.get("rope_type", scaling.get("type")) != "yarn":
+    kind = (scaling or {}).get("rope_type", (scaling or {}).get("type"))
+    if kind == "longrope":
+        # T258: longrope's attention factor, which the converter works out of the context and the original one where
+        # config.json says none (sqrt(1 + ln(factor) / ln(original)): Phi-4 mini's 1.190)
+        return float(scaling["attention_factor"])
+    if kind != "yarn":
         return 1.0
     if scaling.get("attention_factor") is not None:
         return float(scaling["attention_factor"])

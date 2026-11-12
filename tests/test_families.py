@@ -89,7 +89,7 @@ FACTS = {
     "plamo3": Facts("PLaMo 3", "plamo3", "plamo3", "lm_head.weight", {"free_heads", "scaled", "rms_norm"}, "", set(),
                     PLAMO3_MARKS),
     "bitnet": Facts("BitNet", "bitnet", None, "lm_head.weight", LLAMAS),
-    "phi3": Facts("Phi-3", "phi3", None, "lm_head.weight", {"rotatable", "rms_norm", "partly"}),
+    "phi3": Facts("Phi-3", "phi3", None, "lm_head.weight", {"scaled", "rotatable", "rms_norm", "partly"}),
     "gpt2": Facts("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}, "", set(), GPT2_MARKS),
     "gpt_neox": Facts("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}, "", set(), NEOX_MARKS),
 }

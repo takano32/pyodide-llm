@@ -64,8 +64,9 @@ def check_config(config):
             or not (divides or (config.get("head_dim") and family.free_heads)):
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     scaling = config.get("rope_scaling")
-    if scaling and (not family.scaled or scaling.get("rope_type", scaling.get("type")) not in ("llama3", "linear", "yarn")):
-        # Llama 3's, the linear one and yarn are the kinds the RoPE tables know (llama2_numpy.rope_frequencies)
+    if scaling and (not family.scaled or scaling.get("rope_type", scaling.get("type")) not in family.scalings):
+        # Llama 3's, the linear one and yarn are the kinds the RoPE tables know (llama2_numpy.rope_frequencies), and a
+        # Phi-3's longrope (T258: its family's scalings)
         refuse(f"it uses RoPE scaling of the {scaling.get('rope_type', scaling.get('type'))} kind")
     said = yarn(config)
     if said is not None:

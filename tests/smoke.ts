@@ -1187,6 +1187,12 @@ specials = ("</s>",)
   assert.deepEqual(plain, none, "rope_scaling: {} of an entry is not the plain RoPE in the engine");
   assert.equal(plain[0], 1);
   assert.ok(Math.abs(scaled[0] - (0.1 * Math.log(4) + 1)) < 1e-12 && scaled[1] !== plain[1], "yarn in the options did not scale the tables");
+  // T258.2: longrope, its short factors an array (Phi-4 mini's, as its conversion's options say it), through the proxies
+  // (a short factor for every pair of tiny-lm's heads, which it turns whole: dim / heads / 2)
+  const pairs = pyodide.runPython("import struct\n(lambda header: header[0] // header[3] // 2)(struct.unpack_from('<7i', read('tiny-lm.bin'), 0))");
+  const longrope = made({ rope_scaling: { rope_type: "longrope", short_factor: Array.from({ length: pairs }, (_, at) => 1 + at / 8),
+    attention_factor: 1.25, original_max_position_embeddings: 4096 } });
+  assert.ok(longrope[0] === 1.25 && longrope[1] !== plain[1], "longrope in the options did not scale the tables");
 }
 // T397: the converter reads a chat template with jinja2, which Pyodide has once the package is loaded, as the worker
 // loads it before a conversion (worker/pyodide.ts's templatePackage()). T640.14: without it, a template read raises

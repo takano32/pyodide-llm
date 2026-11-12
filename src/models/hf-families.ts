@@ -7,7 +7,7 @@ import {
   QWEN3_THINKING_AFTER_START, SPARK26_THINKING, SPARK_AT_ONCE, SPARK_THINKING, granite, lfm2Old, qwen35, spark,
 } from "./formats.ts";
 import {
-  AGENTS_A1_SAMPLING, BONSAI_27B_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING,
+  AGENTS_A1_SAMPLING, BONSAI_27B_SAMPLING, BONSAI_2_SAMPLING, JAPANESE_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING,
   SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, greedy, thinking,
 } from "./sampling.ts";
 import { binaryBonsai, gemma2Jpn, gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
@@ -110,6 +110,17 @@ export const HF_FAMILIES: Entry[] = [
     hf: hf("microsoft/Phi-3-mini-4k-instruct", "f39ac1d28e925b323eae81227eaba4464caced4e"), download: 7642181880,
     conversion: {}, options: {}, generation: greedy,
     ...ASKED_ENGLISH },
+  // T258.2: Microsoft's Phi-4 mini Instruct, a Phi-3 whose RoPE turns three quarters of each head, scaled by longrope:
+  // its short factors (all 1) within the original context of 4096, to which the context is cut, and the attention
+  // factor of its 131072, sqrt(1 + ln 32 / ln 4096) = 1.190, which multiplies cos and sin (the converter reads both). Its
+  // card names Japanese among its languages. The tokenizer.json (its only one: byte-level, gpt-4o's pre-tokenizer,
+  // T256), whose turn marks take in the whitespace after them (rstrip). The BOS (<|user|>), the stops and the format are
+  // the converter's; the sampling of the list's Japanese entries
+  { group: "hf", id: "hf-phi-4-mini-instruct", name: "Microsoft Phi-4 mini Instruct",
+    note: "answers instructions · 日本語 / English · fetches 7.7 GB → int8 4.3 GB", japanese: true, converted: 4.3e9,
+    hf: hf("microsoft/Phi-4-mini-instruct", "cfbefacb99257ffa30c83adab238a50856ac3083"), download: 7672066216,
+    conversion: {}, options: {}, generation: JAPANESE_SAMPLING,
+    ...ASKED_JAPANESE },
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
