@@ -22,6 +22,10 @@ export function threadsOf(meta) {
   return Number(meta.match(/· (\d+) threads/)?.[1] ?? 1);
 }
 
+/** The software threads the URL asked for (?threads=N), or null: where the line says fewer, the table says so (T84's review:
+ * the 70M of the x86-64 run asked for 4 and ran on 1, and the cell said only 1) */
+export const threadsAsked = (query) => Number(/(?:^|&)threads=(\d+)/.exec(typeof query === "string" ? query : "")?.[1]) || null;
+
 /** The tokens of the answer the tok/s is of (an answer that stopped early was timed at shorter positions). */
 export const tokensOf = (meta) => (typeof meta === "string" ? Number(meta.match(/· (\d+) tokens ·/)?.[1]) || null : null);
 
@@ -31,9 +35,11 @@ function table(results) {
     const r = last.get(id), entry = MODELS.find((m) => m.id === id);
     const megabytes = modelBytes(entry) / 1e6;
     const convert = r.load?.convert, download = r.load?.download;
+    const ran = threadsOf(r.meta), asked = threadsAsked(r.query);
+    const threads = ran === null ? "" : asked && asked !== ran ? `${ran} (asked ${asked})` : `${ran}`;
     const share = typeof convert === "number" && r.readySeconds ? 100 * convert / r.readySeconds : null;
     return `| ${entry.name} | ${fixed(megabytes, 0)} | ${fixed(r.readySeconds)} | ${fixed(download)} | ${fixed(convert)} | ` +
-      `${fixed(share, 0)} | ${tokensOf(r.meta) ?? ""} | ${fixed(r.tokPerSecond)} | ${threadsOf(r.meta) ?? ""} | ${fixed(r.tokPerSecond * megabytes / 1000, 2)} | ` +
+      `${fixed(share, 0)} | ${tokensOf(r.meta) ?? ""} | ${fixed(r.tokPerSecond)} | ${threads} | ${fixed(r.tokPerSecond * megabytes / 1000, 2)} | ` +
       `${r.heapMB ?? ""} | ${r.ok ? "" : "failed"} |`;
   });
   const seen = [...last.values()];
