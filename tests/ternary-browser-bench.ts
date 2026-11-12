@@ -47,6 +47,12 @@ if (before) {
   // kernels/ as it was at that commit, in a folder of its own
   fs.rmSync(work + "before", { recursive: true, force: true });
   fs.mkdirSync(work + "before");
+  // (CI's checkout is one commit deep: a commit it lacks is fetched by its name)
+  try {
+    execFileSync("git", ["cat-file", "-e", `${before}^{commit}`], { cwd: root, stdio: "ignore" });
+  } catch {
+    execFileSync("git", ["fetch", "-q", "--depth", "1", "origin", before], { cwd: root, stdio: "inherit" });
+  }
   const archive = execFileSync("git", ["archive", before, "kernels"], { cwd: root, maxBuffer: 1 << 28 });
   execFileSync("tar", ["-x", "-C", work + "before"], { input: archive });
   sources.push([work + "before/kernels/kernel.ts", "before"]);
