@@ -141,7 +141,14 @@ const KINDS = { attention: plain, echo };
     const more = local ? seqLen * headSize * 4 : 0, said = local ? { local: { layers: [0], window: seqLen } } : {};
     const float = footprint(wide, size, { dtype: "float32", arch, ...said }) - footprint(wide, size, { dtype: "float32" });
     assert.equal(float, (rope ? 0 : seqLen * headSize * 4) + more, `${arch}: a float32 file`);
-    if (local) assert.equal(footprint(wide, size, { dtype: "float32", arch }) - footprint(wide, size, { dtype: "float32" }), rope ? 0 : seqLen * headSize * 4, `${arch}: no local layers, no tables of theirs`);
+    // (T510's review: options that say there are none (null) count no tables of them, and a form alone, which is all
+    // a conversion's sink.open() has, says nothing and counts them: a Gemma 2's window is the whole context, and no
+    // ring makes up for the keys and values counted of every layer of every position)
+    if (local) {
+      const gap = (options: object) => footprint(wide, size, { dtype: "float32", arch, ...options }) - footprint(wide, size, { dtype: "float32" });
+      assert.equal(gap({ local: null }), rope ? 0 : seqLen * headSize * 4, `${arch}: no local layers, no tables of theirs`);
+      assert.equal(gap({}), (rope ? 0 : seqLen * headSize * 4) + more, `${arch}: a form that says nothing of local layers`);
+    }
     const packed = footprint(wide, size, { dtype: "int8", arch, relaxed: false, outliers: 0, ...said }) - footprint(wide, size, { dtype: "int8", relaxed: false, outliers: 0 });
     assert.equal(packed, (positions ? seqLen * dim * 4 : 0) + more, `${arch}: an int8 file`);
     const corrected = footprint(wide, size, { dtype: "int8", arch, outliers: 0, ...said }) - footprint(wide, size, { dtype: "int8", outliers: 0 }) - packed;
