@@ -337,6 +337,17 @@ gemma3_goes_to_the_gpu() {
   node tests/gpu-hybrid-check.ts .tmp/made-up-gemma3-int8
 }
 part "a Gemma 3 where a GPU adapter is" gemma3_goes_to_the_gpu
+# T510's review: a window one position off showed in no logit of the made-up Gemma 3 (windows of 48 and 300) nor of the
+# Gemma 4's long one, whose greedy text soon repeats one token: --varied reads every token in turn (the one position
+# off: logits 3.4 and 0.56 apart, 3.7 for the Gemma 4's, against 6e-6 to 2e-5 of a right one; about 25 seconds)
+windows_of_a_made_up_gemma() {
+  mkdir -p .tmp
+  python tests/make_gemma3.py .tmp/made-up-gemma3-float32 float32
+  python tests/make_gemma3.py .tmp/made-up-gemma3-long-float32 float32 long
+  python tests/make_gemma4.py .tmp/made-up-gemma4-long-float32 float32 long
+  node tests/forward-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma4-long-float32 --varied --rounds 1 --positions 400
+}
+part "forward.js against NumPy, the windows of a made-up Gemma 3 and Gemma 4 on a text of every token" windows_of_a_made_up_gemma
 # T342: nor is a Spark-X2.5, whose gate of the heads and exact GELU no shader has: gpuUnfit's line of the pair of norms
 # and FFN (a few seconds)
 spark_stays_on_the_cpu() {
@@ -460,9 +471,7 @@ if [ "$suite" = full ]; then
   # shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path). T510.1: the local layers keep
   # their window alone, in a ring of the window and a block, 316 positions for the window of 300 (21 for the one of 5,
   # six times round in 128): on the shared memory to 960 positions, three times round, with blocks across its seam.
-  # T510: and the windows of 48 and 300 on a text of every token in turn (--varied): NumPy's greedy text soon repeats
-  # one token, whose value is then every position's, and a window one position wider or narrower showed in nothing
-  # (the logits 2.4 and 1.6 apart on this text at 48, 0.69 and 0.56 at 300)
+  # (T510: the windows of 48 and 300 on a text of every token in turn are read in the light suite, above)
   made_up_gemma3() {
     mkdir -p .tmp
     for dtype in float32 float16 int8 int6; do python tests/make_gemma3.py .tmp/made-up-gemma3-$dtype $dtype; done
@@ -474,7 +483,6 @@ if [ "$suite" = full ]; then
       node tests/forward-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-float16 .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-float32 .tmp/made-up-gemma3-own-int8 --rounds 1 --positions 128 $memory
       node tests/forward-check.ts .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma3-long-int8 --rounds 1 --positions "$([ -z "$memory" ] && echo 960 || echo 400)" $memory
     done
-    node tests/forward-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-long-float32 --varied --rounds 1 --positions 400
     node tests/forward-check.ts .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-int8 --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up Gemma 3" made_up_gemma3
