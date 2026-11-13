@@ -146,6 +146,16 @@ assert.equal(scripts("      - run: npm ci\n      - name: x\n        run: echo hi
 const directory = new URL("../.github/workflows/", import.meta.url);
 const found = fs.readdirSync(directory).filter((file) => file.endsWith(".yml")).flatMap((file) => problems(file, fs.readFileSync(new URL(file, directory), "utf8")));
 assert.deepEqual(found, [], `the workflows break T262's rule:\n${found.join("\n")}`);
+// T384 (its review): the suite's `node` goes through tests/limited.ts, and the deploy's limit for one test is under the job's
+// own (a test that stood still was cut by the job before limited.ts could say where, the second time: run 38055812702)
+const suite = fs.readFileSync(new URL("../tests/suite.sh", import.meta.url), "utf8");
+export const limitedBy = (text) => /^node\(\) \{[^]*?\n\}/m.exec(text)?.[0].includes('tests/limited.ts "${TEST_LIMIT:-') ?? false;
+assert.ok(limitedBy(suite), "tests/suite.sh's node() does not run the tests through tests/limited.ts with TEST_LIMIT");
+assert.ok(!limitedBy(suite.replaceAll("tests/limited.ts", "")), "the check of the suite's limit sees nothing");
+const deploy = fs.readFileSync(new URL("deploy.yml", directory), "utf8");
+const testLimit = Number(/TEST_LIMIT:\s*(\d+)/.exec(deploy)?.[1]);
+const jobMinutes = Number(/^    timeout-minutes:\s*(\d+)/m.exec(deploy)?.[1]);
+assert.ok(testLimit > 0 && jobMinutes > 0 && testLimit < jobMinutes * 60, `the deploy's TEST_LIMIT (${testLimit} s) is not under its first job's timeout-minutes (${jobMinutes})`);
 const refused = fs.readdirSync(directory).filter((file) => file.endsWith(".yml")).flatMap((file) => shellProblems(file, fs.readFileSync(new URL(file, directory), "utf8")));
 assert.deepEqual(refused, [], `bash -n refuses:\n${refused.join("\n")}`);
 console.log(`ok (${fs.readdirSync(directory).filter((file) => file.endsWith(".yml")).length} workflows)`);
