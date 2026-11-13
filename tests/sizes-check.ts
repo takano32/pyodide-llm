@@ -134,15 +134,17 @@ const KINDS = { attention: plain, echo };
   }
   // a table of positions: no matrix (not among the weights that have corrections), widened of a packed file; and the
   // RoPE tables Python makes of any file of a model without RoPE, and of a packed file of one with it; and (T261) the
-  // two tables of the local layers, which no file has, of an architecture that may have such layers
+  // two tables of the local layers, which no file has, of an architecture that may have such layers, where the options
+  // say the model has (T510: none of one without; a window as long as the context, so that no ring changes the keys)
   const lines = Object.entries(ARCHITECTURES).filter(([, { gate }]) => !gate);
   for (const [arch, { positions, rope, local }] of lines) {
-    const more = local ? seqLen * headSize * 4 : 0;
-    const float = footprint(wide, size, { dtype: "float32", arch }) - footprint(wide, size, { dtype: "float32" });
+    const more = local ? seqLen * headSize * 4 : 0, said = local ? { local: { layers: [0], window: seqLen } } : {};
+    const float = footprint(wide, size, { dtype: "float32", arch, ...said }) - footprint(wide, size, { dtype: "float32" });
     assert.equal(float, (rope ? 0 : seqLen * headSize * 4) + more, `${arch}: a float32 file`);
-    const packed = footprint(wide, size, { dtype: "int8", arch, relaxed: false, outliers: 0 }) - footprint(wide, size, { dtype: "int8", relaxed: false, outliers: 0 });
+    if (local) assert.equal(footprint(wide, size, { dtype: "float32", arch }) - footprint(wide, size, { dtype: "float32" }), rope ? 0 : seqLen * headSize * 4, `${arch}: no local layers, no tables of theirs`);
+    const packed = footprint(wide, size, { dtype: "int8", arch, relaxed: false, outliers: 0, ...said }) - footprint(wide, size, { dtype: "int8", relaxed: false, outliers: 0 });
     assert.equal(packed, (positions ? seqLen * dim * 4 : 0) + more, `${arch}: an int8 file`);
-    const corrected = footprint(wide, size, { dtype: "int8", arch, outliers: 0 }) - footprint(wide, size, { dtype: "int8", outliers: 0 }) - packed;
+    const corrected = footprint(wide, size, { dtype: "int8", arch, outliers: 0, ...said }) - footprint(wide, size, { dtype: "int8", outliers: 0 }) - packed;
     assert.ok(Math.abs(corrected + (positions ? (seqLen * dim) / 8 : 0)) <= 1, `${arch}: no corrections for a table of positions`);
   }
   assert.ok(lines.some(([, { positions }]) => positions) && lines.some(([, { rope }]) => !rope) && lines.some(([, { local }]) => local),

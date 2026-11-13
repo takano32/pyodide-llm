@@ -176,9 +176,9 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   if (packing && positions) bytes += seqLen * dim * 4;
   // (T331: of the widest heads: a Gemma 4's tables are its full-attention layers', whose heads are the wide ones)
   if (packing || !rope) bytes += seqLen * Math.max(headSize, options.wide?.head_dim ?? 0) * 4;
-  // T261: and the two tables of a model's local layers, which no file has (of an architecture that may have such
-  // layers: the form does not say whether this model has, and one without is counted that much too high)
-  if (local) bytes += seqLen * headSize * 4;
+  // T261: and the two tables of a model's local layers, which no file has (T510: where its options say it has such
+  // layers, as Python's Llama makes them: none for a model of the architecture without)
+  if (local && options.local?.layers.length) bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens and what the kinds keep of a token apart from its frame (the scores of its
   // attention), the logits; the keys and values of a block from the GPU (in float16) and its rows
   const apart = frames.flatMap(({ apart = [] }) => apart).reduce((sum, [, each]) => sum + align(each), 0);
