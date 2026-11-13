@@ -122,7 +122,11 @@ const chosen = async (files) => (await openHuggingFace(Object.entries(files).map
 // stand-in in the conduct's place of it (tests/conduct_hub.py's StandIn, T374.1), which writes down what it is handed;
 // here it also opens the place of the weights as Writer does, and has the options and the tokenizer a conversion ends with
 const pyodide = await loadPyodide();
-await pyodide.loadPackage("numpy", { messageCallback: () => {} });
+// (T510's review: and jinja2, which the worker's first conversion would load itself, from the CDN by Node's own fetch,
+// under the harness's clock: a hundred times faster, so that 30 quiet seconds are 0.3 s of the line, which the CI's
+// runner failed once on the first case ("jinja2" got nothing from the network for 30 seconds). Loaded here, the
+// worker's load finds it there; the net is asked once, in real time)
+await pyodide.loadPackage(["numpy", "jinja2"], { messageCallback: () => {} });
 placePython(pyodide, treeOf());
 pyodide.FS.writeFile("conduct_hub.py", fs.readFileSync(new URL("conduct_hub.py", import.meta.url)));
 pyodide.runPython(`
