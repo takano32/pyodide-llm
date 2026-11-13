@@ -150,6 +150,10 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     settings = Settings(**said) if settings is None else settings
     int8, disable, rotated, tables = settings.int8, settings.disable, settings.rotated, settings.tables
     layers = layer_facts(dims, settings)
+    if settings.local_tables is None and any(layer["local"] for layer in layers):
+        # (T510: a plan of local layers without their tables, which no file has, would have the engine turn them by
+        # none; Llama always hands them in, so this is a caller's mistake, never a visitor's)
+        raise ValueError("A plan of a model with local layers needs their RoPE tables: local_tables=.")
     held = outside(dims.rows(), dtype)
     # (the classifier of a model that has no other is its embedding, under both names)
     held.setdefault("wcls", held["token_embedding_table"])

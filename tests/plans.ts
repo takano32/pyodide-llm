@@ -59,9 +59,12 @@ def engines_plan(header, form, dtype):
     dims = L.Dims(header, form)
     flat = lambda offset, length: np.ones(length // 4, dtype=np.float32).tobytes()
     local = local_of(header, form)
-    return L.forward_plan(dims, dtype, flat, int8=bool(keeps_int8(header, form, dtype)), kv_start=header[6],
+    # (T510: a plan of local layers is refused without their tables; planOf() puts its own zeros in their place)
+    tables = (np.zeros(1, dtype=np.float32),) * 2 if local else None
+    plan = L.forward_plan(dims, dtype, flat, int8=bool(keeps_int8(header, form, dtype)), kv_start=header[6],
                           rotary=dims.head_size // 4 if form["linear"] else 0, parallel_residual=form["arch"] == "neox",
-                          **({"local": local} if local else {}))
+                          local_tables=tables, **({"local": local} if local else {}))
+    return {**plan, "derived": {}}
 
 def both(header, form, dtype):
     # (T510.1: and the local layers among the options footprint() is asked with, as a model's options carry them)

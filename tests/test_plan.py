@@ -45,6 +45,12 @@ KEYS = {"arch", "dim", "hidden_dim", "n_layers", "n_heads", "n_kv_heads", "head_
         "activation", "tiled", "own_kinds", "value_norm", "softcap", "score_softcap"}
 
 
+def tables_of(dims, more):
+    """T510: the tables of a model's local layers, as Llama hands them in (no file has them, and a plan of local layers
+    without them is refused); None for a model without"""
+    return more.get("local") and local_tables(dims.seq_len, dims.head_size, more["local"]["rope_theta"], rope_frequencies)
+
+
 def no_bytes(offset, length):
     raise AssertionError("nothing of the file is read for this plan")
 
@@ -58,7 +64,8 @@ def flat(offset, length):
 @pytest.mark.parametrize("dtype", DTYPES)
 def test_a_plan_is_made_of_a_header_a_form_and_a_dtype(name, header, form, more, dtype):
     dims = Dims(header, form)
-    plan = forward_plan(dims, dtype, no_bytes, int8=False, kv_start=64, **more)
+    local = tables_of(dims, more)
+    plan = forward_plan(dims, dtype, no_bytes, int8=False, kv_start=64, local_tables=local, **more)
     assert set(plan) == KEYS
     # the header's numbers, and what the form adds to them
     dim, hidden, layers, heads, kv_heads, vocab, seq_len = header
@@ -80,13 +87,14 @@ def test_a_plan_is_made_of_a_header_a_form_and_a_dtype(name, header, form, more,
     assert plan["rms_norm_eps"] == more.get("rms_norm_eps", 1e-5)
     # how it is run
     assert plan["kv_start"] == 64 and plan["int8"] is False and plan["half_kv"] is False and plan["relaxed"] is True
-    assert plan["derived"] == {} and plan["outliers"] == [] and plan["rotated"] == 0
+    assert set(plan["derived"]) == ({"local_cis_real", "local_cis_imag"} if local else set())
+    assert plan["outliers"] == [] and plan["rotated"] == 0
 
 
 @cases
 def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
     dims, rows = Dims(header, form), tensor_rows(header, form)
-    layers = forward_plan(dims, "int8", no_bytes, int8=False, kv_start=64, **more)["layers"]
+    layers = forward_plan(dims, "int8", no_bytes, int8=False, kv_start=64, local_tables=tables_of(dims, more), **more)["layers"]
     assert layers == layer_facts(dims, Settings(False, 64, unturned=more.get("unturned", ()), local=more.get("local"),
                                                 rotary=more.get("rotary", 0))) and len(layers) == header[2]
     assert all(set(layer) == {"kind", "place", "rope", "window", "local", "head", "rotary", "wide", "stack", "double", "ffn", "kept", "reads"}
@@ -175,6 +183,10 @@ def test_the_local_layers_of_a_plan_and_their_tables():
     for arch, said in (("gemma3", {**local, "layers": [6]}), ("llama", local)):
         with pytest.raises(ValueError, match="The local layers are layers of a Gemma 3"):
             forward_plan(Dims(header, {"arch": arch, "head_dim": 32}), "int8", flat, int8=False, kv_start=8, local=said)
+    # T510: local layers without their tables (which no file has) are refused, where the engine would have turned them
+    # by none
+    with pytest.raises(ValueError, match="needs their RoPE tables"):
+        forward_plan(dims, "int8", flat, int8=False, kv_start=8, local=local)
     # and a model made with them hands its engine both: Llama(external=) says what forward.js is to run
     from engine_plans import engine_plan
     import llama2_numpy
@@ -189,7 +201,7 @@ def test_the_local_layers_of_a_plan_and_their_tables():
 @cases
 def test_the_widths_of_a_plan(name, header, form, more):
     dims = Dims(header, form)
-    widths = forward_plan(dims, "float32", no_bytes, int8=False, kv_start=64, **more)["widths"]
+    widths = forward_plan(dims, "float32", no_bytes, int8=False, kv_start=64, local_tables=tables_of(dims, more), **more)["widths"]
     assert widths == plan_widths(dims) and set(widths) == {"q", "kv", "linear", "rotated"}
     dim, hidden, _, heads, kv_heads = header[:5]
     head = form.get("head_dim") or dim // heads
