@@ -367,6 +367,7 @@ const tokens = /^hf-lumi-v2-/.test(id) ? "768" : /^hf-(agents-a1|smollm3)-/.test
 // (T577: not where the query says steps=: the page read it from the URL, models.yml's query=gpuTest=on&steps=16 for a
 // GPU's steps on SwiftShader, which writes 256 tokens in more than the job's 30 minutes)
 const stepsSaid = /(^|&)steps=/.test(process.env.E2E_QUERY ?? "");
+const stepsAsked = Number(/(^|&)steps=(\d+)/.exec(process.env.E2E_QUERY ?? "")?.[2]);
 if (!process.env.E2E_LONG && !stepsSaid) await page.evaluate((tokens) => {
   const steps = document.getElementById("steps");
   steps.value = tokens;
@@ -449,6 +450,9 @@ for (const [where, line] of [["the status line", result.status], ["the line unde
 }
 if (result.pageScrolls) failures.push("the page itself scrolls");
 // (T577: an answer the query cut short with steps= is the start of the expected text, which it does not reach)
+// (and the URL's steps= stood: the page wrote no more tokens than it, the prompt's counted: a test that overrode it ran to 256)
+const wrote = Number(/(\d+) tokens/.exec(result.generated ?? "")?.[1]);
+if (stepsAsked > 0 && wrote > stepsAsked) failures.push(`the query says steps=${stepsAsked} and the page wrote ${wrote} tokens`);
 const begins = (text, want) => text.startsWith(want) || (stepsSaid && want.startsWith(text.trim()) && text.trim().length > 0);
 if (expected[model] && !begins(result.text, expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
 // T231's review: no check above says an answer is a real one. JavaScriptCore on x86-64 wrote "edListedlyedlyedList..." with a
