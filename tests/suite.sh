@@ -459,7 +459,10 @@ if [ "$suite" = full ]; then
   # positions and one of 5 within the 128 compared, and one of 300 past where the cache first grows (400 positions); on a
   # shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path). T510.1: the local layers keep
   # their window alone, in a ring of the window and a block, 316 positions for the window of 300 (21 for the one of 5,
-  # six times round in 128): on the shared memory to 960 positions, three times round, with blocks across its seam
+  # six times round in 128): on the shared memory to 960 positions, three times round, with blocks across its seam.
+  # T510: and the windows of 48 and 300 on a text of every token in turn (--varied): NumPy's greedy text soon repeats
+  # one token, whose value is then every position's, and a window one position wider or narrower showed in nothing
+  # (the logits 2.4 and 1.6 apart on this text at 48, 0.69 and 0.56 at 300)
   made_up_gemma3() {
     mkdir -p .tmp
     for dtype in float32 float16 int8 int6; do python tests/make_gemma3.py .tmp/made-up-gemma3-$dtype $dtype; done
@@ -471,6 +474,7 @@ if [ "$suite" = full ]; then
       node tests/forward-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-float16 .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-float32 .tmp/made-up-gemma3-own-int8 --rounds 1 --positions 128 $memory
       node tests/forward-check.ts .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma3-long-int8 --rounds 1 --positions "$([ -z "$memory" ] && echo 960 || echo 400)" $memory
     done
+    node tests/forward-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-long-float32 --varied --rounds 1 --positions 400
     node tests/forward-check.ts .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-int8 --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up Gemma 3" made_up_gemma3

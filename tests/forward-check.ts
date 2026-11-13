@@ -23,7 +23,11 @@
 // attention's gate left out: 0.14) are for the float32 model, whose line is every model's and exact.
 //
 //   node tests/forward-check.ts [model id | <out> of tests/perplexity_prepare.py ...] [--rounds 3] [--positions 128]
-//        [--without relaxed,int8,sampler] [--plain [--half-keys]] [--wide]
+//        [--without relaxed,int8,sampler] [--plain [--half-keys]] [--wide] [--varied]
+//
+// --varied (T510): the text both read is every token in turn instead of NumPy's greedy one, which a made-up model's
+// soon makes one token over and over (every position's value then the same, so that a layer's window one position
+// wider or narrower shows in no logit).
 //
 // The memory is shared, as the page's where it is cross-origin isolated; --plain: not shared, as the page's where it
 // is not, or where the page asked for a shared one and the browser refused it (the keys and values then float32
@@ -296,7 +300,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   }
 }
 
-const shared = !args.includes("--plain");
+const shared = !args.includes("--plain"), varied = args.includes("--varied");
 const { pyodide: py, kernels } = await pyodideWithEngine({ shared, wide: args.includes("--wide") });
 // (T130: the cache starts at 16 positions, so that it grows in place within every comparison below)
 py.runPython("import time, gc, math, numpy as np, llama2_numpy, engine.model\nfrom llama2_numpy import Llama\nengine.model.KV_START = 16");
@@ -462,7 +466,9 @@ for pos in range(${positions}):
     largest = max(largest, float(np.abs(a - b).max()))
     apart, size = apart + float(((a - b) ** 2).sum()), size + float((b ** 2).sum())
     agree += int(a.argmax() == b.argmax())
-    following = int(b.argmax())  # NumPy's greedy text, which both read
+    # NumPy's greedy text, which both read; T510, --varied: every token in turn (a made-up model's greedy text soon
+    # repeats one token, whose value is then every position's, and no layer's window shows in anything)
+    following = (pos * 37 + 11) % numpy.vocab_size if ${varied ? "True" : "False"} else int(b.argmax())
     for i, logits in enumerate((a, b)):
         shifted = logits - logits.max()
         nll[i] -= shifted[following] - math.log(np.exp(shifted).sum())
