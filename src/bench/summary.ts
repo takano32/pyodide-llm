@@ -4,7 +4,7 @@ import { number, threadsOf, times, timesFaster, noRatios } from "./cells.ts";
 import { steadyCeiling, tokenReads, promptGMACsOf } from "./cpu.ts";
 import { tokenWrong, fastestMatVec } from "./gpu.ts";
 import { stepMs, less, layerSplit } from "./layersteps.ts";
-import { ternaryForms } from "./ternary.ts";
+import { ternaryForms, TERNARY_OTHERS } from "./ternary.ts";
 import type { GpuFound } from "./gpusection.ts";
 import type { Baseline, CpuMeasured } from "./cpu.ts";
 import type { DeviceFound, GpuAbout, LayerFound, LayerRow, LineFound, PromptFound, PromptRow, StorageRun, TokenFound } from "../runtime/contracts/benchmark.ts";
@@ -107,9 +107,11 @@ export function gpuSummary(found: GpuFound, baseline: { token?: Baseline["token"
     const ratio = none ? "" : timesFaster(baseline.prompt?.msPerToken, fastestPrompt.msPerToken);
     lines.push(`GPU, a prompt of ${promptTokens} tokens: ${fastestPrompt.shader}, ${number(fastestPrompt.GFLOPS, 0)} GFLOPS${ratio ? ` (${ratio} the CPU)` : ""}`);
   }
-  // T270: which form of a ternary matrix × vector is faster here (the one T232 is to be overturned by)
-  const lessSums = ternaryForms(found.ternary?.result);
-  if (lessSums.length && !none) lines.push(`GPU, ternary weights: the codes as they are less Σa against the engine's form ${lessSums.join(", ")}`);
+  // T270 (T313: and the table): which form of a ternary matrix × vector is faster here (the one T232 is to be overturned by)
+  for (const [other, said] of TERNARY_OTHERS) {
+    const ratios = ternaryForms(found.ternary?.result, other);
+    if (ratios.length && !none) lines.push(`GPU, ternary weights: ${said} against the engine's form ${ratios.join(", ")}`);
+  }
   return lines;
 }
 

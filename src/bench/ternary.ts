@@ -6,8 +6,10 @@ import type { GpuCeilings, TernaryFound, TernaryRow } from "../runtime/contracts
 
 // the tables of the step, in its order, and what a row of each is
 const WHAT: Record<TernaryRow["what"], string> = { matrix: "a token's matrix × vector", tile: "a prompt's tile", layer: "a layer of a token" };
-// the two forms of a ternary matrix × vector the summary holds against each other (gpu/ternary.ts's names)
+// the forms of a ternary matrix × vector the summary holds against the engine's (gpu/ternary.ts's names): T270's codes as
+// they are less Σa, T313's codes made signed by a table
 const SIGNED = "ternary, the codes made signed (engine)", SUMS = "ternary, the codes as they are less Σa", AGAIN = `${SIGNED}, again at the end`;
+const TABLE = "ternary, the codes made signed by a table";
 
 // a ternary tile's int8 row: the same tile with or without subgroups ("ORT DP4A 64×64, subgroups, ternary" and
 // "ORT DP4A 64×64, subgroups, int8")
@@ -17,19 +19,22 @@ const measured = (row: TernaryRow | undefined) => (row && !row.none && !row.wron
 const rowOf = (rows: TernaryRow[], { what, shape }: Pick<TernaryRow, "what" | "shape">, form: (name: string) => boolean) =>
   rows.find((row) => row.what === what && row.shape === shape && form(row.form));
 
-/** How much faster the codes as they are less Σa run than the engine's form (the codes made signed), a shape each, as
- * "1.1× on Llama 3.2 1B w1": above 1 the form the engine did not take is faster here (T232's choice to overturn). With
- * the engine's form against its own second row (timed at the end of the table: the order and the device's drift), as
- * "(the engine's form against itself 1.02×)", the noise to read the ratio against. */
-export function ternaryForms(r: TernaryFound | undefined): string[] {
+/** How much faster another form (other: the codes as they are less Σa, or T313's codes made signed by a table) runs
+ * than the engine's (the codes made signed), a shape each, as "1.1× on Llama 3.2 1B w1": above 1 the form the engine did
+ * not take is faster here (T232's choice to overturn). With the engine's form against its own second row (timed at the
+ * end of the table: the order and the device's drift), as "(the engine's form against itself 1.02×)", the noise to read
+ * the ratio against. */
+export function ternaryForms(r: TernaryFound | undefined, other: string = SUMS): string[] {
   const rows = r?.rows ?? [];
   return [...new Set(rows.filter((row) => row.what === "matrix").map((row) => row.shape))].flatMap((shape) => {
     const form = (name: string) => measured(rowOf(rows, { what: "matrix", shape }, (one) => one === name));
-    const signed = form(SIGNED), sums = form(SUMS), again = form(AGAIN);
-    if (!signed || !sums || signed.unsteady || sums.unsteady) return [];
-    return [`${times(signed.ms! / sums.ms!)} on ${shape}${again && !again.unsteady ? ` (the engine's form against itself ${times(signed.ms! / again.ms!)})` : ""}`];
+    const signed = form(SIGNED), theirs = form(other), again = form(AGAIN);
+    if (!signed || !theirs || signed.unsteady || theirs.unsteady) return [];
+    return [`${times(signed.ms! / theirs.ms!)} on ${shape}${again && !again.unsteady ? ` (the engine's form against itself ${times(signed.ms! / again.ms!)})` : ""}`];
   });
 }
+/** T313: the forms ternaryForms() holds against the engine's, with what the page calls each */
+export const TERNARY_OTHERS: [name: string, said: string][] = [[SUMS, "the codes as they are less Σa"], [TABLE, "the codes made signed by a table"]];
 
 /**
  * The table of the step "ternary" (s: {name, result: {rows, pos, none}} or {name, error}): a row a form of a table
@@ -43,8 +48,9 @@ export function ternaryTable(s: Step<TernaryFound> | undefined, ceilings: GpuCei
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
   const head = ["**Ternary weights** (T270): Ternary Bonsai's weights, two bits a weight (-1, 0 or +1 times a scale a group of 128), beside int8 on the same shapes. " +
     "The GPU multiplies them by the packed int8 dot as the int8 rows do, the codes spread to a byte each as they are read. " +
-    "Two forms of a token's matrix × vector: the engine's, which makes every code signed as it reads it (an add and an xor a word of 16 codes), " +
-    "and the form Prism ML's llama.cpp and this project's CPU kernel take, which keeps the codes as they are (0, 1 and 2) and takes the vector's sum off the dot (a subtraction a row and group, the sums made as each workgroup loads the vector). " +
+    "Three forms of a token's matrix × vector: the engine's, which makes every code signed as it reads it (an add and an xor a word of 16 codes), " +
+    "the form Prism ML's llama.cpp and this project's CPU kernel take, which keeps the codes as they are (0, 1 and 2) and takes the vector's sum off the dot (a subtraction a row and group, the sums made as each workgroup loads the vector), " +
+    "and ONNX Runtime's form for 2-bit weights, which makes the codes signed by a table of 256 words in the workgroup's memory (four reads of the table a word of 16 codes, the table filled as each workgroup starts). " +
     "Which is faster depends on the device: the engine takes the first until a report says otherwise. " +
     "The engine's form is timed once more at the end of each such table: the two rows' difference is the noise (the order the forms are timed in, the device's drift) that a ratio between the forms is to be read against. " +
     "The prompt's tile and the layer are the engine's forms (ORT's DP4A, T175's fused layer) on int8 and on ternary weights. " +
@@ -67,7 +73,9 @@ export function ternaryTable(s: Step<TernaryFound> | undefined, ceilings: GpuCei
   };
   const lines = [...head, "", "| table | shape | form | ms | G weights/s | GB/s | × int8 |", "|---|---|---|---:|---:|---:|---:|",
     ...r.rows.map((row) => `| ${WHAT[row.what]}${row.what === "tile" ? `, ${row.tokens} tokens` : ""} | ${row.shape} | ${row.form}${row.wrong ? " (WRONG in the check)" : ""} | ${cell(row).join(" | ")} |`)];
-  const forms = ternaryForms(r);
-  lines.push("", `**The codes as they are less Σa against the engine's form** (above 1×: faster than the engine's here): ${forms.length ? forms.join(", ") : "not measured"}`);
+  for (const [other, said] of TERNARY_OTHERS) {
+    const forms = ternaryForms(r, other);
+    lines.push("", `**${said[0].toUpperCase()}${said.slice(1)} against the engine's form** (above 1×: faster than the engine's here): ${forms.length ? forms.join(", ") : "not measured"}`);
+  }
   return lines;
 }

@@ -3,7 +3,8 @@
 // submission, each dispatch on the next copy of the weights so that no cache of the GPU holds them):
 //   - a token's matrix × vector: the engine's DP4A text for small M on int8 weights, on ternary codes made signed as
 //     it reads them (the engine's, fusedDp4aMatVec's ternary), and on the codes as they are less the vector's sum
-//     (shaders/matvec.ts's TERNARY_SUMS_MATVEC: the fork's and the CPU kernel's form, which the engine did not take). On
+//     (shaders/matvec.ts's TERNARY_SUMS_MATVEC: the fork's and the CPU kernel's form, which the engine did not take), and
+//     (T313) on the codes made signed by a table of 256 words (TERNARY_TABLE_MATVEC: ONNX Runtime's 2-bit form). On
 //     two shapes: Llama 3.2 1B's w1 (the bandwidth step's) and Ternary Bonsai 8B's;
 //   - a prompt's tile: the engine's ORT DP4A 64×64 of int8 and of ternary weights (shaders/prompt.ts's promptForms,
 //     with subgroups where they are), 64 tokens a dispatch on Llama 3.2 1B's w1;
@@ -38,7 +39,8 @@ const matVecForms = (): Candidate[] => {
     shader: { name: `T270 ${name}`, code, rows, packed: true, engine: true, none } });
   return [form("int8 (engine)", false, shared.WGSL.fusedDp4aMatVec({ output: "write", weights: "int8" })),
     form("ternary, the codes made signed (engine)", true, shared.WGSL.fusedDp4aMatVec({ output: "write", weights: "ternary" })),
-    form("ternary, the codes as they are less Σa", true, shared.WGSL.TERNARY_SUMS_MATVEC)];
+    form("ternary, the codes as they are less Σa", true, shared.WGSL.TERNARY_SUMS_MATVEC),
+    form("ternary, the codes made signed by a table", true, shared.WGSL.TERNARY_TABLE_MATVEC)];
 };
 // the engine's tiles of a model of int8 weights and of ternary ones on this device (promptForms, as the model's GPU
 // worker makes them: own null and "ternary"), the DP4A ones

@@ -8,9 +8,10 @@ import { ternaryTable, ternaryForms, kernelsTable, gpuSummary, cellsOf } from ".
 // ---- the GPU: a token's matrix × vector on two shapes (the codes made signed, and less Σa, against int8), a tile, a layer
 const matrix = (shape, form, ternary, ms, extra = {}) => ({ what: "matrix", form, ternary, shape, tokens: 1, weights: 8192 * 2048,
   bytes: ternary ? 8192 * 2048 / 4 + 8192 * 2048 / 128 * 4 : 8192 * 2048 * 1.125, ms, ...extra });
-const SIGNED = "ternary, the codes made signed (engine)", SUMS = "ternary, the codes as they are less Σa";
+const SIGNED = "ternary, the codes made signed (engine)", SUMS = "ternary, the codes as they are less Σa", TABLE = "ternary, the codes made signed by a table";
 const found = { pos: 127, rows: [
   matrix("Llama 3.2 1B w1", "int8 (engine)", false, 0.4), matrix("Llama 3.2 1B w1", SIGNED, true, 0.2), matrix("Llama 3.2 1B w1", SUMS, true, 0.16),
+  matrix("Llama 3.2 1B w1", TABLE, true, 0.25),
   matrix("Ternary Bonsai 8B w1", "int8 (engine)", false, 1.2), matrix("Ternary Bonsai 8B w1", SIGNED, true, 0.5),
   matrix("Ternary Bonsai 8B w1", SUMS, true, undefined, { wrong: "3.10e-1 of the products off JavaScript's" }),
   { what: "tile", form: "ORT DP4A 64×64, int8", ternary: false, shape: "Llama 3.2 1B w1", tokens: 64, weights: 8192 * 2048, bytes: 1, ms: 2 },
@@ -42,7 +43,13 @@ assert.deepEqual(wrongRow.slice(4), ["", "", ""]);
 assert.match(rowOf("Llama 3.2 1B, a layer", "DP4A, fused \\(T175\\), ternary \\(engine\\)".replace(/\\/g, ""))[3], /^unsteady: /);
 // the two forms against each other, a shape each where both ran: 0.2 / 0.16; none on the 8B, whose second was wrong
 assert.deepEqual(ternaryForms(found), ["1.3× on Llama 3.2 1B w1"]);
-assert.ok(lines.at(-1).endsWith("1.3× on Llama 3.2 1B w1"), lines.at(-1));
+assert.ok(lines.find((line) => line.startsWith("**The codes as they are less Σa against"))!.endsWith("1.3× on Llama 3.2 1B w1"));
+// T313: the table's form against the engine's the same way (0.2 / 0.25), and against int8 as the others are (0.4 / 0.25);
+// on the 8B, where it was not timed, its line says so
+assert.deepEqual(ternaryForms(found, TABLE), ["0.80× on Llama 3.2 1B w1"]);
+assert.equal(rowOf("Llama 3.2 1B w1", TABLE).at(-1), "1.6×");
+assert.ok(lines.at(-1).startsWith("**The codes made signed by a table against the engine's form**") && lines.at(-1).endsWith("0.80× on Llama 3.2 1B w1"), lines.at(-1));
+assert.ok(ternaryTable({ name: "t", result: { ...found, rows: found.rows.filter((row) => row.form !== TABLE) } }, ceilings).at(-1).endsWith(": not measured"));
 // the engine's form timed again at the end of its table (gpu/ternary.ts's withControl) goes beside the ratio of the two forms
 const AGAIN = `${SIGNED}, again at the end`;
 const withAgain = { ...found, rows: [...found.rows, matrix("Llama 3.2 1B w1", AGAIN, true, 0.21)] };
@@ -57,6 +64,7 @@ assert.equal(ternaryTable({ name: "t", result: { rows: [], none: "not on a fallb
 // the summary's line, and none where the ratios stand for nothing
 const summaryOf = (gpu) => gpuSummary({ bandwidth: [], token: [], info: { result: { adapter: "a GPU", fallback: false } }, ternary: { name: "t", result: found } }, {}, gpu);
 assert.ok(summaryOf({}).includes("GPU, ternary weights: the codes as they are less Σa against the engine's form 1.3× on Llama 3.2 1B w1"));
+assert.ok(summaryOf({}).includes("GPU, ternary weights: the codes made signed by a table against the engine's form 0.80× on Llama 3.2 1B w1"));
 assert.ok(!summaryOf({ lost: "unknown: gone" }).some((line) => line.startsWith("GPU, ternary weights")));
 
 // ---- the CPU's kernels: a pass's ms (ms of passes), against the int8 kernel of the same SIMD and tokens

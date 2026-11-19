@@ -339,7 +339,21 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
 // Changed: the four bytes of a word at once (unpack4xU8 and vec4<u32>, where the fork calls it a byte at a time), as
 // prompt.ts's TERNARY_PACKED has it. Bindings: 0 the codes, 1 their scales (a float32 a group of 128), 2 the quantized
 // vector (xq), 3 params, 4 its scales (xs), 5 the output.
-export const TERNARY_SUMS_MATVEC = /* wgsl */ `requires packed_4x8_integer_dot_product;
+//
+// T313 (B): the third form, "table": ONNX Runtime's for 2-bit weights, the n_bits == 2 path of the same template
+// (dp4a_matmul_common.wgsl.template's LoadDequantizationTable and DequantizedFrom2BitsTo8Bits, as the T232 review read
+// it at the commit above): a table of 256 words in the workgroup's memory, the word of a byte of four codes being their
+// four signed bytes, so that a word of 16 codes is made signed by 4 reads of the table (unpack4xU8 and the reads) where
+// the engine's text makes it so by 9 vector instructions (prompt.ts's TERNARY_PACKED). ORT keeps its table as a constant
+// array, a quarter for each zero point, which each workgroup copies into its memory; this makes the words of the quarter
+// of zero point 1 (code less one: this project's mapping, the 3 no file has going to 2 as the engine's text has it) as
+// the threads fill the table, two words a thread, before the first barrier of the loop. (ORT's source could not be
+// fetched when this was written: the lines are this project's, after that reading; no line of ORT's table is copied.)
+// The rest is the engine's ternary form: no sum taken off. /benchmark/ alone runs it, beside the other two, for a device
+// to say which is faster (T232's review: a wave reading a table at random meets its banks; where instructions bound a
+// device the table may be faster). The engine's catalogue is untouched.
+type TernaryBenchForm = "sums" | "table";
+const ternaryBenchMatVec = (form: TernaryBenchForm) => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
 @group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32
 @group(0) @binding(1) var<storage, read> scales_b: array<f32>;       // a scale a group of 128 weights
@@ -347,15 +361,7 @@ ${FUSED_PARAMS}
 @group(0) @binding(3) var<uniform> params: Params;
 @group(0) @binding(4) var<storage, read> scales_a: array<f32>;       // its scales (xs), one a group of 32
 ${FUSED_WRITES.write.bindings}
-
-// a word of 16 ternary codes (two bits each, the first in the lowest bits) as 16 bytes of 0 to 2, four to a u32 with
-// the first in the lowest byte
-fn ternary_codes(codes: u32) -> vec4<u32> {
-  // Move bit pairs [1:0], [3:2], [5:4], [7:6] to [1:0], [9:8], [17:16], [25:24].
-  var bits = unpack4xU8(codes);
-  bits = (bits | (bits << vec4<u32>(12u))) & vec4<u32>(0x000f000fu);
-  return (bits | (bits << vec4<u32>(6u))) & vec4<u32>(0x03030303u);
-}
+${form === "sums" ? SUMS_CODES : TABLE_CODES}
 
 // the integer dot product of 32 packed int8 (SDP8AI's, before its scale)
 fn dot32(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>) -> i32 {
@@ -380,9 +386,9 @@ const OUTPUTS_PER_WG = tile_size;
 const double_tile_size_k_vec = 2 * tile_size_k_vec;
 
 var<workgroup> inter_results: array<array<f32, tile_size_k_vec>, tile_size>;
-var<workgroup> tile_A : array<vec4<u32>, double_tile_size_k_vec>;
+var<workgroup> tile_A : array<vec4<u32>, double_tile_size_k_vec>;${form === "sums" ? `
 // the sum of each vec4<u32> of tile_A's 16 values: two a group of 32
-var<workgroup> sum_A : array<i32, double_tile_size_k_vec>;
+var<workgroup> sum_A : array<i32, double_tile_size_k_vec>;` : ""}
 const scale_a_size_in_tile_a = double_tile_size_k_vec / 2;
 var<workgroup> scale_A : array<f32, scale_a_size_in_tile_a>;
 // what the reduction leaves: each row's sum, for the write
@@ -396,11 +402,12 @@ fn loadSHMA(kidx_v: u32, col: u32)
     return;
     }
 
-    let own = a[k_offset];
+${form === "sums" ? `    let own = a[k_offset];
     tile_A[col] = own;
     let ones = 0x01010101u;
     sum_A[col] = dot4I8Packed(own[0], ones) + dot4I8Packed(own[1], ones) + dot4I8Packed(own[2], ones) + dot4I8Packed(own[3], ones);
-    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < params.perRow)
+` : `    tile_A[col] = a[k_offset];
+`}    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < params.perRow)
     {
     // kidx_v - covers 16 values of k in input_a
     scale_A[col] = scales_a[kidx_v / 2u + col];
@@ -422,7 +429,10 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
     // Handle each workgroup threads as a block of [sub_tile_count][tile_size_k_vec]
     let local_col = local_idx % tile_size_k_vec;
     let local_row = local_idx / tile_size_k_vec;
-
+${form === "table" ? `    // the table of the codes' words, two a thread (the loop's first barrier comes before any read of it)
+    code_table[local_idx] = table_word(local_idx);
+    code_table[local_idx + workgroup_size_x] = table_word(local_idx + workgroup_size_x);
+` : ""}
     for (var kidx_v:u32 = 0; kidx_v < K32; kidx_v += tile_size_k_vec)
     {
         // Load Phase: Populate shared memory for the workgroup.
@@ -433,9 +443,9 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
         workgroupBarrier();
         var own_a: vec4<u32> = tile_A[local_col * 2];
         var own_a1: vec4<u32> = tile_A[local_col * 2 + 1];
-        var own_scale_a = scale_A[local_col];
+        var own_scale_a = scale_A[local_col];${form === "sums" ? `
         // the sum of the thread's 32 values of the vector, which each code's 1 too many takes once
-        let own_sum = sum_A[local_col * 2] + sum_A[local_col * 2 + 1];
+        let own_sum = sum_A[local_col * 2] + sum_A[local_col * 2 + 1];` : ""}
         let k_offset = kidx_v + local_col;
         // k_offset - covers 32 values of k in input_b
         // calculate intermediate results into inter_results.
@@ -445,9 +455,11 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
             {
                 let b_offset = b_global * K32 + k_offset;
                 let own_scale_b = scales_b[b_global * K128 + k_offset / 4u];
-                let codes_dot = dot32(own_a, ternary_codes(b[b_offset * 2]), own_a1, ternary_codes(b[b_offset * 2 + 1]));
+${form === "sums" ? `                let codes_dot = dot32(own_a, ternary_codes(b[b_offset * 2]), own_a1, ternary_codes(b[b_offset * 2 + 1]));
                 inter_results[row_offset + local_row][local_col] += f32(codes_dot - own_sum) * (own_scale_a * own_scale_b);
-            }
+` : `                let codes_dot = dot32(own_a, table_codes(b[b_offset * 2]), own_a1, table_codes(b[b_offset * 2 + 1]));
+                inter_results[row_offset + local_row][local_col] += f32(codes_dot) * (own_scale_a * own_scale_b);
+`}            }
         }
         workgroupBarrier();
     }
@@ -468,3 +480,33 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
     let scale = 1.0;
 ${FUSED_WRITES.write.write}
 }`;
+// how each form makes a word of 16 codes into the bytes the dot reads
+const SUMS_CODES = /* wgsl */ `
+// a word of 16 ternary codes (two bits each, the first in the lowest bits) as 16 bytes of 0 to 2, four to a u32 with
+// the first in the lowest byte
+fn ternary_codes(codes: u32) -> vec4<u32> {
+  // Move bit pairs [1:0], [3:2], [5:4], [7:6] to [1:0], [9:8], [17:16], [25:24].
+  var bits = unpack4xU8(codes);
+  bits = (bits | (bits << vec4<u32>(12u))) & vec4<u32>(0x000f000fu);
+  return (bits | (bits << vec4<u32>(6u))) & vec4<u32>(0x03030303u);
+}`;
+const TABLE_CODES = /* wgsl */ `
+// the word of each byte of four ternary codes (two bits each, the first in the lowest bits): their four signed bytes,
+// code less one, the first in the lowest byte
+var<workgroup> code_table: array<u32, 256>;
+
+fn table_word(four: u32) -> u32 {
+  var word = 0u;
+  for (var i = 0u; i < 4u; i++) {
+    word |= ((((four >> (2u * i)) & 3u) + 255u) & 255u) << (8u * i);
+  }
+  return word;
+}
+
+// a word of 16 ternary codes as 16 signed bytes, four to a u32 with the first in the lowest byte: a read of the table a byte
+fn table_codes(codes: u32) -> vec4<u32> {
+  let bytes = unpack4xU8(codes);
+  return vec4<u32>(code_table[bytes[0]], code_table[bytes[1]], code_table[bytes[2]], code_table[bytes[3]]);
+}`;
+export const TERNARY_SUMS_MATVEC = ternaryBenchMatVec("sums");
+export const TERNARY_TABLE_MATVEC = ternaryBenchMatVec("table");
