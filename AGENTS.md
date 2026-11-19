@@ -444,6 +444,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **状態を持つ層も GPU に**（Qwen3.5・LFM2）: **linear の層の状態は「層の束」のバッファに置く**（端末が束縛できる大きさ `m.limit` まで）。 道は `docs/notes/adding/layer-kind.md` の 5。**1 つの層の状態だけで端末の束縛の上限を越えるモデルは置かない**。
 - **Gemma 4 はプロンプトのブロックだけ GPU に**（T334.1）: ブロックは自分の鍵と値を持つ最後の層で止める（`lastKept()`・計画の `blockLayers`）。層ごとの head と束の中の位置は計画の `shapes` と `Matrix.at`、staging は層ごとの幅で一番広い幅の間隔、層ごとの埋め込みは CPU が表の行だけを渡して GPU が射影と norm（`PER_LAYER_INPUTS`: CPU の int8 の射影を渡すと活性値の 8 ビットの丸めで浮動小数の形が E16 の線を越えた）。答えのステップは CPU（`REASONS.ownSteps`）。全文は webgpu.md。
 - **Gemma 3 の GPU の K と V は全位置を持つ**（CPU の窓の輪は CPU だけ）。 gate の `GEGLU`、後ろの norm は `RMSNORM_ADD`、窓は `Params.window`、局所の層は 2 つ目の角の表。読み込みの検査は窓の層のあるモデルでは短い窓でも比べる（窓 ±1 は見えにくい）。**gpu-check は窓の層の鍵と値を、CPU の輪がまだ持つ位置だけで比べる**。
+- **Gemma 4 の GPU の確かめ**: 実物の E2B は gpu-check の NumPy がランナーに入らないので、形の同じ作り物 `synthetic-gemma4-e2b`（Dawn の組、1 つで約 2 分）が head 512 の flash・35 層の番地・`PER_LAYER_INPUTS` の 256・CPU の輪の狭い層の staging を踏む。**本番の greedy の GPU と CPU の比べは、CPU の活性値の丸めで僅差の所が割れる**（T334.4: E2B の答えは relaxed の CPU と 5 トークンほどで、`without=relaxed` の CPU と 13 トークンほどで割れ、GPU は後者に近い）: 割れた所を誤りと読む前に `without=relaxed` の CPU を並べる。
 
 ### `/benchmark/`
 
