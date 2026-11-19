@@ -107,9 +107,16 @@ const ownOf = (plan: { matrices: Matrices; tokens?: TokensPlan | null | true; ta
   : [...Object.values(plan.matrices), ...[tables?.classifier, tables?.embedding].filter((table) => table !== null && table !== undefined)]
     .some((matrix) => packingsOf(matrix).some(isBlock)) ? "blocks" : null;
 };
-// T255: how many values of a head RoPE turns in a layer: plan.turned, but none where the model leaves the layer's q
-// and k alone (a SmolLM3's every fourth; the shaders take the number as GPT-2's 0)
-const turnedAt = (plan: Pick<Started, "unturned" | "turned">, l: number) => (plan.unturned?.includes(l) ? 0 : plan.turned);
+// (T255's turnedAt(), how many values of a head RoPE turns in a layer, is a layer's shape's turned since T334.2: Started's shapes)
+// T334.1: the heads of the layers RoPE turns by each table ([the first table's, the local one's]: a Gemma 4's wide ones by
+// the first, its narrow by the local), which a position's angles of that table are as many as (a block's, block.ts; a
+// token's table of every position, weights.ts). T334.2: here, where both read it
+const angleHeadsOf = (plan: Pick<Started, "shapes" | "local" | "headSize">) =>
+  ([false, true] as const).map((local) => plan.shapes.find((_, l) => plan.local.includes(l) === local)?.head ?? plan.headSize) as [number, number];
+// T334.1: the size of the widest heads of the layers (a Gemma 4's wide ones'; the model's heads where they are all alike),
+// which the buffers of a block's or a token's q, k and v and a position of the keys and values in the staging place are
+// sized by (T334.2: here, where block.ts and tokens.ts read it)
+const widestHead = (plan: Pick<Started, "headSize" | "shapes">) => Math.max(plan.headSize, ...plan.shapes.map(({ head }) => head));
 
 // T378.4: what the parts of this worker read and this one alone sets (a static import is the live binding: the others
 // take the names and read them, and say what happened where they have something to say: stopAsked(), handed(),
@@ -342,6 +349,6 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
   pass.dispatchWorkgroups(x, y, z);
 }
 
-export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, clock, openDevice,
+export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, angleHeadsOf, widestHead, model, stopping, lost, stopAsked, handed, held, within, isLate, clock, openDevice,
   describe, unusable, end, whyOf, buffer, uniform, normShape, copyIn, spreadIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
 export type { Model, Open, Bound, Whole, Pass, Opening };

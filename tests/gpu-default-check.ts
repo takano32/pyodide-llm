@@ -143,11 +143,11 @@ parentPort.on("message", (data) => {
     // reads them off forward/engine.js's held at the moment), and whether the halves the earlier blocks wrote back are
     // there: a cache that grew moves its values and changes its capacity, and an old address would read the wrong ones
     if (line.kv?.probe && data.cache) {
-      const H = new Uint16Array(memory.buffer), row = data.cache.half ? data.cache.row / 2 : NaN, last = data.pos - 1, L = plan.layers;
+      const H = new Uint16Array(memory.buffer), row = data.cache.half ? data.cache.places[0].row / 2 : NaN, last = data.pos - 1, L = plan.layers;
       const at = (side, l, p, i) => data.cache.places[l][side] / 2 + p * row + i;
       const right = [[0, 0], [L - 1, last], [L - 1, 256]].every(([l, p]) => [0, 1, row - 1].every((i) =>
         H[at("keys", l, p, i)] === madeUpHalf(l, p % 64, i) && H[at("values", l, p, i)] === madeUpHalf(L + l, p % 64, i)));
-      const places = data.cache.places, capacity = L > 1 ? (places[1].keys - places[0].keys) / data.cache.row : NaN;
+      const places = data.cache.places, capacity = L > 1 ? (places[1].keys - places[0].keys) / places[0].row : NaN;
       parentPort.postMessage({ type: "probe", right, capacity });
     }
     Atomics.store(ctl, words.failed, fail ? 1 : 0);

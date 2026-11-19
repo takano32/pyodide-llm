@@ -225,7 +225,8 @@ assert.deepEqual([...new Set(compiled)].sort(), [
   "ENGINE.SAMPLE", "ENGINE.TAKE_OUTLIERS", "ENGINE.TERNARY_COLUMNS", "ENGINE.TOKEN_ROPE", "ENGINE.WIDEN_SIX",
   "ENGINE.OUTPUT_GATE",  // (T271.2: a Qwen3.5's gate of the attention's output)
   "ENGINE.SCALE", "ENGINE.PER_LAYER_INPUTS",  // (T334.1: a Gemma 4's number of a layer and its inputs of every layer)
-  "ENGINE.flashTile(shape)", "ENGINE.flashVec(a.shape)", "ENGINE.flashVecReduce(a.shape)",
+  "ENGINE.SOFTCAP",  // (T334.2: a Gemma 4's logits capped)
+  "ENGINE.flashTile(shape)", "ENGINE.flashVec(sized.shape)", "ENGINE.flashVecReduce(sized.shape)",  // (T334.2: of each size of heads)
   'ENGINE.fusedDp4aMatVec({ output: "write", weights: type })',  // (T547.3.6) a token's matrix of a type of blocks, checked on its own (tokenforms.ts's checkTokenBlocks)
 ].sort(), "a place where gpu.js compiles a shader that this check does not know: is every shader it can compile of the catalogue (ENGINE.<name>) or a tile (devicePromptForms)?");
 for (const { n, file } of gpuNodes) {

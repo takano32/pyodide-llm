@@ -4,7 +4,7 @@
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, spreadIn, widenIn, widenedHalves, readBack,
-  validated, pipelineOf, bind, dispatch } from "./device.ts";
+  validated, pipelineOf, bind, dispatch, angleHeadsOf } from "./device.ts";
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { ENGINE } from "../shaders/engine.ts";
@@ -183,7 +183,10 @@ async function uploadLayers(m: Open) {
   for (let l = 0; l < plan.layers; l++) {
     // a layer's matrices that are one (T152): a buffer of values and one of scales for all of them (T271.3: where the
     // layer has them: q, k and v the attending layers' alone, where they are theirs: an LFM2's and a Qwen3.5's)
-    const has = (joinedName: string) => named(together!.homes).some(([name, home]) => home.joined === joinedName && (!plan.matrices[name]!.of || plan.matrices[name]!.of === plan.kinds![l]));
+    // (T334.2: and of a stack's layers alone, where it is of some of them: a Gemma 4's narrow and wide q, k and v, its
+    // narrower and wider gate and up, each joined apart)
+    const has = (joinedName: string) => named(together!.homes).some(([name, home]) => home.joined === joinedName && (!plan.matrices[name]!.of || plan.matrices[name]!.of === plan.kinds![l]) &&
+      !(plan.matrices[name]!.at && plan.matrices[name]!.at![l] < 0));
     const packingOf = (joinedName: string) => packingAt(plan.matrices[named(together!.homes).find(([, home]) => home.joined === joinedName)![0]]!, 0);
     const joined = together && Object.fromEntries(Object.entries(together.sizes).filter(([name]) => has(name)).map(([name, [valueBytes, scaleBytes]]): [string, Joined[string]] =>
       [name, [buffer(m, valueBytes, usage), scaleBytes ? buffer(m, scaleBytes, usage) : PACKINGS[packingOf(name)].grid ? grids : null, packingOf(name)]]));
@@ -411,7 +414,8 @@ function tokensLayout(m: Open): Together | null {
   // matrices(): T545.2 an LFM2's in and out of its convolution layers, T271.3 a Qwen3.5's of its linear-attention layers
   // and the gate of its output), the FFN's down and its up where it has no gate are, and a matrix a kind's roles left
   // out of too: a step reads pieces[0] of it, T642.2's review)
-  const joinable = new Set<TensorName>(["wq", "wk", "wv", ...(gated ? ["w1", "w3"] as const : [])]);
+  // (T334.2: and a Gemma 4's of its wide heads and its wider FFN, joined as the others: WIDER)
+  const joinable = new Set<TensorName>(["wq", "wk", "wv", ...(gated ? ["w1", "w3"] as const : []), ...Object.values(WIDER).flat()]);
   const whole = named(m.weights.matrices).map(([name]) => name).filter((name) => !joinable.has(name));
   for (const name of whole) if (m.weights.matrices[name]!.pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
   const homes: Together["homes"] = {}, sizes: Together["sizes"] = {}, matrices = m.weights.matrices;
@@ -431,7 +435,13 @@ function tokensLayout(m: Open): Together | null {
   const vAt = !matrices.wq || "qkv" in kv ? 0 : (matrices.wq.rows + matrices.wk!.rows) * 4, kAt = !matrices.wq || qk ? 0 : matrices.wq.rows * 4;
   if (kAt % align) return why("k would not start where this GPU binds a buffer, after q");
   if (vAt % align) return why("v would not start where this GPU binds a buffer, after q and k");
-  for (const [joined, names] of Object.entries({ ...kv, ...(gated && !up ? { gateUp: ["w1", "w3"] satisfies TensorName[] } : {}) })) {
+  // (T334.2: a Gemma 4's stacks of its wide heads and of its wider FFN, each joined as the narrow ones are, in buffers of
+  // their own: as q, k and v one, and gate and up one, or none of them)
+  const wider = Object.fromEntries(Object.entries(WIDER).filter(([, names]) => matrices[names[0]]));
+  if (Object.keys(wider).length && !("qkv" in kv && gated && !up && Object.values(wider).flat().every((name) => matrices[name] && one(name, "wq")))) {
+    return why("a layer of wider heads or a wider FFN is not of one packing with the others");
+  }
+  for (const [joined, names] of Object.entries({ ...kv, ...(gated && !up ? { gateUp: ["w1", "w3"] satisfies TensorName[] } : {}), ...wider })) {
     let values = 0, scales = 0;
     for (const name of names) {
       const matrix = m.weights.matrices[name]!;
@@ -450,6 +460,9 @@ function tokensLayout(m: Open): Together | null {
   }
   return { homes, sizes, vAt, kAt, up };
 }
+// T334.2: a Gemma 4's matrices of its wide heads and of its wider FFN, joined for a token as the narrow ones are (qkv,
+// gateUp), each in a buffer of its own a layer that has them
+const WIDER = { qkvWide: ["wq_wide", "wk_wide", "wv_wide"], gateUpDouble: ["w1_double", "w3_double"] } satisfies Record<string, TensorName[]>;
 // T152: the tables onto the GPU (int6 widened as a layer's matrices are), the final norm's weights, and RoPE's table
 // of every position, a row a position: the cos of its headSize / 2 angles, then their sin (shaders/fused.ts's fusedMatVec
 // reads it so, T151; from the CPU's two tables, Llama 3's scaling in them)
@@ -459,7 +472,7 @@ function tokensLayout(m: Open): Together | null {
 // T210: a model on the GPU alone makes them as it opens, their bytes routes of the checkpoint as the layers' are
 // (tablesOn), and only the final norm and RoPE's table come from the shared memory here
 async function uploadTokens(m: Model, widen: Widen | null) {
-  const { plan } = m, planned = plan.tokens!, half = plan.headSize / 2;
+  const { plan } = m, planned = plan.tokens!;
   let bytes = 0;
   m.weights.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
     const { first, values, scales } = piece, { n, packing, at: [valuesAt, scalesAt] } = spec;
@@ -478,24 +491,26 @@ async function uploadTokens(m: Model, widen: Widen | null) {
   m.weights.finalNorm = vector(planned.final, plan.dim);
   m.weights.finalBias = planned.finalBias ? vector(planned.finalBias, plan.dim) : null;
   m.weights.positions = planned.positions ? vector(planned.positions, plan.seqLen * plan.dim) : null;
-  const rows = Math.max(1, Math.floor(CHUNK / (plan.headSize * 4))), chunk = new Float32Array(rows * plan.headSize);
-  // (T261.4.2: and a Gemma 3's local layers' table, from its own two)
-  const table = (cos: number, sin: number) => {
-    const made = buffer(m, plan.seqLen * plan.headSize * 4, STORAGE | COPY_DST);
+  // (T261.4.2: and a Gemma 3's local layers' table, from its own two; T334.2: each a row of its layers' heads, a Gemma
+  // 4's wide ones' and its narrow ones', as the CPU's tables are: device.ts's angleHeadsOf)
+  const [heads, headsLocal] = angleHeadsOf(plan);
+  const table = (cos: number, sin: number, head: number) => {
+    const half = head / 2, rows = Math.max(1, Math.floor(CHUNK / (head * 4))), chunk = new Float32Array(rows * head);
+    const made = buffer(m, plan.seqLen * head * 4, STORAGE | COPY_DST);
     // (GPT-2 turns nothing and has no tables: the buffer stays, bound and never read)
     for (let p = 0; plan.turned && p < plan.seqLen; p += rows) {
       const count = Math.min(rows, plan.seqLen - p);
       for (let r = 0; r < count; r++) {
-        chunk.set(new Float32Array(m.memory.buffer, cos + (p + r) * half * 4, half), r * plan.headSize);
-        chunk.set(new Float32Array(m.memory.buffer, sin + (p + r) * half * 4, half), r * plan.headSize + half);
+        chunk.set(new Float32Array(m.memory.buffer, cos + (p + r) * half * 4, half), r * head);
+        chunk.set(new Float32Array(m.memory.buffer, sin + (p + r) * half * 4, half), r * head + half);
       }
-      m.device.queue.writeBuffer(made, p * plan.headSize * 4, chunk, 0, count * plan.headSize);
+      m.device.queue.writeBuffer(made, p * head * 4, chunk, 0, count * head);
     }
-    bytes += plan.seqLen * plan.headSize * 4;
+    bytes += plan.seqLen * head * 4;
     return made;
   };
-  m.weights.angleTable = table(plan.cos, plan.sin);
-  m.weights.localAngleTable = plan.localCos ? table(plan.localCos, plan.localSin) : null;
+  m.weights.angleTable = table(plan.cos, plan.sin, heads);
+  m.weights.localAngleTable = plan.localCos ? table(plan.localCos, plan.localSin, headsLocal) : null;
   await within(m.device.queue.onSubmittedWorkDone(), "the classifier's weights");
   return bytes;
 }

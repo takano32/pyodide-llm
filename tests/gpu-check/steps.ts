@@ -26,7 +26,7 @@
 // parallel residual); the made-up GPT-2's final norm has eight weights of 12 (GPT-2's outlier channels, T92: the
 // engine takes their columns of the classifier apart on the CPU, and the GPU's classifier multiplies floats).
 import { runtimeUrl } from "../tree.ts";
-import { floats, worstRow, worstAt, argmax, logSoftmax } from "./measures.ts";
+import { floats, worstRow, worstAt, argmax, logSoftmax, padded } from "./measures.ts";
 import { GEN, NOT_FINITE_STATUS, GPU_LINE, K, K_PACKED_STEPS, TIE } from "./lines.ts";
 const wgsl = await import(runtimeUrl("shaders.js"));
 
@@ -65,9 +65,8 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
       (/^the (classifier|embedding) is past a buffer/.test(steps.why ?? "") && table > steps.binds) ||
       // (T261.4.2, T545.2: a Gemma 3's and an LFM2's steps are the GPU's now: its GEGLU, norms behind, window and local
       // tables, and its convolution layers, are a token's fused layer's, and their steps on the CPU are a failure)
-      steps.why === `${unbound(c)} would not start where this GPU binds a buffer` ||
-      // (T334.1: a Gemma 4's steps stay on the CPU until T334.2, its prompt's blocks on the GPU)
-      (c.arch === "gemma4" && steps.why === "a Gemma 4's answers are not on the GPU yet");
+      steps.why === `${unbound(c)} would not start where this GPU binds a buffer`;
+    // (T334.1 left a Gemma 4's steps on the CPU, its prompt's blocks on the GPU, until T334.2 gave a token's layer its own)
     // (T547.3.1 took a model of a stack whose layers are each of a packing of their own's steps on the CPU, until
     // T547.3.2 gave a token's layer its matrices apart)
     // (T547.2.3 took a model of Q4_K blocks' steps on the CPU, until T547.2.4 gave a token's layer their reading)
@@ -122,7 +121,8 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
   // layers go 10 times their own; the review of T152): the line of layer l is the prompt's shaders' of the same
   // arithmetic at layer l (T187: DP4A by Q8's distance), or the run's own prompt's distance at layer l where that is
   // larger (the steps' attention reads its keys and values)
-  const [gotK, gotV, wantK, wantV] = [steps.keys, steps.values, ref.greedyKeys, ref.greedyValues].map(rowsOf);
+  // (T334.2: a Gemma 4's layers each of its own width, as rows of the widest: padded())
+  const [gotK, gotV, wantK, wantV] = [steps.keys, steps.values, ref.greedyKeys, ref.greedyValues].map((b64) => rowsOf(padded(b64, ref.widths, kvDim)));
   const rowsAt = (all, l) => all.subarray(l * positions.length * kvDim, (l + 1) * positions.length * kvDim);
   const packed = /DP4A/.test(steps.form ?? "");
   const offs = Array.from({ length: layers }, (_, l) => Math.max(worstRow(rowsAt(gotK, l), rowsAt(wantK, l), kvDim), worstRow(rowsAt(gotV, l), rowsAt(wantV, l), kvDim)));

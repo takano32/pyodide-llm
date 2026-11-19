@@ -3,12 +3,13 @@
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, within, buffer, uniform, normShape, validated,
-  pipelineOf, bind, dispatch } from "./device.ts";
+  pipelineOf, bind, dispatch, widestHead } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { GROUP, BLOCK_PACKINGS } from "../shaders/common.ts";
 import { flashVecSplits } from "../shaders/attention.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, fusedParams } from "../shaders/fused.ts";
 import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, OUTLIERS_MOST, outliersOf } from "../shaders/run.ts";
+import { perLayerParams, softcapParams } from "../shaders/steps.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, isBlock, packingsOf, asTernary } from "./packings.ts";
 import type { Model, Bound, Pass } from "./device.ts";
@@ -43,20 +44,24 @@ type Feed = { norm: Pass[]; quantize: Pass[]; input: Entry[] };
 // (T261.4.2: flash a layer, the tiles' Params with the layer's window in them)
 // (T568.2: what a kind of layers has of its own, an attending layer's q, k and v and its attention's among them, is
 // the kind's: kinds)
+// (T334.2: down, quantizeGate and hidden by the FFN's width, a Gemma 4's wider one's too)
 type Uniforms = {
   embed: GPUBuffer[];
-  down: GPUBuffer;
+  down: Record<number, GPUBuffer>;
   gateUp: GPUBuffer[];
   norm: GPUBuffer[];
   final: GPUBuffer;
   classifier: GPUBuffer[];
-  quantizeGate: GPUBuffer;
+  quantizeGate: Record<number, GPUBuffer>;
   quantizeNormed: GPUBuffer;
   biases?: { [name: string]: GPUBuffer }[];
   positions?: GPUBuffer;
   take?: GPUBuffer;
   columns?: GPUBuffer[];
-  hidden?: GPUBuffer;
+  hidden: Record<number, GPUBuffer>;
+  // T334.2: the cap of a Gemma 4's logits (SOFTCAP's), and the number of each layer (SCALE's: none without)
+  softcap?: GPUBuffer;
+  scales?: GPUBuffer[];
   // T271.1: a rotated basis's Shape of each width (ROTATE_QUANTIZE's and UNROTATE's: n, xStride, block)
   rotate?: Record<number, GPUBuffer>;
 };
@@ -92,7 +97,17 @@ type TokenBuffers = {
   // T568.2: what each kind the model's layers are of made of a token (gpu/kinds.ts: its buffers and uniforms, its
   // layers' steps), by its name
   kinds: Partial<Record<LayerKind, Steps>>;
+  // T334.2: SOFTCAP (null: logits as they are); a Gemma 4's inputs of every layer of the token (null: none)
+  softcap: GPUComputePipeline | null;
+  perLayer: PerLayerToken | null;
 };
+// T334.2: a Gemma 4's inputs of every layer of a token, as a block's (block.ts): the rows of the table the CPU read for
+// the token fed ([layer][width]: requests.ts's generate() puts them up), the projection of the embedded row, the inputs
+// PER_LAYER_INPUTS makes of the two (a layer's at stride × width floats: where a device binds a buffer, which GEGLU binds
+// a layer's at), the gate of a layer's, and the uniforms: the matrices' Params (the projection, the gate, the
+// projection back), PER_LAYER_INPUTS' Norm, QUANTIZE's of the gate and GEGLU's size
+type PerLayerToken = { rows: GPUBuffer; projected: GPUBuffer; inputs: GPUBuffer; gate: GPUBuffer; width: number; stride: number;
+  u: { project: GPUBuffer; gate: GPUBuffer; back: GPUBuffer; norm: GPUBuffer; quantize: GPUBuffer; size: GPUBuffer } };
 // a run of steps: what runTokens() is given, and what it read back (kv where it was asked to keep them)
 type Run = { count: number; pos: number; state: GPUAllowSharedBufferSource; settings?: GPUAllowSharedBufferSource; randoms?: Float32Array<ArrayBuffer>; keep?: boolean;
   extra?: (encoder: GPUCommandEncoder) => void };
@@ -153,6 +168,8 @@ function tokenCandidates(m: Model) {
 // (T261.4.2: geglu, the gate's activation is GELU (a Gemma 3's); posts, the norms behind the attention and the FFN, so
 // that o and down write their rows as they are, which RMSNORM_ADD norms into the stream)
 const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && PACKINGS[m.plan.tokens!.classifier.packing].on === "int8";
+// T334.2: each layer's width of the FFN: the model's, or a Gemma 4's wider one's (the rows of its gate's stack _double)
+const hiddensOf = (plan: Model["plan"]) => [...Array(plan.layers).keys()].map((l) => (plan.shapes[l]?.double ? plan.matrices.w1_double!.rows : plan.hidden));
 // (T568.2: what the kinds of the model's layers write besides (gpu/kinds.ts's writes()): mix, a matrix of the normed
 // stream written as it is (T545.2: an LFM2's convolution layers' matrix in; T271.3: a Qwen3.5's gate of its attending
 // layers' output); write, a matrix of a vector of the kind's own written as it is (a Qwen3.5's linear-attention layers')
@@ -175,8 +192,10 @@ const tokenShape = (m: Model) => {
     for (const [role, names] of Object.entries(rest)) take(role as TokenRole, names);
     take(plan.vectors.attentionPost ? "write" : "add", join);
   }
-  take("glu", ["w1", "w3"]);
-  take(plan.vectors.ffnPost ? "write" : "add", ["w2"]);
+  take("glu", ["w1", "w3", "w1_double", "w3_double"]);
+  take(plan.vectors.ffnPost ? "write" : "add", ["w2", "w2_double"]);
+  // (T334.2: a Gemma 4's matrices of its inputs of every layer, each of a vector as it is, written as it is)
+  take("write", ["per_layer_projection", "ple_gate", "ple_proj"]);
   // (T547.3.6: and the classifier's type, a token's matrix too)
   roles.set("classifier", new Set([PACKINGS[plan.tokens!.classifier.packing].on]));
   return { apart: Boolean(plan.vectors.bq || plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), up: Boolean(m.weights.together?.up),
@@ -227,8 +246,9 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   const { plan } = m, planned = plan.tokens!, most = planned.most, vocab = planned.classifier.rows, attending = attendingOf(plan).length, stateBytes = plan.direct ? 0 : m.block.stateBytes;
   // (T568.2: and what a kind's layers quantize besides: T271.3, the read of a Qwen3.5's linear-attention layer, which z's
   // gate leaves for its matrix out)
-  const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, present = kindsOf(plan);
-  const widest = Math.max(plan.dim, qDim, plan.hidden, ...present.map((kind) => GPU_KINDS[kind].widest?.(plan) ?? 0));
+  // (T334.2: of the widest heads and the widest FFN a layer has, a Gemma 4's; and its inputs of every layer)
+  const qDim = plan.heads * widestHead(plan), kvDim = plan.kvHeads * widestHead(plan), present = kindsOf(plan), hiddens = hiddensOf(plan), hidden = Math.max(...hiddens);
+  const widest = Math.max(plan.dim, qDim, hidden, plan.perLayer?.width ?? 0, ...present.map((kind) => GPU_KINDS[kind].widest?.(plan) ?? 0));
   // (one at a time: each in an error scope of its own)
   // (T232: from a table of ternary weights, EMBED_TERNARY)
   // (T547.3.6: from a table of llama.cpp's blocks, its type's embedBlocks)
@@ -239,25 +259,29 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   const out = STORAGE | COPY_SRC;
   // (u is null until the uniforms are made, below: what this returns has them)
   const g: Omit<TokenBuffers, "u"> & { u: Uniforms | null } = { embed, sample, most, vocab, h: buffer(m, plan.dim * 4, out | COPY_DST), q: buffer(m, qDim * 4), att: buffer(m, qDim * 4),
-    gate: buffer(m, plan.hidden * 4), up: m.weights.together?.up ? buffer(m, plan.hidden * 4) : null, logits: buffer(m, vocab * 4, out), probs: buffer(m, vocab * 4), order: buffer(m, vocab * 4),
+    gate: buffer(m, hidden * 4), up: m.weights.together?.up ? buffer(m, hidden * 4) : null, logits: buffer(m, vocab * 4, out), probs: buffer(m, vocab * 4), order: buffer(m, vocab * 4),
     state: buffer(m, STATE_BYTES, out | COPY_DST), chosen: buffer(m, most * 4, out), randoms: buffer(m, most * 4, STORAGE | COPY_DST),
     step: buffer(m, 16, UNIFORM | COPY_DST), settings: buffer(m, SAMPLING_BYTES, UNIFORM | COPY_DST),
     xq: buffer(m, widest), xs: buffer(m, (widest / GROUP) * 4), xb: buffer(m, plan.dim * 4),
     // (T545.2: the attending layers' keys and values, and the state of the layers that keep one after the last step)
     readback: buffer(m, most * 4 + STATE_BYTES + 2 * attending * most * kvDim * 2 + stateBytes, MAP_READ | COPY_DST),
     // (below: the uniforms, and what only some models have)
-    u: null, take: null, columns: null, picked: null, kinds: {} };
-  // fusedMatVec's Params (shaders/fused.ts's fusedParams)
-  const params = (rows: number, n: number, second = 0, normAt = 0, turned = plan.turned) =>
-    uniform(m, fusedParams({ rows, n, second, eps: plan.eps, normAt, qRows: qDim, kvRows: kvDim, headSize: plan.headSize, turned }));
+    u: null, take: null, columns: null, picked: null, kinds: {}, softcap: null, perLayer: null };
+  // fusedMatVec's Params (shaders/fused.ts's fusedParams; T334.2: of the layer's heads)
+  const params = (rows: number, n: number, second = 0, normAt = 0, turned = plan.turned, head = plan.headSize) =>
+    uniform(m, fusedParams({ rows, n, second, eps: plan.eps, normAt, qRows: plan.heads * head, kvRows: plan.kvHeads * head, headSize: head, turned }));
   // RMSNORM's, HEAD_NORM's and NORM_QUANTIZE's Norm with the model's epsilon (device.ts's normShape)
   const norm = (at: number, size = plan.dim, first = 0) => normShape(m, size, at, plan.eps, first);
   const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim);
+  // (T334.2: of each width of the FFN, a Gemma 4's two)
+  const byHidden = (make: (width: number) => GPUBuffer) => Object.fromEntries([...new Set(hiddens)].map((width) => [width, make(width)] as const));
   g.u = { embed: m.weights.tables!.embedding.map((piece) => uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))),
-    down: params(plan.dim, plan.hidden), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),
+    down: byHidden((width) => params(plan.dim, width)), gateUp: layers.map((at, l) => params(hiddens[l], plan.dim, hiddens[l], at)),
     norm: layers.map((at) => norm(at)), final: norm(0), classifier: m.weights.tables!.classifier.map((piece) => params(piece.rows, plan.dim)),
     // QUANTIZE's (n, xStride): SwiGLU's, the normed stream's
-    quantizeGate: uniform(m, new Uint32Array([plan.hidden, plan.hidden, 0, 0])), quantizeNormed: uniform(m, new Uint32Array([plan.dim, plan.dim, 0, 0])) };
+    quantizeGate: byHidden((width) => uniform(m, new Uint32Array([width, width, 0, 0]))), quantizeNormed: uniform(m, new Uint32Array([plan.dim, plan.dim, 0, 0])),
+    // (GELU's and GEGLU's size)
+    hidden: byHidden((width) => uniform(m, new Uint32Array([width, 0, 0, 0]))) };
   // T568.2: what each kind of the model's layers makes of a token (gpu/kinds.ts: T226 an attending layer's q, k and v
   // and what comes before RoPE; T545.2 an LFM2's convolution layers'; T271.3 a Qwen3.5's linear-attention layers')
   for (const kind of present) g.kinds[kind] = await m.block.kinds[kind]!.tokens({ params, norm, layers });
@@ -278,7 +302,22 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     g.u.take = uniform(m, outliersOf(channels));
     g.u.columns = m.weights.tables!.classifier.map((piece) => uniform(m, outliersOf(channels, piece.rows, plan.dim)));
   }
-  g.u.hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
+  // T334.2: a Gemma 4's logits capped before SAMPLE (SOFTCAP, shaders/steps.ts), its number of every layer (the prompt's
+  // SCALE), and its inputs of every layer (the prompt's PER_LAYER_INPUTS, a token's at a stride that GEGLU binds at)
+  if (planned.softcap) {
+    g.softcap = await within(validated(m, () => pipelineOf(m, ENGINE.SOFTCAP)), "compiling the cap of the logits");
+    g.u.softcap = uniform(m, softcapParams(vocab, planned.softcap));
+  }
+  if (plan.vectors.layerScale) g.u.scales = layers.map((_, l) => uniform(m, new Uint32Array([plan.dim, l, 0, 0])));
+  if (plan.perLayer) {
+    const { width } = plan.perLayer, align = m.device.limits.minStorageBufferOffsetAlignment;
+    let stride = 1;
+    while ((stride * width * 4) % align) stride++;
+    const all = plan.layers * width;
+    g.perLayer = { rows: buffer(m, all * 4, STORAGE | COPY_DST), projected: buffer(m, all * 4), inputs: buffer(m, plan.layers * stride * width * 4), gate: buffer(m, width * 4),
+      width, stride, u: { project: params(all, plan.dim), gate: params(width, plan.dim), back: params(plan.dim, width), norm: uniform(m, perLayerParams(width, stride, plan.eps)),
+        quantize: uniform(m, new Uint32Array([width, width, 0, 0])), size: uniform(m, new Uint32Array([width, 0, 0, 0])) } };
+  }
   if (plan.rotated) g.u.rotate = Object.fromEntries(plan.rotated.signs.map(({ width }) => [width, uniform(m, new Uint32Array([width, width, plan.rotated!.block, 0]))] as const));
   return g as TokenBuffers;
 }
@@ -340,13 +379,24 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   if (embed && W.positions) list.push(added(g.h, W.positions, g.u.positions!, plan.dim));
   // T271.1: the embedding of a rotated basis holds R^-1 of its rows: turned back (UNROTATE)
   if (embed && b.rotate) list.push([b.rotate.unrotate, bindAt(m, b.rotate.unrotate, [[0, g.h], [1, W.signs![plan.dim]], [2, g.u.rotate![plan.dim]]]), plan.dim / plan.rotated!.block, 1]);
+  // T334.2: a Gemma 4's inputs of every layer, of the embedded row and the table's rows the CPU read (as a block's: the
+  // projection of the stream as it is, then PER_LAYER_INPUTS' norm and the rows added, a layer at a time)
+  const pl = g.perLayer;
+  if (embed && pl) {
+    const stream = plain(g.h, g.u.quantizeNormed, plan.dim);
+    list.push(...stream.quantize, matrix("write", W.matrices.per_layer_projection!.pieces[0].layers[0], stream.input, pl.u.project, plan.layers * pl.width, [[5, pl.projected]]),
+      [b.perLayer!.pipeline, bind(m, b.perLayer!.pipeline, [pl.projected, V.perLayerNorm!, pl.rows, pl.inputs, pl.u.norm, g.step]), plan.layers, 1]);
+  }
   const gated = Boolean(W.matrices.w3);
+  // (T334.1: a matrix of a stack of some layers at the layer's place in it, a Gemma 4's; else at the layer)
+  const held = (name: TensorName, l: number) => W.matrices[name]!.pieces[0].layers[plan.matrices[name]!.at?.[l] ?? l];
   for (let l = from; l < to; l++) {
     // (T545.2: a matrix of the layers of a kind, an LFM2's, at the layer's place among them: an attending layer's keys
     // and values too; every layer's place where there is one kind)
-    const place = plan.places[l], [down] = W.matrices.w2!.pieces;
+    // (T334.2: and the FFN of the layer's width, a Gemma 4's wider one's of the stacks named _double)
+    const place = plan.places[l], double = plan.shapes[l]?.double ?? false, hidden = double ? plan.matrices.w1_double!.rows : plan.hidden;
     const attention = normed(V.attention, V.attentionBias, g.u.norm[l]), ffn = normed(V.ffn, V.ffnBias, g.u.norm[l]);
-    const activated = plain(g.gate, g.u.quantizeGate, plan.hidden);
+    const activated = plain(g.gate, g.u.quantizeGate[hidden], hidden);
     // T261.4.2: what joins the stream after a matrix: added on its write, or (a Gemma 3's norm behind it) written as it
     // is into xb, which nothing reads by then, and normed into the stream there (RMSNORM_ADD, as a prompt's block)
     const joining = (post: GPUBuffer | undefined, held: Held, input: Entry[], params: GPUBuffer): Pass[] => (post
@@ -360,13 +410,24 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
       ...(plan.parallel ? [] : ffn.norm), ...ffn.quantize,
       // gate and up as one matrix with SwiGLU on its write; or (T154: no gate) w1, its bias and GELU; or (T547.3.2) gate
       // and up apart, of two packings, each written as it is and joined by the prompt's SWIGLU (GEGLU)
-      ...(g.up ? [matrix("glu", W.matrices.w1!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]),
-        matrix("glu", W.matrices.w3!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.up]]),
-        [b.activation, bind(m, b.activation, [g.gate, g.up, g.u.hidden!, g.step]), Math.ceil(plan.hidden / 64), 1]] satisfies Pass[]
-      : gated ? [matrix("glu", W.joined[l].gateUp, ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]])]
-        : [matrix("glu", W.matrices.w1!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]), ...biased(g.gate, "b1", l),
-          [b.activation, bind(m, b.activation, [g.gate, g.u.hidden!, g.step]), Math.ceil(plan.hidden / 64), 1]] satisfies Pass[]),
-      ...activated.quantize, ...joining(V.ffnPost, down.layers[l], activated.input, g.u.down), ...biased(g.h, "b2", l));
+      ...(g.up ? [matrix("glu", W.matrices.w1!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], hidden, [[5, g.gate]]),
+        matrix("glu", W.matrices.w3!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], hidden, [[5, g.up]]),
+        [b.activation, bind(m, b.activation, [g.gate, g.up, g.u.hidden[hidden], g.step]), Math.ceil(hidden / 64), 1]] satisfies Pass[]
+      : gated ? [matrix("glu", W.joined[l][double ? "gateUpDouble" : "gateUp"], ffn.input, g.u.gateUp[l], hidden, [[5, g.gate]])]
+        : [matrix("glu", W.matrices.w1!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], hidden, [[5, g.gate]]), ...biased(g.gate, "b1", l),
+          [b.activation, bind(m, b.activation, [g.gate, g.u.hidden[hidden], g.step]), Math.ceil(hidden / 64), 1]] satisfies Pass[]),
+      ...activated.quantize, ...joining(V.ffnPost, held(double ? "w2_double" : "w2", l), activated.input, g.u.down[hidden]), ...biased(g.h, "b2", l));
+    // T334.2: a Gemma 4's input of the layer, after the FFN as a block's (block.ts) and the CPU's (forward/perlayer.ts):
+    // gelu(gate · the stream) times the layer's slice of the inputs (the prompt's GEGLU), projected back into xb and its
+    // norm added to the stream (RMSNORM_ADD); then its number of the layer (the prompt's SCALE)
+    if (pl) {
+      const stream = plain(g.h, g.u.quantizeNormed, plan.dim), gate = plain(pl.gate, pl.u.quantize, pl.width);
+      list.push(...stream.quantize, matrix("write", held("ple_gate", l), stream.input, pl.u.gate, pl.width, [[5, pl.gate]]),
+        [b.activation, bind(m, b.activation, [pl.gate, { buffer: pl.inputs, offset: l * pl.stride * pl.width * 4, size: pl.width * 4 }, pl.u.size, g.step]), Math.ceil(pl.width / 64), 1],
+        ...gate.quantize, matrix("write", held("ple_proj", l), gate.input, pl.u.back, plan.dim, [[5, g.xb]]),
+        [b.normAdd!, bind(m, b.normAdd!, [g.xb, V.plePost!, g.h, g.u.norm[l], g.step]), 1, 1]);
+    }
+    if (g.u.scales) list.push([b.scale!, bind(m, b.scale!, [g.h, V.layerScale!, g.u.scales[l], g.step]), Math.ceil(plan.dim / 64), 1]);
   }
   if (head) {
     // T232: a ternary classifier's outlier channels go out of the normed stream before it is quantized (TAKE_OUTLIERS),
@@ -379,6 +440,8 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
       // (T547.3.6: a classifier of blocks by its type's pipeline)
       ...W.tables!.classifier.flatMap((piece, i): Pass[] => [matrix("classifier", [piece.values, piece.scales, plan.tokens!.classifier.packing], final.input, g.u.classifier[i], piece.rows, [[5, logitsOf(piece)]]),
         ...(take ? [[g.columns!, bind(m, g.columns!, [piece.values, piece.scales!, g.picked!, logitsOf(piece), g.u.columns![i]]), ...spread(m, piece.rows, 256)]] satisfies Pass[] : [])]),
+      // (T334.2: a Gemma 4's logits capped, as the CPU caps them before it samples)
+      ...(g.softcap ? [[g.softcap, bind(m, g.softcap, [g.logits, g.u.softcap!]), Math.min(Math.ceil(g.vocab / 64), m.device.limits.maxComputeWorkgroupsPerDimension), 1]] satisfies Pass[] : []),
       [g.sample, bindAt(m, g.sample, [[0, g.logits], [1, g.probs], [2, g.order], [3, g.state], [4, g.chosen], [5, g.randoms], [6, g.settings]]), 1, 1]);
   }
   return list;
@@ -399,8 +462,11 @@ function tokenStep(m: Model, form: TokenForm, positions: number) {
 // T545.2: kv by the attending layers' places; state (keep), the state of the layers that keep one after the last step
 // (T271.2: of the last step alone: steps that stopped before it leave no state of their position, and the CPU goes on
 // from position 0 then, forward/gpuside.ts)
+// (T334.2: each layer's of its own heads, in a place of the widest's, a Gemma 4's: kv[side][l] holds its count positions
+// of its own width, and nothing of a layer that reads another's keys and values)
 async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, settings, randoms, keep = false, extra }: Run) {
-  const { device } = m, g = m.tokens!, { cache, states } = m.block, kvRow = m.plan.kvHeads * m.plan.headSize * 2, idsBytes = g.most * 4;
+  const { device, plan } = m, g = m.tokens!, { cache, states } = m.block, kvRow = plan.kvHeads * widestHead(plan) * 2, idsBytes = g.most * 4;
+  const attending = attendingOf(plan), rowOf = (p: number) => (plan.shapes[attending[p]].kept < 0 ? 0 : plan.kvHeads * plan.shapes[attending[p]].head * 2);
   const layers = cache!.keys.length, stateBytes = keep && !m.plan.direct ? m.block.stateBytes : 0, stateAt = idsBytes + STATE_BYTES + 2 * layers * g.most * kvRow;
   if (pos + count > cache!.capacity) throw new Error(`positions to ${pos + count} are past the GPU's cache`);
   device.pushErrorScope("out-of-memory");
@@ -429,8 +495,10 @@ async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, sett
   const kvAt = idsBytes + STATE_BYTES;
   if (keep) {
     for (let l = 0; l < layers; l++) {
-      encoder.copyBufferToBuffer(cache!.keys[l], pos * kvRow, g.readback, kvAt + l * g.most * kvRow, count * kvRow);
-      encoder.copyBufferToBuffer(cache!.values[l], pos * kvRow, g.readback, kvAt + (layers + l) * g.most * kvRow, count * kvRow);
+      const own = rowOf(l);
+      if (!own) continue;
+      encoder.copyBufferToBuffer(cache!.keys[l], pos * own, g.readback, kvAt + l * g.most * kvRow, count * own);
+      encoder.copyBufferToBuffer(cache!.values[l], pos * own, g.readback, kvAt + (layers + l) * g.most * kvRow, count * own);
     }
   }
   extra?.(encoder);
@@ -446,7 +514,7 @@ async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, sett
       const bytes = new Uint8Array(g.readback.getMappedRange(kvAt, 2 * layers * g.most * kvRow + stateBytes).slice(0));
       out.kv = [0, 1].map((side) => [...Array(layers)].map((_, l) => {
         const at = (side * layers + l) * g.most * kvRow;
-        return bytes.subarray(at, at + count * kvRow);
+        return bytes.subarray(at, at + count * rowOf(l));
       }));
       if (stateBytes) out.state = bytes.subarray(stateAt - kvAt, stateAt - kvAt + stateBytes);
     }

@@ -42,6 +42,7 @@ const ORDER = {
     "SHORT_CONV", "CONV_STATE",  // (T545: an LFM2's convolution layers)
     "DELTA_GATES", "DELTA_CONV", "DELTA_CONV_STATE", "DELTA_NET", "OUTPUT_GATE",  // (T271.2: a Qwen3.5's linear-attention layers and its output gate)
     "SCALE", "PER_LAYER_INPUTS",  // (T334.1: a Gemma 4's number of a layer and its inputs of every layer)
+    "SOFTCAP",  // (T334.2: a Gemma 4's logits capped)
     // (T379.2: each maker's rows together; within a maker subgroups is the outer choice)
     ...EITHER.flatMap((subgroups) => EITHER.map((half) => `flashTile(half=${half}, subgroups=${subgroups})`)),
     ...EITHER.map((subgroups) => `flashVec(subgroups=${subgroups})`),

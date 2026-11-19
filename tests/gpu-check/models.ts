@@ -197,7 +197,8 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // of the fourth and the third, and keep none): the third's keys and values are a wide layer's, the fourth's are those
   // after a wide layer's and a layer's input and number; a GPU that reads a layer's stack at the wrong place, turns the
   // wrong part of a wide head, leaves v's heads unnormed, or adds a layer's input or multiplies its number wrong is off in
-  // the keys of the next layer. Its steps are the CPU's until T334.2
+  // the keys of the next layer. Its steps are the GPU's since T334.2 (all six layers, a request a step): the shared
+  // layers' and the wider FFN's are its steps' alone
   "synthetic-gemma4": [{ layers: 6, kv_heads: 1, seq_len: 160, ...GEMMA4 }, { ...GEMMA4, local: { layers: [0, 1, 3, 4], window: 64, rope_theta: 100 }, rotary: 8 }],
   // (T334.1: the same in parts, four layers, the third attending every position, each with one of what a Gemma 4 has
   // besides: the heads of v normed and the layer's number alone; the third's heads wide, a part of them turned; an input

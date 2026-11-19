@@ -75,7 +75,8 @@ export type Matrices = Partial<Record<TensorName, Matrix>>;
 
 // T152: what the worker takes for a generation's steps (gpuside.ts's gpuTokensPlan()): the classifier and, where it is
 // another table, the embedding; the final norm (its bias and GPT-2's positions: 0 where the model has none); whether
-// the classifier has outlier channels (T92) and which; where the ids go; the most steps of a submission
+// the classifier has outlier channels (T92) and which; where the ids go; the most steps of a submission. T334.2: the
+// cap of the logits (a Gemma 4's: cap * tanh(logits / cap) before the sampling; 0: none)
 export type Tokens = {
   classifier: Table;
   embedding: Table | null;
@@ -86,6 +87,7 @@ export type Tokens = {
   channels: number[];
   ids: number;
   most: number;
+  softcap: number;
 };
 
 // T210: the tables of a model on the GPU alone, which come with the checkpoint's bytes
@@ -134,9 +136,9 @@ export type Started = KindNumbers & {
   heads: number;
   kvHeads: number;
   headSize: number;
-  // the values of a head RoPE turns (0: a GPT-2), and the layers it leaves alone (T255)
+  // the values of a head RoPE turns (0: a GPT-2; T255's layers it leaves alone, and T334.1's of their own heads, are each
+  // layer's shape's turned: shapes)
   turned: number;
-  unturned: number[];
   seqLen: number;
   kvStart: number;
   eps: number;
@@ -200,11 +202,12 @@ export type Opened = { layers: number; matrices: Matrices; tables: Tables; force
 
 // forward.ts's cache of the keys and values a generation's steps go up from: where each attending layer's are now (T261.4.2,
 // places: the address of position 0's keys and values, position p's p rows after; or, where ring is not 0, a ring of so
-// many positions that holds position p at p mod ring, T510.1), the bytes of a position, and whether they are float16
-export type CachePlace = { keys: number; values: number; ring: number };
+// many positions that holds position p at p mod ring, T510.1), and whether they are float16. T334.2: and the bytes of a
+// position of each (row: a Gemma 4's layers are of their own widths)
+export type CachePlace = { keys: number; values: number; ring: number; row: number };
 // T334.1: a layer's heads and places in a Started plan (its shapes)
 export type LayerShape = { head: number; wide: boolean; stack: number; kept: number; reads: number; double: boolean; turned: number };
-export type Cache = { places: CachePlace[]; row: number; half: boolean };
+export type Cache = { places: CachePlace[]; half: boolean };
 // the sampling of the steps (the engine's settings; T546: topK, minP and presence too, 0 where none; stops: the stop
 // tokens)
 export type Sampling = { temperature: number; topp: number; penalty: number; topK: number; minP: number; presence: number; stops: number[] };

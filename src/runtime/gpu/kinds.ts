@@ -73,11 +73,12 @@ export type Stepping = {
   normed: Feed; ffnNorm: Pass[]; biased(to: GPUBuffer, name: "bo", l: number): Pass[]; positions: number;
   bindAt(pipeline: GPUComputePipeline, entries: Entry[]): GPUBindGroup;
 };
-// What a kind makes a token's uniforms with (tokens.ts's): fusedMatVec's Params (rows, n, second, normAt, turned) and
-// the norms' Norm with the model's epsilon (at, size, first), and every layer's offset of its norm (device.ts's normShape
-// makes a Norm of another epsilon)
+// What a kind makes a token's uniforms with (tokens.ts's): fusedMatVec's Params (rows, n, second, normAt, turned; T334.2:
+// head, the size of the layer's heads, a Gemma 4's own, which RoPE's write reads q's and k's rows by) and the norms'
+// Norm with the model's epsilon (at, size, first), and every layer's offset of its norm (device.ts's normShape makes a
+// Norm of another epsilon)
 export type Making = {
-  params(rows: number, n: number, second?: number, normAt?: number, turned?: number): GPUBuffer;
+  params(rows: number, n: number, second?: number, normAt?: number, turned?: number, head?: number): GPUBuffer;
   norm(at: number, size?: number, first?: number): GPUBuffer;
   layers: number[];
 };

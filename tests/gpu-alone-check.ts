@@ -153,7 +153,7 @@ console.log("ok: T450, an engine on the GPU alone starts no software thread what
     for (let pos = 62 - ring; pos < 62; pos++) {
       const slot = pos % ring;
       for (const [base, sign] of [[place.keys, 1], [place.values, -1]]) {
-        const first = [...read(base + slot * asked.row)], second = [...read(base + (slot + ring) * asked.row)];
+        const first = [...read(base + slot * place.row)], second = [...read(base + (slot + ring) * place.row)];
         assert.deepEqual(second, first, `layer ${l}, position ${pos}: the ring's two copies`);
         assert.deepEqual(first, Array.from({ length: kvDim }, (_, i) => (asked.half ? half(sign * key(pos, l, i)) : sign * key(pos, l, i))), `layer ${l}, position ${pos}: what the GPU wrote`);
       }
@@ -232,11 +232,11 @@ console.log("ok: T375.2, the GPU's worker is told how much of a head RoPE turns 
   const [first, last] = beside.posted.filter((data) => data.type === "tokens").map(({ cache }) => cache);
   assert.ok(first && last, "the steps were asked of the GPU twice, with the cache's places");
   // (T261.4.2: each layer's place, its block a capacity of positions after the one before it)
-  const layers = 2, capacityOf = ({ places: [one, two] }) => (two.keys - one.keys) / last.row;
+  const layers = 2, capacityOf = ({ places: [one, two] }) => (two.keys - one.keys) / one.row;
   assert.equal(capacityOf(first), 32, "the cache had grown to twice its start");
   assert.equal(capacityOf(last), 128, "and to the context after the larger prompt");
   assert.deepEqual(last.places.map((place) => place.ring), [0, 0], "no layer's is a ring");
-  assert.equal(last.places[0].values, last.places[0].keys + layers * capacityOf(last) * last.row, "the values begin where the keys end, at the capacity the GPU is told");
+  assert.equal(last.places[0].values, last.places[0].keys + layers * capacityOf(last) * last.places[0].row, "the values begin where the keys end, at the capacity the GPU is told");
   assert.notEqual(last.places[0].values, first.places[0].values, "the values moved as the cache grew, and the GPU is told where they are now");
   assert.ok(last.places[0].keys > Math.max(started.staging, started.rows, started.tokens.ids), "the cache is placed after what the GPU answers into, where it can grow");
   assert.equal(await engine.release(), true);

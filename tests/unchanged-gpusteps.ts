@@ -115,9 +115,11 @@ for (const [model, made, packed, direct] of runs) {
     // narrowed; a ring (T510.1) for the windowed layers, the others' whole
     if (!direct) {
       for (const half of [true, false]) {
-        const places = cache.map(([keys, values], p) => ({ keys, values, ring: plan.windows[plan.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : []))[p]] ? 6 : 0 }));
+        // (T334.2: a position's bytes each place's; and the cache's, which a tree before it reads)
+        const row = plan.kvHeads * plan.headSize * (half ? 2 : 4);
+        const places = cache.map(([keys, values], p) => ({ keys, values, ring: plan.windows[plan.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : []))[p]] ? 6 : 0, row }));
         from = calls.length;
-        block_.keysIn(m, { places, row: plan.kvHeads * plan.headSize * (half ? 2 : 4), half }, 3, 13);
+        block_.keysIn(m, { places, row, half }, 3, 13);
         record(`${name}: the keys and values of 3 to 12 up, ${half ? "float16" : "float32"}`, since(from));
       }
     }

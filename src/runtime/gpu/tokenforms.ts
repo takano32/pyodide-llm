@@ -232,7 +232,8 @@ async function checkTokenBlocks(m: Model) {
   }
 }
 async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
-  const { plan, device } = m, g = m.tokens!, planned = plan.tokens!, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize;
+  // (T334.2: the first layer's heads, a Gemma 4's narrow ones)
+  const { plan, device } = m, g = m.tokens!, planned = plan.tokens!, vocab = g.vocab, dim = plan.dim, headSize = plan.shapes[0]?.head ?? plan.headSize;
   const kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   // JavaScript's layer and head, of the shared memory and what was read back (T642.11: reference.ts's)
   const reference = referenceOf({ plan, memory: () => m.memory.buffer, packed: form.dp4a, back }), { matmul, vectorOf, plus, rms, behind } = reference;
@@ -253,6 +254,9 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     // keys and values)
     const first = m.block.kinds[plan.kinds[0]]!.first(owned);
     const readH = buffer(m, dim * 4, MAP_READ | COPY_DST, owned);
+    // (T334.2: a Gemma 4's rows of its table of every layer's inputs, made up: the CPU reads the token's from the saved file)
+    const layerRows = g.perLayer ? new Float32Array(plan.layers * g.perLayer.width).map(() => Math.random() - 0.5) : new Float32Array(0);
+    if (g.perLayer) device.queue.writeBuffer(g.perLayer.rows, 0, layerRows);
     const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false, positions: pos + 1 }), { count: 1, pos, keep: true,
       state: samplingState({ token, pos, history: [token] }), extra: (encoder) => {
         encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4);
@@ -267,7 +271,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const { o, k, v, wrong } = await first.then({ x0, xn, pos, line, row0: [Float64Array.from(row0[0], floatOfHalf), Float64Array.from(row0[1], floatOfHalf)], got: [gotK, gotV],
       held: heldFloats, matmul, vectorOf, plus, rms, behind, largest, off });
     if (wrong) return wrong;
-    const h2 = reference.ffn(x0, o);
+    const h2 = reference.ended(x0, reference.ffn(x0, o), layerRows);
     const stream = off(h, h2) / largest(h2.map((value, i) => value - x0[i]));
     if (!(stream <= line)) return `the first layer's stream is ${stream.toExponential(2)} of its change from JavaScript's (line ${line})`;
     const keyOff = k ? off(gotK, k) / largest(k) : 0, valueOff = v ? off(gotV, v!) / largest(v!) : 0;

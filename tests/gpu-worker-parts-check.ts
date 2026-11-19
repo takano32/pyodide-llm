@@ -61,7 +61,7 @@ const device_ = await import(runtimeUrl("gpu/device.js"));
 const { openDevice, handed, held, end, STORAGE, COPY_DST, COPY_SRC } = device_;
 const { upload, uploadLayers, tablesOn, routed, unwritten } = await import(runtimeUrl("gpu/weights.js"));
 const { prepare, bindLayers, grow, roomFor, keysIn, block } = await import(runtimeUrl("gpu/block.js"));
-const { prompt, generate } = await import(runtimeUrl("gpu/requests.js"));
+const { prompt } = await import(runtimeUrl("gpu/requests.js"));
 const { RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE } = await import(runtimeUrl("shaders/steps.js"));
 const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.js"));
 
@@ -620,8 +620,9 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
   const { cache: now } = m.block, row = KV_ROW, capacity = 16, from = 2, pos = 7;
   const address = plan.rows;  // (any place of the memory: [keys, values] of LAYERS × capacity rows)
   // (T261.4.2: where each layer's are: here the blocks of a cache of LAYERS × capacity rows each)
-  const placesOf = (bytes) => Array.from({ length: LAYERS }, (_, l) => ({ keys: address + l * capacity * bytes, values: address + (LAYERS + l) * capacity * bytes, ring: 0 }));
-  const halves = { places: placesOf(row), row, half: true };
+  // (T334.2: and each one's bytes of a position)
+  const placesOf = (bytes) => Array.from({ length: LAYERS }, (_, l) => ({ keys: address + l * capacity * bytes, values: address + (LAYERS + l) * capacity * bytes, ring: 0, row: bytes }));
+  const halves = { places: placesOf(row), half: true };
   new Uint8Array(memory.buffer, address, 2 * LAYERS * capacity * row).set(random(2 * LAYERS * capacity * row));
   for (let l = 0; l < LAYERS; l++) { now.keys[l].data.fill(0); now.values[l].data.fill(0); }
   keysIn(m, halves, from, pos);
@@ -631,7 +632,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     assert.ok(now.keys[l].data.subarray(0, from * KV_ROW).every((byte) => byte === 0) && now.keys[l].data.subarray(pos * KV_ROW).every((byte) => byte === 0), "no other position is written");
   }
   // a float32 cache (a grouped-query model's, T160): narrowed to float16 on the way up
-  const floats = { places: placesOf(KV_DIM * 4), row: KV_DIM * 4, half: false };
+  const floats = { places: placesOf(KV_DIM * 4), half: false };
   new Float32Array(memory.buffer, address, 2 * LAYERS * capacity * KV_DIM).forEach((_, i, all) => { all[i] = (i % 17) - 8; });
   keysIn(m, floats, from, pos);
   const half = (value) => { const view = new DataView(new ArrayBuffer(2)); view.setFloat16(0, value, true); return view.getUint16(0, true); };
@@ -645,7 +646,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
   for (const late of [7, 8]) {
     const ring = 3, rows = new Uint8Array(memory.buffer, address, 4 * ring * row);
     rows.set(random(4 * ring * row));
-    const ringed = { places: [{ keys: address, values: address + 2 * ring * row, ring }, ...placesOf(row).slice(1)], row, half: true };
+    const ringed = { places: [{ keys: address, values: address + 2 * ring * row, ring, row }, ...placesOf(row).slice(1)], half: true };
     for (let l = 0; l < LAYERS; l++) { now.keys[l].data.fill(0); now.values[l].data.fill(0); }
     keysIn(m, ringed, from, late);
     const slot = (late - ring) % ring;
@@ -658,7 +659,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
   {
     const ring = 3, rows = new Uint8Array(memory.buffer, address, 4 * ring * row);
     rows.set(random(4 * ring * row));
-    const ringed = { places: [{ keys: address, values: address + 2 * ring * row, ring }, ...placesOf(row).slice(1)], row, half: true };
+    const ringed = { places: [{ keys: address, values: address + 2 * ring * row, ring, row }, ...placesOf(row).slice(1)], half: true };
     const clear = () => { for (let l = 0; l < LAYERS; l++) { now.keys[l].data.fill(0); now.values[l].data.fill(0); } };
     clear();
     keysIn(m, ringed, 7, 9);
@@ -668,7 +669,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     assert.ok(now.keys[0].data.subarray(0, 7 * KV_ROW).every((byte) => byte === 0) && now.keys[0].data.subarray(9 * KV_ROW).every((byte) => byte === 0), "nothing before from, nothing from pos on");
     // (and a float32 ring, a grouped-query model's (T160): narrowed to float16 on the way up, narrowIn() counting values
     // where copyIn() counts bytes)
-    const wide = KV_DIM * 4, floatRing = { places: [{ keys: address, values: address + 2 * ring * wide, ring }, ...placesOf(wide).slice(1)], row: wide, half: false };
+    const wide = KV_DIM * 4, floatRing = { places: [{ keys: address, values: address + 2 * ring * wide, ring, row: wide }, ...placesOf(wide).slice(1)], half: false };
     new Float32Array(memory.buffer, address, 4 * ring * KV_DIM).forEach((_, i, all) => { all[i] = (i % 23) - 11; });
     clear();
     keysIn(m, floatRing, 7, 9);
@@ -686,23 +687,26 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     }
   }
 }
-// T334.4's review: keysIn() counts every layer's keys and values by the model's heads, so it refuses a model whose
-// layers are not all alike (a Gemma 4's: a layer of wider heads, or one that reads another's keys and values), and
-// puts nothing up
-const UNALIKE = [["a layer of wider heads", { head: 2 * HEAD }], ["a layer that reads another's keys and values", { kept: -1 }]]
-  .map(([what, other]) => [what, plan.shapes.map((shape, l) => (l === 1 ? { ...shape, ...other } : shape))]);
+// T334.2: keysIn() puts each layer's keys and values of its own heads (a Gemma 4's: here a layer of narrower heads, of
+// its own bytes of a position there and here), and none of a layer that reads another's
 {
-  const was = m.plan, { cache: now } = m.block, address = plan.rows;
-  const places = Array.from({ length: LAYERS }, (_, l) => ({ keys: address + l * 16 * KV_ROW, values: address + (LAYERS + l) * 16 * KV_ROW, ring: 0 }));
-  for (const [what, shapes] of UNALIKE) {
-    m.plan = { ...was, shapes };
+  const was = m.plan, { cache: now } = m.block, address = plan.rows, capacity = 16, narrow = KV_ROW / 2;
+  const places = Array.from({ length: LAYERS }, (_, l) => ({ keys: address + l * capacity * KV_ROW, values: address + (LAYERS + l) * capacity * KV_ROW, ring: 0, row: l === 1 ? narrow : KV_ROW }));
+  new Uint8Array(memory.buffer, address, 2 * LAYERS * capacity * KV_ROW).set(random(2 * LAYERS * capacity * KV_ROW));
+  for (const [what, other] of [["a layer of narrower heads", { head: HEAD / 2 }], ["a layer that reads another's keys and values", { kept: -1 }]]) {
+    m.plan = { ...was, shapes: was.shapes.map((shape, l) => (l === 1 ? { ...shape, ...other } : shape)) };
     for (let l = 0; l < LAYERS; l++) { now.keys[l].data.fill(0); now.values[l].data.fill(0); }
-    assert.throws(() => keysIn(m, { places, row: KV_ROW, half: true }, 0, 4), /keysIn\(\) counts every layer's keys and values by the model's heads/, `keysIn() refuses ${what}`);
-    assert.ok(now.keys.every((buffer) => buffer.data.every((byte) => byte === 0)), "and puts nothing up");
+    keysIn(m, { places, half: true }, 0, 4);
+    m.plan = was;
+    assert.ok(same(now.keys[0].data.subarray(0, 4 * KV_ROW), new Uint8Array(memory.buffer, places[0].keys, 4 * KV_ROW)), `with ${what}, the others' go up as they were`);
+    if (other.kept) assert.ok(now.keys[1].data.every((byte) => byte === 0) && now.values[1].data.every((byte) => byte === 0), "nothing of a layer that reads another's");
+    else {
+      assert.ok(same(now.keys[1].data.subarray(0, 4 * narrow), new Uint8Array(memory.buffer, places[1].keys, 4 * narrow)), "a narrower layer's of its own row, dense");
+      assert.ok(now.keys[1].data.subarray(4 * narrow).every((byte) => byte === 0), "and no more of it");
+    }
   }
-  m.plan = was;
 }
-console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, dispatches the layers in one submission, and answers into the staging only where it is still wanted; keysIn() puts forward.js's cache up, and refuses layers not all alike");
+console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, dispatches the layers in one submission, and answers into the staging only where it is still wanted; keysIn() puts forward.js's cache up, each layer's of its own heads");
 
 // ---- requests.js: a prompt's block answered in the control area, by the model device.js holds now
 {
@@ -731,26 +735,6 @@ console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, d
   staging.fill(0xee);
   assert.deepEqual(await asked(2, { wanted: 3 }), { done: 1, failed: 7 }, "a request forward.js gave up is answered nowhere: the words are another request's by then");
   assert.ok(staging.every((byte) => byte === 0xee), "nor in the staging");
-  // T334.4's review: a token's steps (generate()) count every layer's keys and values by the model's heads: refused
-  // where the layers are not all alike, said why, with nothing asked of the device
-  record.tokenForm = { form };
-  for (const [what, shapes] of UNALIKE) {
-    const was = record.plan;
-    record.plan = { ...was, shapes };
-    now.calls.length = 0;
-    posted.length = 0;
-    Atomics.store(words, WORDS.wanted, 9);
-    generate({ serial: 9, count: 1, pos: 4, from: 4, token: 1, history: [], length: 0, written: 0, cache: null, settings: {}, randoms: [] });
-    for (let i = 0; i < 50 && Atomics.load(words, WORDS.done) !== 9; i++) await new Promise((resolve) => setTimeout(resolve, 0));
-    record.plan = was;
-    assert.deepEqual([Atomics.load(words, WORDS.done), Atomics.load(words, WORDS.failed)], [9, 1], `a token's steps fail for ${what}`);
-    assert.equal(posted.length, 1);
-    assert.match(posted[0].reason, /A token's steps counts every layer's keys and values by the model's heads/, "and say why");
-    assert.equal(now.calls.length, 0, "with nothing asked of the device");
-    Atomics.store(words, WORDS.done, 0);
-  }
-  delete record.tokenForm;
-  posted.length = 0;
   // the device lost while the block is at work: read after the work as it is then
   now.device.onSubmit = () => { now.device.onSubmit = null; now.lose({ reason: "unknown", message: "" }); };
   assert.equal(device_.lost, null);

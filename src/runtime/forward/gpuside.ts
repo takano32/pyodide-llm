@@ -84,8 +84,8 @@ export type Side = "cpu" | "gpu" | null;
 export function gpuSide({ shape, weights, taken, cpuSide, control, threads, options }: {
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now: () => number } }) {
-  const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
-    unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes, rotated, layerShapes, valueNorm, perLayer, counts, stackPlaces } = shape;
+  const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
+    sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes, rotated, layerShapes, valueNorm, softcap, perLayer, counts, stackPlaces } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin, signs, codebooks } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds, inputs: gpuInputs } = taken;
   const { memory, views, grow, embed, layersInputs, fromStaging, stagingFinite, run, unfiniteBy, follows, stateToStaging, stateFromStaging } = cpuSide;
@@ -94,6 +94,11 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   // every block and step the GPU can take goes there, whatever the CPU's time: the tests' fallback adapter, and a model
   // on the GPU alone (T156)
   const always = Boolean(gpuForce.always || direct);
+  // T334.2: the most steps of a request: GPU_TOKENS, or one where the GPU's step reads the token's rows of a table the
+  // CPU keeps (a Gemma 4's inputs of every layer, which it reads from the saved file a token at a time: the token a step
+  // feeds is the step before's, which the GPU samples, so that a request of more would need the table on the GPU, 2.6 GB
+  // of the E2B's in int8. T334.3's model on the GPU alone has its table there)
+  const tokensMost = perLayer && !direct ? 1 : GPU_TOKENS;
   // T243: what the status line says of a GPU stopped for keys or values that are no finite numbers (where: the request)
   // ---- T135: a prompt on the GPU. gpu() makes the GPU's worker (gpu.ts), which puts this model's layers on the GPU
   // once (a second copy of them: the CPU keeps its own, for the tokens after the prompt), and then runs each block of a
@@ -167,7 +172,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     return { classifier: { rows: wcls!.rows, n: wcls!.n, packing: gpuPacking(wcls!.kind), at: wcls!.layer(0).slice(0, 2) as [number, number] },
       embedding: sharedClassifier ? null
         : { rows: vocab, n: dim, packing: gpuPacking(embedding.kind), at: [base + embedding.offset, base + embedding.scales] },
-      final: finalW, finalBias: finalB, positions, outliers: channels.length > 0, channels, ids: gpuIds, most: GPU_TOKENS };
+      final: finalW, finalBias: finalB, positions, outliers: channels.length > 0, channels, ids: gpuIds, most: tokensMost, softcap };
   }
   function startGpu() {
     // the values of a head RoPE turns: all of them, GPT-NeoX's first rotary (T154), none of GPT-2's
@@ -221,7 +226,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
           tokenStatus = always ? "gpu" : "untimed";
           const kinds = triedSaid(data.tokens.forms, 2);
           const attentions = (data.tokens.attentions ?? []).map((a) => `${a.name} ${a.none ?? (a.ms ? `${a.ms.toFixed(2)} ms` : "untimed")}`).join("; ");
-          console.info(`gpu: a token by ${data.tokens.form} (a step of a run of ${GPU_TOKENS}: ${kinds}), its attention by ${data.tokens.attention} (${attentions})`);
+          console.info(`gpu: a token by ${data.tokens.form} (a step of a run of ${tokensMost}: ${kinds}), its attention by ${data.tokens.attention} (${attentions})`);
         } else if (data.tokensWhy) {
           tokensReason = data.tokensWhy;
           tokenStatus = "why";
@@ -265,7 +270,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // (T568.4: the kinds' numbers, forward/kinds.ts's gpu.plan(): null for a kind the model has none of, every one of
     // KindNumbers's: the plan's literal stays typed whole. T641.3: those nulls are the table's, kinds.ts's NO_KIND_NUMBERS)
     const numbers = gpuKinds.reduce<KindNumbers>((all, { plan }) => ({ ...all, ...plan }), NO_KIND_NUMBERS);
-    worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
+    worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, seqLen,
       kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin,
       kinds, places, ...numbers,
       // (T334.1: every layer's heads and places, a Gemma 4's heads of v normed and its inputs of every layer)
@@ -445,7 +450,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // CPU's step says why it cannot, follow()'s words)
     // (T244: and steps that would take up keys or values of the CPU's that were no finite numbers, which a float16
     // cache keeps as 65536: the CPU's step stops on its logits)
-    if (!gpuSteps() || count < 1 || count > GPU_TOKENS || (!direct && (!follows(pos) || unfiniteBy(pos)))) return undefined;
+    if (!gpuSteps() || count < 1 || count > tokensMost || (!direct && (!follows(pos) || unfiniteBy(pos)))) return undefined;
     const stopList = list(stops);
     if (stopList.length > STOPS_MOST) {
       tokensOn = false;
@@ -458,15 +463,18 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     if (!direct && pos + count - 1 >= cpuSide.capacity) grow(pos + count - 1);
     views();
     const fresh = stateUp(pos);
+    // (T334.2: and the rows of the table of every layer's inputs of the token fed, as a block's: the GPU's worker projects
+    // its embedded row itself)
+    if (perLayer && !direct) layersInputs([token]);
     // (T210: on the GPU alone, no cache here to go up from, nor any position the GPU does not hold)
     const answer = asked((serial) => ({ type: "tokens", serial, count, pos, fresh, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length, written,
-      cache: direct ? null : { places: cpuSide.places(), row: KV, half: halfKV }, settings: { temperature, topp, penalty, topK, minP, presence, stops: stopList }, randoms: list(randoms) }));
+      cache: direct ? null : { places: cpuSide.places(), half: halfKV }, settings: { temperature, topp, penalty, topK, minP, presence, stops: stopList }, randoms: list(randoms) }));
     if (answer !== "done") {
       stopGpu(answer === "stalled" ? REASONS.stalled(stalledMs) : REASONS.tokenFailed);
       return undefined;
     }
     views();
-    const words = new Int32Array(memory.buffer, gpuIds, 2 + GPU_TOKENS), sampled = words[0], notFinite = words[1 + GPU_TOKENS];
+    const words = new Int32Array(memory.buffer, gpuIds, 2 + tokensMost), sampled = words[0], notFinite = words[1 + tokensMost];
     if (notFinite) {
       // T219: the sampler refused the step after the `sampled` ones: its logits held a NaN or +inf, or none over
       // -3.4e38 (the State's not_finite word, set by the bits: WGSL lets a GPU take NaN and infinities as absent). The
@@ -591,10 +599,10 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     steps.cpu(threads.count, milliseconds);
     if (tokenRecheck === "cpu" && --cpuRecheck <= 0) tokenRecheck = null;
   }
-  /** T152: how many steps of a generation Python hands generateMany() at once now: GPU_TOKENS where the GPU takes
+  /** T152: how many steps of a generation Python hands generateMany() at once now: GPU_TOKENS (T334.2: tokensMost) where the GPU takes
    * them (it is faster, or it is timed again), 0 where the CPU takes the step (the forward pass, and the sampling in
    * Python). Not while the threads are searched: that times the CPU's tokens */
-  const tokenBlock = () => (gpuSteps() ? GPU_TOKENS : 0);
+  const tokenBlock = () => (gpuSteps() ? tokensMost : 0);
   /** T184 (the benchmark's page path): every block of a prompt on "cpu" or on "gpu" (where the GPU is on and holds
    * the keys and values before it, as gpuForce.always), or anything else: each where it is faster (promptTimes) */
   function put(side: Side) {

@@ -138,7 +138,7 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
     get H() { return halves; },
     get capacity() { return beside.capacity; },
     // (T261.4.2: where each attending layer's keys and values are: the first a ring's)
-    places() { return [{ keys: 60000, values: 61000, ring: 21 }, { keys: 62000 + beside.capacity, values: 63000, ring: 0 }]; } };
+    places() { return [{ keys: 60000, values: 61000, ring: 21, row: 8 }, { keys: 62000 + beside.capacity, values: 63000, ring: 0, row: 8 }]; } };
   const model = { ...SHAPE, ...shape };
   const weights = { ...WEIGHTS, ...other };
   const fit = gpuFit({ shape: model, weights, device: { gpuRoom: undefined, sharedMemory: true }, direct });
@@ -214,7 +214,7 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual([type, memory], ["start", beside.memory]);
   assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "blockLayers", "codebooks", "convolution", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kinds", "kvHeads", "kvStart",
     "layerNorm", "layers", "linear", "local", "localCos", "localSin", "matrices",
-    "parallel", "perLayer", "places", "remembered", "rotated", "rows", "seqLen", "shapes", "sin", "staging", "tokens", "turned", "unturned", "valueNorm", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
+    "parallel", "perLayer", "places", "remembered", "rotated", "rows", "seqLen", "shapes", "sin", "staging", "tokens", "turned", "valueNorm", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
   // (T334.1: every layer's heads and places, and every layer in a block)
   assert.deepEqual([plan.shapes, plan.blockLayers, plan.valueNorm, plan.perLayer], [SHAPE.layerShapes, 2, false, null]);
   assert.equal(plan.rotated, null, "T271.1: no rotated basis in the model's own basis");
@@ -228,7 +228,7 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual(plan.matrices.w2, { rows: 8, n: 24, packing: "int8", layers: [[40000, 40500], [41000, 41500]] }, "a matrix: its values and scales a layer");
   assert.deepEqual(plan.vectors, { attention: { at: 50000, size: 8 }, ffn: { at: 50100, size: 8 } });
   assert.deepEqual(plan.tokens, { classifier: { rows: 100, n: 8, packing: "int8", at: [44000, 44500] }, embedding: null, final: 50200, finalBias: 0, positions: 0,
-    outliers: false, channels: [], ids: IDS, most: GPU_TOKENS });
+    outliers: false, channels: [], ids: IDS, most: GPU_TOKENS, softcap: 0 });
   assert.deepEqual([plan.cos, plan.sin, plan.remembered, plan.force], [51000, 52000, { key: "kept" }, {}]);
   // (T261.4: a Gemma 3's facts, none of which this model has)
   assert.deepEqual([plan.activation, plan.windows, plan.local, plan.localCos, plan.localSin], ["silu", [0, 0], [], 0, 0]);
@@ -412,7 +412,7 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   assert.deepEqual(step(part, 16), [16, 17, 18, 19], "the ids the GPU sampled");
   const [asked] = beside.posted;
   assert.deepEqual([asked.type, asked.count, asked.pos, asked.from, asked.token, asked.history, asked.length, asked.written, asked.randoms], ["tokens", 4, 16, 0, 7, [1, 2, 3], 3, 2, [0.1, 0.2, 0.3, 0.4]]);
-  assert.deepEqual([asked.cache, asked.settings], [{ places: [{ keys: 60000, values: 61000, ring: 21 }, { keys: 62032, values: 63000, ring: 0 }], row: 8, half: true }, { temperature: 0.7, topp: 0.9, penalty: 1.1, topK: 20, minP: 0.05, presence: 1.5, stops: [] }],
+  assert.deepEqual([asked.cache, asked.settings], [{ places: [{ keys: 60000, values: 61000, ring: 21, row: 8 }, { keys: 62032, values: 63000, ring: 0, row: 8 }], half: true }, { temperature: 0.7, topp: 0.9, penalty: 1.1, topK: 20, minP: 0.05, presence: 1.5, stops: [] }],
     "the cache as it is now: after it grew for the steps");
   assert.deepEqual([beside.grown, beside.staged, part.sampled], [[19], [[16, 4]], 4]);
   assert.deepEqual(step(part, 20, { count: 2 }), [20, 21]);

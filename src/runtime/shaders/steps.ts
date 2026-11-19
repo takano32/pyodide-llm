@@ -377,6 +377,34 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   y[id.y * shape.n + id.x] *= scale[shape.at];
 }`;
 
+// T334.2: a Gemma 4's logits capped, cap * tanh(logits / cap), before the sampling: llama.cpp's src/models/
+// gemma4-iswa.cpp's final_logit_softcapping, ggml_scale by 1 / cap, ggml_tanh and ggml_scale by cap, which its WebGPU
+// runs as three dispatches (scale.wgsl, unary.wgsl's TANH, scale.wgsl: the notice above), as one: a thread a logit,
+// over the vocabulary in strides of the dispatch's threads (a dispatch of no more workgroups than a device takes in
+// x). The CPU's order is the same (forward/engine.ts: the logit over cap, its tanh, times cap). The tanh's argument is
+// clamped as GEGLU's (WGSL's tanh is sinh over cosh, which a device may take to NaN where they overflow), and a logit
+// that is no finite number stays as it is, by its bits (a clamp would make it a finite one, and SAMPLE refuses the
+// step by it: T219)
+export const SOFTCAP = /* wgsl */ `
+struct Cap { n: u32, cap: f32, unused0: u32, unused1: u32 }
+@group(0) @binding(0) var<storage, read_write> logits: array<f32>;
+@group(0) @binding(1) var<uniform> shape: Cap;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3u, @builtin(num_workgroups) groups: vec3u) {
+  for (var i = id.x; i < shape.n; i += groups.x * 64u) {
+    let logit = logits[i];
+    if ((bitcast<u32>(logit) & 0x7f800000u) == 0x7f800000u) { continue; }
+    logits[i] = shape.cap * tanh(clamp(logit / shape.cap, -9.010913, 9.010913));
+  }
+}`;
+// (its Cap's bytes: the logits, and the cap)
+export function softcapParams(n: number, cap: number) {
+  const bytes = new ArrayBuffer(16);
+  new Uint32Array(bytes).set([n, 0, 0, 0]);
+  new Float32Array(bytes, 4, 1)[0] = cap;
+  return new Uint8Array(bytes);
+}
+
 // RoPE on q and k, and the keys and values of every token into this layer's cache at its position (step.pos + the
 // token): one workgroup per token. Pairs of neighbours turn (llama2.c's order), the first turned of every head (all
 // of it but for GPT-NeoX, T154: whose converter puts the pairs of its rotary part in this order; none of it for GPT-2,

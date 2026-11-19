@@ -176,6 +176,22 @@ function referenceOf({ plan, memory, packed, back = {} }: { plan: Started; memor
       const down = behind(plus(matmul("w2", activated), "b2"), "ffnPost");
       return h1.map((value, i) => value + down[i]);
     },
+    // T334.2: the stream after the first layer's end, of the stream after its FFN (h) and the embedded row (x0): a Gemma
+    // 4's input of the layer (rows: the first layer's row of its table, as the check put it up), as forward/perlayer.ts
+    // has it: the projection of x0 normed and the row added, gelu(gate · h) times it, projected back, normed and added;
+    // then the layer's number (the stream as it is where the model has neither)
+    ended(x0: Float64Array, h: Float64Array, rows: ArrayLike<number>) {
+      let out = h;
+      if (plan.perLayer) {
+        const { width } = plan.perLayer, projected = matmul("per_layer_projection", x0).subarray(0, width);
+        const input = rmsOf(projected, vectorOf("perLayerNorm")!).map((value, i) => value + rows[i]);
+        const activated = matmul("ple_gate", h).map((value, i) => gelu(value) * input[i]);
+        const back = rmsOf(matmul("ple_proj", activated), vectorOf("plePost")!);
+        out = h.map((value, i) => value + back[i]);
+      }
+      const scale = vectorOf("layerScale")?.[0];
+      return scale === undefined ? out : out.map((value) => value * scale);
+    },
     // the logits of rows of a stream: the final norm, the classifier (quantized: its input quantized first). T232: a
     // ternary classifier's outlier channels as the CPU has them (src/runtime/forward/engine.ts's picked) where take:
     // taken out of the normed stream before it is quantized, and their columns of the table multiplied apart, in floats
@@ -191,7 +207,8 @@ function referenceOf({ plan, memory, packed, back = {} }: { plan: Started; memor
         const [w, s] = tableRow("classifier")(r);
         for (const [c, value] of taken) want[j] += value * w[c] * s[Math.floor((c * s.length) / w.length)];
       });
-      return want;
+      // (T334.2: a Gemma 4's capped, as the CPU caps them before it samples)
+      return planned.softcap ? want.map((value) => planned.softcap * Math.tanh(value / planned.softcap)) : want;
     },
   };
 }

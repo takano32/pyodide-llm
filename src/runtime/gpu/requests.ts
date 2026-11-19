@@ -2,8 +2,8 @@
 // keys and values (T210), each answered by serve().
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { model, lost, whyOf } from "./device.ts";
-import { roomFor, keysIn, block, keysOut, keysBack, stateIn, oneShape } from "./block.ts";
+import { model, lost, whyOf, widestHead } from "./device.ts";
+import { roomFor, keysIn, block, keysOut, keysBack, stateIn } from "./block.ts";
 import { attendingOf } from "./kinds.ts";
 import { tokenStep, runTokens } from "./tokens.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
@@ -25,13 +25,17 @@ type Asked<Kind extends ToGpu["type"]> = Extract<ToGpu, { type: Kind }>;
 // T545.2: an LFM2's convolution layers go on from the CPU's rows (none at position 0, as a block), which the CPU holds
 // while it waits; after the attending layers' keys and values (by their places) come the rows as the last step left
 // them, as a block's come back (cpuSide.stateFromStaging takes them). T271.2: and a Qwen3.5's linear-attention layers'
-// states and rows; fresh, from the GPU's own (block.ts's stateIn). On the GPU alone (cache null) the state is its own
+// states and rows; fresh, from the GPU's own (block.ts's stateIn). On the GPU alone (cache null) the state is its own.
+// T334.2: a Gemma 4's keys and values each of its layer's own width in a place of the widest's, as a block's (none of a
+// layer that reads another's), and the rows of its table of every layer's inputs of the token fed, which the CPU put
+// where a block's go (plan.perLayer.inputs: a request of one step, gpuside.ts's tokensMost)
 function generate({ serial, count, pos, fresh = false, from, token, history, length, written, cache, settings, randoms }: Asked<"tokens">) {
   serve(serial, async (wanted) => {
-    const m = model!, { plan, tokenForm: chosen } = m, g = m.tokens!, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
+    const m = model!, { plan, tokenForm: chosen } = m, g = m.tokens!, kvRow = plan.kvHeads * widestHead(plan) * 2, layers = attendingOf(plan).length;
     if (!chosen?.form) throw new Error("no tokens on this GPU");
-    oneShape(plan, "A token's steps");
     roomFor(m, pos + count);
+    if (g.perLayer && count > 1) throw new Error("a request of steps of a model with inputs of every layer is of one step: the CPU reads the rows of the token it feeds");
+    if (g.perLayer) m.device.queue.writeBuffer(g.perLayer.rows, 0, new Float32Array(m.memory.buffer, plan.perLayer!.inputs, plan.layers * g.perLayer.width));
     if (cache) keysIn(m, cache, from, pos);
     const encoder = m.device.createCommandEncoder();
     stateIn(m, encoder, pos, fresh || !cache);
@@ -42,8 +46,9 @@ function generate({ serial, count, pos, fresh = false, from, token, history, len
     if (!wanted()) return;
     for (let side = 0; cache && side < 2; side++) {
       for (let l = 0; l < layers; l++) {
-        new Uint8Array(m.memory.buffer, plan.staging + (side * layers + l) * plan.batch * kvRow, out.sampled * kvRow)
-          .set(out.kv![side][l].subarray(0, out.sampled * kvRow));
+        const own = out.kv![side][l].length / count;
+        new Uint8Array(m.memory.buffer, plan.staging + (side * layers + l) * plan.batch * kvRow, out.sampled * own)
+          .set(out.kv![side][l].subarray(0, out.sampled * own));
       }
     }
     if (out.state && out.sampled === count) new Uint8Array(m.memory.buffer, plan.staging + 2 * layers * plan.batch * kvRow, out.state.length).set(out.state);

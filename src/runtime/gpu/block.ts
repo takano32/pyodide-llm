@@ -3,7 +3,7 @@
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within, buffer, uniform, copyIn, narrowIn, validated, pipelineOf, bind,
-  dispatch, normShape } from "./device.ts";
+  dispatch, normShape, angleHeadsOf, widestHead } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { productGroups, multiply } from "./forms.ts";
 import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
@@ -117,17 +117,6 @@ type Block = {
 };
 // a matrix of the layer as products holds it
 type Timed = [TensorName, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
-// T334.1: the size of the widest heads of the layers (a Gemma 4's wide ones'; the model's heads where they are all alike),
-// which the buffers of a block's q, k and v and a position of the keys and values in the staging place are sized by
-const widestHead = (plan: Pick<Started, "headSize" | "shapes">) => Math.max(plan.headSize, ...plan.shapes.map(({ head }) => head));
-// T334.4: what counts a position's keys and values of every layer by the model's heads (keysIn; requests.ts's
-// generate(), a token's steps) refuses a model of layers whose heads are of another size or that read another's keys
-// and values (a Gemma 4's, whose steps stay on the CPU until T334.2: gpufit.ts's REASONS.ownSteps), so that a line
-// taken away there does not move their addresses silently
-function oneShape({ shapes, headSize }: Pick<Started, "headSize" | "shapes">, what: string) {
-  if (shapes.some(({ head, kept }) => head !== headSize || kept < 0)) throw new Error(`${what} counts every layer's keys and values by the model's heads, and this model's layers are not all alike`);
-}
-
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
 // layers' bind groups in it once the forms are chosen, grow() the keys and values); forms.ts and tokens.ts read its
@@ -161,7 +150,7 @@ async function prepare(m: Model) {
   const xs = buffer(m, B * (quantized / GROUP) * 4);
   // (T334.1: a token's angles of each table are as many as the heads of its layers have: a Gemma 4's wide ones' and its
   // narrow ones')
-  const angleHeads = ([false, true] as const).map((local) => plan.shapes.find((_, l) => plan.local.includes(l) === local)?.head ?? plan.headSize) as [number, number];
+  const angleHeads = angleHeadsOf(plan);
   const angles = buffer(m, B * angleHeads[0] * 4, STORAGE | COPY_DST);
   // (T261.4: and those of the local layers' tables, where the model has them)
   const anglesLocal = plan.localCos ? buffer(m, B * angleHeads[1] * 4, STORAGE | COPY_DST) : null;
@@ -356,19 +345,21 @@ function roomFor(m: Model, positions: number) {
   if (positions > m.block.cache!.capacity) grow(m, positions);
 }
 // T152: the keys and values of positions from to pos - 1 up from forward.ts's cache (cache: where each attending layer's
-// are in the shared memory and the bytes of a position; half: float16 as here, else float32, narrowed on the way up:
-// T160, a grouped-query model's), before the steps of a generation read them. T261.4.2: a layer whose window a ring
+// are in the shared memory and the bytes of a position there; half: float16 as here, else float32, narrowed on the way
+// up: T160, a grouped-query model's), before the steps of a generation read them. T261.4.2: a layer whose window a ring
 // holds there (T510.1) has the last ring positions of them and no more, and needs no more (its window is shorter); a
-// position at p mod ring and again ring after it, so that they are one run however they wrap
+// position at p mod ring and again ring after it, so that they are one run however they wrap. T334.2: each layer's of
+// its own heads (a place's own bytes of a position there), and none of a layer that reads another's keys and values (a
+// Gemma 4's: the CPU keeps none of its own, and the GPU's are those of the layer it reads, which went up with it)
 function keysIn(m: Model, cache: Sent, from: number, pos: number) {
-  const { plan } = m, { keys, values } = m.block.cache!, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
-  oneShape(plan, "keysIn()");
-  cache.places.forEach((place, l) => {
+  const { plan } = m, { keys, values } = m.block.cache!, attending = attendingOf(plan);
+  cache.places.forEach((place, p) => {
+    const { head, kept } = plan.shapes[attending[p]], kvDim = plan.kvHeads * head, kvRow = kvDim * 2;
     const first = place.ring ? Math.max(from, pos - place.ring) : from, slot = place.ring ? first % place.ring : first;
-    if (first >= pos) return;
-    for (const [base, target] of [[place.keys, keys[l]], [place.values, values[l]]] satisfies [number, GPUBuffer][]) {
-      if (cache.half) copyIn(m, target, base + slot * cache.row, (pos - first) * kvRow, first * kvRow);
-      else narrowIn(m, target, base + slot * cache.row, (pos - first) * kvDim, first * kvRow);
+    if (kept < 0 || first >= pos) return;
+    for (const [base, target] of [[place.keys, keys[p]], [place.values, values[p]]] satisfies [number, GPUBuffer][]) {
+      if (cache.half) copyIn(m, target, base + slot * place.row, (pos - first) * kvRow, first * kvRow);
+      else narrowIn(m, target, base + slot * place.row, (pos - first) * kvDim, first * kvRow);
     }
   });
 }
@@ -524,6 +515,6 @@ async function keysBack(m: Model, wanted: () => boolean) {
   }
 }
 
-export { prepare, bindLayers, grow, roomFor, keysIn, timeBlocks, block, keysOut, keysBack, stateIn, oneShape };
+export { prepare, bindLayers, grow, roomFor, keysIn, timeBlocks, block, keysOut, keysBack, stateIn };
 
 export type { Block, Quantizing, Kept };

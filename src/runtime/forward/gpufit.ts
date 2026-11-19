@@ -115,7 +115,7 @@ export type Taken = { matrices(): Record<string, Held>; vectors(): Vectors; whyN
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; sharedMemory: boolean; oneThread?: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, scoresCapped, gpuKinds, stateful,
-    rotated, sharedClassifier, kinds, attending, stateBytes, layerShapes, valueNorm, softcap, perLayer, counts } = shape;
+    rotated, sharedClassifier, kinds, attending, stateBytes, layerShapes, perLayer, counts } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, sized,
     layerScale, channels } = weights;
   // (T334.1: the size of a Gemma 4's wide heads)
@@ -210,11 +210,10 @@ export function gpuFit({ shape, weights, device, direct }:
     // packing of its own where one of them is of llama.cpp's blocks, which the GPU embeds and multiplies by its type's
     // shaders (Saluki's: an embedding of IQ1_M, a classifier of IQ3_S); not with outlier channels, whose classifier is
     // multiplied as floats of int8)
-    // (T334.1: a Gemma 4's steps stay here: a token's fused layer has none of what its layers have besides, which a
-    // prompt's block has, nor the cap of its logits)
-    if (valueNorm || softcap || layerScale || perLayer || layerShapes.some(({ head, kept, double }) => head !== headSize || kept < 0 || double)) {
-      return REASONS.ownSteps;
-    }
+    // (T334.1: a Gemma 4's steps stayed here until T334.2, which gave a token's layer what its layers have besides, which a
+    // prompt's block has, and the cap of its logits; its inputs of every layer read a token's rows of a table the CPU
+    // keeps, a step a request (gpuside.ts's tokensMost). On the GPU alone, whose table is there, they stay here: T334.3)
+    if (perLayer && direct) return REASONS.ownSteps;
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     const embedded = packingOf(embedding.kind)?.gpu && embedding.group === packingOf(embedding.kind)!.group ? packingOf(embedding.kind)!.gpu!.as : null;
     const blocks = Boolean(held && embedded) && (!PACKED[held!].scale || !PACKED[embedded!].scale);
@@ -227,9 +226,9 @@ export function gpuFit({ shape, weights, device, direct }:
     // (T547.3.6's review: each table as it is packed: Saluki's embedding of IQ1_M is half the bytes of its classifier)
     const table = vocab * dim * gpuWeightBytes(wcls.kind), embeddingBytes = vocab * dim * gpuWeightBytes(embedding.kind);
     // (GPT-2's positions on the GPU as well, a row a position)
-    // (T261.4.2: a Gemma 3's local layers' table of RoPE as well)
+    // (T261.4.2: a Gemma 3's local layers' table of RoPE as well; T334.2: a Gemma 4's first table is of its wide heads)
     // (T545.2: and the state as the last step of a request leaves it, read back with its ids)
-    const onGpu = layersOnGpu() + table + (sharedClassifier ? 0 : embeddingBytes) + (local ? 2 : 1) * seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0) +
+    const onGpu = layersOnGpu() + table + (sharedClassifier ? 0 : embeddingBytes) + (wideHead + (local ? headSize : 0)) * seqLen * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0) +
       stateBytes;
     if (gpuRoom !== undefined && onGpu > gpuRoom) return REASONS.classifierRoom(onGpu);
     return null;

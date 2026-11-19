@@ -242,10 +242,22 @@ try {
         engine.gpuSide = side;
       };
       // (T546: narrowing, a top-k, min-p and the presence penalty, of which the ids before are the sampled ones)
+      // (T334.2: count steps in requests of the most the engine hands the GPU at once, engine.tokenBlock: a Gemma 4's are
+      // one step a request, each fed the id the one before sampled, as Python's generate() feeds them; a stop token ends
+      // them. One request where count is no more than that: every other model's)
+      const most = engine.tokenBlock;
       const ask = (token, pos, before, count, settings = [0, 0.9, 1], randoms = [], stops = [], narrowing = [0, 0, 0]) => {
-        const h = history(before);
-        again(pos);
-        return engine.generateMany(token, pos, h.slice(-64), h.length, count, ...settings, randoms, stops, ...narrowing, before.length);
+        const out = [];
+        while (out.length < count) {
+          const part = Math.min(most, count - out.length), done = [...before, ...out], h = history(done);
+          again(pos + out.length);
+          const ids = engine.generateMany(out.length ? out[out.length - 1] : token, pos + out.length, h.slice(-64), h.length, part, ...settings,
+            randoms.slice(out.length, out.length + part), stops, ...narrowing, done.length);
+          if (!ids) return out.length ? out : ids;
+          out.push(...ids);
+          if (ids.length < part || stops.includes(ids[ids.length - 1])) break;
+        }
+        return out;
       };
       const out = { form: engine.gpuReady?.tokens, attention: engine.gpuReady?.tokenAttention, pieces: engine.gpuReady?.tablePieces, first: ask(tokens[n], n, [], 4) };
       if (out.first && out.first.every((id, i) => id === greedy[i])) {
@@ -326,12 +338,13 @@ try {
       engine.gpuSide = "cpu";
       engine.forwardMany(tokens.slice(0, -1), 0);
       engine.gpuSide = null;
-      const place = cache.places[0], row = (at) => place.values + at * cache.row;
+      const place = cache.places[0], row = (at) => place.values + at * place.row;
       // (the last position of the prompt, which every layer reads, a window's too; a ring holds it twice)
       const at = n - 1, cells = (place.ring ? [at % place.ring, at % place.ring + place.ring] : [at]).map((one) => (cache.half ? new Uint16Array(memory.buffer, row(one), 1) : new Float32Array(memory.buffer, row(one), 1)));
       const kept = cells.map((cell) => cell[0]);
       for (const cell of cells) cell[0] = cache.half ? 0x7e00 : NaN;
-      const taken = engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, 4, 0, 0.9, 1, [], []);
+      // (T334.2: as many steps as a request of the engine's has, a Gemma 4's one)
+      const taken = engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, seen.plan?.tokens?.most ?? 4, 0, 0.9, 1, [], []);
       cells.forEach((cell, i) => { cell[0] = kept[i]; });
       return { taken: taken ?? null, status: engine.gpuStatus };
     };
@@ -428,17 +441,21 @@ try {
       const request = seen.tokens, cache = request?.cache, most = seen.plan?.tokens?.most;
       if (!clean || !cache) return { skipped: "no step on the GPU over the CPU's keys and values (" + JSON.stringify(clean ?? null) + ")" };
       const ids = new Int32Array(memory.buffer, seen.plan.tokens.ids, 2 + most);
-      const width = cache.half ? 2 : 4, columns = cache.row / width, cases = [];
+      const width = cache.half ? 2 : 4, cases = [];
+      // (T334.2: the last of them that keeps keys and values of its own: a Gemma 4's that read another's have none there)
+      const last = cache.places.findLastIndex((place) => place.row > 0);
       for (const [value, half] of [[NaN, 0x7e00], [Infinity, 0x7c00]]) {
         // (T261.4.2: an attending layer's place in the CPU's cache, a block or a ring: the first and the last of them)
-        for (const layer of [0, cache.places.length - 1]) {
+        for (const layer of [0, last]) {
+          // (T334.2: of the place's own width)
+          const columns = cache.places[layer].row / width;
           // (and of a layer that attends a window, a Gemma 3's local ones, the first position the step's window reads,
           // not 0: the step reads nothing before it)
           const reach = plan.layers.filter((one) => one.kind === "attention")[layer]?.window ?? 0;
           for (const [position, column] of [[reach ? Math.max(0, n + 1 - reach) : 0, 0], [n - 1, columns - 1]]) {
             // (T558.1: a ring holds every position twice, at p mod its period and a period after: both, as the CPU
             // writes them, whichever the step's keys and values are taken up from)
-            const place = cache.places[layer], row = (at) => place.values + at * cache.row + column * width;
+            const place = cache.places[layer], row = (at) => place.values + at * place.row + column * width;
             const cells = (place.ring ? [position % place.ring, position % place.ring + place.ring] : [position])
               .map((at) => (cache.half ? new Uint16Array(memory.buffer, row(at), 1) : new Float32Array(memory.buffer, row(at), 1)));
             const kept = cells.map((cell) => cell[0]);
