@@ -375,6 +375,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   // back GPU_BLOCK positions a request through staging: in float32, [layers][count][kvDim] each, as keysAndValues
   function gpuKeysAndValues(pos: number, count: number) {
     // (T545: the attending layers', by their places)
+    // (T334.4: counted by the model's heads, which a Gemma 4's layers are not all of, nor all of their own keys: T334.3)
+    if (layerShapes.some(({ head, kept }) => head !== headSize || kept < 0)) throw new Error("The GPU's keys and values are read back by the model's heads, and this model's layers are not all alike");
     const out = [0, 1].map(() => new Float32Array(attending * count * kvDim));
     for (let at = 0; at < count; at += GPU_BLOCK) {
       const part = Math.min(GPU_BLOCK, count - at);

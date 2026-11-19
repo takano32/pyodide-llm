@@ -120,6 +120,13 @@ type Timed = [TensorName, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
 // T334.1: the size of the widest heads of the layers (a Gemma 4's wide ones'; the model's heads where they are all alike),
 // which the buffers of a block's q, k and v and a position of the keys and values in the staging place are sized by
 const widestHead = (plan: Pick<Started, "headSize" | "shapes">) => Math.max(plan.headSize, ...plan.shapes.map(({ head }) => head));
+// T334.4: what counts a position's keys and values of every layer by the model's heads (keysIn; requests.ts's
+// generate(), a token's steps) refuses a model of layers whose heads are of another size or that read another's keys
+// and values (a Gemma 4's, whose steps stay on the CPU until T334.2: gpufit.ts's REASONS.ownSteps), so that a line
+// taken away there does not move their addresses silently
+function oneShape({ shapes, headSize }: Pick<Started, "headSize" | "shapes">, what: string) {
+  if (shapes.some(({ head, kept }) => head !== headSize || kept < 0)) throw new Error(`${what} counts every layer's keys and values by the model's heads, and this model's layers are not all alike`);
+}
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
@@ -355,6 +362,7 @@ function roomFor(m: Model, positions: number) {
 // position at p mod ring and again ring after it, so that they are one run however they wrap
 function keysIn(m: Model, cache: Sent, from: number, pos: number) {
   const { plan } = m, { keys, values } = m.block.cache!, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
+  oneShape(plan, "keysIn()");
   cache.places.forEach((place, l) => {
     const first = place.ring ? Math.max(from, pos - place.ring) : from, slot = place.ring ? first % place.ring : first;
     if (first >= pos) return;
@@ -516,6 +524,6 @@ async function keysBack(m: Model, wanted: () => boolean) {
   }
 }
 
-export { prepare, bindLayers, grow, roomFor, keysIn, timeBlocks, block, keysOut, keysBack, stateIn };
+export { prepare, bindLayers, grow, roomFor, keysIn, timeBlocks, block, keysOut, keysBack, stateIn, oneShape };
 
 export type { Block, Quantizing, Kept };

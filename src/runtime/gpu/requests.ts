@@ -3,7 +3,7 @@
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { model, lost, whyOf } from "./device.ts";
-import { roomFor, keysIn, block, keysOut, keysBack, stateIn } from "./block.ts";
+import { roomFor, keysIn, block, keysOut, keysBack, stateIn, oneShape } from "./block.ts";
 import { attendingOf } from "./kinds.ts";
 import { tokenStep, runTokens } from "./tokens.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
@@ -30,6 +30,7 @@ function generate({ serial, count, pos, fresh = false, from, token, history, len
   serve(serial, async (wanted) => {
     const m = model!, { plan, tokenForm: chosen } = m, g = m.tokens!, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
     if (!chosen?.form) throw new Error("no tokens on this GPU");
+    oneShape(plan, "A token's steps");
     roomFor(m, pos + count);
     if (cache) keysIn(m, cache, from, pos);
     const encoder = m.device.createCommandEncoder();
