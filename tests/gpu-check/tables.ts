@@ -19,7 +19,10 @@ import { floats, worstRow } from "./measures.ts";
 // forms it chose), then one a form of the matrices (T147), then the attention without subgroups.
 function layerTables(c, cpu, runs, { e16, q8, cpuLogits, logits, scale }) {
   const ref = c.reference, n = ref.tokens.length - 1;
-  const [dim, , every, heads, kvHeads] = ref.header, layers = ref.attending ?? every, kvDim = (c.headDim || dim / heads) * kvHeads;
+  // (T334.5: a Gemma 4's rows are the widest layer's, as verdicts.ts's padded() hands them here: by its own heads the
+  // tables of the real E2B read layers that were not theirs)
+  const [dim, , every, heads, kvHeads] = ref.header, layers = ref.attending ?? every;
+  const kvDim = ref.widths ? Math.max(...ref.widths) : (c.headDim || dim / heads) * kvHeads;
   const exact = { keys: ref.keys, values: ref.values }, half = { keys: ref.keys16, values: ref.values16 };
   const eight = { keys: ref.keys8, values: ref.values8 };
   // (T562: H16's distance, the f16 tiles' yardstick)

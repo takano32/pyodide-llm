@@ -554,6 +554,28 @@ check("the tables of a model, a line a run, the seconds", () => {
   assert.equal(alone.lines.filter((text) => text.startsWith("| layer |")).length, 3);
 });
 
+check("T334.5: a Gemma 4's layers of their own widths, in the verdicts and the tables alike", () => {
+  // layer 0 rows of 8 values, layer 1 rows of 16 ([layer][position][its width], as NumPy's and the engine's come), the
+  // runs `off` in layer 1 alone: by the widest row both say layer 0 is where NumPy's is and layer 1 is off (the tables
+  // read rows of the model's heads, 8 here, before T334.5: the rows of 16 then stood in two layers)
+  const widths = [8, 16], own = (seed) => widths.flatMap((width, l) => [...numbers(N * width, seed + l)].map((x, i) => (i % width === 0 ? 1 : i % width === 1 ? -1 : x)));
+  const shift = (from, off, layers = [0, 1]) => {
+    let at = 0;
+    return widths.flatMap((width, l) => from.slice(at, (at += N * width)).map((x, i) => (layers.includes(l) && i % width < 2 ? x + off : x)));
+  };
+  const keys = own(11), values = own(12);
+  const reference = { ...REFERENCE, widths, attending: 2, keys: b64(keys), values: b64(values), keys16: b64(shift(keys, E16)), values16: b64(shift(values, E16)),
+    keys8: b64(shift(keys, Q8)), values8: b64(shift(values, Q8)) };
+  const answer = (off) => ({ gpuTokens: N, keys: b64(shift(keys, off, [1])), values: b64(shift(values, off, [1])), logits: b64(LOGITS) });
+  const run = { ...answer(5e-3), again: answer(5e-3), past: { gpuTokens: 0 }, note: "prompts on WebGPU", form: "TF.js's tiles", attention: "llama.cpp flash attention tiles",
+    promptMs: 3, seconds: 4, readySeconds: 1.5 };
+  const cpu = { ...CPU, keys: b64(shift(keys, 0.1)), values: b64(shift(values, 0.1)) };
+  const { lines } = said(() => modelWrong([{ ...CASE, reference }], { id: "made-up", cpu, gpu: [run], nanSeconds: { rows: 0, values: 0 } }));
+  assert.match(lines.join("\n"), /layer 1 0\.62 of its line\)/, lines.join("\n"));
+  const first = lines.findIndex((text) => text.startsWith("\nkeys and values of made-up by layer, against NumPy's (E16"));
+  assert.deepEqual(lines.slice(first + 3, first + 6), ["| 0 | 1.0e-3 | 2.0e-2 | 1.0e-1 | 0.0e+0 |", "| 1 | 1.0e-3 | 2.0e-2 | 1.0e-1 | 5.0e-3 |", "| all | 1.0e-3 | 2.0e-2 | 1.0e-1 | 5.0e-3 |"]);
+});
+
 // ---- harness.js and the rewriting Dawn's worker thread needs
 check("the harness is a module, and the runtime's files it names are in this tree", () => {
   const file = new URL("./gpu-check/harness.js", import.meta.url), text = fs.readFileSync(file, "utf8");
