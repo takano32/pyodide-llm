@@ -231,7 +231,9 @@ function caseOf(py, directory, id, options, reference, checkpoint) {
   const read = (offset, length) => {
     if (fd === null) return checkpoint.slice(offset, offset + length);
     const out = new Uint8Array(length);
-    fs.readSync(fd, out, 0, length, offset);
+    // (T334.5's review: readSync reads less than asked near 2 GiB and says so only by its count)
+    const got = fs.readSync(fd, out, 0, length, offset);
+    if (got !== length) throw new Error(`gpu-check: read ${got} of ${length} bytes at ${offset} of the checkpoint`);
     return out;
   };
   py.globals.set("OPTIONS", py.toPy(options));
