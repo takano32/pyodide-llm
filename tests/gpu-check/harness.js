@@ -341,18 +341,22 @@ try {
       engine.newGeneration();
       engine.forwardMany(tokens.slice(0, 16), 0);
       if (engine.gpuTokens !== 16) return { skipped: "the GPU took " + engine.gpuTokens + " tokens of a block of 16" };
-      // (T545: the staging place holds the attending layers' keys and values alone)
-      const cases = [], row = P.kvHeads * P.headSize, attending = P.kinds.filter((kind) => kind === "attention").length;
+      // (T545: the staging place holds the attending layers' keys and values alone; T334.1: each layer's positions of its
+      // own width in a place of the widest's, none of a layer that reads another's: a Gemma 4's)
+      const attending = P.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : [])), widest = P.kvHeads * Math.max(P.headSize, ...(P.shapes ?? []).map(({ head }) => head));
+      const widths = attending.map((l) => (P.shapes && P.shapes[l].kept < 0 ? 0 : P.kvHeads * (P.shapes?.[l].head ?? P.headSize)));
+      const cases = [], total = widths.reduce((sum, width) => sum + width, 0);
       for (const [value, t, j] of [[NaN, 3, 5], [Infinity, 15, plan.dim - 1]]) {
         const cell = new Float32Array(memory.buffer, P.rows + (t * plan.dim + j) * 4, 1), kept = cell[0];
         cell[0] = value;
         const [answered, failed] = own(seen.worker, { type: "prompt", count: 16, pos: 0 });
         cell[0] = kept;
         let finite = 0;
-        for (let part = 0; part < 2 * attending; part++) {
-          for (const half of new Uint16Array(memory.buffer, P.staging + (part * P.batch + t) * row * 2, row)) finite += (half & 0x7c00) !== 0x7c00;
+        for (let part = 0; part < 2 * attending.length; part++) {
+          const width = widths[part % attending.length];
+          for (const half of new Uint16Array(memory.buffer, P.staging + part * P.batch * widest * 2 + t * width * 2, width)) finite += (half & 0x7c00) !== 0x7c00;
         }
-        cases.push({ value: String(value), token: t, at: j, answered, failed, finite, of: 2 * attending * row });
+        cases.push({ value: String(value), token: t, at: j, answered, failed, finite, of: 2 * total });
       }
       return { cases };
     };

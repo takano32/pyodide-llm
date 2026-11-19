@@ -93,7 +93,7 @@ export type Placed = {
   // model has, by the GPU's names: the attention of its layers of wide heads and what every layer makes of its input of
   // a table of its own (the gate, the projection back, its norm), and the norms of the wide heads and the layer's number
   layerScale: number;
-  sized: { matrices: Record<string, Held>; qNormWide: number; kNormWide: number; plePost: number };
+  sized: { matrices: Record<string, Held>; qNormWide: number; kNormWide: number; perLayerNorm: number; plePost: number };
   // T547.3.4: the codebooks of llama.cpp's blocks, the checkpoint's row (its address: 0, a file with no such rows)
   codebooks: number;
   // T568.4: the matrices and vectors the kinds of its layers have of their own on the GPU, by the GPU's names (forward/kinds.ts's
@@ -251,6 +251,8 @@ export function gpuFit({ shape, weights, device, direct }:
       // T334.1: a Gemma 4's own: the norms of its wide heads (of their stacks' layers), the norm of what every layer makes of
       // its input of a table of its own, and every layer's number
       ...(sized.qNormWide ? { qNormWide: { at: sized.qNormWide, size: wideHead, ...stacked("q_norm_wide") }, kNormWide: { at: sized.kNormWide, size: wideHead, ...stacked("k_norm_wide") } } : {}),
+      // (T334.1: and the norm of the projection of the embedded rows into the inputs of every layer, one, every layer's)
+      ...(perLayer ? { perLayerNorm: { at: sized.perLayerNorm, size: perLayer.width, count: 1 } } : {}),
       ...(sized.plePost ? { plePost: { at: sized.plePost, size: dim } } : {}), ...(layerScale ? { layerScale: { at: layerScale, size: 1 } } : {}) };
   }
   // (a vector's count of layers where its stack is of some of them alone, as its tensor counts them)

@@ -268,6 +268,35 @@ export const RMSNORM = rmsNorm(false, false);
 export const HEAD_NORM = rmsNorm(true, false);
 export const RMSNORM_ADD = rmsNorm(false, true);
 
+// T334.1: a Gemma 4's inputs of every layer of a block's tokens: the projection of their embedded rows (x, [token][layer]
+// [size]) normed a layer's size at a time by one weight, plus their rows of the table, as the CPU makes them
+// (forward/perlayer.ts: the rmsnorm, then the row added), written a layer's tokens together ([layer][batch][size]) for
+// GEGLU to read a layer's at an offset. llama.cpp's src/models/gemma3n-iswa.cpp (project_per_layer_inputs: ggml_rms_norm,
+// ggml_mul by the weight, ggml_add of the table's rows, then the ggml_permute and ggml_cont that put a layer's tokens
+// together; its WebGPU runs rms_norm_mul.wgsl, binary.wgsl's ADD and cpy.wgsl), fused as RMSNORM_ADD above fuses the
+// first three (the notice above), the cont's transposed write the last line: a workgroup a layer of a token, the layers
+// the dispatch's x and the tokens its y
+export const PER_LAYER_INPUTS = /* wgsl */ `
+struct Norm { size: u32, batch: u32, eps: f32, unused: u32 }
+${STEP}
+@group(0) @binding(0) var<storage, read> x: array<f32>;
+@group(0) @binding(1) var<storage, read> weight: array<f32>;
+@group(0) @binding(2) var<storage, read> rows: array<f32>;
+@group(0) @binding(3) var<storage, read_write> out: array<f32>;
+@group(0) @binding(4) var<uniform> norm: Norm;
+@group(0) @binding(5) var<uniform> step: Step;
+var<workgroup> partial: array<f32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) layers: vec3u, @builtin(local_invocation_index) t: u32) {
+  if (id.y >= step.tokens) { return; }
+  let row = (id.y * layers.x + id.x) * norm.size;
+${ROW_RMS}
+  let to = (id.x * norm.batch + id.y) * norm.size;
+  for (var i = t; i < norm.size; i += 64u) { out[to + i] = weight[i] * (s * x[row + i]) + rows[row + i]; }
+}`;
+// (its Norm's bytes: a layer's width, the tokens of a block the inputs are laid out for, the epsilon)
+export const perLayerParams = (width: number, batch: number, eps: number) => normParams(width, batch, eps);
+
 // T154: LayerNorm (GPT-2's and GPT-NeoX's), out = weight * ((x - mean) / sqrt(variance + eps)) + bias, as the CPU's
 // layernorm kernel computes it: llama.cpp's row_norm.wgsl with NORM (the notice above: the sum of the row, its mean,
 // then the sum of the squares about the mean, a reduction of the workgroup each), in the frame of RMSNORM above: one

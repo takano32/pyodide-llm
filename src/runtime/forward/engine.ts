@@ -308,17 +308,20 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       turned: !rope ? 0 : rotary > 0 && rotary < head ? rotary : head })),
     valueNorm: Boolean(plan.value_norm), softcap: softcap || 0,
     perLayer: perLayered ? { width: perLayered.width } : null,
-    // (T334.1: every layer's place in a Gemma 4's stacks of its narrow and wide heads and of its narrower FFN)
-    stackPlaces: facts.some(({ wide, double, kept }) => wide || double || kept < 0) ? Object.fromEntries(([
+    // (T334.1: every layer's place in a Gemma 4's stacks of its narrow and wide heads and of its narrower FFN, and the
+    // projection of its embedded rows into the inputs of every layer, a matrix of the model's, not a layer's: the first's)
+    stackPlaces: facts.some(({ wide, double, kept }) => wide || double || kept < 0) || perLayered ? Object.fromEntries(([
+      [["per_layer_projection"], (_: Layer, l: number) => (l === 0 ? 0 : -1)],
       [["wq", "wo"], ({ kind, wide, stack }: Layer) => (kind === "attention" && !wide ? stack : -1)],
       [["wq_wide", "wo_wide"], ({ kind, wide, stack }: Layer) => (kind === "attention" && wide ? stack : -1)],
       [["wk", "wv"], ({ kind, wide, kept }: Layer) => (kind === "attention" && !wide ? kept : -1)],
       [["wk_wide", "wv_wide"], ({ kind, wide, kept }: Layer) => (kind === "attention" && wide ? kept : -1)],
-      [["w1", "w2", "w3"], ({ double, ffn }: Layer) => (double ? -1 : ffn)]] satisfies [TensorName[], (fact: Layer) => number][])
+      [["w1", "w2", "w3"], ({ double, ffn }: Layer) => (double ? -1 : ffn)]] satisfies [TensorName[], (fact: Layer, l: number) => number][])
       .flatMap(([names, place]) => names.map((name) => [name, facts.map(place)] as const))) : {},
     // (the layers of every stack of matrices, and of the norms of the heads: a Gemma 4's are some of its layers)
-    counts: Object.fromEntries(Object.entries(T).flatMap(([name, t]) =>
+    counts: { ...Object.fromEntries(Object.entries(T).flatMap(([name, t]) =>
       (t && (t.shape.length === 3 || (STACKED_VECTORS as readonly string[]).includes(name)) ? [[name, t.shape[0]] as const] : []))),
+      ...(perLayered ? { per_layer_projection: 1 } : {}) },
     // T612: a Gemma 2's cap of the scores
     scoresCapped: Boolean(plan.score_softcap) };
   // (T547.3.4: and the codebooks of llama.cpp's blocks, which the GPU reads its IQ types by)
@@ -333,9 +336,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // its input of a table of its own (perLayer.ts: the gate, the projection back and its norm), where it has them
     layerScale,
     sized: {
-      matrices: Object.fromEntries((["wq_wide", "wk_wide", "wv_wide", "wo_wide", "ple_gate", "ple_proj"] satisfies TensorName[])
+      matrices: Object.fromEntries((["wq_wide", "wk_wide", "wv_wide", "wo_wide", "per_layer_projection", "ple_gate", "ple_proj"] satisfies TensorName[])
         .flatMap((name) => (matrix(name) ? [[name, matrix(name)!] as const] : []))),
-      qNormWide: floats("q_norm_wide"), kNormWide: floats("k_norm_wide"), plePost: floats("ple_post"),
+      qNormWide: floats("q_norm_wide"), kNormWide: floats("k_norm_wide"), perLayerNorm: floats("per_layer_norm"), plePost: floats("ple_post"),
     },
     own: {
       matrices: Object.fromEntries(had.flatMap(({ kind }) => kinds[kind].gpu?.matrices ?? []).flatMap((name) => (matrix(name) ? [[name, matrix(name)!] as const] : []))),
@@ -490,16 +493,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // it is now (T349: getters, read each time: the cache moves as it grows) and grown, and what the CPU does for a block
   const cpuSide: CpuSide = {
     memory, views, grow: cache.grow, embed, fromStaging, stagingFinite, run, unfiniteBy: cache.unfiniteBy,
-    // T334.1: a Gemma 4's inputs of every layer of a block's tokens, as run() makes them (from their rows embedded into
-    // the frames, BATCH tokens at a time), into the place the GPU's worker reads them from
-    layersInputs(tokens: number[], pos0: number) {
-      const bytes = layers * perLayered!.width * 4;
-      for (let t = 0; t < tokens.length; t += BATCH) {
-        const some = tokens.slice(t, t + BATCH);
-        embed(some, pos0 + t);
-        perLayered!.inputs(some, some.length);
-        U.copyWithin(gpuInputs + t * bytes, perLayered!.at, perLayered!.at + some.length * bytes);
-      }
+    // T334.1: a Gemma 4's rows of the table of every layer's inputs of a block's tokens, where the GPU's worker reads them
+    // (it projects the embedded rows itself, norms them and adds these, as perLayer.ts's inputs())
+    layersInputs(tokens: number[]) {
+      perLayered!.rowsOf(tokens, tokens.length, gpuInputs);
     },
     // T545: whether a block at pos may go on from the state the layers that keep one have (follow()'s rule: position 0,
     // or the one that comes next), and that state taken from what the GPU's worker left of a block after its keys and

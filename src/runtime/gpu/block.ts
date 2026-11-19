@@ -10,6 +10,7 @@ import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { flashParams } from "../shaders/attention.ts";
+import { perLayerParams } from "../shaders/steps.ts";
 import { isBlock, asTernary } from "./packings.ts";
 import { roundsMs } from "./timing.ts";
 import type { Model } from "./device.ts";
@@ -87,10 +88,14 @@ type Block = {
   quantizing(from: GPUBuffer, n: number): Quantizing;
   rotate: { quantize: GPUComputePipeline; unrotate: GPUComputePipeline } | null;
   // T334.1: a Gemma 4's: the weights of ones the heads of v are normed by (null: no such norm); its inputs of every layer
-  // as a block's go up ([layers][batch][width]: a layer's own after another's, so that GEGLU reads a layer's at an
-  // offset), the gate of a layer's, the stream quantized for it, and SCALE (null: none of them)
+  // of a block's tokens (null: none): the rows of their table as the CPU reads them ([token][layer][width]), the
+  // projection of the embedded rows (the same), the inputs PER_LAYER_INPUTS makes of the two ([layer][batch][width]: a
+  // layer's tokens together, so that GEGLU reads a layer's at an offset), the gate of a layer's, the stream quantized
+  // for the projection and the gate, the gate quantized for the projection back, PER_LAYER_INPUTS's pipeline and bind
+  // group, and the projection (bindLayers()); and SCALE (null: none)
   ones: GPUBuffer | null;
-  perLayer: { inputs: GPUBuffer; host: Float32Array<ArrayBuffer>; gate: GPUBuffer; quantizeStream: Quantizing; quantizeGate: Quantizing } | null;
+  perLayer: { rows: GPUBuffer; projected: GPUBuffer; inputs: GPUBuffer; gate: GPUBuffer; quantizeStream: Quantizing; quantizeGate: Quantizing;
+    pipeline: GPUComputePipeline; group: GPUBindGroup; project: Product | null } | null;
   scale: GPUComputePipeline | null;
   unrotateRows: Quantizing | null;
   embedRows: GPUComputePipeline | null;
@@ -215,9 +220,16 @@ async function prepare(m: Model) {
     ones = buffer(m, widest * 4, STORAGE | COPY_DST);
     device.queue.writeBuffer(ones, 0, new Float32Array(widest).fill(1));
   }
-  const width = plan.perLayer?.width ?? 0, perLayerGate = width ? buffer(m, B * width * 4) : null;
-  const perLayer: Block["perLayer"] = width ? { inputs: buffer(m, plan.layers * B * width * 4, STORAGE | COPY_DST), host: new Float32Array(plan.layers * B * width),
-    gate: perLayerGate!, quantizeStream: quantizing(x, plan.dim), quantizeGate: quantizing(perLayerGate!, width) } : null;
+  const width = plan.perLayer?.width ?? 0;
+  let perLayer: Block["perLayer"] = null;
+  if (width) {
+    const rows = buffer(m, B * plan.layers * width * 4, STORAGE | COPY_DST), projected = buffer(m, B * plan.layers * width * 4);
+    const inputs = buffer(m, plan.layers * B * width * 4), gate = buffer(m, B * width * 4);
+    const pipeline = await within(pipelineOf(m, ENGINE.PER_LAYER_INPUTS), "the inputs of every layer");
+    const shape = perLayerParams(width, B, plan.eps);
+    perLayer = { rows, projected, inputs, gate, quantizeStream: quantizing(x, plan.dim), quantizeGate: quantizing(gate, width), pipeline,
+      group: bind(m, pipeline, [projected, m.weights.vectors!.perLayerNorm!, rows, inputs, uniform(m, shape), step]), project: null };
+  }
   const scale = plan.vectors.layerScale ? await within(pipelineOf(m, ENGINE.SCALE), "the layers' number") : null;
   m.block = { norm, headNorm, add, rope, activation, quantize, normAdd: normAdd ?? null, x, xb, q, k, v, gate, up, ffnInput, xq, xs, angles, anglesLocal, step,
     readback, rows, turns, turnsLocal, angleHeads, ropeOf, activationGroup, quantizeXb, quantizeHeads, quantizeFfn, quantizeGate, quantizing, rotate, unrotateRows,
@@ -236,6 +248,8 @@ async function prepare(m: Model) {
 function bindLayers(m: Model) {
   const { plan } = m, form = m.forms.form!, V = m.weights.vectors!, b = m.block;
   const layers: Layer[] = [];
+  // (T334.1: a Gemma 4's projection of a block's embedded rows into the inputs of every layer, the model's matrix)
+  if (b.perLayer) b.perLayer.project = productGroups(m, form, "per_layer_projection", 0, b.x, b.perLayer.projected);
   // (T334.1: those a block runs: the layers after the last that keeps keys and values of its own or a state, a Gemma 4's
   // that read another's, have none of their matrices here, or not in the stacks this binds)
   for (let l = 0; l < plan.blockLayers; l++) {
@@ -405,24 +419,15 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
       turnsLocal?.set(floats(plan.localSin + (pos + t) * halfLocal * 4, halfLocal), t * headLocal + halfLocal);
     }
   }
-  // (T334.1: a Gemma 4's inputs of every layer, as the CPU made them for the block's tokens, [token][layer][width]: a
-  // layer's after another's here, [layer][batch][width]; zeros where it is timed)
-  if (perLayer) {
-    const width = plan.perLayer!.width, B = plan.batch;
-    if (timing) perLayer.host.fill(0);
-    else {
-      const inputs = floats(plan.perLayer!.inputs, count * plan.layers * width);
-      for (let t = 0; t < count; t++) {
-        for (let l = 0; l < plan.layers; l++) perLayer.host.set(inputs.subarray((t * plan.layers + l) * width, (t * plan.layers + l + 1) * width), (l * B + t) * width);
-      }
-    }
-  }
+  // (T334.1: a Gemma 4's rows of the table of every layer's inputs, as the CPU read them for the block's tokens; zeros
+  // where it is timed)
+  const tableRows = perLayer && (timing ? new Float32Array(count * plan.layers * plan.perLayer!.width) : floats(plan.perLayer!.inputs, count * plan.layers * plan.perLayer!.width));
   device.pushErrorScope("out-of-memory");
   device.pushErrorScope("validation");
   if (!plan.direct) device.queue.writeBuffer(x, 0, rows, 0, count * plan.dim);
   device.queue.writeBuffer(angles, 0, turns, 0, count * head);
   if (anglesLocal) device.queue.writeBuffer(anglesLocal, 0, turnsLocal!, 0, count * headLocal);
-  if (perLayer) device.queue.writeBuffer(perLayer.inputs, 0, perLayer.host);
+  if (perLayer) device.queue.writeBuffer(perLayer.rows, 0, tableRows!);
   device.queue.writeBuffer(step, 0, new Uint32Array([count, pos, 0, 0]));
   roomFor(m, pos + count);
   const encoder = device.createCommandEncoder(), form = m.forms.form!;
@@ -436,6 +441,12 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   const biased = (bias: Added | undefined) => bias && dispatch(pass, add, bias.group, bias.x, count);
   embedGroups?.forEach((group) => dispatch(pass, embedRows!, group, 1, count));
   if (unrotateRows) dispatch(pass, unrotateRows.pipeline, unrotateRows.group, unrotateRows.x, count);
+  // (T334.1: a Gemma 4's inputs of every layer, of the embedded rows and the table's)
+  if (perLayer) {
+    quantized(perLayer.quantizeStream);
+    multiplied(perLayer.project!);
+    dispatch(pass, perLayer.pipeline, perLayer.group, plan.layers, count);
+  }
   for (let l = 0; l < plan.blockLayers; l++) {
     const layer = layers![l];
     dispatch(pass, norm, layer.attentionNorm, 1, count);

@@ -26,8 +26,8 @@ export type CpuSide = {
   views(): void;
   grow(pos: number): void;
   embed(tokens: number[], pos0: number, rows?: number, stride?: number): void;
-  // T334.1: the inputs of every layer of a table of their own of tokens at pos0, ... (a Gemma 4's), where perLayer says
-  layersInputs(tokens: number[], pos0: number): void;
+  // T334.1: a Gemma 4's rows of the table of every layer's inputs of tokens, where perLayer says
+  layersInputs(tokens: number[]): void;
   fromStaging(pos: number, count: number): void;
   stagingFinite(count: number): boolean;
   run(tokens: number[], pos0: number, needLogits: boolean): void;
@@ -344,7 +344,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // the GPU reads the rows from there (T210: on the GPU alone, it embeds the tokens itself)
     if (!direct) embed(tokens, pos0, gpuRows, D);
     // (T334.1: and the inputs of every layer of a table of their own, which the CPU computes as for its own layers)
-    if (perLayer && !direct) layersInputs(tokens, pos0);
+    if (perLayer && !direct) layersInputs(tokens);
     const fresh = stateUp(pos0);
     const answer = asked((serial) => ({ type: "prompt", serial, count, pos: pos0, fresh, ...(direct ? { tokens } : {}) }));
     if (answer !== "done") {

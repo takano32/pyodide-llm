@@ -64,6 +64,8 @@ export type Vectors = {
   // its input of a table of its own, and the number every layer ends by multiplying the stream by (one a layer)
   qNormWide?: Vector;
   kNormWide?: Vector;
+  // (and the norm of the projection of the embedded rows into those inputs, one of every layer's width: its count 1)
+  perLayerNorm?: Vector;
   plePost?: Vector;
   layerScale?: Vector;
 };
@@ -167,8 +169,9 @@ export type Started = KindNumbers & {
   shapes: LayerShape[];
   blockLayers: number;
   // T334.1: the heads of v normalized (an RMSNorm of weights of ones: a Gemma 4's), and the inputs of every layer of a
-  // table of their own (a Gemma 4's: their width, and where the CPU puts a block's, [tokens][layers][width] floats;
-  // null: none), which every layer gates by the stream, projects back and adds to it normed (plePost)
+  // table of their own (a Gemma 4's: their width, and where the CPU puts a block's rows of the table, [tokens][layers]
+  // [width] floats; null: none): the GPU projects the embedded rows (per_layer_projection), norms them (perLayerNorm)
+  // and adds the rows, and every layer gates them by the stream, projects back and adds them to it normed (plePost)
   valueNorm: boolean;
   perLayer: { width: number; inputs: number } | null;
   // the most tokens of a block

@@ -53,7 +53,7 @@ class H16(np.ndarray):
 # its gate of the attention's output; T334.1: a Gemma 4's of its wide heads and wider FFN, and its layers' gates and
 # projections of their inputs of a table of their own)
 MATRICES = ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg", "wq_wide", "wk_wide", "wv_wide", "wo_wide",
-            "w1_double", "w2_double", "w3_double", "ple_gate", "ple_proj")
+            "w1_double", "w2_double", "w3_double", "per_layer_projection", "ple_gate", "ple_proj")
 
 def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=False):
     """NumPy's keys and values of the prompt's first count - 1 positions ([layers][positions][kv dim] each) and the
