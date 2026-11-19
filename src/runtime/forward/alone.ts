@@ -182,6 +182,17 @@ export const cpuReadBytes = (size: number, stored: string) => {
   const packing = packingOf(stored);
   return packing ? size * (weightBytes(PACKED.int8) / weightBytes(packing)) : size;
 };
+/** T313 (C): /benchmark/'s CPU (cpu) as it would run a model whose weights are stored so: of ternary codes (PACKED's
+ * gpu.as ternary: ternary, and binary, whose CPU kernel is ternary's with a type argument), its int8 reading and G MAC/s
+ * times what the CPU section measured of the ternary kernels against int8's (CpuSpeed's ternary: a token's and a prompt's
+ * tile's, one thread, the matrix alone), each where it was measured; else, and for every other packing, cpu as it is
+ * (with cpuReadBytes, T232's estimate: as fast as the same weights of int8). */
+export const cpuOf = (cpu: CpuSpeed | undefined, stored: string): CpuSpeed | undefined => {
+  const times = packingOf(stored)?.gpu?.as === "ternary" ? cpu?.ternary : undefined;
+  if (!times) return cpu;
+  return { ...cpu, ...(times.token! > 0 && cpu!.GBps ? { GBps: cpu!.GBps * times.token! } : {}),
+    ...(times.prompt! > 0 && cpu!.promptGMACs ? { promptGMACs: cpu!.promptGMACs * times.prompt! } : {}) };
+};
 export function aloneVerdict({ size, layerWeights, cpu = {}, gpu = {}, usage = USAGE_UNKNOWN }:
   { size: number; layerWeights: number; cpu?: CpuSpeed; gpu?: { stepMs?: number; promptMs?: number }; usage?: Usage }) {
   const parts: [number, number, number][] = [];

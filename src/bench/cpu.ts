@@ -2,6 +2,7 @@
 // (T353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, times, tableCell, unmeasured } from "./cells.ts";
 import type { Answer, CpuCeilings, CpuFound, CpuKernelRow, CpuKernels, CpuRow } from "../runtime/contracts/benchmark.ts";
+import type { TernaryTimes } from "../runtime/contracts/messages.ts";
 import { STATE } from "./sections.ts";
 import type { Result } from "./sections.ts";
 
@@ -169,14 +170,32 @@ export function cpuBaseline(section: Result<"cpu"> | undefined): Baseline {
   return { token: { threads: token.threads, msPerToken: token.msPerToken, GBps: token.GBps, isolated },
            ...(prompt ? { prompt: { threads: prompt.threads, msPerToken: prompt.promptMsPerToken, isolated } } : {}) };
 }
+/** T313 (C): how many times as fast the ternary kernels ran as the int8 ones beside them (kernelsTable's × int8), a
+ * token's (the relaxed SIMD kernels where this browser has them, as forward.ts takes them, else the plain ones) and a
+ * prompt's tile's (relaxed SIMD alone has those); a ratio only where both rows were measured and steady, and undefined
+ * where neither was. One thread, the matrix alone: what the model page reads it as is forward/alone.ts's cpuOf(). */
+export function ternaryTimes(kernels: CpuKernels | undefined): TernaryTimes | undefined {
+  const rows = kernels?.error ? [] : kernels?.rows ?? [];
+  const steady = (weights: CpuKernelRow["weights"], relaxed: boolean, tokens: number) => rows.find((row) => row.weights === weights &&
+    row.relaxed === relaxed && row.tokens === tokens && !row.none && !row.error && !row.unsteady && row.ms! > 0 && row.passes! > 0);
+  const ratio = (relaxed: boolean, tokens: number) => {
+    const int8 = steady("int8", relaxed, tokens), ternary = steady("ternary", relaxed, tokens);
+    return int8 && ternary ? (int8.ms! / int8.passes!) / (ternary.ms! / ternary.passes!) : undefined;
+  };
+  const relaxed = rows.some((row) => row.relaxed && !row.none);
+  const token = ratio(relaxed, 1), prompt = relaxed ? ratio(true, Math.max(...rows.map((row) => row.tokens))) : undefined;
+  return token || prompt ? { ...(token ? { token } : {}), ...(prompt ? { prompt } : {}) } : undefined;
+}
 /** T156: what the page keeps under CPU_SPEED_KEY of the CPU section's result: its fastest reading of the weights for a
  * token ({ GBps, threads }) and a prompt's G MAC/s at its fastest (its model's layers' multiply-adds a token, over its
- * ms); undefined where it measured no token or was not cross-origin isolated (its one thread is no page's). */
-export function cpuSpeed(section: Result<"cpu"> | undefined): { GBps: number; threads: number; promptGMACs: number | undefined } | undefined {
+ * ms), and (T313) its ternary kernels against int8's where it measured them; undefined where it measured no token or
+ * was not cross-origin isolated (its one thread is no page's). */
+export function cpuSpeed(section: Result<"cpu"> | undefined): { GBps: number; threads: number; promptGMACs: number | undefined; ternary?: TernaryTimes } | undefined {
   const { token, prompt } = cpuBaseline(section);
   if (!token?.isolated) return undefined;
   const promptGMACs = prompt && section?.data ? promptGMACsOf(section.data, { promptMsPerToken: prompt.msPerToken }) : undefined;
-  return { GBps: token.GBps, threads: token.threads, promptGMACs };
+  const ternary = ternaryTimes(section?.data?.kernels);
+  return { GBps: token.GBps, threads: token.threads, promptGMACs, ...(ternary ? { ternary } : {}) };
 }
 
 export { steadyCeiling, tokenReads, promptGMACsOf };

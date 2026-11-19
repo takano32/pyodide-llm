@@ -5,7 +5,7 @@
 
 import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } from "../jobs.ts";
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine, STOPS_MOST } from "./choice.ts";
-import { cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
+import { cpuReadBytes, cpuOf, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
 import { REASONS } from "./reasons.ts";
 import { gpuPacking } from "./alone.ts";
 import { halfToFloat } from "./memory.ts";
@@ -233,7 +233,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
         // (the owner, 2026-09-27: the prompts as well, which the GPU runs about five times as fast, weighed by use)
         if (direct) {
           const block = data.blocks.find((b) => b.count === GPU_BLOCK);
-          const verdict = aloneVerdict({ size: cpuReadBytes(direct.size, wo!.kind), layerWeights: direct.layerWeights, cpu: direct.cpu, usage: direct.usage,
+          const verdict = aloneVerdict({ size: cpuReadBytes(direct.size, wo!.kind), layerWeights: direct.layerWeights, cpu: cpuOf(direct.cpu, wo!.kind), usage: direct.usage,
             gpu: { stepMs: data.tokens!.ms, promptMs: block ? block.ms / block.count : undefined } });
           if (verdict.cpuFaster) {
             direct.verdict = { key: data.key, cpu: direct.cpu! };  // the page keeps it: the next load goes on the CPU at once

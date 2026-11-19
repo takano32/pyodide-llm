@@ -59,8 +59,10 @@ export type OfTranslation = Named & { translation: Translation; bytes: number; h
 // T93 stage 2: what the page asks about the number of threads: fixed (?threads=N), the count it remembers for this
 // device and model, and the logical cores to search from
 export type ThreadsAsked = { fixed?: number; remembered?: number; hint?: number };
-// what /benchmark/'s CPU section measured here, which a model on the GPU alone is held against (T156)
-export type CpuSpeed = { GBps?: number; threads?: number; promptGMACs?: number };
+// what /benchmark/'s CPU section measured here, which a model on the GPU alone is held against (T156); ternary (T313):
+// how many times as fast its kernels of ternary weights ran as int8's beside them, a token's and a prompt's tile's
+export type CpuSpeed = { GBps?: number; threads?: number; promptGMACs?: number; ternary?: TernaryTimes };
+export type TernaryTimes = { token?: number; prompt?: number };
 // how the page is used: the tokens of its prompts and those written, decayed (T156)
 export type Usage = { prompt: number; written: number };
 // T156: the worker's verdict that the CPU is faster here than this model on the GPU alone, under the device's key

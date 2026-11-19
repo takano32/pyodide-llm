@@ -7,7 +7,7 @@ const { aloneHolds, aloneVerdict, footprint, gpuBytes, gpuOnlyPlan, gpuOnlyUnfit
   USAGE_UNKNOWN, weightsPlace } = await import(runtimeUrl("forward.js"));
 // (T641.10: what only the tests read, from the parts)
 const { gpuLine, PROMPTS_CPU, PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes } = await import(runtimeUrl("forward/choice.js"));
-const { BOTH_ON_8, cpuReadBytes } = await import(runtimeUrl("forward/alone.js"));
+const { BOTH_ON_8, cpuReadBytes, cpuOf } = await import(runtimeUrl("forward/alone.js"));
 const { deviceKey, floatOfHalf, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData,
   tokenAttentionOff } = await import(runtimeUrl("shaders.js"));
 import { usedAfter } from "../src/bench.ts";
@@ -583,6 +583,20 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // its kernel is bound by its arithmetic, at about the int8 kernel's weights a second, T231)
   assert.equal(cpuReadBytes(1e9, "ternary"), 1e9 * 1.125 / 0.265625);
   assert.equal(cpuReadBytes(1e9, "int8"), 1e9);
+  // T313 (C): where /benchmark/'s CPU section measured its ternary kernels against int8's, a ternary (and a binary) model's
+  // CPU is that many times as fast as int8's reading; an int8 model's, and one where nothing was measured, as it is
+  const measuredCpu = { GBps: 28.7, promptGMACs: 40, ternary: { token: 1.5, prompt: 0.8 } };
+  assert.deepEqual(cpuOf(measuredCpu, "ternary"), { GBps: 28.7 * 1.5, promptGMACs: 40 * 0.8, ternary: measuredCpu.ternary });
+  assert.deepEqual(cpuOf(measuredCpu, "binary"), cpuOf(measuredCpu, "ternary"));
+  assert.equal(cpuOf(measuredCpu, "int8"), measuredCpu);
+  assert.equal(cpuOf(cpu, "ternary"), cpu, "no ternary kernels measured: T232's estimate");
+  assert.deepEqual(cpuOf({ GBps: 28.7, ternary: { token: 2 } }, "ternary"), { GBps: 57.4, ternary: { token: 2 } }, "a token's alone");
+  assert.equal(cpuOf(undefined, "ternary"), undefined);
+  // and the verdict moves with it: a ternary model whose GPU step is 0.9 times the CPU's int8 estimate stays on the GPU
+  // by T232's estimate, and goes to the CPU where its kernels ran twice as fast as int8's
+  const ternarySize = cpuReadBytes(0.5e9, "ternary"), stepMs = 0.9 * ternarySize / (28.7 * 1e6);
+  assert.equal(aloneVerdict({ size: ternarySize, layerWeights: weights, cpu: cpuOf({ GBps: 28.7 }, "ternary"), gpu: { stepMs } }).cpuFaster, false);
+  assert.equal(aloneVerdict({ size: ternarySize, layerWeights: weights, cpu: cpuOf({ GBps: 28.7, ternary: { token: 2 } }, "ternary"), gpu: { stepMs } }).cpuFaster, true);
   // the use kept: each generation's added to four fifths of what was there
   assert.deepEqual(usedAfter(usedAfter(undefined, 100, 50), 20, 200), { prompt: 100 * 0.8 + 20, written: 50 * 0.8 + 200 });
   // the key: the adapter as the device made of it (the same features and limits), another description another key;

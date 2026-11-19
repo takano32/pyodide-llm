@@ -16,6 +16,18 @@ assert.deepEqual(cpuSpeed(cpuSection), { GBps: 28.7, threads: 4, promptGMACs: un
 assert.equal(cpuSpeed({ status: "ok", data: { ...measured.data, shared: false } }), undefined);
 assert.equal(cpuSpeed({ status: "error", markdown: "stopped" }), undefined);
 assert.equal(cpuSpeed(undefined), undefined);
+// T313 (C): the ternary kernels against int8's (one thread, ms a pass): a token's by the relaxed SIMD kernels where the
+// browser has them, a prompt's by the tiles; none where a row was not measured or unsteady, the plain ones without relaxed SIMD
+const kernel = (name, weights, relaxed, tokens, ms, extra = {}) => ({ kernel: name, weights, relaxed, tokens, values: 1, bytes: 1, copies: 1, ms, passes: 10, ...extra });
+const withKernels = (rows) => cpuSpeed({ status: "ok", data: { ...measured.data, kernels: { shape: [8192, 2048], rows } } });
+const relaxedRows = [kernel("matmul_q8r", "int8", true, 1, 20), kernel("matmul_t2r", "ternary", true, 1, 10), kernel("matmul_q8", "int8", false, 1, 30),
+  kernel("matmul_t2", "ternary", false, 1, 40), kernel("matmul_q8r_tile", "int8", true, 16, 80), kernel("matmul_t2r_tile", "ternary", true, 16, 100)];
+assert.deepEqual(withKernels(relaxedRows).ternary, { token: 2, prompt: 0.8 });
+assert.deepEqual(withKernels(relaxedRows.map((row) => (row.kernel === "matmul_t2r_tile" ? { ...row, unsteady: true } : row))).ternary, { token: 2 }, "an unsteady tile: no prompt's");
+const plainRows = relaxedRows.map((row) => (row.relaxed ? { ...row, ms: undefined, none: "no relaxed SIMD in this browser" } : row));
+assert.deepEqual(withKernels(plainRows).ternary, { token: 0.75 }, "no relaxed SIMD: the plain kernels, and no tile");
+assert.equal("ternary" in withKernels(plainRows.map((row) => (row.weights === "ternary" ? { ...row, ms: undefined, error: "RangeError" } : row))), false, "nothing measured: no key");
+assert.equal("ternary" in cpuSpeed(measured), false);
 
 // T643.15: the matrix × vector table's line of quantizing, whose model's numbers come from gpu/models.ts's table (16 layers
 // of Llama 3.2 1B, each 8192 wide at the most): a token of it quantizes 16 × 4 + 1 vectors, at its w1's ms each
