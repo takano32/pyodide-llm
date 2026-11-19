@@ -61,7 +61,7 @@ const device_ = await import(runtimeUrl("gpu/device.js"));
 const { openDevice, handed, held, end, STORAGE, COPY_DST, COPY_SRC } = device_;
 const { upload, uploadLayers, tablesOn, routed, unwritten } = await import(runtimeUrl("gpu/weights.js"));
 const { prepare, bindLayers, grow, roomFor, keysIn, block } = await import(runtimeUrl("gpu/block.js"));
-const { prompt } = await import(runtimeUrl("gpu/requests.js"));
+const { prompt, generate } = await import(runtimeUrl("gpu/requests.js"));
 const { RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE } = await import(runtimeUrl("shaders/steps.js"));
 const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.js"));
 
@@ -686,7 +686,23 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     }
   }
 }
-console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, dispatches the layers in one submission, and answers into the staging only where it is still wanted; keysIn() puts forward.js's cache up");
+// T334.4's review: keysIn() counts every layer's keys and values by the model's heads, so it refuses a model whose
+// layers are not all alike (a Gemma 4's: a layer of wider heads, or one that reads another's keys and values), and
+// puts nothing up
+const UNALIKE = [["a layer of wider heads", { head: 2 * HEAD }], ["a layer that reads another's keys and values", { kept: -1 }]]
+  .map(([what, other]) => [what, plan.shapes.map((shape, l) => (l === 1 ? { ...shape, ...other } : shape))]);
+{
+  const was = m.plan, { cache: now } = m.block, address = plan.rows;
+  const places = Array.from({ length: LAYERS }, (_, l) => ({ keys: address + l * 16 * KV_ROW, values: address + (LAYERS + l) * 16 * KV_ROW, ring: 0 }));
+  for (const [what, shapes] of UNALIKE) {
+    m.plan = { ...was, shapes };
+    for (let l = 0; l < LAYERS; l++) { now.keys[l].data.fill(0); now.values[l].data.fill(0); }
+    assert.throws(() => keysIn(m, { places, row: KV_ROW, half: true }, 0, 4), /keysIn\(\) counts every layer's keys and values by the model's heads/, `keysIn() refuses ${what}`);
+    assert.ok(now.keys.every((buffer) => buffer.data.every((byte) => byte === 0)), "and puts nothing up");
+  }
+  m.plan = was;
+}
+console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, dispatches the layers in one submission, and answers into the staging only where it is still wanted; keysIn() puts forward.js's cache up, and refuses layers not all alike");
 
 // ---- requests.js: a prompt's block answered in the control area, by the model device.js holds now
 {
@@ -715,6 +731,26 @@ console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, d
   staging.fill(0xee);
   assert.deepEqual(await asked(2, { wanted: 3 }), { done: 1, failed: 7 }, "a request forward.js gave up is answered nowhere: the words are another request's by then");
   assert.ok(staging.every((byte) => byte === 0xee), "nor in the staging");
+  // T334.4's review: a token's steps (generate()) count every layer's keys and values by the model's heads: refused
+  // where the layers are not all alike, said why, with nothing asked of the device
+  record.tokenForm = { form };
+  for (const [what, shapes] of UNALIKE) {
+    const was = record.plan;
+    record.plan = { ...was, shapes };
+    now.calls.length = 0;
+    posted.length = 0;
+    Atomics.store(words, WORDS.wanted, 9);
+    generate({ serial: 9, count: 1, pos: 4, from: 4, token: 1, history: [], length: 0, written: 0, cache: null, settings: {}, randoms: [] });
+    for (let i = 0; i < 50 && Atomics.load(words, WORDS.done) !== 9; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    record.plan = was;
+    assert.deepEqual([Atomics.load(words, WORDS.done), Atomics.load(words, WORDS.failed)], [9, 1], `a token's steps fail for ${what}`);
+    assert.equal(posted.length, 1);
+    assert.match(posted[0].reason, /A token's steps counts every layer's keys and values by the model's heads/, "and say why");
+    assert.equal(now.calls.length, 0, "with nothing asked of the device");
+    Atomics.store(words, WORDS.done, 0);
+  }
+  delete record.tokenForm;
+  posted.length = 0;
   // the device lost while the block is at work: read after the work as it is then
   now.device.onSubmit = () => { now.device.onSubmit = null; now.lose({ reason: "unknown", message: "" }); };
   assert.equal(device_.lost, null);

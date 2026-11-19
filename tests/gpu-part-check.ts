@@ -606,6 +606,17 @@ console.log("ok: a request with no answer, a failure, an id outside the vocabula
   assert.equal(lost.length, 1, "and not when the model is let go");
   said();
 }
+// T334.4's review: the GPU's keys and values are read back by the model's heads, so a model whose layers are not all
+// alike (a Gemma 4's: a layer of wider heads, or one that reads another's keys and values) is refused, with nothing asked
+for (const [what, other] of [["a layer of wider heads", { head: 8 }], ["a layer that reads another's keys and values", { kept: -1 }]]) {
+  const { part, beside } = made({ direct: { onLost() {} }, shape: { layerShapes: SHAPE.layerShapes.map((shape, l) => (l === 1 ? { ...shape, ...other } : shape)) } });
+  beside.ready();
+  await part.note;
+  assert.throws(() => part.keysAndValues(0, 4), /The GPU's keys and values are read back by the model's heads, and this model's layers are not all alike/, `keysAndValues() refuses ${what}`);
+  assert.equal(requests(beside, "keys").length, 0, "with nothing asked of the GPU");
+  await part.release();
+  said();
+}
 {
   // a GPU that does not take the steps cannot hold a model alone; nor one the CPU beats as /benchmark/ measured it
   const lost = [];

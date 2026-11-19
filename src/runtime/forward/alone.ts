@@ -125,7 +125,8 @@ export function gpuBytes(header: Header, { dtype = "int8", ...form }: GpuForm & 
   const matrices = Object.entries(roles).reduce((sum, [name, weights]) => sum + ofKind(name, weights), 0);
   const layerBytes = matrices + layers * 2 * dim * 4 + 2 * keptWidths.reduce((sum, width) => sum + width, 0) * seqLen * 2 + held;
   const tables = ofKind("token_embedding_table", [vocab * dim]) + (signedVocab > 0 ? 0 : ofKind("wcls", [vocab * dim]));
-  // (RoPE's table of the widest heads: T331, a Gemma 4's are its wide ones')
+  // (RoPE's table of the widest heads: T331, a Gemma 4's are its wide ones'; one table alone, T334.4's review: a local
+  // layer's second one (a Gemma 3's or 4's, about 4 MiB of an E2B's) is not counted)
   return layerBytes + tables + seqLen * Math.max(form.head_dim || dim / heads, form.wide?.head_dim ?? 0) * 4 + 3 * vocab * 4;
 }
 
