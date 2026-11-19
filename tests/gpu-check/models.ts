@@ -73,6 +73,7 @@ const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models
 // which a second layer alone would not tell from 0 + size
 // T334.1: a Gemma 4's form (heads of 32, the wide ones' 64, one of keys and values: rows of whole groups of 32; dim 64, hidden 128)
 const GEMMA4 = { arch: "gemma4", head_dim: 32, wide: { layers: [2, 5], head_dim: 64 }, kv_shared: { layers: [4, 5], from: [3, 2] }, double: [4, 5], per_layer: 32 };
+const GEMMA4_LOCAL = { layers: [0, 1, 3], window: 64, rope_theta: 100 };
 const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, dtype: "ternary" };
 const TERNARY_OPTIONS = { dtype: "ternary", qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 };
 // T634.3: the 1-bit Bonsai's form, a Qwen3 of binary weights (one bit a weight, every group of 128 the signs of its
@@ -188,6 +189,14 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // wrong part of a wide head, leaves v's heads unnormed, or adds a layer's input or multiplies its number wrong is off in
   // the keys of the next layer. Its steps are the CPU's until T334.2
   "synthetic-gemma4": [{ layers: 6, kv_heads: 1, seq_len: 160, ...GEMMA4 }, { ...GEMMA4, local: { layers: [0, 1, 3, 4], window: 64, rope_theta: 100 }, rotary: 8 }],
+  // (T334.1: the same in parts, four layers, the third attending every position, each with one of what a Gemma 4 has
+  // besides: the heads of v normed and the layer's number alone; the third's heads wide, a part of them turned; an input
+  // of every layer. A GPU wrong in one of them is off in the next layer's keys of that one)
+  "synthetic-gemma4-plain": [{ layers: 4, kv_heads: 1, seq_len: 160, arch: "gemma4", head_dim: 32 }, { arch: "gemma4", head_dim: 32, local: GEMMA4_LOCAL }],
+  "synthetic-gemma4-wide": [{ layers: 4, kv_heads: 1, seq_len: 160, arch: "gemma4", head_dim: 32, wide: { layers: [2], head_dim: 64 } },
+    { arch: "gemma4", head_dim: 32, wide: { layers: [2], head_dim: 64 }, local: GEMMA4_LOCAL, rotary: 8 }],
+  "synthetic-gemma4-inputs": [{ layers: 4, kv_heads: 1, seq_len: 160, arch: "gemma4", head_dim: 32, per_layer: 32 },
+    { arch: "gemma4", head_dim: 32, per_layer: 32, local: GEMMA4_LOCAL }],
   // T649.2: a PLaMo 3 (a Gemma 3's layers, but a SiLU in the gate and yarn in the tables of the layer that attends every
   // position: its cos and sin 1 + 0.1 ln 4 times a unit turn): the SWIGLU of a Llama with a Gemma 3's norms behind and
   // windows, which no other model has together
@@ -340,7 +349,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
   "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-qwen35-rotated-1024", "synthetic-gemma3-ring", "synthetic-plamo3", "synthetic-q4k-wide",
-  "synthetic-lfm2-q4k", "synthetic-q4k-layers",
+  "synthetic-lfm2-q4k", "synthetic-q4k-layers", "synthetic-gemma4-plain", "synthetic-gemma4-wide", "synthetic-gemma4-inputs",
   "synthetic-lfm2-q4k-layers", "synthetic-q4k-qk-apart", "synthetic-q4k-up-apart",
   "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers",
   // (T547.3.6: the tables of blocks' shaders are synthetic-q4k-tied's and synthetic-saluki-tables'; on SwiftShader the
