@@ -206,7 +206,9 @@ export function sixValues(packed: ArrayLike<number>) {
 // ggml/src/ggml-webgpu/wgsl-shaders/rms_norm_mul.wgsl and binary.wgsl (OP_ADD, INPLACE; ADD below), and (T154)
 // row_norm.wgsl (NORM: LAYER_NORM below) and unary.wgsl (GELU: GELU below), and the fusion of LAYER_NORM's last line
 // from ggml/src/ggml-metal/kernels/norm.metal (kernel_norm_mul_add_f32, F == 3; ggml-metal-fusion.cpp's NORM_MUL_ADD)
-// (https://github.com/ggml-org/llama.cpp, commit 2145525a, 2026-09-26), under the MIT License:
+// (https://github.com/ggml-org/llama.cpp, commit 2145525a, 2026-09-26), and (T334.1: PER_LAYER_INPUTS and SCALE below)
+// the forms of src/models/gemma3n-iswa.cpp, src/models/gemma4-iswa.cpp and ggml/src/ggml-webgpu/wgsl-shaders/cpy.wgsl,
+// under the MIT License:
 //
 /*! Copyright (c) 2023-2026 The ggml authors
  *
