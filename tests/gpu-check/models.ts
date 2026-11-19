@@ -199,7 +199,9 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // wrong part of a wide head, leaves v's heads unnormed, or adds a layer's input or multiplies its number wrong is off in
   // the keys of the next layer. Its steps are the GPU's since T334.2 (all six layers, a request a step): the shared
   // layers' and the wider FFN's are its steps' alone
-  "synthetic-gemma4": [{ layers: 6, kv_heads: 1, seq_len: 160, ...GEMMA4 }, { ...GEMMA4, local: { layers: [0, 1, 3, 4], window: 64, rope_theta: 100 }, rotary: 8 }],
+  // (T334.2: its logits capped at 2, where the E2B's are at 30: a made-up model's logits are small, and a cap of 30 left
+  // them as they were, so that a step that left the cap out passed, run 44631025078)
+  "synthetic-gemma4": [{ layers: 6, kv_heads: 1, seq_len: 160, ...GEMMA4 }, { ...GEMMA4, local: { layers: [0, 1, 3, 4], window: 64, rope_theta: 100 }, rotary: 8, softcap: 2 }],
   // (T334.1: the same in parts, four layers, the third attending every position, each with one of what a Gemma 4 has
   // besides: the heads of v normed and the layer's number alone; the third's heads wide, a part of them turned; an input
   // of every layer. A GPU wrong in one of them is off in the next layer's keys of that one)
@@ -215,7 +217,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // narrower than a position of the widest heads. A prompt of 560 tokens (count), past the ring's period of 528: the
   // windows cut, the ring wraps, and a token's steps after the prompt take the local layers' keys and values from it)
   "synthetic-gemma4-e2b": [{ dim: 64, hidden: 128, layers: 35, heads: 4, kv_heads: 1, seq_len: 4096, ...GEMMA4_E2B },
-    { ...GEMMA4_E2B, local: E2B_LOCAL, rotary: 128 }, { count: 560 }],
+    { ...GEMMA4_E2B, local: E2B_LOCAL, rotary: 128, softcap: 30 }, { count: 560 }],
   // T649.2: a PLaMo 3 (a Gemma 3's layers, but a SiLU in the gate and yarn in the tables of the layer that attends every
   // position: its cos and sin 1 + 0.1 ln 4 times a unit turn): the SWIGLU of a Llama with a Gemma 3's norms behind and
   // windows, which no other model has together
