@@ -264,7 +264,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     step: buffer(m, 16, UNIFORM | COPY_DST), settings: buffer(m, SAMPLING_BYTES, UNIFORM | COPY_DST),
     xq: buffer(m, widest), xs: buffer(m, (widest / GROUP) * 4), xb: buffer(m, plan.dim * 4),
     // (T545.2: the attending layers' keys and values, and the state of the layers that keep one after the last step)
-    readback: buffer(m, most * 4 + STATE_BYTES + 2 * attending * most * kvDim * 2 + stateBytes, MAP_READ | COPY_DST),
+    readback: buffer(m, idsBytesOf(most) + STATE_BYTES + 2 * attending * most * kvDim * 2 + stateBytes, MAP_READ | COPY_DST),
     // (below: the uniforms, and what only some models have)
     u: null, take: null, columns: null, picked: null, kinds: {}, softcap: null, perLayer: null };
   // fusedMatVec's Params (shaders/fused.ts's fusedParams; T334.2: of the layer's heads)
@@ -322,6 +322,9 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   return g as TokenBuffers;
 }
 
+// T334.2: the bytes of a run's ids where it reads them back, before the state: a multiple of 8 (where a mapped range
+// may start: the state and the keys and values are read from after them; a Gemma 4's run is of one step, 4 bytes)
+const idsBytesOf = (most: number) => Math.ceil(most / 2) * 8;
 // the workgroups of rows by the fused shaders' rows a workgroup, over x and then y (they number them so)
 function spread(m: Model, rows: number, perGroup: number): [number, number] {
   const groups = Math.ceil(rows / perGroup), across = Math.min(groups, m.device.limits.maxComputeWorkgroupsPerDimension);
@@ -465,7 +468,7 @@ function tokenStep(m: Model, form: TokenForm, positions: number) {
 // (T334.2: each layer's of its own heads, in a place of the widest's, a Gemma 4's: kv[side][l] holds its count positions
 // of its own width, and nothing of a layer that reads another's keys and values)
 async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, settings, randoms, keep = false, extra }: Run) {
-  const { device, plan } = m, g = m.tokens!, { cache, states } = m.block, kvRow = plan.kvHeads * widestHead(plan) * 2, idsBytes = g.most * 4;
+  const { device, plan } = m, g = m.tokens!, { cache, states } = m.block, kvRow = plan.kvHeads * widestHead(plan) * 2, idsBytes = idsBytesOf(g.most);
   const attending = attendingOf(plan), rowOf = (p: number) => (plan.shapes[attending[p]].kept < 0 ? 0 : plan.kvHeads * plan.shapes[attending[p]].head * 2);
   const layers = cache!.keys.length, stateBytes = keep && !m.plan.direct ? m.block.stateBytes : 0, stateAt = idsBytes + STATE_BYTES + 2 * layers * g.most * kvRow;
   if (pos + count > cache!.capacity) throw new Error(`positions to ${pos + count} are past the GPU's cache`);
@@ -508,7 +511,7 @@ async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, sett
   await g.readback.mapAsync(MAP_READ);
   try {
     const words = new Uint32Array(g.readback.getMappedRange(0, idsBytes + STATE_BYTES).slice(0));
-    const after = words.subarray(g.most);
+    const after = words.subarray(idsBytes / 4);
     const out: Ran = { ids: words.slice(0, count), sampled: after[5], stopped: after[7], notFinite: after[STATE_NOT_FINITE] };
     if (keep) {
       const bytes = new Uint8Array(g.readback.getMappedRange(kvAt, 2 * layers * g.most * kvRow + stateBytes).slice(0));
