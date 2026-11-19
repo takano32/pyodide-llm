@@ -15,7 +15,26 @@ const root = new URL("../../", import.meta.url).pathname;
 
 const PYTHON = `
 import base64, gc, struct, numpy as np, llama2_numpy, llama2_convert
+import engine.tensors
+from engine.dtypes import KINDS
 from llama2_numpy import Llama, external_tensors
+
+def read_in_place(read):
+    """T334.5: a table every layer reads a row of (a Gemma 4's, engine/layout.py's ROWS), held as the file has it: views
+    of the checkpoint in place of the copy engine/tensors.py's read_tensor() makes, so that the real E2B's (2.6 GB of
+    int8, in a file the native Python maps: referenceCase() below) is no second copy in a runner of 16 GB. The same
+    values: the copy is for a checkpoint that may be let go, which this one is not while a Llama reads it"""
+    def reading(checkpoint, place, whole=True, copy=False):
+        kind = KINDS[place.kind] if place.kind is not None else None
+        if whole or place.row.name != "per_layer_table" or kind is None or kind.name != "int8":
+            return read(checkpoint, place, whole, copy)
+        shape = place.row.shape
+        raw = np.frombuffer(checkpoint, dtype=np.uint8, count=place.scales - place.offset, offset=place.offset)
+        scales = np.frombuffer(checkpoint, dtype=kind.scale_type, count=(place.offset + place.size - place.scales) // kind.scale, offset=place.scales)
+        return kind.unpack(raw).reshape(*shape[:-1], -1, place.group), scales.reshape(*shape[:-1], -1, 1)
+    return reading
+
+engine.tensors.read_tensor = read_in_place(engine.tensors.read_tensor)
 
 class Half(np.ndarray):
     """T153: a cache that keeps what is written into it rounded to float16 (the GPU's and the CPU's cache, T110)"""
@@ -64,7 +83,14 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=Fal
     if h16:
         for name in MATRICES:
             if getattr(numpy, name, None) is not None:
-                setattr(numpy, name, np.asarray(getattr(numpy, name), dtype=np.float32).astype(np.float16).astype(np.float32).view(H16))
+                # (T334.5: rounded in place where the array is the Llama's own, so that the real E2B's 1.5 GB stack of
+                # its wider FFN has no second float32 copy beside it)
+                matrix = np.asarray(getattr(numpy, name), dtype=np.float32)
+                if matrix.flags.writeable:
+                    matrix[...] = matrix.astype(np.float16)
+                else:
+                    matrix = matrix.astype(np.float16).astype(np.float32)
+                setattr(numpy, name, matrix.view(H16))
     if q8:
         # (T545: an LFM2's matrices in and out too; T271.2: a Qwen3.5's of q, k and v, of z and out, and its gate of the
         # attention's output; T334.1: a Gemma 4's of its wide heads and wider FFN, and its layers' gates and projections
@@ -146,8 +172,9 @@ const TEXTS = {
     "多くの和歌や絵画に描かれてきた。二〇一三年には世界文化遺産に登録され、毎年夏には多くの登山者が山頂を目指す。",
 };
 // NumPy's answers for one model and its case (caseOf, below): a made-up model's name, <prefix>.json, or a model of
-// src/models.ts
-function referenceCase(py, directory, id) {
+// src/models.ts. language (T334.5): the text of a <prefix>.json's prompt, one of TEXTS (gpu-check --text)
+function referenceCase(py, directory, id, language = "english") {
+  if (!TEXTS[language]) throw new Error(`no text ${JSON.stringify(language)}: ${Object.keys(TEXTS).join(" or ")}`);
   let options, text, run = {};
   const began = performance.now();
   if (SYNTHETIC[id]) {
@@ -161,16 +188,21 @@ function referenceCase(py, directory, id) {
     // GB, which with the file's copies went past Pyodide's 4 GB and a 7.5 GB scope of the development machine
     const prefix = id.slice(0, -".json".length);
     options = JSON.parse(fs.readFileSync(id, "utf8"));
-    text = TEXTS.english.repeat(3);
+    text = TEXTS[language].repeat(3);
     const native = spawnSync(process.env.PYTHON ?? "python3", ["-c", `import sys, json\nsys.path.insert(0, ${JSON.stringify(sources())})\n${PYTHON}
-data, vocabulary = open(sys.argv[1] + ".bin", "rb").read(), open(sys.argv[1] + ".tokenizer.bin", "rb").read()
+import mmap
+# (T334.5: the checkpoint mapped, not read: the real E2B's is 5.2 GB, whose pages the runner can let go and read again)
+with open(sys.argv[1] + ".bin", "rb") as file:
+    data = mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ)
+vocabulary = open(sys.argv[1] + ".tokenizer.bin", "rb").read()
 print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open(sys.argv[1] + ".json")))))`, prefix, text],
       { encoding: "utf8", maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "inherit"] });
     if (native.status !== 0) throw new Error(`NumPy's answer for ${id} failed (${native.status ?? native.signal})`);
     const numpySeconds = (performance.now() - began) / 1000;
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(`${prefix}.tokenizer.bin`));
     py.runPython(`vocabulary = open("tokenizer.bin", "rb").read()`);
-    return { ...caseOf(py, directory, id, options, JSON.parse(native.stdout), new Uint8Array(fs.readFileSync(`${prefix}.bin`))), numpySeconds };
+    // (T334.5: the checkpoint read where it is, not whole into Node: the real E2B's 5.2 GB pass readFileSync()'s 2 GiB)
+    return { ...caseOf(py, directory, id, options, JSON.parse(native.stdout), `${prefix}.bin`), numpySeconds };
   } else {
     const entry = MODELS.find((m) => m.id === id);
     if (!entry) throw new Error(`no model ${id} in src/models.ts`);
@@ -189,14 +221,23 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
   return { ...caseOf(py, directory, id, options, reference, py.runPython("data").toJs()), numpySeconds, ...run };
 }
 // the plan forward.js gets from Python (the vocabulary in Pyodide's globals), recorded: Llama(external=) with a start()
-// that keeps it, and the case the browser runs
-function caseOf(py, directory, id, options, reference, bytes) {
+// that keeps it, and the case the browser runs. checkpoint: its bytes, or (T334.5) the file that holds them, read a
+// stretch at a time and served from where it is
+function caseOf(py, directory, id, options, reference, checkpoint) {
   const began = performance.now();
   let plan;
+  const fd = typeof checkpoint === "string" ? fs.openSync(checkpoint, "r") : null;
+  const size = fd === null ? checkpoint.length : fs.fstatSync(fd).size;
+  const read = (offset, length) => {
+    if (fd === null) return checkpoint.slice(offset, offset + length);
+    const out = new Uint8Array(length);
+    fs.readSync(fd, out, 0, length, offset);
+    return out;
+  };
   py.globals.set("OPTIONS", py.toPy(options));
   py.globals.set("recorder", {
-    size: bytes.length,
-    read: (offset, length) => bytes.slice(offset, offset + length),
+    size,
+    read,
     start: (given) => {
       plan = given.toJs({ dict_converter: Object.fromEntries });
       return { backend: "recorded", bind() {}, forward() {}, release() {} };
@@ -209,13 +250,14 @@ function caseOf(py, directory, id, options, reference, bytes) {
   // is made with: options, in the case)
   let places;
   if (["llama", "qwen35"].includes(options.arch ?? "llama") && ["int8", "ternary", "binary"].includes(options.dtype)) {
-    py.globals.set("HEADER", py.toPy([...new Int32Array(bytes.slice(0, 28).buffer)]));
+    py.globals.set("HEADER", py.toPy([...new Int32Array(read(0, 28).buffer)]));
     places = py.runPython(`external_tensors(HEADER, OPTIONS["dtype"], OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   }
   for (const [name, value] of Object.entries(plan.derived)) plan.derived[name] = Buffer.from(value).toString("base64");
-  const name = path.basename(id), file = path.join(directory, `${name}.bin`);
-  fs.writeFileSync(file, bytes);
-  return { id, plan, places, options, headDim: options.head_dim ?? 0, arch: options.arch ?? "llama", dtype: options.dtype, checkpoint: `/case/${name}.bin`, file, reference,
+  const name = path.basename(id), file = fd === null ? path.join(directory, `${name}.bin`) : checkpoint;
+  if (fd === null) fs.writeFileSync(file, checkpoint);
+  else fs.closeSync(fd);
+  return { id, plan, places, size, options, headDim: options.head_dim ?? 0, arch: options.arch ?? "llama", dtype: options.dtype, checkpoint: `/case/${name}.bin`, file, reference,
     planSeconds: (performance.now() - began) / 1000 };
 }
 

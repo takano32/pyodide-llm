@@ -50,6 +50,9 @@ on:
       url:
         description: 'the site to test (default: the deployed one)'
         required: false
+      prompt:
+        description: "T334.5: a prompt to type instead of the page's own (tests/e2e.ts's E2E_PROMPT)"
+        required: false
 
 jobs:
   models:
@@ -121,6 +124,7 @@ jobs:
           E2E_GPU: ${{ inputs.swiftshader && 'swiftshader' || '' }}
           E2E_THEN: ${{ inputs.then }}
           E2E_LONG: ${{ inputs.long }}
+          E2E_PROMPT: ${{ inputs.prompt }}
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0

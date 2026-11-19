@@ -36,7 +36,11 @@ const served = (cases, only, nanRounds) => http.createServer((req, res) => {
   if (pathname === "/harness.js") return send(types[".js"], `const ONLY = ${JSON.stringify(only ? only.split(",") : [])};\nconst NAN_ROUNDS = ${JSON.stringify(nanRounds)};\n${HARNESS}`);
   // (T152: and NumPy's greedy ids after the prompt, which the harness feeds the GPU's steps)
   if (pathname === "/cases.json") return send(types[".json"], JSON.stringify(cases.map(({ file, reference: { tokens, header, greedy }, ...c }) => ({ ...c, reference: { tokens, header, greedy } }))));
-  if (found) return send("application/octet-stream", fs.readFileSync(found.file));
+  // (T334.5: streamed: the real E2B's checkpoint of 5.2 GB passes readFileSync()'s 2 GiB)
+  if (found) {
+    res.writeHead(200, { ...headers, "Content-Type": "application/octet-stream", "Content-Length": fs.statSync(found.file).size });
+    return fs.createReadStream(found.file).pipe(res);
+  }
   // (the runtime's files and the built kernels, each from where this tree keeps them: tests/tree.ts)
   const kinds = { "/runtime/": runtime, "/built/": built };
   const kind = Object.keys(kinds).find((prefix) => pathname.startsWith(prefix));

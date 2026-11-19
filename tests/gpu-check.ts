@@ -6,6 +6,7 @@
 //   node tests/gpu-check.ts ... --engine dawn --webgpu <the npm package webgpu's directory>
 //   ... [--minutes 90]   (T645: the tool's limit from its start; progress lines go to stderr as the harness goes)
 //   ... [--part k/n]   (T645 (b): of the made-up models "made-up" stands for, every n-th from the k-th; named models all)
+//   ... [--text english|japanese]   (T334.5: the prompt's text of a <prefix>.json's model; english by default)
 //   ... [--nan all|made-up|small|none]   (T241's review: where the rounds with a NaN or an infinity run; see gpu-check/models.ts's NAN_CHOICES)
 //
 // T147: --engine dawn runs the same in Node on Dawn (the npm package webgpu, not a dependency of this project: install
@@ -59,6 +60,9 @@ const minutes = Number(option("--minutes", "90"));
 // The checks of the harness that are no model's (the quantizers alone, the list of forms) run in every part: they take
 // seconds, and the forms are what every model's runs are made of
 const part = option("--part", "");
+// T334.5: the text a real model (<prefix>.json) reads (gpu-check/reference.ts's TEXTS): the real E2B's GPU and CPU parted
+// soonest on a Japanese question (TASKS.md's T334.4)
+const language = option("--text", "english");
 const nanRounds = NAN_CHOICES[option("--nan", { dawn: "made-up", chromium: "small" }[engine] ?? "none")] ?? NAN_CHOICES.none;
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
 // gpu-prompt.yml's suites name them so, and a made-up model added to models.ts's SYNTHETIC joins them)
@@ -71,7 +75,7 @@ if ((args.length ? args : ["made-up"]).includes("made-up")) console.log(`suite: 
 const py = await referencePython();
 const directory = path.join(root, ".tmp", "gpu-check");
 fs.mkdirSync(directory, { recursive: true });
-const cases = ids.map((id) => referenceCase(py, directory, id));
+const cases = ids.map((id) => referenceCase(py, directory, id, language));
 
 // ---- the browser or Dawn: what the harness posted
 const server = served(cases, only, nanRounds);

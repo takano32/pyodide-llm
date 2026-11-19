@@ -1,8 +1,18 @@
 const search = "?v=gpu-check";
-const { compileKernels, compileBlocks, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.ts" + search);
+const { compileKernels, compileBlocks, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf, tableHole, placer } = await import("/runtime/forward.ts" + search);
 const { ringPositions } = await import("/runtime/forward/memory.ts" + search);  // (T641.10: the part; forward.ts no longer hands it out)
 const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.ts" + search);
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+// T334.5: a file read as it comes, each piece handed to put(where it is in the file, its bytes): no copy of it whole
+const streamed = async (url, put) => {
+  const reader = (await fetch(url)).body.getReader();
+  for (let at = 0; ;) {
+    const { done, value } = await reader.read();
+    if (done) return at;
+    put(at, value);
+    at += value.length;
+  }
+};
 const b64 = (floats) => {
   const bytes = new Uint8Array(floats.buffer, floats.byteOffset, floats.byteLength);
   let text = "";
@@ -160,16 +170,41 @@ try {
     const kinds = c.options.kinds ?? {}, embeddingKind = kinds.token_embedding_table, classifierKind = kinds.wcls ?? embeddingKind;
     const tablePieceBytes = Math.max(Math.ceil((plan.vocab_size * rowBytesOf(classifierKind)) / 3), 64 * rowBytesOf(embeddingKind));
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
-    const checkpoint = await fetched(c.checkpoint), size = checkpoint.length, tokens = c.reference.tokens, n = tokens.length - 1;
+    // T334.5: a table every layer reads a row of (a Gemma 4's) out of the memory, as the page holds it where it can
+    // (forward.ts's tableHole() and Apart): the rest packed without it, a tensor at place(its offset), the table's rows
+    // read from a buffer of its own (rows), and the checkpoint streamed into the two as it comes: the real E2B's 5.2 GB
+    // whole beside its memory and its copy of fetch() did not fit a runner of 16 GB. The checkpoint whole (checkpoint)
+    // is then not here: only the GPU alone reads it (direct(), below), which takes no such model
+    const size = c.size, tokens = c.reference.tokens, n = tokens.length - 1, hole = tableHole(plan.tensors);
+    const stored = hole ? size - (hole[1] - hole[0]) : size, table = hole && new Uint8Array(hole[1] - hole[0]);
+    const checkpoint = hole ? null : await fetched(c.checkpoint);
+    if (hole) {
+      const place = placer([hole]), moved = (t) => ({ ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) });
+      plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, { ...moved(t), ...(t.layers ? { layers: t.layers.map(moved) } : {}) }]));
+    }
     // T155: a 64-bit memory (c.wide) with its kernels, the checkpoint 4 GiB up as threads-check's --high puts it
     const high = c.wide ? 2 ** 32 : 0;
     const built = c.wide ? compileKernels(await fetched("/built/simdkernel_shared64.wasm"), await fetched("/built/simdkernel_relaxed_shared64.wasm"), true) : narrow;
     // (T547.2.3: and the kernels of llama.cpp's blocks for a model with rows of them, which its CPU's side multiplies by)
     const kernels = shaders === "blocks" ? { ...built, blocks: compileBlocks(await fetched("/built/blockkernel_shared.wasm"), await fetched("/built/blockkernel_relaxed_shared.wasm")) } : built;
     const after = footprint(c.reference.header, size, { dtype: c.dtype, halfKV: true, shared: true, gpu: true, head_dim: c.headDim, arch: c.arch });
-    const { memory, base: low } = weightsMemory(size + high, { shared: true, wide: Boolean(c.wide), after });
+    const { memory, base: low } = weightsMemory(stored + high, { shared: true, wide: Boolean(c.wide), after });
     const base = low + high;
-    new Uint8Array(memory.buffer, base, size).set(checkpoint);
+    if (hole) {
+      await streamed(c.checkpoint, (at, chunk) => {
+        for (let i = 0; i < chunk.length;) {
+          const p = at + i, inTable = p >= hole[0] && p < hole[1], k = Math.min(chunk.length - i, (p < hole[0] ? hole[0] : inTable ? hole[1] : size) - p);
+          if (inTable) table.set(chunk.subarray(i, i + k), p - hole[0]);
+          else new Uint8Array(memory.buffer, base + (p < hole[0] ? p : p - table.length), k).set(chunk.subarray(i, i + k));
+          i += k;
+        }
+      });
+    } else {
+      new Uint8Array(memory.buffer, base, size).set(checkpoint);
+    }
+    // (the table's rows by their offsets in the checkpoint, which the plan leaves them: forward.ts's external())
+    const rows = hole ? (offset, bytes, to) => new Uint8Array(memory.buffer, to, bytes).set(table.subarray(offset - hole[0], offset - hole[0] + bytes)) : undefined;
+    const forwardOf = (more) => createForward({ memory, base, size: stored, kernels, plan, rows, ...more });
     // T148: SwiftShader and lavapipe are fallback adapters, which the page refuses: the tests take them (fallback),
     // and give the GPU every block it can take (always: a fallback adapter is far slower than the CPU). T155: the
     // case's own (the pieces of its matrices)
@@ -439,7 +474,7 @@ try {
     const brokenWeight = async (form, [name, address, half], value, force) => {
       const cell = half ? new Uint16Array(memory.buffer, address, 1) : new Float32Array(memory.buffer, address, 1), kept = cell[0];
       cell[0] = half ? halfBits(value) : value;
-      const engine = createForward({ memory, base, size, kernels, plan, gpu: openGpu, gpuForce: { ...TESTS, ...force, tokens: form } });
+      const engine = forwardOf({ gpu: openGpu, gpuForce: { ...TESTS, ...force, tokens: form } });
       const note = await engine.gpu;
       cell[0] = kept;
       engine.gpuSide = "cpu";
@@ -454,7 +489,7 @@ try {
     };
     const run = async (gpu, gpuForce, gpuRemembered, steps = false) => {
       const started = performance.now(), seen = {};
-      const engine = createForward({ memory, base, size, kernels, plan, gpu: gpu && watched(gpu, seen), gpuForce: { ...TESTS, ...gpuForce }, gpuRemembered });
+      const engine = forwardOf({ gpu: gpu && watched(gpu, seen), gpuForce: { ...TESTS, ...gpuForce }, gpuRemembered });
       const note = gpu ? await engine.gpu : undefined;
       const readySeconds = (performance.now() - started) / 1000;
       const ready = engine.gpuReady;
@@ -510,7 +545,7 @@ try {
         return { postMessage: (data) => data.type !== "stop" && inner.postMessage(data), set onmessage(f) { inner.onmessage = f; },
           set onerror(f) { inner.onerror = f; } };
       };
-      const engine = createForward({ memory, base, size, kernels, plan, gpu: stopLost, gpuForce: TESTS, stalledMs: 1 });
+      const engine = forwardOf({ gpu: stopLost, gpuForce: TESTS, stalledMs: 1 });
       const note = await engine.gpu;
       const words = new Int32Array(memory.buffer, 0, GPU_WANTED + 1);
       engine.forwardMany(tokens.slice(0, -1), 0);
@@ -606,10 +641,10 @@ try {
     // remembered, what the page kept before T296, and a token's attention too)
     let refused, remembered;
     if (c.id === "synthetic") {
-      const began = performance.now(), engine = createForward({ memory, base, size, kernels, plan, gpu: openGpu });
+      const began = performance.now(), engine = forwardOf({ gpu: openGpu });
       refused = { note: await engine.gpu, seconds: (performance.now() - began) / 1000, ended: await engine.release() };
       // T205: a model let go while its GPU is still getting ready (gpu.js's start() stops at its next step and says so)
-      const starting = createForward({ memory, base, size, kernels, plan, gpu: openGpu, gpuForce: TESTS });
+      const starting = forwardOf({ gpu: openGpu, gpuForce: TESTS });
       const stopped = performance.now();
       refused.whileStarting = { ended: await starting.release(), seconds: (performance.now() - stopped) / 1000 };
     }
@@ -617,7 +652,7 @@ try {
       // (the GPU got ready and let go, no run on it: what the GPU chose is all these are read for, and a real model's
       // whole run takes some 135 s on lavapipe, which three of them a model took past the tool's 90 minutes)
       const readied = async (gpuRemembered) => {
-        const engine = createForward({ memory, base, size, kernels, plan, gpu: openGpu, gpuForce: TESTS, gpuRemembered });
+        const engine = forwardOf({ gpu: openGpu, gpuForce: TESTS, gpuRemembered });
         await engine.gpu;
         const ready = engine.gpuReady;
         await engine.release();

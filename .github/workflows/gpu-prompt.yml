@@ -62,6 +62,9 @@ on:
       engines:
         description: "T564: dawn runs the Dawn job alone (no Chromium-family browsers): for real= models, whose SwiftShader job runs into its 90 minutes (empty: both)"
         required: false
+      text:
+        description: "T334.5: the prompt's text of the real= models, english or japanese (gpu-check --text; empty: english)"
+        required: false
       nan:
         description: "T241's review: where the rounds with a NaN or an infinity run, all, made-up, small or none (gpu-check --nan; empty: Dawn made-up, Chromium small, Chrome and Edge none)"
         required: false
@@ -135,6 +138,7 @@ jobs:
           REAL: ${{ inputs.real }}
           FORMS: ${{ inputs.forms }}
           NAN: ${{ inputs.nan }}
+          TEXT: ${{ inputs.text }}
           PART: ${{ matrix.part }}
         run: |
           echo "## ${{ matrix.os }} ${{ matrix.engine }} ${{ matrix.part }}" >> "$GITHUB_STEP_SUMMARY"
@@ -144,7 +148,7 @@ jobs:
           [ "$SUITE" = full ] && suite=made-up || suite=synthetic
           # (T645 (b): the part only splits the suite's made-up models: models named by models= or real= run in both parts)
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-$suite}${PART:+, part $PART}"
-          node tests/gpu-check.ts ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} ${PART:+--part "$PART"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/gpu-check.ts ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} ${TEXT:+--text "$TEXT"} ${PART:+--part "$PART"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
   dawn:
@@ -197,6 +201,7 @@ jobs:
           REAL: ${{ inputs.real }}
           FORMS: ${{ inputs.forms }}
           NAN: ${{ inputs.nan }}
+          TEXT: ${{ inputs.text }}
         run: |
           export VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)
           echo "## ubuntu-latest dawn ($VK_ICD_FILENAMES)" >> "$GITHUB_STEP_SUMMARY"
@@ -206,7 +211,7 @@ jobs:
           # gpu-check's default)
           [ "$SUITE" = full ] && suite="" || suite=made-up
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-${suite:-made-up and the site models}}"
-          node tests/gpu-check.ts ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/gpu-check.ts ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} ${TEXT:+--text "$TEXT"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
       # T225's review: /benchmark/'s layer and token checks on devices that round a float32 to a float16 the other ways WGSL
