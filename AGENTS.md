@@ -138,7 +138,7 @@
 | `tests/e2e.ts` | 実ブラウザ。環境変数 `E2E_TIMEOUT`・`E2E_RESULTS`・`E2E_ARTIFACTS`・`E2E_TWICE`（2 回目の訪問、ディスクの profile）・`E2E_THEN`・`E2E_OFFLINE`・`E2E_QUOTA`・`E2E_CONSOLE`・`E2E_SILENCE`（答えなくなったページを落とす秒、既定 120）。モデル ID に `local`・`hf`・`hf:<owner>/<repo>@<revision>`・`default`。一覧に無い id はブラウザの前に落とす |
 | 試験の組に無い実ブラウザの道具 | `gemma4-in-browser.ts`・`blocks-in-browser.ts`・`coi-off-in-browser.ts`・`switch-in-browser.ts`・`markdown-in-browser.ts`: **触ったら手で、`npm run build` の後**（何に触ったら回すかは細部の表） |
 | CI だけの実ブラウザの道具 | `saluki_in_browser.sh`・`repository_in_browser.sh`・`gemma4_in_browser.sh`（デプロイされていないブランチの確かめ） |
-| `tests/gpu-check.ts` と `gpu-check/` | GPU の正しさ（CI だけ）。`--engine dawn`・`--forms`・`--nan`・`real=<一覧の ID>`・`--part k/n`、丸めを替えた装置は `GPU_ROUNDING=`。期限は `--minutes`（既定 90） |
+| `tests/gpu-check.ts` と `gpu-check/` | GPU の正しさ（CI だけ）。`--engine dawn`・`--forms`・`--nan`・`real=<一覧の ID>`・`--text japanese`（実物の文）・`--part k/n`、丸めを替えた装置は `GPU_ROUNDING=`。期限は `--minutes`（既定 90） |
 | 速さの道具 | `compare-engines.ts`・`compare-builds.sh`・`threads-compare.ts`・`abba-convert.sh`（前後を同じプロセスで交互に）/ `profile.ts`・`overhead.ts`・`profile-convert.ts` / `*-bench.ts` / `ternary-browser-bench.ts`（relaxed 無しの 3 値・1 ビットのカーネルを各ブラウザのエンジンで 1 本、`--before <コミット>` のカーネルと交互に。**唯一 WebKit の速さを測れる**。案は `ternary-plain-forms.ts`、組には入らない。`--relaxed` で relaxed の `matmul_t2r` を案 `ternary-relaxed-forms.ts` と: T288） |
 | モデルの質の道具 | `perplexity.ts`・`start_check.py`/`.ts`・`chat_nll.py`・`answer_check.ts`（自身の答えを両方の向きで）・`starts.sh`（頭のトークンの 3 つの物差しをモデルごとに CI で）・`degenerate.ts`・`answers.ts`（12 の問い）・`write.sh`（人が読む）・`rope_compare.sh` |
 | 変換と書式の道具 | `format_check.py`・`template_corpus.py`・`conversions_compare.py`（**変換器を変えたら**一覧の全項目の前後）・`fixed_outputs.py`・`gguf_check.py`・`tokenizer_json_check.py`・`plamo_tokenizer_check.py` |
@@ -444,7 +444,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **状態を持つ層も GPU に**（Qwen3.5・LFM2）: **linear の層の状態は「層の束」のバッファに置く**（端末が束縛できる大きさ `m.limit` まで）。 道は `docs/notes/adding/layer-kind.md` の 5。**1 つの層の状態だけで端末の束縛の上限を越えるモデルは置かない**。
 - **Gemma 4 はプロンプトのブロックだけ GPU に**（T334.1）: ブロックは自分の鍵と値を持つ最後の層で止める（`lastKept()`・計画の `blockLayers`）。層ごとの head と束の中の位置は計画の `shapes` と `Matrix.at`、staging は層ごとの幅で一番広い幅の間隔、層ごとの埋め込みは CPU が表の行だけを渡して GPU が射影と norm（`PER_LAYER_INPUTS`: CPU の int8 の射影を渡すと活性値の 8 ビットの丸めで浮動小数の形が E16 の線を越えた）。答えのステップは CPU（`REASONS.ownSteps`）。全文は webgpu.md。
 - **Gemma 3 の GPU の K と V は全位置を持つ**（CPU の窓の輪は CPU だけ）。 gate の `GEGLU`、後ろの norm は `RMSNORM_ADD`、窓は `Params.window`、局所の層は 2 つ目の角の表。読み込みの検査は窓の層のあるモデルでは短い窓でも比べる（窓 ±1 は見えにくい）。**gpu-check は窓の層の鍵と値を、CPU の輪がまだ持つ位置だけで比べる**。
-- **Gemma 4 の GPU の確かめ**: 実物の E2B は gpu-check の NumPy がランナーに入らないので、形の同じ作り物 `synthetic-gemma4-e2b`（Dawn の組、1 つで約 2 分）が head 512 の flash・35 層の番地・`PER_LAYER_INPUTS` の 256・CPU の輪の狭い層の staging を踏む。**本番の greedy の GPU と CPU の比べは、どこで割れるかが問いで違う**（T334.4 とそのレビューの run 44588222223: 本番の E2B、`temperature=0`、割れた位置の概算のトークン。CPU の活性値は relaxed で 7 ビット、`without=relaxed` で 8 ビット）:
+- **Gemma 4 の GPU の確かめ**: 形の同じ作り物 `synthetic-gemma4-e2b`（Dawn の組、1 つで約 2 分）が head 512 の flash・35 層の番地・`PER_LAYER_INPUTS` の 256・CPU の輪の狭い層の staging を踏む。**実物の E2B も gpu-check に入る**（T334.5: `node tests/ci.ts run gpu-prompt.yml real=hf-gemma-4-e2b engines=dawn [text=japanese]`、全部の形で約 23 分）。16 GB のランナーに入れる形: 参照の NumPy はチェックポイントを mmap し、層ごとの埋め込みの表（int8 で 2.6 GB）を写さずに読み、H16 の行列をその場で丸める。サーバはチェックポイントを流し（`readFileSync()` は 2 GiB まで）、`caseOf()` はファイルから読み、ハーネスは表をページと同じくメモリの外に置く（`tableHole()`: 表を持つモデルはどれも。作り物の答えは前とビット単位で同じ）。**誤りは見つからなかった**（runs 44600952619・44603874358・44603879653、149 トークン）: 日本語の文では全部の形が線の内（浮動小数 0.21〜0.59、DP4A 0.60〜0.73）、英語の文では浮動小数の f16 の tiles が 0.52〜0.58、TF.js の tiles が f32 の attention で 0.77、f16 の attention で層 13 が 1.07（4 × E16 の線は f16 の attention の丸めを数えない）、**DP4A が層 10 で 1.56**（その層の Q8 の 7.8 倍。ただし Q8 自身がその層だけ NumPy に近く（8.5e-2、層 8 は 0.22）、7 ビットの CPU も 0.44 で 5.2 倍: 8 ビットの丸めの境が深い層で割れる形で、浮動小数の形は同じ層で線の内）。最後のトークンの logits の KL は GPU のどの形も 9.1e-11〜1.0e-8（CPU 4.4e-10・4.7e-8）、最尤は NumPy と同じ。英語の DP4A の 1.56 は落ちたままで、線を変えていない（全部の組には入らない: 手で回すときは読み方をここで）。**本番の greedy の GPU と CPU の比べは、どこで割れるかが問いで違う**（T334.4 とそのレビューの run 44588222223: 本番の E2B、`temperature=0`、割れた位置の概算のトークン。CPU の活性値は relaxed で 7 ビット、`without=relaxed` で 8 ビット）:
 
   | 問い | CPU 7 ビット 対 8 ビット | GPU 対 CPU 7 ビット | GPU 対 CPU 8 ビット |
   |---|---|---|---|
@@ -452,7 +452,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
   | 日本の四季を三つの文で説明してください。 | 41 | 12 | 12 |
   | 英語の問い | 28 | 50 | 25 |
 
-  どの答えも読める文。CPU どうしも割れるので、先頭 40 トークンの一致は線にならない。日本の四季だけ GPU が CPU どうしより早く割れる。GPU の鍵と値は float16 で E2B の CPU は float32 なので、差の元は活性値の丸めだけではない。割れた所を誤りと読む前に `without=relaxed` の CPU を並べ、決めは logits で（T334.5）。
+  どの答えも読める文。CPU どうしも割れるので、先頭 40 トークンの一致は線にならない。日本の四季だけ GPU が CPU どうしより早く割れる。GPU の鍵と値は float16 で E2B の CPU は float32 なので、差の元は活性値の丸めだけではない。割れた所を誤りと読む前に `without=relaxed` の CPU を並べ、決めは logits で（T334.5 が上の gpu-check で見た: プロンプトのブロックに誤りは無い）。
 
 ### `/benchmark/`
 
