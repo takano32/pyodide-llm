@@ -173,6 +173,25 @@ const KINDS = { attention: plain, echo };
     }
   }
   assert.equal(layerWeightsOf(header, { head_dim: 128 }), layers * (2 * 4096 * dim + 2 * 1024 * dim + 3 * hidden * dim), "(by the head's size where the form says one)");
+  // T334.4: a Gemma 4's layers each of its own sizes, the E2B's (google/gemma-4-E2B-it's config.json): heads of 256 and
+  // every fifth layer's of 512, the last 20 reading the keys and values of a layer before them (no k nor v of their own)
+  // and of an FFN twice as wide, an input of every layer of 256 (the projection of the embedded rows, a layer's gate and
+  // its projection back)
+  {
+    const e2b = [1536, 6144, 35, 8, 1, 262144, 4096], [dim, hidden, layers, heads, , vocab, seqLen] = e2b, perLayer = 256;
+    const wide = [4, 9, 14, 19, 24, 29, 34], shared = Array.from({ length: 20 }, (_, i) => 15 + i);
+    const form = { arch: "gemma4", head_dim: 256, wide: { layers: wide, head_dim: 512 }, kv_shared: { layers: shared, from: shared.map((l) => (wide.includes(l) ? 14 : 13)) },
+      double: shared, per_layer: perLayer };
+    let weights = layers * perLayer * dim, keys = 0;
+    for (let l = 0; l < layers; l++) {
+      const head = wide.includes(l) ? 512 : 256, own = !shared.includes(l);
+      weights += 2 * heads * head * dim + (own ? 2 * head * dim : 0) + 3 * (own ? 1 : 2) * hidden * dim + 2 * perLayer * dim;
+      keys += own ? head : 0;
+    }
+    assert.equal(layerWeightsOf(e2b, form), weights, "a Gemma 4's layers' weights, each layer's of its own sizes");
+    const bytes = (weights + vocab * dim) * gpuWeightBytes("int8") + layers * 2 * dim * 4 + 2 * keys * seqLen * 2 + seqLen * 512 * 4 + 3 * vocab * 4;
+    assert.ok(Math.abs(gpuBytes(e2b, { ...form, dtype: "int8" }) - bytes) < 1, `a Gemma 4 on the GPU: ${gpuBytes(e2b, { ...form, dtype: "int8" })} against ${bytes}`);
+  }
   const adapter = { fallback: false, packed: true, limits: { maxStorageBufferBindingSize: 2 ** 31, maxBufferSize: 2 ** 32 } };
   // by the architecture's facts: RMSNorms, a gated FFN, no table of positions (T271.4: a gate of the attention's output
   // is the GPU's alone too now, a Qwen3.5's; a Spark-X2.5's goes with its exact GELU). T382: each fact by a reason of its

@@ -12,6 +12,7 @@ import { ATTENTION, kindsHad, sizesOfForm } from "./sizes.ts";
 import { REASONS } from "./reasons.ts";
 import type { Header } from "./memory.ts";
 import type { Formed, Sizes } from "./sizes.ts";
+import type { CacheForm } from "./attention.ts";
 import type { Dtype, Rotated } from "../contracts/form.ts";
 import type { Force, GpuPacking, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
 import type { Alone, CpuSpeed, Usage } from "../contracts/messages.ts";
@@ -19,7 +20,9 @@ import type { LayerKind, Tensor, TensorName, Tensors } from "../contracts/plan.t
 
 // (T368.4, the types) what of a form says whether a model can go on the GPU, and how many bytes it takes there
 // (T375.5: the architecture's name, the size of a head, and the numbers of the layers that keep a state: sizes.ts's Formed)
-export type GpuForm = Formed & { bias?: boolean; qk_norm?: boolean };
+// (T334.4: and what sizes each layer of its own, attention.ts's CacheForm, and the width of every layer's input of a table of its own)
+type LayersForm = Formed & CacheForm & { per_layer?: number };
+export type GpuForm = LayersForm & { bias?: boolean; qk_norm?: boolean };
 // the adapter as the worker keeps it (worker/runtime.ts). keys: the device's key of a model by the shaders of its own
 // (shaders/key.ts's deviceKey(): plain, T232 ternary weights', T547.3.7 llama.cpp's blocks'), none where it was not made
 export type Adapter = { fallback: boolean; limits: { maxStorageBufferBindingSize: number; maxBufferSize: number }; packed: boolean;
@@ -74,17 +77,35 @@ const aloneKinds = (sizes: Sizes) => kindsHad(sizes, LAYER_KINDS).flatMap(({ kin
  * one, z, and its output) and every layer's FFN (three where it is gated, else GPT-2's two); how many layers keep keys
  * and values (the cache's kinds: those that attend); the bytes the kinds' layers keep and read besides on the GPU (a
  * Qwen3.5's linear-attention layers' states and rows, the gates' small matrices of float32 and their vectors); and
- * (T547.3.7) each matrix's weights a layer and its layers, for a form whose rows have kinds of their own */
-const layersOf = (header: Header, form: Formed) => {
+ * (T547.3.7) each matrix's weights in each of the layers it is of, for a form whose rows have kinds of their own.
+ * T334.4: every layer's of its own sizes, a Gemma 4's (its wide heads, no k and v where it reads another's keys and
+ * values, an FFN twice as wide in the layers of the form's double), and the matrices of its inputs of every layer (the
+ * projection of the embedded rows, the model's one, and every layer's gate and projection back: gpufit.ts's sized);
+ * and the widths of every attending layer's keys and values (the cache's kinds' cached(), as footprint() counts them:
+ * 0 where a layer reads another's) */
+const layersOf = (header: Header, form: LayersForm) => {
   const [dim, hidden, layers] = header, sizes = sizesOfForm(header, form, LAYER_KINDS), kinds = aloneKinds(sizes);
-  const roles: Record<string, [number, number]> = Object.fromEntries(kinds.flatMap(({ alone, count }) =>
-    Object.entries(alone.matrices(sizes)).map(([name, weights]): [string, [number, number]] => [name, [weights!, count]])));
-  roles.w1 = [hidden * dim, layers];
-  roles.w2 = [hidden * dim, layers];
-  if (architectureOf(form.arch ?? "llama").gatedFfn) roles.w3 = [hidden * dim, layers];
-  const attending = kindsHad(sizes, LAYER_KINDS).filter(({ kind }) => LAYER_KINDS[kind as LayerKind].cached).reduce((sum, { count }) => sum + count, 0);
+  const roles: Record<string, number[]> = {};
+  const add = (name: string, weights: number) => (roles[name] ??= []).push(weights);
+  // (a kind the GPU alone may not hold has no matrices here, as before: aloneKinds())
+  sizes.kinds.forEach((kind, l) => {
+    for (const [name, weights] of Object.entries(LAYER_KINDS[kind as LayerKind].gpu?.alone?.matrices(sizes, form, l) ?? {})) add(name, weights!);
+  });
+  const gated = architectureOf(form.arch ?? "llama").gatedFfn;
+  for (let l = 0; l < layers; l++) {
+    const inside = (form.double?.includes(l) ? 2 : 1) * hidden * dim;
+    for (const name of gated ? ["w1", "w2", "w3"] : ["w1", "w2"]) add(name, inside);
+  }
+  const perLayer = form.per_layer || 0;
+  if (perLayer) add("per_layer_projection", layers * perLayer * dim);
+  for (let l = 0; perLayer && l < layers; l++) {
+    add("ple_gate", perLayer * dim);
+    add("ple_proj", dim * perLayer);
+  }
+  const keptWidths = kindsHad(sizes, LAYER_KINDS).flatMap(({ kind }) =>
+    LAYER_KINDS[kind as LayerKind].cached?.(sizes, form, sizes.kinds.flatMap((had, l) => (had === kind ? [l] : []))).widths ?? []);
   const held = kinds.reduce((sum, { alone, count }) => sum + count * (alone.held?.(sizes) ?? 0), 0);
-  return { weights: Object.values(roles).reduce((sum, [weights, count]) => sum + weights * count, 0), attending, held, roles };
+  return { weights: Object.values(roles).flat().reduce((sum, weights) => sum + weights, 0), keptWidths, held, roles };
 };
 /** T156: the bytes the GPU holds of a model with this header and form (FORM): its layers' matrices (as the GPU holds
  * their packing: gpuWeightBytes()), its two norms a layer, its own keys
@@ -94,18 +115,18 @@ const layersOf = (header: Header, form: Formed) => {
 // (T271.4: the keys and values of the attending layers alone, and a Qwen3.5's linear-attention layers' own: layersOf())
 // (T547.3.7: of a form whose rows have kinds of their own, each row's and layer's as its kind: Saluki's types of blocks)
 export function gpuBytes(header: Header, { dtype = "int8", ...form }: GpuForm & { dtype?: Dtype; kinds?: Record<string, unknown> | null } = {}) {
-  const [dim, , layers, heads, kvHeads, signedVocab, seqLen] = header;
-  const vocab = Math.abs(signedVocab), headSize = form.head_dim || dim / heads, kvDim = kvHeads * headSize;
-  const each = gpuWeightBytes(dtype), { weights, attending, held, roles } = layersOf(header, form), kinds = form.kinds ?? {};
-  const ofKind = (name: string, layerWeights: number, count: number) => {
+  const [dim, , layers, heads, , signedVocab, seqLen] = header;
+  const vocab = Math.abs(signedVocab), { keptWidths, held, roles } = layersOf(header, form), kinds = form.kinds ?? {};
+  // (each layer's as the form's kind of the row, or of that layer where it gives a list, else as the file's dtype)
+  const ofKind = (name: string, weights: number[]) => {
     const kind = kinds[name];
-    return Array.isArray(kind) ? (kind as string[]).reduce((sum, one) => sum + layerWeights * gpuWeightBytes(one), 0)
-      : count * layerWeights * gpuWeightBytes(typeof kind === "string" ? kind : dtype);
+    return weights.reduce((sum, one, i) => sum + one * gpuWeightBytes(Array.isArray(kind) ? (kind as string[])[i] : typeof kind === "string" ? kind : dtype), 0);
   };
-  const matrices = form.kinds ? Object.entries(roles).reduce((sum, [name, [layerWeights, count]]) => sum + ofKind(name, layerWeights, count), 0) : weights * each;
-  const layerBytes = matrices + layers * 2 * dim * 4 + 2 * attending * seqLen * kvDim * 2 + held;
-  const tables = ofKind("token_embedding_table", vocab * dim, 1) + (signedVocab > 0 ? 0 : ofKind("wcls", vocab * dim, 1));
-  return layerBytes + tables + seqLen * headSize * 4 + 3 * vocab * 4;
+  const matrices = Object.entries(roles).reduce((sum, [name, weights]) => sum + ofKind(name, weights), 0);
+  const layerBytes = matrices + layers * 2 * dim * 4 + 2 * keptWidths.reduce((sum, width) => sum + width, 0) * seqLen * 2 + held;
+  const tables = ofKind("token_embedding_table", [vocab * dim]) + (signedVocab > 0 ? 0 : ofKind("wcls", [vocab * dim]));
+  // (RoPE's table of the widest heads: T331, a Gemma 4's are its wide ones')
+  return layerBytes + tables + seqLen * Math.max(form.head_dim || dim / heads, form.wide?.head_dim ?? 0) * 4 + 3 * vocab * 4;
 }
 
 // the layers' matrices of a Llama, which the GPU alone holds (T156); T271.4: and a Qwen3.5's (its linear-attention
@@ -160,7 +181,7 @@ export function weightsPlace({ cpu, gpuOnly, gpu, deviceMemory = 4, eligible = f
 }
 
 /** T156: the multiply-adds of a model's layers a token of a prompt makes (every weight of its matrices once) */
-export const layerWeightsOf = (header: Header, form: Formed = {}) => layersOf(header, form).weights;
+export const layerWeightsOf = (header: Header, form: LayersForm = {}) => layersOf(header, form).weights;
 // T156 (the owner, 2026-09-27: the prompt counts too): the tokens of a prompt against the tokens written, where the
 // page has not kept how they are used here yet: as many (a chat's question with its template and an answer of about
 // the same length; no measurement of the site's visitors says otherwise)
@@ -305,7 +326,9 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   const widest = own.length ? Math.max(...own.map((kind) => packingOf(kind)!.rowBytes(BLOCK) / BLOCK)) : 0;
   const rowBytes = (weights: number) => (own.length ? Math.ceil(weights * widest) : heldOnGpu.rowBytes(weights));
   const kinds = aloneKinds(sizes);
-  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden), ...kinds.flatMap(({ alone }) => Object.values(alone.matrices(sizes)) as number[])]
+  // (T334.4: each layer's of its own sizes)
+  const layerMatrices = sizes.kinds.flatMap((kind, l) => Object.values(LAYER_KINDS[kind as LayerKind].gpu?.alone?.matrices(sizes, form, l) ?? {}) as number[]);
+  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden), ...layerMatrices]
     .some((weights) => rowBytes(weights) > binds)) return REASONS.alonePast;
   // (T573: nor a linear-attention layer whose state alone is past a buffer: the GPU binds a place's state whole)
   if (kinds.some(({ alone }) => (alone.state?.(sizes) ?? 0) > binds)) return REASONS.aloneState;

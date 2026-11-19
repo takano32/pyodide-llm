@@ -97,10 +97,11 @@ export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void; 
 //   plan()    its numbers in the GPU's plan (Started's: KindNumbers, under the kind's own name)
 //   alone     the GPU alone holds its state too, and a model of its layers may be on the GPU alone (T271.4). T641.3:
 //             what alone.ts counts and checks of such a layer before a model is loaded (gpuBytes(), gpuOnlyUnfit()):
-//     matrices()  the weights of each of its matrices a layer (the FFN's are every model's, alone.ts's)
+//     matrices()  the weights of each of its matrices in layer l (the FFN's are every model's, alone.ts's; T334.4: of
+//                 that layer's sizes, as the form says them)
 //     held()      the bytes it keeps on the GPU besides, a layer (its state, its rows, its vectors; none: 0)
 //     state()     the bytes of its state, which the GPU binds whole, a layer (none: 0)
-export type AloneLayers = { matrices(sizes: Sizes): Partial<Record<TensorName, number>>; held?(sizes: Sizes): number; state?(sizes: Sizes): number };
+export type AloneLayers = { matrices(sizes: Sizes, form: CacheForm, l: number): Partial<Record<TensorName, number>>; held?(sizes: Sizes): number; state?(sizes: Sizes): number };
 export type OnGpu = {
   names: string[]; matrices?: TensorName[]; vectors?(sizes: Sizes): Record<string, [TensorName, number]>; unfit?(sizes: Sizes): string | null;
   plan?(sizes: Sizes): Partial<KindNumbers>; alone?: AloneLayers;
