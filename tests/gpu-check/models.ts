@@ -74,6 +74,16 @@ const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models
 // T334.1: a Gemma 4's form (heads of 32, the wide ones' 64, one of keys and values: rows of whole groups of 32; dim 64, hidden 128)
 const GEMMA4 = { arch: "gemma4", head_dim: 32, wide: { layers: [2, 5], head_dim: 64 }, kv_shared: { layers: [4, 5], from: [3, 2] }, double: [4, 5], per_layer: 32 };
 const GEMMA4_LOCAL = { layers: [0, 1, 3], window: 64, rope_theta: 100 };
+// T334.4 (T334.1's review): the E2B's form (google/gemma-4-E2B-it's config.json) with dim and hidden small: 35 layers,
+// every fifth from the fifth (4, 9 ... 34) attending every position with heads of 512, a quarter of them turned, the
+// others local in a window of 512 with heads of 256, one head of keys and values; the last 20 reading the keys and
+// values of the last layer of their kind before them (13 or 14) and of an FFN twice as wide; an input of every layer of
+// 256; a context of 4096. 4 heads where the E2B has 8: NumPy's answer (gpu-check makes four) of 560 tokens took 27 s
+// natively with 4, of 600 tokens with 8 59 s (.tmp's run, a1-free), and Pyodide's is slower
+const E2B_WIDE = [4, 9, 14, 19, 24, 29, 34], E2B_SHARED = Array.from({ length: 20 }, (_, i) => 15 + i);
+const GEMMA4_E2B = { arch: "gemma4", head_dim: 256, wide: { layers: E2B_WIDE, head_dim: 512 },
+  kv_shared: { layers: E2B_SHARED, from: E2B_SHARED.map((l) => (E2B_WIDE.includes(l) ? 14 : 13)) }, double: E2B_SHARED, per_layer: 256 };
+const E2B_LOCAL = { layers: Array.from({ length: 35 }, (_, l) => l).filter((l) => !E2B_WIDE.includes(l)), window: 512, rope_theta: 100 };
 const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, dtype: "ternary" };
 const TERNARY_OPTIONS = { dtype: "ternary", qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 };
 // T634.3: the 1-bit Bonsai's form, a Qwen3 of binary weights (one bit a weight, every group of 128 the signs of its
@@ -197,6 +207,14 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
     { arch: "gemma4", head_dim: 32, wide: { layers: [2], head_dim: 64 }, local: GEMMA4_LOCAL, rotary: 8 }],
   "synthetic-gemma4-inputs": [{ layers: 4, kv_heads: 1, seq_len: 160, arch: "gemma4", head_dim: 32, per_layer: 32 },
     { arch: "gemma4", head_dim: 32, per_layer: 32, local: GEMMA4_LOCAL }],
+  // (T334.4, T334.1's review: the E2B's own form, GEMMA4_E2B above, as the real one cannot be checked here: its NumPy
+  // does not fit the runner, run 44539214117. What none of the small ones reaches: the flash tiles of heads of 512, the
+  // places of 35 layers (a block runs the first 15, the last that keep keys and values of their own), PER_LAYER_INPUTS of
+  // 256, and the CPU's ring (twice 512 + 16 is less than the context: T510.1), whose staging of the local layers is
+  // narrower than a position of the widest heads. A prompt of 560 tokens (count), past the ring's period of 528: the
+  // windows cut, the ring wraps, and a token's steps after the prompt take the local layers' keys and values from it)
+  "synthetic-gemma4-e2b": [{ dim: 64, hidden: 128, layers: 35, heads: 4, kv_heads: 1, seq_len: 4096, ...GEMMA4_E2B },
+    { ...GEMMA4_E2B, local: E2B_LOCAL, rotary: 128 }, { count: 560 }],
   // T649.2: a PLaMo 3 (a Gemma 3's layers, but a SiLU in the gate and yarn in the tables of the layer that attends every
   // position: its cos and sin 1 + 0.1 ln 4 times a unit turn): the SWIGLU of a Llama with a Gemma 3's norms behind and
   // windows, which no other model has together
@@ -349,7 +367,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
   "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-qwen35-rotated-1024", "synthetic-gemma3-ring", "synthetic-plamo3", "synthetic-q4k-wide",
-  "synthetic-lfm2-q4k", "synthetic-q4k-layers", "synthetic-gemma4-plain", "synthetic-gemma4-wide", "synthetic-gemma4-inputs",
+  "synthetic-lfm2-q4k", "synthetic-q4k-layers", "synthetic-gemma4-plain", "synthetic-gemma4-wide", "synthetic-gemma4-inputs", "synthetic-gemma4-e2b",
   "synthetic-lfm2-q4k-layers", "synthetic-q4k-qk-apart", "synthetic-q4k-up-apart",
   "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers",
   // (T547.3.6: the tables of blocks' shaders are synthetic-q4k-tied's and synthetic-saluki-tables'; on SwiftShader the
