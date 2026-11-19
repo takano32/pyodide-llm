@@ -71,6 +71,8 @@ const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models
   none: { models: [], weights: false } };
 // T153: the made-up models of another form (see above). Three layers: a layer's vectors are read at l × their size,
 // which a second layer alone would not tell from 0 + size
+// T334.1: a Gemma 4's form (heads of 32, the wide ones' 64, one of keys and values: rows of whole groups of 32; dim 64, hidden 128)
+const GEMMA4 = { arch: "gemma4", head_dim: 32, wide: { layers: [2, 5], head_dim: 64 }, kv_shared: { layers: [4, 5], from: [3, 2] }, double: [4, 5], per_layer: 32 };
 const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, dtype: "ternary" };
 const TERNARY_OPTIONS = { dtype: "ternary", qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 };
 // T634.3: the 1-bit Bonsai's form, a Qwen3 of binary weights (one bit a weight, every group of 128 the signs of its
@@ -176,6 +178,16 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // their keys and values up from the ring's last period (keysIn())
   "synthetic-gemma3-ring": [{ layers: 4, kv_heads: 1, arch: "gemma3", head_dim: 32, seq_len: 160 },
     { arch: "gemma3", head_dim: 32, local: { layers: [0, 1, 2], window: 24, rope_theta: 100 } }],
+  // T334.1: a Gemma 4 (its layers of wide heads, of a table of RoPE of their own and of a part of a head turned, among
+  // narrow local ones; its last two layers reading the keys and values of the two before, and of a wider FFN; an input of
+  // every layer of a table of its own; the heads of v normed; a number every layer ends by multiplying the stream by):
+  // six layers, narrow and local (window 64, base 100) but the third and the last, which attend every position with heads
+  // twice as wide, a quarter of them turned. A prompt's block runs the first four (the last two read the keys and values
+  // of the fourth and the third, and keep none): the third's keys and values are a wide layer's, the fourth's are those
+  // after a wide layer's and a layer's input and number; a GPU that reads a layer's stack at the wrong place, turns the
+  // wrong part of a wide head, leaves v's heads unnormed, or adds a layer's input or multiplies its number wrong is off in
+  // the keys of the next layer. Its steps are the CPU's until T334.2
+  "synthetic-gemma4": [{ layers: 6, kv_heads: 1, seq_len: 160, ...GEMMA4 }, { ...GEMMA4, local: { layers: [0, 1, 3, 4], window: 64, rope_theta: 100 }, rotary: 8 }],
   // T649.2: a PLaMo 3 (a Gemma 3's layers, but a SiLU in the gate and yarn in the tables of the layer that attends every
   // position: its cos and sin 1 + 0.1 ln 4 times a unit turn): the SWIGLU of a Llama with a Gemma 3's norms behind and
   // windows, which no other model has together

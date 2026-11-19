@@ -442,6 +442,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **3 値を GPU に**: 重みは広げずに置き、形は DP4A だけ。 シェーダが読む所で packed int8 に戻す。答えのステップは塊と同じく役の鍵の詰め方で引く。**読み込みの検査 `tiledOff()` は NaN を通していた**（比べは「線の内なら通す」の形に）。3 値の作り物は dim 128・分類器が共有でスケールの添字の誤りの多くを通した（`synthetic-ternary-untied` を足した）。packed int8 dot の無いブラウザは CPU。新しい dtype を GPU だけに置けるようにするときは保存の `mayKeep` も見る。
 - **llama.cpp の塊を GPU に**: 型は `shaders/superblocks.ts` の表 `SUPERBLOCKS` の行。 塊のまま GPU に置き、尺度のバッファを持たない。IQ 型はチェックポイントの `codebooks` の行をそのまま GPU に 1 回上げる。モデルの `own` は `"blocks"`（型を足すと塊のモデルの鍵が 1 回動く）、モデルは持つ型の文だけをコンパイルする。**型の WGSL が使う断片の定数（`K_BITS`・`IQ_*` の類）を新しく足したら、`tests/device-key-check.ts` の `Q4K_BRANCHES` にも名前を**（無いと「did not reach the hash」）。**活性値の和を float16 にしない**。**行列を束ねるのは詰め方が同じときだけ**（`tokensLayout()`）。型を足す手順は全文に。
 - **状態を持つ層も GPU に**（Qwen3.5・LFM2）: **linear の層の状態は「層の束」のバッファに置く**（端末が束縛できる大きさ `m.limit` まで）。 道は `docs/notes/adding/layer-kind.md` の 5。**1 つの層の状態だけで端末の束縛の上限を越えるモデルは置かない**。
+- **Gemma 4 はプロンプトのブロックだけ GPU に**（T334.1）: ブロックは自分の鍵と値を持つ最後の層で止める（`lastKept()`・計画の `blockLayers`）。層ごとの head と束の中の位置は計画の `shapes` と `Matrix.at`、staging は層ごとの幅で一番広い幅の間隔、層ごとの埋め込みの入力は CPU が作って渡す。答えのステップは CPU（`REASONS.ownSteps`）。全文は webgpu.md。
 - **Gemma 3 の GPU の K と V は全位置を持つ**（CPU の窓の輪は CPU だけ）。 gate の `GEGLU`、後ろの norm は `RMSNORM_ADD`、窓は `Params.window`、局所の層は 2 つ目の角の表。読み込みの検査は窓の層のあるモデルでは短い窓でも比べる（窓 ±1 は見えにくい）。**gpu-check は窓の層の鍵と値を、CPU の輪がまだ持つ位置だけで比べる**。
 
 ### `/benchmark/`

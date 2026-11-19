@@ -193,8 +193,11 @@ async function uploadLayers(m: Open) {
       // them, and none in a layer of another kind: its pieces' layers are by those places. T626: of is set only for
       // models of mixed kinds, whose plans, start()'s and forward/alone.ts's gpuOnlyPlan()'s, carry kinds and places)
       if (matrix.of && plan.kinds![l] !== matrix.of) continue;
+      // (T334.1: and of a stack of some layers whatever their kinds, at the layer's place in it, none in another layer: a
+      // Gemma 4's narrow and wide heads' and its narrower FFN's)
+      if (matrix.at && matrix.at[l] < 0) continue;
       // (T547.3.1: held, the layer's rows as its packing holds them, where each layer has a packing of its own)
-      const place = matrix.of ? plan.places![l] : l, [valuesAt, scalesAt] = matrix.layers[place], held = { n: matrix.n, packing: packingAt(matrix, place) };
+      const place = matrix.at ? matrix.at[l] : matrix.of ? plan.places![l] : l, [valuesAt, scalesAt] = matrix.layers[place], held = { n: matrix.n, packing: packingAt(matrix, place) };
       const home = together?.homes[name], row = rowBytes(held), perRow = scalesOf(held);
       for (const piece of m.weights.matrices[name]!.pieces) {
         const valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
@@ -229,9 +232,9 @@ async function uploadRest(m: Model) {
   gridsFilled(m);
   if (m.weights.together) bytes += await uploadTokens(m, m.weights.widen);
   const vectors: Partial<GpuVectors> = {};
-  for (const [name, { at, size, of }] of named<keyof Vectors, Vector>(plan.vectors)) {
-    // (T545: of the layers of a kind, where it is theirs alone)
-    const vectorBytes = (of ? plan.kinds.filter((kind) => kind === of).length : plan.layers) * size * 4;
+  for (const [name, { at, size, of, count }] of named<keyof Vectors, Vector>(plan.vectors)) {
+    // (T545: of the layers of a kind, where it is theirs alone; T334.1: of its stack's, where it says how many)
+    const vectorBytes = (count ?? (of ? plan.kinds.filter((kind) => kind === of).length : plan.layers)) * size * 4;
 
     const made = vectors[name] = buffer(m, vectorBytes, STORAGE | COPY_DST);
     copyIn(m, made, at, vectorBytes);

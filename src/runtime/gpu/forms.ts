@@ -22,7 +22,9 @@ import type { TensorName } from "../contracts/plan.ts";
 // T368.6: this module's record, m.forms: the prompt's attention chosen here (chooseAttention() makes the record with
 // it), the tiled shader chosen (chooseMatrices(): null until then, read with a ! after it), and what each tried came to.
 // A tiled shader is one of shaders/prompt.ts's forms with its pipeline, and whether it is the one the page remembered
-type Attention = { name: string; pipeline: GPUComputePipeline; shape: FlashShape };
+// (T334.1: pipelines, the same of each size of heads the layers have, a Gemma 4's two: pipeline is that of the model's
+// heads, plan.headSize's, which a token's attention takes)
+type Attention = { name: string; pipeline: GPUComputePipeline; shape: FlashShape; pipelines: Record<number, GPUComputePipeline> };
 // (T547.2.3: blockPipelines, the pipelines of the form's texts for matrices of llama.cpp's blocks, T547.3.3: of each type
 // the model has)
 type Tiled = PromptForm & { pipeline: GPUComputePipeline; blockPipelines: Partial<Record<BlockPacking, GPUComputePipeline>>; remembered?: boolean };
@@ -49,28 +51,37 @@ async function chooseAttention(m: Model) {
   // T148: the one the page remembers for this adapter first (it was the first right one then: the other was wrong)
   const options = [{ half, subgroups }, { half: false, subgroups: false }].filter((o, i) => i === 0 || o.half !== half || o.subgroups !== subgroups)
     .sort((a, b) => ((nameOf(b) === m.remembered?.attention) as unknown as number) - ((nameOf(a) === m.remembered?.attention) as unknown as number));
-  for (const option of options) {
-    const shape = flashShape({ headSize: plan.headSize, ...option, ...limits });
+  // (T334.1: an option is right where it is right for every size of heads the layers have, the model's first)
+  const sizes = [...new Set([plan.headSize, ...plan.shapes.map(({ head }) => head)])];
+  options: for (const option of options) {
     const name = nameOf(option);
     if (plan.force.attention && plan.force.attention !== name) continue;
-    if (shape.none) {
-      tried.push(`${name}: ${shape.none}`);
-      continue;
-    }
-    try {
-      const pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.flashTile(shape))), `compiling ${name}`);
-      const wrong = await within(checkAttention(m, pipeline), `checking ${name}`);
-      if (!wrong) {
-        // (T378.4: this module's record, which it alone sets: the attention, then chooseMatrices()'s form and what
-        // each one tried came to)
-        m.forms = { attention: { name, pipeline, shape }, form: null, tried: [] };
-        return;
+    const pipelines: Record<number, GPUComputePipeline> = {};
+    for (const size of sizes) {
+      const shape = flashShape({ headSize: size, ...option, ...limits });
+      const said = sizes.length > 1 ? `${name} (heads of ${size})` : name;
+      if (shape.none) {
+        tried.push(`${said}: ${shape.none}`);
+        continue options;
       }
-      tried.push(`${name}: ${wrong}`);
-    } catch (error) {
-      if (isLate(error)) throw error;
-      tried.push(`${name}: ${whyOf(error)}`);
+      try {
+        const pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.flashTile(shape))), `compiling ${said}`);
+        const wrong = await within(checkAttention(m, pipeline, size), `checking ${said}`);
+        if (wrong) {
+          tried.push(`${said}: ${wrong}`);
+          continue options;
+        }
+        pipelines[size] = pipeline;
+      } catch (error) {
+        if (isLate(error)) throw error;
+        tried.push(`${said}: ${whyOf(error)}`);
+        continue options;
+      }
     }
+    // (T378.4: this module's record, which it alone sets: the attention, then chooseMatrices()'s form and what each
+    // one tried came to)
+    m.forms = { attention: { name, pipeline: pipelines[plan.headSize], shape: flashShape({ headSize: plan.headSize, ...option, ...limits }), pipelines }, form: null, tried: [] };
+    return;
   }
   throw new Error(`no attention is right on this GPU (${tried.join("; ") || `none named ${plan.force.attention}`})`);
 }
@@ -87,8 +98,9 @@ async function chooseAttention(m: Model) {
 // positions alone: the first tile of positions begins at 49 (61 - 13 + 1, where the first token's window does), each
 // row of a tile has a window of its own (one position on from the row before), and the positions before are not read
 const LINE = 4e-3, WINDOW = 13;
-async function checkAttention(m: Model, pipeline: GPUComputePipeline) {
-  const { plan } = m, size = plan.headSize, heads = 4, kvHeads = 2, tokens = 9, pos = 61;
+// (T334.1: with heads of size, each size the layers have)
+async function checkAttention(m: Model, pipeline: GPUComputePipeline, size: number) {
+  const { plan } = m, heads = 4, kvHeads = 2, tokens = 9, pos = 61;
   const window = plan.windows?.some((w) => w > 0) ? WINDOW : 0;
   const sizes = { heads, kvHeads, size, tokens, pos, window }, qDim = heads * size;
   const data = promptAttentionData(sizes);

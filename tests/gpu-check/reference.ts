@@ -49,6 +49,12 @@ class H16(np.ndarray):
         x = np.asarray(x, dtype=np.float32).astype(np.float16).astype(np.float32)
         return np.asarray(self).view(np.ndarray) @ x
 
+# the matrices a layer multiplies by (T545: an LFM2's in and out; T271.2: a Qwen3.5's of q, k and v, of z and out, and
+# its gate of the attention's output; T334.1: a Gemma 4's of its wide heads and wider FFN, and its layers' gates and
+# projections of their inputs of a table of their own)
+MATRICES = ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg", "wq_wide", "wk_wide", "wv_wide", "wo_wide",
+            "w1_double", "w2_double", "w3_double", "ple_gate", "ple_proj")
+
 def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=False):
     """NumPy's keys and values of the prompt's first count - 1 positions ([layers][positions][kv dim] each) and the
     logits of its last token, and the tokens. half (T153): the cache rounded to float16, and nothing else (made whole
@@ -56,16 +62,21 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=Fal
     quantized to 8 bits (Q8). h16 (T562): the layers' matrices and their inputs rounded to float16 (H16)"""
     numpy = Llama(data, vocabulary, **options)
     if h16:
-        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg"):
+        for name in MATRICES:
             if getattr(numpy, name, None) is not None:
                 setattr(numpy, name, np.asarray(getattr(numpy, name), dtype=np.float32).astype(np.float16).astype(np.float32).view(H16))
     if q8:
         # (T545: an LFM2's matrices in and out too; T271.2: a Qwen3.5's of q, k and v, of z and out, and its gate of the
-        # attention's output)
-        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg"):
+        # attention's output; T334.1: a Gemma 4's of its wide heads and wider FFN, and its layers' gates and projections
+        # of their inputs)
+        for name in MATRICES:
             if getattr(numpy, name, None) is not None:
                 setattr(numpy, name, np.asarray(getattr(numpy, name)).view(Q8))
-    if half:
+    if half and isinstance(numpy.key_cache, list):
+        # (T334.1: a Gemma 4's, a layer's of its own heads' size, none of a layer that reads another's)
+        numpy.key_cache = [None if each is None else np.zeros((numpy.n_kv_heads, numpy.seq_len, each.shape[2]), dtype=np.float32).view(Half) for each in numpy.key_cache]
+        numpy.value_cache = [None if each is None else np.zeros_like(each).view(Half) for each in numpy.key_cache]
+    elif half:
         # (T545: of the attending layers alone, as the engine keeps them: an LFM2's convolution layers keep none)
         numpy.key_cache = np.zeros((len(numpy.key_cache), numpy.n_kv_heads, numpy.seq_len, numpy.head_size), dtype=np.float32).view(Half)
         numpy.value_cache = np.zeros_like(numpy.key_cache).view(Half)
@@ -78,10 +89,16 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=Fal
         numpy.forward(token, pos, need_logits=False)
     logits = numpy.forward(tokens[-1], count - 1)
     n = count - 1
-    kv = lambda cache, at=0, m=n: np.ascontiguousarray(cache[:, :, at:at + m, :].transpose(0, 2, 1, 3).reshape(len(cache), m, -1), dtype=np.float32)
+    # (T334.1: a Gemma 4's cache is a list, an array a layer of its own heads' size and None for a layer that reads
+    # another's: [layer][position][its own width] of the layers that keep theirs, one after another, as the page's
+    # engine reads its own back; widths, each one's)
+    own = [each for each in numpy.key_cache if each is not None] if isinstance(numpy.key_cache, list) else None
+    kv = lambda cache, at=0, m=n: (np.concatenate([np.ascontiguousarray(each[:, at:at + m, :].transpose(1, 0, 2), dtype=np.float32).ravel() for each in cache if each is not None])
+                                   if isinstance(cache, list) else np.ascontiguousarray(cache[:, :, at:at + m, :].transpose(0, 2, 1, 3).reshape(len(cache), m, -1), dtype=np.float32))
     b64 = lambda a: base64.b64encode(np.ascontiguousarray(a, dtype=np.float32).tobytes()).decode()
     out = {"tokens": tokens, "logits": b64(logits), "keys": b64(kv(numpy.key_cache)), "values": b64(kv(numpy.value_cache)),
-           "header": list(struct.unpack_from("<7i", data, 0)), "attending": len(numpy.key_cache)}
+           "header": list(struct.unpack_from("<7i", data, 0)), "attending": len(own) if own is not None else len(numpy.key_cache),
+           **({"widths": [each.shape[0] * each.shape[2] for each in own]} if own is not None else {})}
     if half:
         return out
     # T152: GEN greedy steps after the prompt: the ids, the logits of each step, the keys and values of their positions

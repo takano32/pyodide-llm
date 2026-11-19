@@ -52,13 +52,16 @@ const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
 const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
   eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, activation: "silu", local: false, windows: [0, 0], locals: [], extras: false, scoresCapped: false, parallel: false, unturned: [], gpuKinds: kindsOf(["attention"]), stateful: false, rotated: 0,
-  sharedClassifier: true, kinds: ["attention", "attention"], places: [0, 1], attending: 2, stateBytes: 0 };
+  sharedClassifier: true, kinds: ["attention", "attention"], places: [0, 1], attending: 2, stateBytes: 0,
+  // (T334.1: every layer's heads and places, none of a Gemma 4's facts)
+  layerShapes: [0, 1].map((l) => ({ head: 4, wide: false, stack: l, kept: l, reads: l, double: false, turned: 4 })), valueNorm: false, softcap: 0, perLayer: null, counts: {}, stackPlaces: {} };
 const matrixOf = (rows, n, at, more = {}) => ({ rows, n, kind: "int8", group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
 const WEIGHTS = { base: 8192, embedding: { kind: "int8", group: 32, offset: 100, scales: 200 },
   wq: matrixOf(8, 8, 30000), wk: matrixOf(4, 8, 32000), wv: matrixOf(4, 8, 34000), wo: matrixOf(8, 8, 36000),
   w1: matrixOf(24, 8, 38000), w2: matrixOf(8, 24, 40000), w3: matrixOf(24, 8, 42000), wcls: matrixOf(100, 8, 44000),
   attW: 50000, ffnW: 50100, attB: 0, ffnB: 0, finalW: 50200, finalB: 0, bo: 0, b1: 0, b2: 0, bq: 0, bk: 0, bv: 0, qNorm: 0, kNorm: 0,
-  cosTable: 51000, sinTable: 52000, positions: 0, channels: [], attPost: 0, ffnPost: 0, localCos: 0, localSin: 0, own: { matrices: {}, vectors: {} } };
+  cosTable: 51000, sinTable: 52000, positions: 0, channels: [], attPost: 0, ffnPost: 0, localCos: 0, localSin: 0, own: { matrices: {}, vectors: {} },
+  layerScale: 0, sized: { matrices: {}, qNormWide: 0, kNormWide: 0, plePost: 0 } };
 const STAGING = CONTROL_BYTES, ROWS = STAGING + 2 * SHAPE.layers * GPU_BLOCK * SHAPE.kvDim * 2, IDS = ROWS + GPU_BLOCK * SHAPE.D;
 assert.ok(IDS + (2 + GPU_TOKENS) * 4 <= 2 * PAGE, "the places the GPU answers into fit this test's memory");
 
@@ -209,9 +212,11 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual([beside.made, beside.posted.length, part.gettingReady(), part.status], [1, 1, true, "prompts on the CPU while the GPU gets ready"]);
   const [{ type, memory, plan }] = beside.posted;
   assert.deepEqual([type, memory], ["start", beside.memory]);
-  assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "codebooks", "convolution", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kinds", "kvHeads", "kvStart",
+  assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "blockLayers", "codebooks", "convolution", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kinds", "kvHeads", "kvStart",
     "layerNorm", "layers", "linear", "local", "localCos", "localSin", "matrices",
-    "parallel", "places", "remembered", "rotated", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
+    "parallel", "perLayer", "places", "remembered", "rotated", "rows", "seqLen", "shapes", "sin", "staging", "tokens", "turned", "unturned", "valueNorm", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
+  // (T334.1: every layer's heads and places, and every layer in a block)
+  assert.deepEqual([plan.shapes, plan.blockLayers, plan.valueNorm, plan.perLayer], [SHAPE.layerShapes, 2, false, null]);
   assert.equal(plan.rotated, null, "T271.1: no rotated basis in the model's own basis");
   assert.deepEqual([plan.dim, plan.hidden, plan.layers, plan.heads, plan.kvHeads, plan.headSize, plan.turned, plan.seqLen, plan.kvStart, plan.eps, plan.batch, plan.direct, plan.rows, plan.staging],
     [8, 24, 2, 2, 1, 4, 4, 512, 256, 1e-5, GPU_BLOCK, false, ROWS, STAGING]);

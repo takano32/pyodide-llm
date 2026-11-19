@@ -328,6 +328,24 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   y[id.y * shape.n + id.x] += bias[shape.at + (step.pos + id.y) * shape.byPos + id.x];
 }`;
 
+// T334.1: the stream times a number of the layer's, every token's (a Gemma 4's layer_scalar, which ends each layer:
+// llama.cpp's src/models/gemma4-iswa.cpp multiplies the layer's output by it with ggml_mul, which its WebGPU runs as
+// binary.wgsl with OP_MUL and INPLACE, the notice above, its second tensor of one value broadcast over the row): y *=
+// scale, the layer's from float at. In ADD's frame above, the token the dispatch's y and the element its x; the CPU
+// multiplies the same float32 by the same one (forward/engine.ts)
+export const SCALE = /* wgsl */ `
+struct Scale { n: u32, at: u32, unused0: u32, unused1: u32 }
+${STEP}
+@group(0) @binding(0) var<storage, read_write> y: array<f32>;
+@group(0) @binding(1) var<storage, read> scale: array<f32>;
+@group(0) @binding(2) var<uniform> shape: Scale;
+@group(0) @binding(3) var<uniform> step: Step;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  if (id.y >= step.tokens || id.x >= shape.n) { return; }
+  y[id.y * shape.n + id.x] *= scale[shape.at];
+}`;
+
 // RoPE on q and k, and the keys and values of every token into this layer's cache at its position (step.pos + the
 // token): one workgroup per token. Pairs of neighbours turn (llama2.c's order), the first turned of every head (all
 // of it but for GPT-NeoX, T154: whose converter puts the pairs of its rotary part in this order; none of it for GPT-2,

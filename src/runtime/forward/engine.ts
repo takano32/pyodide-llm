@@ -28,7 +28,11 @@ import type { Spawn } from "./threads.ts";
 import type { Rows } from "./perlayer.ts";
 import type { Force, Remembered } from "../contracts/gpu/protocol.ts";
 import type { Core, Held, Kinds, Product, Room } from "./kinds.ts";
-import type { Derived, LayerKind, Plan } from "../contracts/plan.ts";
+import type { Derived, Layer, LayerKind, Plan, TensorName } from "../contracts/plan.ts";
+
+// T334.1: the norms of the heads whose stacks are of some of the layers alone (a Gemma 4's narrow and wide ones), whose
+// layers the GPU's plan counts as it counts a stack of matrices
+const STACKED_VECTORS = ["q_norm", "k_norm", "q_norm_wide", "k_norm_wide"] as const;
 
 // ---- (T368.4, the types)
 // The kernels of one build as modules (forward.ts's compileKernels()): relaxed: null where the browser has no relaxed
@@ -295,9 +299,26 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // T261.4: every layer's window and the layers the local tables turn (the GPU's plan has them), and what a Gemma 4's
     // layers have besides, which the GPU's have not
     windows: facts.map(({ window }) => window), locals: facts.flatMap(({ local }, l) => (local ? [l] : [])),
-    // (T283: and a BitNet's norms in front of wo and w2, which the GPU's layers have not)
-    extras: Boolean(plan.value_norm || softcap || layerScale || perLayered || floats("rms_att_sub_weight") || floats("rms_ffn_sub_weight")) ||
-      facts.some(({ wide, double, kept, reads, place }) => wide || double || kept !== place || reads !== place),
+    // (T283: a BitNet's norms in front of wo and w2, which the GPU's layers have not; T334.1: what a Gemma 4 has besides
+    // is said below, one fact each)
+    extras: Boolean(floats("rms_att_sub_weight") || floats("rms_ffn_sub_weight")),
+    // T334.1: every layer's heads and its places in its stacks, and the values of a head RoPE turns in it (T255: none
+    // where it turns none; GPT-NeoX's first rotary, T154; a Gemma 4's local layers all of theirs, the others a part)
+    layerShapes: facts.map(({ head, wide, stack, kept, reads, double, rope, rotary }) => ({ head, wide, stack, kept, reads, double,
+      turned: !rope ? 0 : rotary > 0 && rotary < head ? rotary : head })),
+    valueNorm: Boolean(plan.value_norm), softcap: softcap || 0,
+    perLayer: perLayered ? { width: perLayered.width } : null,
+    // (T334.1: every layer's place in a Gemma 4's stacks of its narrow and wide heads and of its narrower FFN)
+    stackPlaces: facts.some(({ wide, double, kept }) => wide || double || kept < 0) ? Object.fromEntries(([
+      [["wq", "wo"], ({ kind, wide, stack }: Layer) => (kind === "attention" && !wide ? stack : -1)],
+      [["wq_wide", "wo_wide"], ({ kind, wide, stack }: Layer) => (kind === "attention" && wide ? stack : -1)],
+      [["wk", "wv"], ({ kind, wide, kept }: Layer) => (kind === "attention" && !wide ? kept : -1)],
+      [["wk_wide", "wv_wide"], ({ kind, wide, kept }: Layer) => (kind === "attention" && wide ? kept : -1)],
+      [["w1", "w2", "w3"], ({ double, ffn }: Layer) => (double ? -1 : ffn)]] satisfies [TensorName[], (fact: Layer) => number][])
+      .flatMap(([names, place]) => names.map((name) => [name, facts.map(place)] as const))) : {},
+    // (the layers of every stack of matrices, and of the norms of the heads: a Gemma 4's are some of its layers)
+    counts: Object.fromEntries(Object.entries(T).flatMap(([name, t]) =>
+      (t && (t.shape.length === 3 || (STACKED_VECTORS as readonly string[]).includes(name)) ? [[name, t.shape[0]] as const] : []))),
     // T612: a Gemma 2's cap of the scores
     scoresCapped: Boolean(plan.score_softcap) };
   // (T547.3.4: and the codebooks of llama.cpp's blocks, which the GPU reads its IQ types by)
@@ -307,6 +328,15 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // T568.4: the matrices and vectors the kinds of its layers have of their own on the GPU (kinds.ts's gpu, in the
     // table's order: T545 an LFM2's matrices in and out and its taps; T271.2 a Qwen3.5's linear-attention layers' matrices
     // and their gates' vectors, and its attending layers' gate of the output), where the model has them
+    // T334.1: the number every layer ends by multiplying the stream by (0: none), and the tensors of a Gemma 4's that no
+    // other model has: the attention of its layers of wide heads (the stacks named _wide), and what every layer makes of
+    // its input of a table of its own (perLayer.ts: the gate, the projection back and its norm), where it has them
+    layerScale,
+    sized: {
+      matrices: Object.fromEntries((["wq_wide", "wk_wide", "wv_wide", "wo_wide", "ple_gate", "ple_proj"] satisfies TensorName[])
+        .flatMap((name) => (matrix(name) ? [[name, matrix(name)!] as const] : []))),
+      qNormWide: floats("q_norm_wide"), kNormWide: floats("k_norm_wide"), plePost: floats("ple_post"),
+    },
     own: {
       matrices: Object.fromEntries(had.flatMap(({ kind }) => kinds[kind].gpu?.matrices ?? []).flatMap((name) => (matrix(name) ? [[name, matrix(name)!] as const] : []))),
       vectors: Object.fromEntries(had.flatMap(({ kind }) => Object.entries(kinds[kind].gpu?.vectors?.(sizes) ?? {}))
@@ -327,6 +357,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T147, T243: the keys and values the GPU's worker put there, looked at and written into the cache (staging.ts)
   const { fromStaging, stagingFinite } = stagingReader({ k, cache, staging, attending, kvDim });
   const gpuRows = staging && !direct ? alloc(GPU_BLOCK * D) : 0;
+  // (T334.1: and a Gemma 4's inputs of every layer of a block's tokens, [token][layer][width] floats, layersInputs())
+  const gpuInputs = staging && !direct && perLayered ? alloc(GPU_BLOCK * layers * perLayered.width * 4) : 0;
   // T152: why a generation's steps stay on the CPU where the prompt's blocks may go to the GPU (else null), and where
   // the GPU's worker writes the ids of the steps it took ([sampled, id, ...])
   const tokensWhyNot = staging ? fit.tokensUnfit() : null;
@@ -458,6 +490,17 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // it is now (T349: getters, read each time: the cache moves as it grows) and grown, and what the CPU does for a block
   const cpuSide: CpuSide = {
     memory, views, grow: cache.grow, embed, fromStaging, stagingFinite, run, unfiniteBy: cache.unfiniteBy,
+    // T334.1: a Gemma 4's inputs of every layer of a block's tokens, as run() makes them (from their rows embedded into
+    // the frames, BATCH tokens at a time), into the place the GPU's worker reads them from
+    layersInputs(tokens: number[], pos0: number) {
+      const bytes = layers * perLayered!.width * 4;
+      for (let t = 0; t < tokens.length; t += BATCH) {
+        const some = tokens.slice(t, t + BATCH);
+        embed(some, pos0 + t);
+        perLayered!.inputs(some, some.length);
+        U.copyWithin(gpuInputs + t * bytes, perLayered!.at, perLayered!.at + some.length * bytes);
+      }
+    },
     // T545: whether a block at pos may go on from the state the layers that keep one have (follow()'s rule: position 0,
     // or the one that comes next), and that state taken from what the GPU's worker left of a block after its keys and
     // values, the tokens up to next there now. T271.2: put there first for the GPU's worker to take it up (it goes on
@@ -493,7 +536,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     }),
   };
   // what the GPU is to take of this model (gpuFit()'s answers), and the places above where it answers
-  const taken: Taken = { matrices: fit.matrices, vectors: fit.vectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds };
+  const taken: Taken = { matrices: fit.matrices, vectors: fit.vectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds, inputs: gpuInputs };
 
   // T349: the GPU's side (forward/gpuside.ts): its functions by name. T378.2: its state is its own: what happens here is
   // told through those functions, and what the page is shown of it is read (onGpu.status, .ready, ...)

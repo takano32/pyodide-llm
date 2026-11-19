@@ -26,14 +26,16 @@ export type Product = { rows: number; group: GPUBindGroup; pipeline: GPUComputeP
 export type Quantizing = { pipeline: GPUComputePipeline; group: GPUBindGroup; x: number };
 export type Added = { group: GPUBindGroup; x: number };
 // What a kind's layer l is handed as block.ts binds it: its place among the layers of its kind, and
-//   product()  a matrix of the model (name) of the layer, from one buffer of a block's into another (add: onto it)
+//   product()  a matrix of the model (name) of the layer, from one buffer of a block's into another (add: onto it; at:
+//              the layer's place in the matrix's stack, where it is not the layer's own or its place among its kind's:
+//              T334.1, a Gemma 4's k and v of the layers that keep their own)
 //   out()      the layer's matrix whose output joins the stream: onto x, or (a norm behind it: a Gemma 3's) into gate,
 //              which block.ts norms into the stream after the step
 //   added()    a vector of the layer (name) added to a buffer, where the model has it
 export type Binding = {
   l: number; place: number;
-  product(name: string, from: GPUBuffer, to: GPUBuffer, add?: boolean): Product;
-  out(name: string, from: GPUBuffer): Product;
+  product(name: string, from: GPUBuffer, to: GPUBuffer, add?: boolean, at?: number): Product;
+  out(name: string, from: GPUBuffer, at?: number): Product;
   added(to: GPUBuffer, name: keyof Vectors): Added | undefined;
 };
 // What a layer's step in a block is handed each time: the pass, the block's tokens, whether it is the last layer (which

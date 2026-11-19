@@ -15,7 +15,7 @@ import { roundsMs } from "./timing.ts";
 import type { Model } from "./device.ts";
 import type { Added, BlockStep, KindBlock, Product, Quantizing, State } from "./kinds.ts";
 import type { LayerKind, TensorName } from "../contracts/plan.ts";
-import type { Cache as Sent, Vectors } from "../contracts/gpu/protocol.ts";
+import type { Cache as Sent, Started, Vectors } from "../contracts/gpu/protocol.ts";
 
 // T368.6: this module's record, m.block, as prepare() makes it (the layers' bind groups and the keys and values come
 // later, bindLayers() and grow(): null until then, and read with a ! after).
@@ -35,7 +35,14 @@ type Layer = {
   down: Product;
   downBias: Added | undefined;
   ffnPost: GPUBindGroup | null;
+  // T334.1: what the layer makes of its input of a table of its own (a Gemma 4's: null where the model has none), and the
+  // number it ends by multiplying the stream by (null: none)
+  perLayer: PerLayerStep | null;
+  scale: GPUBindGroup | null;
 };
+// T334.1: the stream quantized for the gate, the gate, gelu(gate) times the layer's input (GEGLU of the layer's slice of
+// the inputs), the gate quantized, the projection back into xb, and its norm added to the stream (RMSNORM_ADD)
+type PerLayerStep = { gate: Product; activation: GPUBindGroup; projection: Product; post: GPUBindGroup };
 // the GPU's own keys and values, a buffer a layer each (T545: an attending layer each, by its place), and the bind
 // groups that read them
 type Kept = { capacity: number; owned: GPUBuffer[]; keys: GPUBuffer[]; values: GPUBuffer[]; rope: GPUBindGroup[]; attention: GPUBindGroup[] };
@@ -64,11 +71,14 @@ type Block = {
   rows: Float32Array<ArrayBuffer>;
   turns: Float32Array<ArrayBuffer>;
   turnsLocal: Float32Array<ArrayBuffer> | null;
-  ropeShape: GPUBuffer;
-  ropeAlone: GPUBuffer | null;
+  // T334.1: the heads of the layers RoPE turns by each table (a Gemma 4's wide ones by the first, its narrow by the local),
+  // which are the strides of a token's angles in angles and anglesLocal; and the RoPE's uniform of each layer
+  angleHeads: [number, number];
+  ropeOf(l: number): GPUBuffer;
   activationGroup: GPUBindGroup;
   quantizeXb: Quantizing;
-  quantizeAttention: Quantizing;
+  // T334.1: of the attention's output, the layers' of each size of heads (a Gemma 4's wide ones too)
+  quantizeHeads: Record<number, Quantizing>;
   quantizeFfn: Quantizing;
   quantizeGate: Quantizing;
   // T271.1: what quantizes n values of a block's buffer for the packed matrices (the kinds' inputs too: QUANTIZE, or in a
@@ -76,6 +86,12 @@ type Block = {
   // of the rows a model on the GPU alone embeds here (null: none)
   quantizing(from: GPUBuffer, n: number): Quantizing;
   rotate: { quantize: GPUComputePipeline; unrotate: GPUComputePipeline } | null;
+  // T334.1: a Gemma 4's: the weights of ones the heads of v are normed by (null: no such norm); its inputs of every layer
+  // as a block's go up ([layers][batch][width]: a layer's own after another's, so that GEGLU reads a layer's at an
+  // offset), the gate of a layer's, the stream quantized for it, and SCALE (null: none of them)
+  ones: GPUBuffer | null;
+  perLayer: { inputs: GPUBuffer; host: Float32Array<ArrayBuffer>; gate: GPUBuffer; quantizeStream: Quantizing; quantizeGate: Quantizing } | null;
+  scale: GPUComputePipeline | null;
   unrotateRows: Quantizing | null;
   embedRows: GPUComputePipeline | null;
   ids: GPUBuffer | null;
@@ -96,17 +112,21 @@ type Block = {
 };
 // a matrix of the layer as products holds it
 type Timed = [TensorName, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
+// T334.1: the size of the widest heads of the layers (a Gemma 4's wide ones'; the model's heads where they are all alike),
+// which the buffers of a block's q, k and v and a position of the keys and values in the staging place are sized by
+const widestHead = (plan: Pick<Started, "headSize" | "shapes">) => Math.max(plan.headSize, ...plan.shapes.map(({ head }) => head));
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
 // layers' bind groups in it once the forms are chosen, grow() the keys and values); forms.ts and tokens.ts read its
 // pipelines and buffers for their own bind groups
 async function prepare(m: Model) {
-  const { plan } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
+  const { plan, device } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
   // (T568.2: and what a kind's layers quantize besides: T271.2 a Qwen3.5's linear-attention layers' read, which z's gate
   // leaves for their matrix out)
-  const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, present = kindsOf(plan);
-  const widest = Math.max(plan.dim, qDim, plan.hidden, ...present.map((kind) => GPU_KINDS[kind].widest?.(plan) ?? 0));
+  // (T334.1: of the widest heads, where the layers have heads of their own sizes: a Gemma 4's)
+  const widest = widestHead(plan), qDim = plan.heads * widest, kvDim = plan.kvHeads * widest, present = kindsOf(plan);
+  const quantized = Math.max(plan.dim, qDim, plan.hidden, plan.perLayer?.width ?? 0, ...present.map((kind) => GPU_KINDS[kind].widest?.(plan) ?? 0));
   // T154: LayerNorm and GELU where the model has them (GPT-2, GPT-NeoX), else RMSNorm and SwiGLU (T261.4: or GEGLU, a
   // Gemma 3's gate); and the norm added to the stream behind the attention and the FFN where the model has those
   const posts = Boolean(plan.vectors.attentionPost || plan.vectors.ffnPost);
@@ -125,11 +145,14 @@ async function prepare(m: Model) {
   // writes there first)
   const ffnInput = plan.parallel ? buffer(m, B * plan.dim * 4) : xb;
   // the packed shaders' input: the activations of a matrix quantized, 8 bits a value and a float32 scale a group
-  const xq = buffer(m, B * widest);
-  const xs = buffer(m, B * (widest / GROUP) * 4);
-  const angles = buffer(m, B * plan.headSize * 4, STORAGE | COPY_DST);
+  const xq = buffer(m, B * quantized);
+  const xs = buffer(m, B * (quantized / GROUP) * 4);
+  // (T334.1: a token's angles of each table are as many as the heads of its layers have: a Gemma 4's wide ones' and its
+  // narrow ones')
+  const angleHeads = ([false, true] as const).map((local) => plan.shapes.find((_, l) => plan.local.includes(l) === local)?.head ?? plan.headSize) as [number, number];
+  const angles = buffer(m, B * angleHeads[0] * 4, STORAGE | COPY_DST);
   // (T261.4: and those of the local layers' tables, where the model has them)
-  const anglesLocal = plan.localCos ? buffer(m, B * plan.headSize * 4, STORAGE | COPY_DST) : null;
+  const anglesLocal = plan.localCos ? buffer(m, B * angleHeads[1] * 4, STORAGE | COPY_DST) : null;
   const step = buffer(m, 16, UNIFORM | COPY_DST);
   // T271.1: a rotated basis's shaders
   const rotate: Block["rotate"] = plan.rotated ? await within(Promise.all([ENGINE.ROTATE_QUANTIZE, ENGINE.UNROTATE].map((code) => pipelineOf(m, code))), "the rotated basis's shaders")
@@ -145,12 +168,15 @@ async function prepare(m: Model) {
   const readback = buffer(m, 2 * attendingOf(plan).length * B * kvDim * 2 + (plan.direct ? 0 : stateBytes), MAP_READ | COPY_DST);
   // what a request writes into them, from the shared memory
   const rows = new Float32Array(B * plan.dim);
-  const turns = new Float32Array(B * plan.headSize);
-  const turnsLocal = plan.localCos ? new Float32Array(B * plan.headSize) : null;
-  // (T255: a layer RoPE leaves alone turns none of a head, as every layer of a GPT-2)
-  const shapeOf = (turned: number) => uniform(m, new Uint32Array([plan.heads, plan.kvHeads, plan.headSize, turned]));
-  const ropeShape = shapeOf(plan.turned);
-  const ropeAlone = plan.unturned?.length ? shapeOf(0) : null;
+  const turns = new Float32Array(B * angleHeads[0]);
+  const turnsLocal = plan.localCos ? new Float32Array(B * angleHeads[1]) : null;
+  // (T255: a layer RoPE leaves alone turns none of a head, as every layer of a GPT-2; T334.1: each layer of its own heads
+  // and turned values, one uniform for each such pair, made in the order of the layers)
+  const ropes = new Map<string, GPUBuffer>();
+  for (const { head, turned } of plan.shapes) {
+    if (!ropes.has(`${head} ${turned}`)) ropes.set(`${head} ${turned}`, uniform(m, new Uint32Array([plan.heads, plan.kvHeads, head, turned])));
+  }
+  const ropeOf = (l: number) => ropes.get(`${plan.shapes[l].head} ${plan.shapes[l].turned}`)!;
   const hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
   const activationGroup = bind(m, activation, gated ? [gate, up!, hidden, step] : [gate, hidden, step]);
   // QUANTIZE of the inputs the matrices read: xb (the norm's, dim wide; the attention's, heads × headSize wide, which
@@ -161,7 +187,9 @@ async function prepare(m: Model) {
       x: n / plan.rotated!.block }
     : { pipeline: quantize, group: bind(m, quantize, [from, xq, xs, uniform(m, new Uint32Array([n, n, 0, 0])), step]), x: Math.ceil(n / GROUP / 64) });
   const quantizeXb = quantizing(xb, plan.dim);
-  const quantizeAttention = quantizing(xb, qDim);
+  // (T334.1: of each size of heads the layers have)
+  const quantizeHeads = Object.fromEntries([...new Set([plan.headSize, ...plan.shapes.map(({ head }) => head)])].map((head) => [head, quantizing(xb, plan.heads * head)] as const));
+  const quantizeAttention = quantizeHeads[plan.headSize];
   const quantizeFfn = plan.parallel ? quantizing(ffnInput, plan.dim) : quantizeXb;
   const quantizeGate = quantizing(gate, plan.hidden);
   // T210: a model on the GPU alone embeds a block's tokens here (the CPU holds no embedding): EMBED_ROWS a piece of
@@ -181,8 +209,19 @@ async function prepare(m: Model) {
   // (T271.1: the embedding of a rotated basis holds R^-1 of its rows: turned back here, where the GPU embeds them)
   const unrotateRows = plan.direct && rotate ? { pipeline: rotate.unrotate, group: bind(m, rotate.unrotate, [x, m.weights.signs![plan.dim],
     uniform(m, new Uint32Array([plan.dim, plan.dim, plan.rotated!.block, 0]))]), x: plan.dim / plan.rotated!.block } : null;
+  // T334.1: a Gemma 4's heads of v normed by weights of ones, its inputs of every layer and its number of a layer
+  let ones: GPUBuffer | null = null;
+  if (plan.valueNorm) {
+    ones = buffer(m, widest * 4, STORAGE | COPY_DST);
+    device.queue.writeBuffer(ones, 0, new Float32Array(widest).fill(1));
+  }
+  const width = plan.perLayer?.width ?? 0, perLayerGate = width ? buffer(m, B * width * 4) : null;
+  const perLayer: Block["perLayer"] = width ? { inputs: buffer(m, plan.layers * B * width * 4, STORAGE | COPY_DST), host: new Float32Array(plan.layers * B * width),
+    gate: perLayerGate!, quantizeStream: quantizing(x, plan.dim), quantizeGate: quantizing(perLayerGate!, width) } : null;
+  const scale = plan.vectors.layerScale ? await within(pipelineOf(m, ENGINE.SCALE), "the layers' number") : null;
   m.block = { norm, headNorm, add, rope, activation, quantize, normAdd: normAdd ?? null, x, xb, q, k, v, gate, up, ffnInput, xq, xs, angles, anglesLocal, step,
-    readback, rows, turns, turnsLocal, ropeShape, ropeAlone, activationGroup, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate, quantizing, rotate, unrotateRows,
+    readback, rows, turns, turnsLocal, angleHeads, ropeOf, activationGroup, quantizeXb, quantizeHeads, quantizeFfn, quantizeGate, quantizing, rotate, unrotateRows,
+    ones, perLayer, scale,
     embedRows, ids, embedGroups,
     // (bindLayers() and grow())
     layers: null, cache: null, kinds, states, stateBytes,
@@ -197,13 +236,16 @@ async function prepare(m: Model) {
 function bindLayers(m: Model) {
   const { plan } = m, form = m.forms.form!, V = m.weights.vectors!, b = m.block;
   const layers: Layer[] = [];
-  for (let l = 0; l < plan.layers; l++) {
+  // (T334.1: those a block runs: the layers after the last that keeps keys and values of its own or a state, a Gemma 4's
+  // that read another's, have none of their matrices here, or not in the stacks this binds)
+  for (let l = 0; l < plan.blockLayers; l++) {
     // T545: a matrix or a vector of the layers of a kind (an LFM2's attending or convolution layers': of) is read at the
     // layer's place among them, every layer's at the layer
     const place = plan.places?.[l] ?? l;
     const index = (of: string | undefined) => (of ? place : l);
     // (a piece each, T155)
-    const product = (name: TensorName, from: GPUBuffer, to: GPUBuffer, add = false) => productGroups(m, form, name, index(plan.matrices[name]?.of), from, to, add);
+    // (T334.1: or at its place in the matrix's stack, where the caller says it)
+    const product = (name: TensorName, from: GPUBuffer, to: GPUBuffer, add = false, at = plan.matrices[name]?.at?.[l] ?? index(plan.matrices[name]?.of)) => productGroups(m, form, name, at, from, to, add);
     const normBound = normShape(m, plan.dim, l * plan.dim, plan.eps);
     const added = (to: GPUBuffer, name: keyof Vectors) => V[name] && { group: bind(m, b.add, [to, V[name], uniform(m, new Uint32Array([plan.vectors[name]!.size, index(plan.vectors[name]!.of) * plan.vectors[name]!.size, 0, 0])), b.step]),
       x: Math.ceil(plan.vectors[name]!.size / 64) };
@@ -214,7 +256,7 @@ function bindLayers(m: Model) {
     // and of w2, written apart into gate and xb, which nothing reads by then)
     const post = (name: keyof Vectors, from: GPUBuffer) => (V[name] ? bind(m, b.normAdd!, [from, V[name], b.x, normBound, b.step]) : null);
     // (the step's matrix out: added to the stream, or written into gate for the norm behind it)
-    const out = (name: TensorName, from: GPUBuffer) => (V.attentionPost ? product(name, from, b.gate) : product(name, from, b.x, true));
+    const out = (name: TensorName, from: GPUBuffer, at?: number) => (V.attentionPost ? product(name, from, b.gate, false, at) : product(name, from, b.x, true, at));
     layers.push({
       // T568.2: the layer's kind's step (gpu/kinds.ts)
       step: b.kinds[plan.kinds[l]]!.layer({ l, place, product, out, added }),
@@ -223,6 +265,14 @@ function bindLayers(m: Model) {
       gate: product("w1", b.ffnInput, b.gate), gateBias: added(b.gate, "b1"),
       up: m.weights.matrices.w3 ? product("w3", b.ffnInput, b.up!) : null,
       down: V.ffnPost ? product("w2", b.gate, b.xb) : product("w2", b.gate, b.x, true), downBias: added(b.x, "b2"), ffnPost: post("ffnPost", b.xb),
+      // T334.1: a Gemma 4's input of the layer: gelu(gate · the stream) times its slice of the inputs, projected back into
+      // xb and its norm added to the stream; and its number of the layer
+      perLayer: b.perLayer && {
+        gate: product("ple_gate", b.x, b.perLayer.gate),
+        activation: bind(m, b.activation, [b.perLayer.gate, { buffer: b.perLayer.inputs, offset: l * plan.batch * plan.perLayer!.width * 4, size: plan.batch * plan.perLayer!.width * 4 },
+          uniform(m, new Uint32Array([plan.perLayer!.width, 0, 0, 0])), b.step]),
+        projection: product("ple_proj", b.perLayer.gate, b.xb), post: post("plePost", b.xb)! },
+      scale: b.scale && bind(m, b.scale, [b.x, V.layerScale!, uniform(m, new Uint32Array([plan.dim, l, 0, 0])), b.step]),
     });
   }
   m.block.layers = layers;
@@ -232,17 +282,25 @@ function bindLayers(m: Model) {
 // the bind groups that read them
 function grow(m: Model, needed: number) {
   const { device, plan } = m, b = m.block, old = b.cache, attending = attendingOf(plan);
-  const kvDim = plan.kvHeads * plan.headSize, row = kvDim * 2;
   const capacity = Math.min(Math.max(2 * (old?.capacity ?? 0), needed), plan.seqLen);
-  if (capacity * row > m.limit) throw new Error(`the keys of ${capacity} positions are more than a buffer of this GPU`);
+  // (T334.1: a layer's position of its own heads' size: a Gemma 4's wide ones' are the widest)
+  const rowOf = (l: number) => plan.kvHeads * plan.shapes[l].head * 2;
+  if (capacity * Math.max(...attending.map(rowOf)) > m.limit) throw new Error(`the keys of ${capacity} positions are more than a buffer of this GPU`);
   const cache: Kept = { capacity, owned: [], keys: [], values: [], rope: [], attention: [] };
   const usage = STORAGE | COPY_SRC | COPY_DST;
   const encoder = device.createCommandEncoder();
-  for (let l = 0; l < attending.length; l++) {
-    const keys = buffer(m, capacity * row, usage, cache.owned), values = buffer(m, capacity * row, usage, cache.owned);
+  for (const [p, l] of attending.entries()) {
+    // (T334.1: a layer that reads another's keys and values, a Gemma 4's, has that layer's buffers, which come before it)
+    const { kept, reads } = plan.shapes[l];
+    if (kept < 0) {
+      cache.keys.push(cache.keys[reads]);
+      cache.values.push(cache.values[reads]);
+      continue;
+    }
+    const row = rowOf(l), keys = buffer(m, capacity * row, usage, cache.owned), values = buffer(m, capacity * row, usage, cache.owned);
     if (old) {
-      encoder.copyBufferToBuffer(old.keys[l], 0, keys, 0, old.capacity * row);
-      encoder.copyBufferToBuffer(old.values[l], 0, values, 0, old.capacity * row);
+      encoder.copyBufferToBuffer(old.keys[p], 0, keys, 0, old.capacity * row);
+      encoder.copyBufferToBuffer(old.values[p], 0, values, 0, old.capacity * row);
     }
     cache.keys.push(keys);
     cache.values.push(values);
@@ -250,20 +308,22 @@ function grow(m: Model, needed: number) {
   device.queue.submit([encoder.finish()]);
   // the old ones go once the copies are done (a buffer destroyed after its submission lives until the GPU is through)
   old?.owned.forEach((buffer) => buffer.destroy());
-  // (T261.4: a uniform for each window the layers attend, 0 for every position: a Gemma 3's local layers and the others)
-  const windows = new Map<number, GPUBuffer>();
-  const attentionParams = (window: number) => {
-    if (!windows.has(window)) {
-      windows.set(window, uniform(m, flashParams(plan.heads, plan.kvHeads, plan.headSize, window), cache.owned));
+  // (T261.4: a uniform for each window the layers attend, 0 for every position: a Gemma 3's local layers and the others;
+  // T334.1: and for each size of heads, a Gemma 4's two)
+  const windows = new Map<string, GPUBuffer>();
+  const attentionParams = (window: number, head: number) => {
+    if (!windows.has(`${window} ${head}`)) {
+      windows.set(`${window} ${head}`, uniform(m, flashParams(plan.heads, plan.kvHeads, head, window), cache.owned));
     }
-    return windows.get(window)!;
+    return windows.get(`${window} ${head}`)!;
   };
-  // (T545: an attending layer's by its place p, its layer l's window, tables and RoPE)
+  // (T545: an attending layer's by its place p, its layer l's window, tables and RoPE; T334.1: and its heads', whose
+  // attention is the one of their size)
   for (const [p, l] of attending.entries()) {
     // (T261.4: a local layer turned by the angles of its own tables)
-    const angles = plan.local.includes(l) ? b.anglesLocal! : b.angles;
-    cache.rope.push(bind(m, b.rope, [b.q, b.k, b.v, cache.keys[p], cache.values[p], angles, plan.unturned?.includes(l) ? b.ropeAlone! : b.ropeShape, b.step]));
-    cache.attention.push(bind(m, m.forms.attention.pipeline, [b.q, cache.keys[p], cache.values[p], b.xb, attentionParams(plan.windows[l] ?? 0), b.step]));
+    const angles = plan.local.includes(l) ? b.anglesLocal! : b.angles, { head } = plan.shapes[l];
+    cache.rope.push(bind(m, b.rope, [b.q, b.k, b.v, cache.keys[p], cache.values[p], angles, b.ropeOf(l), b.step]));
+    cache.attention.push(bind(m, m.forms.attention.pipelines[head], [b.q, cache.keys[p], cache.values[p], b.xb, attentionParams(plan.windows[l] ?? 0, head), b.step]));
   }
   m.block.cache = cache;
   // (device.ts's end() lets go of these, the ones held last)
@@ -308,7 +368,7 @@ async function timeBlocks(m: Model) {
 // stateToStaging)
 function stateIn(m: Model, encoder: GPUCommandEncoder, pos: number, fresh: boolean) {
   const { plan } = m, { states } = m.block;
-  let at = plan.staging + 2 * attendingOf(plan).length * plan.batch * plan.kvHeads * plan.headSize * 2;
+  let at = plan.staging + 2 * attendingOf(plan).length * plan.batch * plan.kvHeads * widestHead(plan) * 2;
   for (const { buffer: target, bytes } of states) {
     if (pos === 0) encoder.clearBuffer(target);
     else if (!fresh) copyIn(m, target, at, bytes);
@@ -319,10 +379,12 @@ function stateIn(m: Model, encoder: GPUCommandEncoder, pos: number, fresh: boole
 // so. timing (T148, timeBlocks): rows and angles of zeros instead of forward.ts's, and nothing written back. fresh
 // (T271.2): the block goes on from the GPU's own state of the layers that keep one (stateIn)
 async function block(m: Model, count: number, pos: number, wanted: () => boolean, timing = false, tokens?: number[], fresh = false) {
-  const { device, plan } = m, half = plan.headSize / 2;
+  const { device, plan } = m;
   // (T378.4: this module's record taken apart once: the layers' loop below reads locals. The cache after grow())
   const { norm, add, activation, normAdd, x, angles, anglesLocal, step, rows, turns, turnsLocal, ids, activationGroup, quantizeXb,
-    quantizeFfn, quantizeGate, unrotateRows, embedRows, embedGroups, layers } = m.block;
+    quantizeFfn, quantizeGate, unrotateRows, embedRows, embedGroups, layers, angleHeads, perLayer, scale } = m.block;
+  // (T334.1: a token's angles of a table are as many as its layers' heads have)
+  const [head, headLocal] = angleHeads, half = head / 2, halfLocal = headLocal / 2;
   // the rows forward.ts embedded (dense), and the angles of their positions (the tables forward.ts has); views of just
   // those floats (T155: not a view of the whole of a 64-bit memory of some GB for every block)
   const floats = (address: number, n: number) => new Float32Array(m.memory.buffer, address, n);
@@ -336,18 +398,31 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
     turnsLocal?.fill(0);
   } else {
     for (let t = 0; t < count; t++) {
-      turns.set(floats(plan.cos + (pos + t) * half * 4, half), t * plan.headSize);
-      turns.set(floats(plan.sin + (pos + t) * half * 4, half), t * plan.headSize + half);
+      turns.set(floats(plan.cos + (pos + t) * half * 4, half), t * head);
+      turns.set(floats(plan.sin + (pos + t) * half * 4, half), t * head + half);
       // (T261.4: the local layers' tables, laid out as the others)
-      turnsLocal?.set(floats(plan.localCos + (pos + t) * half * 4, half), t * plan.headSize);
-      turnsLocal?.set(floats(plan.localSin + (pos + t) * half * 4, half), t * plan.headSize + half);
+      turnsLocal?.set(floats(plan.localCos + (pos + t) * halfLocal * 4, halfLocal), t * headLocal);
+      turnsLocal?.set(floats(plan.localSin + (pos + t) * halfLocal * 4, halfLocal), t * headLocal + halfLocal);
+    }
+  }
+  // (T334.1: a Gemma 4's inputs of every layer, as the CPU made them for the block's tokens, [token][layer][width]: a
+  // layer's after another's here, [layer][batch][width]; zeros where it is timed)
+  if (perLayer) {
+    const width = plan.perLayer!.width, B = plan.batch;
+    if (timing) perLayer.host.fill(0);
+    else {
+      const inputs = floats(plan.perLayer!.inputs, count * plan.layers * width);
+      for (let t = 0; t < count; t++) {
+        for (let l = 0; l < plan.layers; l++) perLayer.host.set(inputs.subarray((t * plan.layers + l) * width, (t * plan.layers + l + 1) * width), (l * B + t) * width);
+      }
     }
   }
   device.pushErrorScope("out-of-memory");
   device.pushErrorScope("validation");
   if (!plan.direct) device.queue.writeBuffer(x, 0, rows, 0, count * plan.dim);
-  device.queue.writeBuffer(angles, 0, turns, 0, count * plan.headSize);
-  if (anglesLocal) device.queue.writeBuffer(anglesLocal, 0, turnsLocal!, 0, count * plan.headSize);
+  device.queue.writeBuffer(angles, 0, turns, 0, count * head);
+  if (anglesLocal) device.queue.writeBuffer(anglesLocal, 0, turnsLocal!, 0, count * headLocal);
+  if (perLayer) device.queue.writeBuffer(perLayer.inputs, 0, perLayer.host);
   device.queue.writeBuffer(step, 0, new Uint32Array([count, pos, 0, 0]));
   roomFor(m, pos + count);
   const encoder = device.createCommandEncoder(), form = m.forms.form!;
@@ -361,12 +436,12 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   const biased = (bias: Added | undefined) => bias && dispatch(pass, add, bias.group, bias.x, count);
   embedGroups?.forEach((group) => dispatch(pass, embedRows!, group, 1, count));
   if (unrotateRows) dispatch(pass, unrotateRows.pipeline, unrotateRows.group, unrotateRows.x, count);
-  for (let l = 0; l < plan.layers; l++) {
+  for (let l = 0; l < plan.blockLayers; l++) {
     const layer = layers![l];
     dispatch(pass, norm, layer.attentionNorm, 1, count);
     quantized(quantizeXb);
     // T568.2: the layer's kind's step (gpu/kinds.ts), which the last layer ends the block in
-    const running = { pass, count, last: l === plan.layers - 1, multiplied, quantized, biased, ffnNorm: () => dispatch(pass, norm, layer.ffnNorm, 1, count) };
+    const running = { pass, count, last: l === plan.blockLayers - 1, multiplied, quantized, biased, ffnNorm: () => dispatch(pass, norm, layer.ffnNorm, 1, count) };
     if (layer.step(running)) break;
     if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
     if (!plan.parallel) dispatch(pass, norm, layer.ffnNorm, 1, count);
@@ -379,6 +454,16 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
     multiplied(layer.down);
     biased(layer.downBias);
     if (layer.ffnPost) dispatch(pass, normAdd!, layer.ffnPost, 1, count);
+    // T334.1: a Gemma 4's input of the layer (after the FFN, as the CPU's perLayer.ts), then its number
+    if (layer.perLayer) {
+      quantized(perLayer!.quantizeStream);
+      multiplied(layer.perLayer.gate);
+      dispatch(pass, activation, layer.perLayer.activation, Math.ceil(plan.perLayer!.width / 64), count);
+      quantized(perLayer!.quantizeGate);
+      multiplied(layer.perLayer.projection);
+      dispatch(pass, normAdd!, layer.perLayer.post, 1, count);
+    }
+    if (layer.scale) dispatch(pass, scale!, layer.scale, Math.ceil(plan.dim / 64), count);
   }
   pass.end();
   // (T210: a model on the GPU alone keeps them there: nothing comes back)
@@ -393,10 +478,14 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
 // into the block's readback as plan.staging lays them out. T545: of every attending layer, by its place; and after
 // them the state of the layers that keep one, as the block left it (T271.2: as it goes up: stateIn)
 function keysOut(m: Model, encoder: GPUCommandEncoder, pos: number, count: number) {
-  const { plan } = m, { cache, readback, states } = m.block, B = plan.batch, row = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
-  for (let l = 0; l < layers; l++) {
-    encoder.copyBufferToBuffer(cache!.keys[l], pos * row, readback, l * B * row, count * row);
-    encoder.copyBufferToBuffer(cache!.values[l], pos * row, readback, (layers + l) * B * row, count * row);
+  const { plan } = m, { cache, readback, states } = m.block, B = plan.batch, row = plan.kvHeads * widestHead(plan) * 2, attending = attendingOf(plan), layers = attending.length;
+  // (T334.1: a layer's positions of its own heads' size, dense, in a place of the widest's; none of a layer that reads
+  // another's keys and values, a Gemma 4's: the CPU's cache has none of its own either)
+  for (const [p, l] of attending.entries()) {
+    const own = plan.kvHeads * plan.shapes[l].head * 2;
+    if (plan.shapes[l].kept < 0) continue;
+    encoder.copyBufferToBuffer(cache!.keys[p], pos * own, readback, p * B * row, count * own);
+    encoder.copyBufferToBuffer(cache!.values[p], pos * own, readback, (layers + p) * B * row, count * own);
   }
   let at = 2 * layers * B * row;
   for (const { buffer: from, bytes } of plan.direct ? [] : states) {
@@ -409,7 +498,7 @@ async function keysBack(m: Model, wanted: () => boolean) {
   const { plan } = m, { readback } = m.block;
   await readback.mapAsync(MAP_READ);
   try {
-    const bytes = 2 * attendingOf(plan).length * plan.batch * plan.kvHeads * plan.headSize * 2 + (plan.direct ? 0 : m.block.stateBytes);
+    const bytes = 2 * attendingOf(plan).length * plan.batch * plan.kvHeads * widestHead(plan) * 2 + (plan.direct ? 0 : m.block.stateBytes);
     if (wanted()) new Uint8Array(m.memory.buffer, plan.staging, bytes).set(new Uint8Array(readback.getMappedRange(), 0, bytes));
   } finally {
     readback.unmap();

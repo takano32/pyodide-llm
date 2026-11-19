@@ -201,7 +201,9 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // attention layers' states and rows)
   if (gpu) {
     bytes += 2 * had.filter(({ kind }) => kinds[kind].cached).reduce((sum, { count }) => sum + count, 0) * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4 +
-      had.reduce((sum, { kind, count }) => sum + (kinds[kind].staged?.(sizes, count) ?? 0), 0);
+      had.reduce((sum, { kind, count }) => sum + (kinds[kind].staged?.(sizes, count) ?? 0), 0) +
+      // (T334.1: and a Gemma 4's inputs of every layer of a block)
+      (perLayer ? GPU_BLOCK * layers * perLayer * 4 : 0);
   }
   // what the kinds' layers keep besides, whatever the context (T229: a linear-attention layer's state; T260: a
   // convolution layer's rows), each as the engine takes it of the memory

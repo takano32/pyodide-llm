@@ -292,20 +292,28 @@ function halfToFloat(h) {
       return;
     }
     if (p.form.arch === "gemma4") {
-      // T260: an LFM2 stays on the CPU: the engine says why, starts no GPU's worker and puts nothing aside for one
-      // (T331.2: and so does a Gemma 4, for what its layers have that the GPU's have not; T261.4: a Gemma 3, which did
-      // until then, is the GPU's below)
-      const [model, why] = ["a Gemma 4", "this pair of norms and FFN is not on the GPU yet"];
-
-      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: p.dtype !== "float32" && p.dtype !== "float16", outliers: 8, gpu: false, shared: true };
+      // T334.1: a Gemma 4's prompts are the GPU's (T331.2 to T334: a Gemma 4 stayed on the CPU for what its layers have):
+      // its worker is started, and what is put aside for it (the keys and values of a block, the inputs of every layer of a
+      // block) is footprint()'s; but not of float weights, nor with an FFN of the wider ones in a layer a block runs (the
+      // layers up to the last that keeps keys and values of its own: no published Gemma 4's), which the engine says why of
+      const shared = p.form.kv_shared?.layers ?? [], last = Math.max(...Array.from({ length: p.header[2] }, (_, l) => l).filter((l) => !shared.includes(l)));
+      const floats = p.dtype === "float32" || p.dtype === "float16";
+      // (nor with layers of one table of RoPE of two sizes of heads: the made-up one of wide inputs, whose layers that attend
+      // every position are of both; the layers first, as gpuFit() asks)
+      const layers = Array.from({ length: p.header[2] }, (_, l) => l), local = p.form.local?.layers ?? [];
+      const head = (l) => (p.form.wide?.layers.includes(l) ? p.form.wide.head_dim : p.form.head_dim);
+      const mixed = [true, false].some((isLocal) => new Set(layers.filter((l) => local.includes(l) === isLocal).map(head)).size > 1);
+      const why = (p.form.double ?? []).some((l) => l <= last) || mixed ? "this pair of norms and FFN is not on the GPU yet" : floats ? "float32 weights are not on the GPU yet" : null;
+      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: !floats, outliers: 8, gpu: !why, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       let asked = 0;
       const engine = engineOn(p, planOf(p, { outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys,
         gpu: () => { asked++; return silentGpu(); } });
       const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
-      assert.equal(engine.gpuWhyNot, why, `${shapes[n].name}: the GPU was not refused for what ${model}'s layers are`);
-      assert.equal(asked, 0, `${shapes[n].name}: a GPU's worker was started for ${model}`);
-      assert.ok(used <= bound, `${shapes[n].name}: a GPU asked for put ${(used / MiB).toFixed(2)} MiB after the checkpoint, the CPU alone counts ${(bound / MiB).toFixed(2)}`);
+      assert.equal(engine.gpuWhyNot, why, `${shapes[n].name}, ${p.dtype}: the GPU's refusal is "${engine.gpuWhyNot}"`);
+      assert.equal(asked, why ? 0 : 1, `${shapes[n].name}, ${p.dtype}: a GPU's worker was started ${asked} times`);
+      assert.ok(used <= bound && (why !== null || bound - used <= 1.2 * MiB),
+        `${shapes[n].name}, ${p.dtype}, a GPU asked for: createForward put ${(used / MiB).toFixed(2)} MiB after the checkpoint, footprint() counted ${(bound / MiB).toFixed(2)}`);
       engine.release();
       convolutional++;
       return;
@@ -332,7 +340,7 @@ function halfToFloat(h) {
   });
   console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (and, for a hybrid model, the corrections of its float32 gates) (${engines} engines: ${plans.length} models and dtypes, ` +
     `with and without relaxed SIMD, on a shared and a plain memory; ${(tightest / MiB).toFixed(2)} to ${(loosest / MiB).toFixed(2)} MiB over; ` +
-    `and ${withGpu} with the GPU asked for, ${rotatedTaken} ternary models in a rotated basis (T271.1: taken), ${convolutional} of an LFM2 (T545: taken, but a float one) or a Gemma 4 (refused); ${seconds()})`);
+    `and ${withGpu} with the GPU asked for, ${rotatedTaken} ternary models in a rotated basis (T271.1: taken), ${convolutional} of an LFM2 (T545: taken, but a float one) or a Gemma 4 (T334.1: taken, but a float one or one with a wider FFN in a block); ${seconds()})`);
 }
 
 // ---- (3) the memory of a cache that doubles never holds more than the whole context's

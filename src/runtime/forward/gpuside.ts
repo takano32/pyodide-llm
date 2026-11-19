@@ -9,7 +9,7 @@ import { cpuReadBytes, cpuOf, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.t
 import { REASONS } from "./reasons.ts";
 import { gpuPacking } from "./alone.ts";
 import { halfToFloat } from "./memory.ts";
-import { kindOf } from "./gpufit.ts";
+import { kindOf, lastKept } from "./gpufit.ts";
 import { NO_KIND_NUMBERS } from "./kinds.ts";
 import type { Answers } from "./choice.ts";
 import type { Control } from "./control.ts";
@@ -17,6 +17,7 @@ import type { Direct } from "./alone.ts";
 import type { CachePlace, Force, FromGpu, KindNumbers, Matrix, Remembered, ToGpu, Tokens, Tried } from "../contracts/gpu/protocol.ts";
 import type { GpuChose } from "../contracts/messages.ts";
 import type { Shape, Placed, Taken } from "./gpufit.ts";
+import type { TensorName } from "../contracts/plan.ts";
 
 // the CPU's side: the memory and its views made anew, the cache of the keys and values as it is now and grown, and what
 // the CPU does for a block
@@ -25,6 +26,8 @@ export type CpuSide = {
   views(): void;
   grow(pos: number): void;
   embed(tokens: number[], pos0: number, rows?: number, stride?: number): void;
+  // T334.1: the inputs of every layer of a table of their own of tokens at pos0, ... (a Gemma 4's), where perLayer says
+  layersInputs(tokens: number[], pos0: number): void;
   fromStaging(pos: number, count: number): void;
   stagingFinite(count: number): boolean;
   run(tokens: number[], pos0: number, needLogits: boolean): void;
@@ -82,10 +85,10 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now: () => number } }) {
   const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
-    unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes, rotated } = shape;
+    unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes, rotated, layerShapes, valueNorm, perLayer, counts, stackPlaces } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin, signs, codebooks } = weights;
-  const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
-  const { memory, views, grow, embed, fromStaging, stagingFinite, run, unfiniteBy, follows, stateToStaging, stateFromStaging } = cpuSide;
+  const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds, inputs: gpuInputs } = taken;
+  const { memory, views, grow, embed, layersInputs, fromStaging, stagingFinite, run, unfiniteBy, follows, stateToStaging, stateFromStaging } = cpuSide;
   const { ctl, waitUntil } = control;
   const { gpu, remembered: gpuRemembered, force: gpuForce = {}, direct, stalledMs, now } = options;
   // every block and step the GPU can take goes there, whatever the CPU's time: the tests' fallback adapter, and a model
@@ -175,12 +178,15 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // (T547.3.1: a stack whose layers are each of a kind of their own, packing "layers" and each layer's packing, its
     // values where its own matrix has them)
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] => {
-      const of = kindOf(name, shape), count = of ? kinds.filter((kind) => kind === of).length : layers;
+      // (T334.1: of the layers of its stack, where those are some of the layers whatever their kinds: a Gemma 4's)
+      const of = kindOf(name, shape), count = counts[name as TensorName] ?? (of ? kinds.filter((kind) => kind === of).length : layers);
       const at = (l: number) => (m.layers ? m.layers[l].layer(0) : m.layer(l)).slice(0, 2) as [number, number];
       // (T547.3.1's review: a packing a layer, said here where a short list would be an undefined packing on the GPU)
       if (m.layers && m.layers.length !== count) throw new Error(`The matrix ${name} has ${m.layers.length} layers of their own kinds, and the GPU's plan ${count}.`);
       return [name, { rows: m.rows, n: m.n, ...(m.layers ? { packing: "layers", packings: m.layers.map((layer) => gpuPacking(layer.kind)) } : { packing: gpuPacking(m.kind) }),
-        layers: Array.from({ length: count }, (_, l) => at(l)), ...(of ? { of } : {}) }];
+        layers: Array.from({ length: count }, (_, l) => at(l)), ...(of ? { of } : {}),
+        // (T334.1: and every layer's place in it, where it is of some layers whatever their kinds: a Gemma 4's)
+        ...(stackPlaces[name as TensorName] ? { at: stackPlaces[name as TensorName] } : {}) }];
     }));
     const listen = () => {
       clearTimeout(quietTimer);
@@ -262,6 +268,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
       kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin,
       kinds, places, ...numbers,
+      // (T334.1: every layer's heads and places, a Gemma 4's heads of v normed and its inputs of every layer)
+      shapes: layerShapes, blockLayers: lastKept(shape) + 1, valueNorm, perLayer: perLayer && { width: perLayer.width, inputs: gpuInputs },
       // (T271.1: a rotated basis, which the GPU's worker turns every matrix's input into and an embedded row back from)
       rotated: rotated ? { block: rotated, signs: Object.entries(signs!).map(([width, at]) => ({ width: Number(width), at })) } : null,
       batch: GPU_BLOCK,
@@ -335,6 +343,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     views();
     // the GPU reads the rows from there (T210: on the GPU alone, it embeds the tokens itself)
     if (!direct) embed(tokens, pos0, gpuRows, D);
+    // (T334.1: and the inputs of every layer of a table of their own, which the CPU computes as for its own layers)
+    if (perLayer && !direct) layersInputs(tokens, pos0);
     const fresh = stateUp(pos0);
     const answer = asked((serial) => ({ type: "prompt", serial, count, pos: pos0, fresh, ...(direct ? { tokens } : {}) }));
     if (answer !== "done") {

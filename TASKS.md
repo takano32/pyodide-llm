@@ -72,7 +72,7 @@
 - T327 [バグ][CPU] 古い arm64 の Chrome（V8 14.2 以前）の Liftoff が 4 GiB を越える番地の `load32_splat` を誤る — ページに備えがあるか — 候補
 - T328 [調査][Gemma4] Gemma 4 を動かす: 全体と順 — 未着手
 - T332 [追加][Gemma4] 12B（`gemma4_unified`） — 候補
-- T334 [性能][Gemma4][WebGPU] Gemma 4 を GPU に — 未着手
+- T334 [性能][Gemma4][WebGPU] Gemma 4 を GPU に — 進行中
 - T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 候補
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
 - T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 未着手
@@ -328,6 +328,7 @@
   - **T258 のレビューから（PC（NVIDIA）と Android の Chrome。本線に入れた後）**: モデルのページで「Microsoft Phi-3 mini 4K Instruct」と「Microsoft Phi-4 mini Instruct」を開いて 1 つずつ聞く（Phi-4 は日本語で）。見るのは、準備完了までの秒（取得 7.6・7.7 GB。int8 は 4.3 GB で 4 GiB を越えるので 64 ビットのメモリの Chrome か Firefox）、ステータス行（`deviceMemory` が 8 の端末は 3B 以上で GPU だけの見積もり: 「on the GPU alone」。**Phi-3 mini の頭は 96 で、GPU のシェーダの形の検査が 96 の実物を踏んでいない**: GPU の準備が通って答えが読めるか、CPU に戻ったらステータス行の訳）、tok/s、答えが読めて `<|end|>` で止まるか（止まらずに `<|user|>` などの印が続けば止まりの誤り）。
   - **T545 から（PC（NVIDIA）と Android の Chrome。2026-11-12 に台帳の見直しで T545 の項から移した）**: 既定のモデル（Shisa V2.1c LFM2 350M）を開いて、ステータス行がプロンプトと答えを WebGPU と言うか（「prompts and answers on WebGPU」「prompts of N tokens and more on WebGPU」など）、長いプロンプトの最初のトークンまでの秒、答えの tok/s と読めるか（T545.1・T545.2。速さは未計測。覆す条件: 持ち主の Android で LFM2 の DP4A の出力だけが壊れるなら、最初の層のゆるめを見直す）。
   - **T379.2（シェーダの文の掃除、どの端末でも 1 回）**: 端末の鍵が 1 回動くので、モデルのページを開いた最初の 1 回は GPU の形を選び直す（GPU だけのモデルの「CPU のほうが速い」の覚えも 1 回捨てられる）。見るのは、選ばれた形の名前（コンソールの `gpu:` の行）と tok/s が前と同じ桁であること、`/benchmark/` の GPU の節の検査が全部 ok で層の表とステップの数字が前（T190・T191 の報告）と同じ桁であること。計算は変えていないので同じはず（未計測）。
+  - **T334.1 から（Android の Chrome と PC の Chrome。本線に入れた後）**: モデルのページで「Google Gemma 4 E2B」を開いて長めの問い（200 トークンほど）を 1 つ。見るのは、ステータス行が「prompts on WebGPU, answers on the CPU (a Gemma 4's answers are not on the GPU yet)」と言うか、言うなら CPU だけのとき（`?gpu=off` はないので前の版の数字）より問いの読みが速いか（コンソールの `gpu:` の行の「a whole block: 16 tokens … ms, 64 tokens … ms」）、答えの文が壊れていないか。端末の鍵が 1 回動くので、最初の 1 回は形を選び直す。
   - **T557 の前に（Android の Chrome と iPhone の Safari。実装の前の確かめ）**: サイトのデータを消してモデルのページを開き（既定のモデルの 379 MB の取得が始まる）、取得の途中で画面を消して 1 分待ってから点ける: 取得の MB が消していた間も進んでいたか、止まっていたか、ページが読み直されたか。止まっていれば T557（取得の間は画面を消さない）を入れる。
 - ブランチを本線に入れる形: この回は `git merge --no-ff <ブランチ>`（題は「T.番号: Merge …」。戻すときは `git revert -m 1 <その merge>` の 1 つ）。前の回の `.tmp/merge-branch.sh`（rebase）は、本線を merge 済みのブランチには使えない。
 
@@ -665,7 +666,16 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T332 [追加][Gemma4] 12B（`gemma4_unified`） — 状態: 候補（2026-10-05。規模 中〜大）
 - 別のクラスで `attention_k_eq_v: true`（K と V が同じ）ほか。int8 と補正で約 15.0 GB で、64 ビットのメモリの 16 GiB に入るかは境界（T129 の `pastWide()`）。入らなければ 6 ビット（Chrome と Firefox）か外す。
 
-### T334 [性能][Gemma4][WebGPU] Gemma 4 を GPU に — 状態: 未着手（2026-10-05。規模 中〜大。T333 の後）
+### T334 [性能][Gemma4][WebGPU] Gemma 4 を GPU に — 状態: 進行中（2026-11-19 着手、Opus medium、ブランチ `t334-gemma4-gpu`。2026-10-05。規模 中〜大。T333 の後）
+- **子タスクの番号**: T334.1 進行中、T334.2 未着手、T334.3 未着手。
+- **今も当たるか（2026-11-19）**: 前に要るものは本線にある。T261.4（Gemma 3 の GPU: `GEGLU`・`RMSNORM_ADD`・窓の `Params.window`・局所の角の表、`docs/tasks/T261.md`）、T546（GPU の標本抽出の top-k、`docs/tasks/T546.md`）、T329.2（層ごとの埋め込みの表は保存から 1 行ずつ: `forward/perlayer.ts` の `rows`、持ち主は `worker/weights.ts` の `rowsNow`）。いま Gemma 4 を GPU から外しているのは `gpufit.ts` の `extras`（値の norm・logits の頭打ち・層の倍率・層ごとの埋め込み・幅の違う層・鍵と値の共有を 1 つにまとめた真偽）で、訳は `REASONS.pair`。E4B は 2 重に入らないので GPU だけの道に行き、`aloneFactsUnfit()` の `aloneLocal` が断る（CPU だけ）。
+- **分け方（取りまとめ役の決め。訳: 1 つずつ CI で確かめて本線に入れられる単位）**:
+  - **T334.1 プロンプトのブロックを GPU に（重みを 2 重に置けるモデル: 8 と言う端末の E2B）**。ブロックが返すのは鍵と値だけなので、**自分の鍵と値を持つ最後の層で止める**（E2B の 35 層のうち 0〜14。後ろの 20 層は鍵と値を共有するだけで、ブロックでは走らない。2 倍幅の FFN はその 20 層だけにある）。足すもの: 層ごとの head の大きさと束（`wq_wide` など、束の中の位置 `stack`・`kept`）、値の head の norm（`HEAD_NORM` に 1 の重み）、層ごとの埋め込み（入力は CPU が今の `perLayer().inputs()` で作って共有メモリに置き、GPU は gate・`GEGLU`・proj・`RMSNORM_ADD` を層ごとに）、層の倍率（新しいシェーダ `SCALE`: 端末の鍵が 1 回動く）。答えのステップは CPU のまま（訳を 1 つ足す）。
+  - **T334.2 答えのステップを GPU に**: 1 トークンの融合した層を層ごとの大きさで、鍵と値の共有、2 倍幅の FFN、logits の頭打ち（SAMPLE の前）、層ごとの埋め込みの表の行（GPU が引いたトークンの行は CPU の保存にある: 1 回の submit に 4 ステップの形を保つなら表を GPU に置くか、ステップを 1 つずつにするか、ここで決める）。シェーダの文が変わるので鍵がもう 1 回動く（T334.1 と分けたので 2 回。訳: ステップの形は T334.1 の数を見てから決めたい）。
+  - **T334.3 GPU だけの道（E4B など 2 重に入らないもの）**: 表も GPU に、`aloneFactsUnfit()` の `aloneLocal`・`aloneActivation` を外す。
+- **T334.1 の中身（2026-11-19、ブランチ `t334-gemma4-gpu`）**: 形は今の GPU の層（llama.cpp の WebGPU と Metal の形: T261.4 の `GEGLU`・`RMSNORM_ADD`・flash attention のタイル）を層ごとの大きさで回すだけで、足したシェーダは `SCALE` の 1 つ（llama.cpp の binary.wgsl の OP_MUL を 1 つの値で広げる形。gemma4-iswa.cpp が層の終わりに `ggml_mul` で掛けるもの。行は写していないが steps.ts の llama.cpp の通知の下）。CPU の側: `gpufit.ts` の `extras` から Gemma 4 の事実を外して 1 つずつに（`layerShapes`・`valueNorm`・`perLayer`・`counts`・`stackPlaces`）、`lastKept()`、答えのステップの訳 `REASONS.ownSteps`（「a Gemma 4's answers are not on the GPU yet」: 訪問者に見える文が 1 つ増える。取りまとめ役の決め（訳: 何がまだかを言う今の文の形に合わせた。持ち主に見せる一覧に積む））、staging を層ごとの幅で（`staging.ts`・`cache.ts` の `putHalves`）、層ごとの埋め込みの入力の置き場（`Taken.inputs`、`footprint()` も数える）。GPU の Worker: `block.ts`（`shapes` で層ごとに束・head・回す数・倍率・層ごとの埋め込み、共有の層の鍵と値は読む層のバッファ、`blockLayers` まで）、`attention.ts`、`forms.ts`（head の大きさごとの flash）、`weights.ts`（`Matrix.at`・`Vector.count`）。試験: `gpu-check` に `synthetic-gemma4`（参照の鍵と値は層ごとの幅、判定は `padded()`）、`memory-check` の Gemma 4 は GPU が取る形に（断るのは浮動小数・ブロックの中の 2 倍幅・1 つの角の表に 2 つの head の大きさ）、`gpu-part-check`・`gpu-worker-parts-check`・`reasons-check`・`device-key-check`・`shaders-catalogue-check`・偽の計画 `tests/fakes/gpu-plans.ts`・網の `unchanged-gpusteps.ts` の代役に新しい鍵。
+  - **網（`node tests/unchanged.ts`、origin/main 7f948c25 と）**: 予定どおり違うのは `shaders`（`SCALE` の行: 192 台の端末の鍵が全部動く）と `gpuworker`（文の差）だけ。`gpusteps` は同じ（偽の装置の 8 つの作り物のモデルのブロックとステップのディスパッチと書き込みがバイトまで同じ: 今あるモデルの GPU の道は変わらない）、`choices`・`calls`・`python`・`page`・`bench` も同じ。
+  - **手元**: 軽い組（`suite.sh light`、1025 秒）・`npm run build`・`dist-check` が通った。偽の装置で作り物の Gemma 4 のブロックを 1 つ回し（`.tmp/gemma4-fake.ts`）、束の位置・head の大きさ・GEGLU の入力の offset・staging の位置を目で読んだ。
 - 窓つきの attention（flash attention に下限）、層ごとの head の大きさ、KV の共有、GeGLU、softcap、層ごとの埋め込み（GPU だけのときは表も GPU に）。いまの `gpuUnfit()` に当たる所を 1 つずつ外す。
 - **追記（2026-10-16、T545 の WebGPU の洗い出しから）**: 窓つきの attention・後ろの norm・GELU の gate は T261.4（Gemma 3 を GPU に、実装中）が作るものを使う。項目の標本抽出は top-k 64 なので、答えのステップを GPU に残すには T546（GPU の標本抽出の top-k）も要る。層ごとの埋め込みの表は保存（OPFS）から読む形（T329.2）なので、GPU だけに置くときの表の置き場はここで決める。
 

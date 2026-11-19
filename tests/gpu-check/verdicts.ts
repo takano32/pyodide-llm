@@ -2,7 +2,7 @@
 // for a model (its runs on the CPU and with the GPU, lines.ts's lines) against the model's case (NumPy's
 // answers), said in the log's lines, and whether any of them failed. Functions of what they are given: no GPU, no
 // browser, no Pyodide (tests/gpu-check-parts-check.ts runs them on made-up numbers).
-import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff, held } from "./measures.ts";
+import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff, held, padded } from "./measures.ts";
 import { NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE } from "./lines.ts";
 import { stepsRight } from "./steps.ts";
 import { layerTables } from "./tables.ts";
@@ -30,13 +30,16 @@ function quantizersWrong(outcome) {
 function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, remembered, alone, broken, nanSeconds, heldFrom }) {
   let failed = false;
   const found = cases.find((entry) => entry.id === id), n = found.reference.tokens.length - 1;
-  const [dim, , every, heads, kvHeads] = found.reference.header, layers = found.reference.attending ?? every, kvDim = (found.headDim || dim / heads) * kvHeads;
+  // (T334.1: a Gemma 4's layers that keep their own keys and values, each of its own width: as rows of the widest, padded())
+  const [dim, , every, heads, kvHeads] = found.reference.header, layers = found.reference.attending ?? every, widths = found.reference.widths;
+  const kvDim = widths ? Math.max(...widths) : (found.headDim || dim / heads) * kvHeads;
   // T558.1: of a layer whose keys and values the CPU keeps in a ring (a window's), the positions the ring still holds
   // alone (the harness's heldFrom): the rows before them zeroed in NumPy's and in every run's alike
-  const kept = (run) => run && { ...run, keys: held(run.keys, heldFrom, n, kvDim), values: held(run.values, heldFrom, n, kvDim), ...(run.again ? { again: kept(run.again) } : {}) };
-  const r = found.reference, c = { ...found, reference: { ...r, ...kept(r), ...(r.keys16 ? { keys16: held(r.keys16, heldFrom, n, kvDim), values16: held(r.values16, heldFrom, n, kvDim) } : {}),
-    ...(r.keys8 ? { keys8: held(r.keys8, heldFrom, n, kvDim), values8: held(r.values8, heldFrom, n, kvDim) } : {}),
-    ...(r.keysH ? { keysH: held(r.keysH, heldFrom, n, kvDim), valuesH: held(r.valuesH, heldFrom, n, kvDim) } : {}) } };
+  const rows = (b64) => held(padded(b64, widths, kvDim), heldFrom, n, kvDim);
+  const kept = (run) => run && { ...run, keys: rows(run.keys), values: rows(run.values), ...(run.again ? { again: kept(run.again) } : {}) };
+  const r = found.reference, c = { ...found, reference: { ...r, ...kept(r), ...(r.keys16 ? { keys16: rows(r.keys16), values16: rows(r.values16) } : {}),
+    ...(r.keys8 ? { keys8: rows(r.keys8), values8: rows(r.values8) } : {}),
+    ...(r.keysH ? { keysH: rows(r.keysH), valuesH: rows(r.valuesH) } : {}) } };
   const ref = c.reference, cpu = kept(cpuRun), runs = runsGiven.map(kept);
   const exact = { keys: ref.keys, values: ref.values };
   // T187: the worst row of every layer (the lines are held a layer at a time)
@@ -188,7 +191,7 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
         return g.every((word, i) => Math.floor((i % (32 * kvDim)) / kvDim) < (heldFrom?.[Math.floor(i / (32 * kvDim))] ?? 0)
           || word === w[Math.floor(i / (32 * kvDim)) * n * kvDim + (i % (32 * kvDim))]) && w.length === each * n * kvDim;
       };
-      const own = cpuOwn(r.keys, cpuRun.keys) && cpuOwn(r.values, cpuRun.values);
+      const own = cpuOwn(padded(r.keys, widths, kvDim), padded(cpuRun.keys, widths, kvDim)) && cpuOwn(padded(r.values, widths, kvDim), padded(cpuRun.values, widths, kvDim));
       if (r.gpuTokens !== 0 || r.after !== 0 || !NOT_FINITE_KV_STATUS.test(r.status ?? "") || !own) {
         failures.push(`a block with ${r.value} in the row of token ${r.token} (at ${r.at}) through forward.js: ${r.gpuTokens} of its tokens and ${r.after} with the next block's taken on the GPU, ` +
           `the status line "${r.status}", the cache ${own ? "the CPU's own" : "not the CPU's own"}: the block is to be refused whole, the GPU stopped for keys or values that are not finite, the CPU to take both blocks`);

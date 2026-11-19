@@ -17,6 +17,9 @@ export type PerLayer = {
   inputs(ids: number[], count: number): void;
   /** what layer l makes of its input joins the stream of count tokens (after the FFN, before the layer's scale) */
   layer(l: number, count: number): void;
+  /** T334.1: the width of a layer's input, and where inputs() puts count tokens' ([token][layer][width] floats: the GPU's
+   * worker reads a prompt's block of them there) */
+  width: number; at: number;
 };
 
 /** The step of every layer's input, or null where the model has no table of it. rows: where the table's rows come from */
@@ -55,6 +58,7 @@ export function perLayer({ plan, eps, k, room, floats, matrix, at, S, matmuls }:
     }
   };
   return {
+    width, at: inputs,
     inputs(ids, count) {
       // the projection of the embedded token, normalized every width values (one norm, every layer's)
       matmuls(x, count, [[projection, inputs, I, 0]]);

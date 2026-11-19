@@ -40,6 +40,11 @@ export function planned({ kinds, matrices, vectors, more: { positions, ...more }
       finalBias: 0, positions: 0, outliers: false, channels: [], ids: take(4096), most: MOST },
     staging: take(1 << 20), force: {}, remembered: undefined, direct: false, words: { done: 3, failed: 2, beat: 0, wanted: 1 }, rotated: null, ...more,
   };
+  // (T334.1: every layer's heads and places, as forward/gpufit.ts's layerShapes says them of a model whose layers are all
+  // of the model's heads: an attending layer's place among the attending layers is its place in every stack; and the
+  // layers a block runs, every one)
+  Object.assign(plan, { shapes: kinds.map((_, l) => ({ head: plan.headSize, wide: false, stack: places[l], kept: places[l], reads: places[l], double: false,
+    turned: (plan.unturned as number[]).includes(l) ? 0 : plan.turned })), blockLayers: kinds.length, valueNorm: false, perLayer: null });
   if (plan.localCos === true) Object.assign(plan, { localCos: take(CONTEXT * (head / 2) * 4), localSin: take(CONTEXT * (head / 2) * 4) });
   if (positions) plan.tokens.positions = take(CONTEXT * dim * 4);
   if (plan.layerNorm) plan.tokens.finalBias = take(dim * 4);

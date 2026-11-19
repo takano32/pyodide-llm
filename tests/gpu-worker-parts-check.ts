@@ -47,6 +47,9 @@ function planned(more = {}, sizes = SIZES) {
   const plan = { layers: LAYERS, dim: DIM, hidden: HIDDEN, heads: HEADS, kvHeads: KV_HEADS, headSize: HEAD, batch: BATCH, seqLen: CONTEXT, kvStart: 8, turned: HEAD,
     eps: 1e-5, layerNorm: false, parallel: false, activation: "silu", windows: Array(LAYERS).fill(0),
     kinds: Array(LAYERS).fill("attention"), places: Array.from({ length: LAYERS }, (_, l) => l), local: [], localCos: 0, localSin: 0, unturned: [], matrices, vectors,
+    // (T334.1: every layer's heads and places, every layer in a block)
+    shapes: Array.from({ length: LAYERS }, (_, l) => ({ head: HEAD, wide: false, stack: l, kept: l, reads: l, double: false, turned: HEAD })), blockLayers: LAYERS,
+    valueNorm: false, perLayer: null,
     tokens: null, force: {},
     rows: take(BATCH * DIM * 4), staging: take(2 * LAYERS * BATCH * KV_ROW), cos: take(CONTEXT * (HEAD / 2) * 4), sin: take(CONTEXT * (HEAD / 2) * 4), ...more };
   return { plan, bytes: at };
@@ -496,6 +499,7 @@ console.log("gpu-worker-parts-check: a binary model's bits go up as ternary's co
 gpu.calls.length = 0;
 // (forms.js makes m.forms once its checks have passed on a device that computes: here the test stands for it)
 const attention = { name: "a stand-in attention", pipeline: { code: "attention", getBindGroupLayout: () => ({}) } };
+attention.pipelines = { [HEAD]: attention.pipeline };  // (T334.1: the same of each size of heads, the model's one)
 const form = { name: "a stand-in form", pipeline: { code: "tiles", getBindGroupLayout: () => ({}) }, packed: true, tile: { rows: 4, tokens: 4 } };
 m.forms = { attention, form, tried: [] };
 await prepare(m);
@@ -508,7 +512,8 @@ await prepare(m);
     [BATCH * DIM * 4, BATCH * DIM * 4, BATCH * Q_DIM * 4, BATCH * KV_DIM * 4, BATCH * KV_DIM * 4, BATCH * HIDDEN * 4, BATCH * HIDDEN * 4, BATCH * HEAD * 4, 16, 2 * LAYERS * BATCH * KV_ROW]);
   assert.equal(b.ffnInput, b.xb, "no buffer of its own for the FFN's input without a parallel residual");
   assert.equal(b.quantizeFfn, b.quantizeXb);
-  assert.equal(b.ropeAlone, null, "no layer RoPE leaves alone");
+  assert.equal(new Set(Array.from({ length: LAYERS }, (_, l) => b.ropeOf(l))).size, 1, "no layer RoPE leaves alone: one RoPE's uniform for every layer (T334.1)");
+  assert.deepEqual([b.ones, b.perLayer, b.scale], [null, null, null], "T334.1: none of a Gemma 4's");
   assert.deepEqual([b.embedRows, b.ids, b.embedGroups], [null, null, null], "the embedding is the CPU's but for a model on the GPU alone");
   assert.deepEqual([b.layers, b.cache], [null, null], "the layers' bind groups and the cache are not made yet");
 }
@@ -538,7 +543,7 @@ assert.equal(m.held, firstCache.owned, "grow() tells device.js which buffers the
   assert.equal(ended, false, "a layer that is not the last does not end the block");
   assert.deepEqual(products.map((pieces) => pieces.map((piece) => piece.rows)), [[Q_DIM], [KV_DIM], [KV_DIM], [DIM]], "q, k, v, then o: one piece of each matrix's rows");
   assert.equal(products[0][0].group.entries[2].resource.buffer, m.block.xq, "q reads the quantized input");
-  assert.deepEqual(quantized, [m.block.quantizeAttention], "o's input is the attention's output, quantized");
+  assert.deepEqual(quantized, [m.block.quantizeHeads[HEAD]], "o's input is the attention's output, quantized");
   assert.deepEqual(biases, [undefined], "no bias after o (and none of q, k and v asked for)");
   assert.deepEqual(dispatched.map(([pipeline, group]) => [pipeline, group]), [[m.block.rope, firstCache.rope[0]], [m.forms.attention.pipeline, firstCache.attention[0]]],
     "RoPE into the layer's cache, then the attention over it: no norm of a head");

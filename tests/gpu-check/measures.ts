@@ -54,4 +54,19 @@ function held(b64, from, positions, width) {
   from.forEach((first, l) => out.fill(0, l * positions * width, (l * positions + first) * width));
   return Buffer.from(out.buffer).toString("base64");
 }
-export { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff, held };
+// T334.1: keys or values of layers of their own widths, one layer's after another's ([layer][position][its width]: a
+// Gemma 4's, NumPy's and the page's engine's alike, of the layers that keep their own), as rows of the widest
+// ([layer][position][width], each row filled with zeros past its own width), so that a layer and a row are where they
+// are in a model whose layers are all as wide (worstRow() reads the zeros as 0 from 0). widths: none, or all of the
+// width: as they are
+function padded(b64, widths, width) {
+  if (!widths || widths.every((each) => each === width)) return b64;
+  const given = floats(b64), positions = given.length / widths.reduce((sum, each) => sum + each, 0);
+  const out = new Float32Array(widths.length * positions * width);
+  let from = 0;
+  widths.forEach((each, l) => {
+    for (let p = 0; p < positions; p++, from += each) out.set(given.subarray(from, from + each), (l * positions + p) * width);
+  });
+  return Buffer.from(out.buffer).toString("base64");
+}
+export { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff, held, padded };

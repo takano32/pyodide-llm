@@ -31,14 +31,20 @@ export const attention: GpuKind = {
       // Qwen3's, where the model has them; T154: GPT-2's biases), the gate of the output, o and its bias
       layer({ l, place, product, out, added }) {
         const b = m.block, V = m.weights.vectors!;
-        const headNorm = (of: GPUBuffer, name: keyof Vectors, heads: number) =>
-          (V[name] ? { group: bind(m, b.headNorm, [of, V[name], normShape(m, plan.headSize, (plan.vectors[name]!.of ? place : l) * plan.headSize, plan.eps), b.step]), heads } : null);
-        const q = product("wq", b.xb, b.q), k = product("wk", b.xb, b.k), v = product("wv", b.xb, b.v);
+        // T334.1: the layer's heads (a Gemma 4's: of their own size, the wide ones' of the stacks named _wide, each layer at
+        // its places in them; k and v of the layer whose keys and values it reads, where it is not its own)
+        const { head, wide, stack, kept } = plan.shapes[l], named = <Name extends string>(name: Name) => (wide ? `${name}_wide` : name);
+        // (T545: a layer's at its place among the attending layers, an LFM2's, which is its place in the stacks of q and k)
+        const headNorm = (of: GPUBuffer, name: keyof Vectors, heads: number, at: number) =>
+          (V[name] ? { group: bind(m, b.headNorm, [of, V[name], normShape(m, head, at * head, plan.eps), b.step]), heads } : null);
+        const q = product(named("wq"), b.xb, b.q, false, stack), k = product(named("wk"), b.xb, b.k, false, kept), v = product(named("wv"), b.xb, b.v, false, kept);
         const biases = [added(b.q, "bq"), added(b.k, "bk"), added(b.v, "bv")].filter(Boolean) as Added[];
-        const headNorms = [headNorm(b.q, "qNorm", plan.heads), headNorm(b.k, "kNorm", plan.kvHeads)].filter(Boolean) as HeadNorm[];
+        // (T334.1: and a Gemma 4's norm of v's heads, by weights of ones)
+        const headNorms = [headNorm(b.q, wide ? "qNormWide" : "qNorm", plan.heads, stack), headNorm(b.k, wide ? "kNormWide" : "kNorm", plan.kvHeads, kept),
+          b.ones && { group: bind(m, b.headNorm, [b.v, b.ones, normShape(m, head, 0, plan.eps), b.step]), heads: plan.kvHeads }].filter(Boolean) as HeadNorm[];
         const gate = outputGate ? { into: product("wg", b.xb, outputGate.gated),
           group: bind(m, outputGate.pipeline, [b.xb, outputGate.gated, uniform(m, new Uint32Array([qDim, 0, 0, 0])), b.step]) } : null;
-        const o = out("wo", b.xb), oBias = added(b.x, "bo"), flash = m.forms.attention;
+        const o = out(named("wo"), b.xb, stack), oBias = added(b.x, "bo"), flash = m.forms.attention.pipelines[head], quantizeAttention = b.quantizeHeads[head];
         // T153: as the CPU has it (forward.ts), the biases, then the norms of the heads, then RoPE; the attention over the
         // cache (block.ts's, as it is at the block: it grows), the gate, o
         return ({ pass, count, last, multiplied, quantized, biased, ffnNorm }) => {
@@ -53,9 +59,9 @@ export const attention: GpuKind = {
           if (last) return true;  // the keys and values are all a prompt's token leaves
           // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it
           if (plan.parallel) ffnNorm();
-          dispatch(pass, flash.pipeline, cache.attention[place], plan.heads * Math.ceil(count / FLASH_Q_TILE));
+          dispatch(pass, flash, cache.attention[place], plan.heads * Math.ceil(count / FLASH_Q_TILE));
           if (gate) dispatch(pass, outputGate!.pipeline, gate.group, Math.ceil(qDim / 64), count);
-          quantized(b.quantizeAttention);
+          quantized(quantizeAttention);
           multiplied(o);
           biased(oBias);
           return false;

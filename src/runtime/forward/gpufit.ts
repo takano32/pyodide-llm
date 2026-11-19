@@ -10,7 +10,15 @@ import type { Packed } from "../jobs.ts";
 import type { Held } from "./kinds.ts";
 import type { Direct } from "./alone.ts";
 import type { KindNumbers, Vector, Vectors } from "../contracts/gpu/protocol.ts";
-import type { Activation, LayerKind, Tensor } from "../contracts/plan.ts";
+import type { Activation, LayerKind, Tensor, TensorName } from "../contracts/plan.ts";
+
+// T334.1: a layer's heads and places (Shape's layerShapes)
+export type LayerShape = { head: number; wide: boolean; stack: number; kept: number; reads: number; double: boolean; turned: number };
+// T334.1: the last layer a prompt's block runs: the last that keeps keys and values of its own or a state (a Gemma 4's
+// layers after it read another layer's keys and values, and leave nothing a later position reads: a block, which leaves
+// the keys and values alone, need not run them)
+export const lastKept = ({ layerShapes, kinds }: Pick<Shape, "layerShapes" | "kinds">) =>
+  layerShapes.reduce((last, { kept }, l) => (kinds[l] !== "attention" || kept >= 0 ? l : last), -1);
 
 // ---- (T368.4, the types) what createForward() (engine.ts) makes once and hands gpuFit() and gpuSide() (gpuside.ts)
 // the model's facts
@@ -20,9 +28,23 @@ export type Shape = {
   D: number; KV: number; halfKV: boolean;
   eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; gatedFfn: boolean; parallel: boolean; unturned: number[];
   // T261: the FFN's activation, and whether some layer attends a window or is turned by tables of its own; T261.4: and
-  // every layer's window (0: every position) and the layers turned by those tables; extras: what a Gemma 4 has besides
-  // (a norm of v's heads, a cap of the logits, a scale of a layer, layers of other widths, keys and values shared)
+  // every layer's window (0: every position) and the layers turned by those tables; extras: what the GPU's layers have
+  // not (T283: a BitNet's norms in front of wo and w2)
   activation: Activation; local: boolean; windows: number[]; locals: number[]; extras: boolean;
+  // T334.1: every layer's heads (their size; whether they are the wide ones', whose tensors are the stacks named _wide),
+  // its places in its stacks (stack: of q, o and the norm of q's heads; kept: of k, v and the norm of k's heads, -1 where
+  // it reads another layer's keys and values; reads: the place among the attending layers of the layer whose it reads),
+  // whether its FFN is the wider one (_double), and the values of a head RoPE turns in it (0: none)
+  layerShapes: LayerShape[];
+  // T334.1: what a Gemma 4 has besides: the heads of v normalized (by weights of ones), the logits capped (0: not), the
+  // inputs of every layer of a table of their own (their width; null: none)
+  valueNorm: boolean; softcap: number; perLayer: { width: number } | null;
+  // T334.1: the layers each stack of the model's is of, by the tensor's name (a Gemma 4's narrow and wide stacks are each
+  // of some of its layers)
+  counts: Partial<Record<TensorName, number>>;
+  // T334.1: every layer's place in the stacks of a Gemma 4's that are of some of its layers (-1: none of it), by the
+  // tensor's name (none: a model whose stacks are every layer's or its kind's)
+  stackPlaces: Partial<Record<TensorName, number[]>>;
   // T612: the attention's scores are capped (a Gemma 2's), which the GPU's attention has not
   scoresCapped: boolean;
   // T568.4: what the GPU's side reads of each kind of the model's layers that the GPU's worker has a step for, in the table's
@@ -67,6 +89,11 @@ export type Placed = {
   attPost: number; ffnPost: number; localCos: number; localSin: number;
   // T271.1: the signs of a rotated basis by the width a matrix reads (their addresses: null in the model's own basis)
   signs: Record<number, number> | null;
+  // T334.1: the number every layer ends by multiplying the stream by (0: none), and a Gemma 4's tensors that no other
+  // model has, by the GPU's names: the attention of its layers of wide heads and what every layer makes of its input of
+  // a table of its own (the gate, the projection back, its norm), and the norms of the wide heads and the layer's number
+  layerScale: number;
+  sized: { matrices: Record<string, Held>; qNormWide: number; kNormWide: number; plePost: number };
   // T547.3.4: the codebooks of llama.cpp's blocks, the checkpoint's row (its address: 0, a file with no such rows)
   codebooks: number;
   // T568.4: the matrices and vectors the kinds of its layers have of their own on the GPU, by the GPU's names (forward/kinds.ts's
@@ -76,7 +103,9 @@ export type Placed = {
 };
 // what the GPU is to take of the model (gpuFit()'s matrices and vectors), why it would take none or no steps, and the
 // places in the memory it answers into (0: none)
-export type Taken = { matrices(): Record<string, Held>; vectors(): Vectors; whyNot: string | null; tokensWhyNot: string | null; staging: number; rows: number; ids: number };
+// (T334.1: inputs, a Gemma 4's inputs of every layer of a block's tokens)
+export type Taken = { matrices(): Record<string, Held>; vectors(): Vectors; whyNot: string | null; tokensWhyNot: string | null; staging: number; rows: number; ids: number;
+  inputs: number };
 
 /** T349: what the GPU would hold of one engine's model, and why it would not take it (createForward() asks before it
  * allocates the places the GPU writes to).
@@ -86,10 +115,14 @@ export type Taken = { matrices(): Record<string, Held>; vectors(): Vectors; whyN
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; sharedMemory: boolean; oneThread?: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, scoresCapped, gpuKinds, stateful,
-    rotated, sharedClassifier, kinds, attending, stateBytes } = shape;
-  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, channels } = weights;
-  // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf())
-  const countOf = (name: string) => (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
+    rotated, sharedClassifier, kinds, attending, stateBytes, layerShapes, valueNorm, softcap, perLayer, counts } = shape;
+  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, sized,
+    layerScale, channels } = weights;
+  // (T334.1: the size of a Gemma 4's wide heads)
+  const wideHead = Math.max(headSize, ...layerShapes.map(({ head }) => head));
+  // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf()); T334.1:
+  // a matrix's stack says it (a Gemma 4's narrow and wide ones are each of some of its layers)
+  const countOf = (name: string) => counts[name as TensorName] ?? (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
   const { gpuRoom, sharedMemory, oneThread } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
   // (T153: with Qwen2's biases, Qwen3's norms of the heads and heads of another size than dim / heads as well; T154:
@@ -97,7 +130,8 @@ export function gpuFit({ shape, weights, device, direct }:
   // (a function, not a const: gpuUnfit runs before this line, AGENTS.md)
   function gpuMatrices() {
     // (T568.4: and the kinds' own, after every model's)
-    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, ...own.matrices }).filter(([, m]) => m)) as Record<string, Held>;
+    // (T334.1: and a Gemma 4's own)
+    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, ...own.matrices, ...sized.matrices }).filter(([, m]) => m)) as Record<string, Held>;
   }
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.ts; T232: ternary weights
   // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers: the
@@ -126,6 +160,13 @@ export function gpuFit({ shape, weights, device, direct }:
     // off by this line too). An FFN without a gate is GELU's on the GPU, as it was (T154)
     if ((gatedFfn && activation !== "silu" && activation !== "gelu") || extras) return REASONS.pair;
     if ((attPost || ffnPost) && layerNorm) return REASONS.pair;
+    // T334.1: a Gemma 4's layers are on the GPU's blocks (heads of their sizes, keys and values of another layer's, the
+    // heads of v normalized, an input of every layer, the layer's number), but for an FFN of its wider ones in a layer a
+    // block runs (none of the E2B's: its wider ones are those of the layers after the last that keeps keys and values),
+    // and for layers of one table of RoPE with heads of two sizes (the tables are of one head's angles: no Gemma 4's)
+    // (and none of its layers that read another's keys and values comes before the last that keeps its own: no Gemma 4's)
+    if (layerShapes.slice(0, lastKept(shape) + 1).some(({ double, kept }) => double || kept < 0)) return REASONS.pair;
+    if ([true, false].some((isLocal) => new Set(layerShapes.filter((_, l) => shape.locals.includes(l) === isLocal).map(({ head }) => head)).size > 1)) return REASONS.pair;
     // (T371, the owner's choice C: a memory not shared on an isolated page is ?threads=1's, or one the browser would
     // not share, or a 64-bit one with no shared kernels for it)
     if (!sharedMemory) return !globalThis.crossOriginIsolated ? REASONS.notIsolated : oneThread ? REASONS.oneThread : REASONS.notShared;
@@ -169,6 +210,11 @@ export function gpuFit({ shape, weights, device, direct }:
     // packing of its own where one of them is of llama.cpp's blocks, which the GPU embeds and multiplies by its type's
     // shaders (Saluki's: an embedding of IQ1_M, a classifier of IQ3_S); not with outlier channels, whose classifier is
     // multiplied as floats of int8)
+    // (T334.1: a Gemma 4's steps stay here: a token's fused layer has none of what its layers have besides, which a
+    // prompt's block has, nor the cap of its logits)
+    if (valueNorm || softcap || layerScale || perLayer || layerShapes.some(({ head, kept, double }) => head !== headSize || kept < 0 || double)) {
+      return REASONS.ownSteps;
+    }
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     const embedded = packingOf(embedding.kind)?.gpu && embedding.group === packingOf(embedding.kind)!.group ? packingOf(embedding.kind)!.gpu!.as : null;
     const blocks = Boolean(held && embedded) && (!PACKED[held!].scale || !PACKED[embedded!].scale);
@@ -195,12 +241,22 @@ export function gpuFit({ shape, weights, device, direct }:
     return { attention: { at: attW, size: dim }, ffn: { at: ffnW, size: dim },
       ...(layerNorm ? { attentionBias: { at: attB, size: dim }, ffnBias: { at: ffnB, size: dim } } : {}),
       ...(bq ? { bq: { at: bq, size: qDim }, bk: { at: bk, size: kvDim }, bv: { at: bv, size: kvDim } } : {}),
-      ...(qNorm ? { qNorm: { at: qNorm, size: headSize }, kNorm: { at: kNorm, size: headSize } } : {}),
+      // (T334.1: of the layers of their stacks, where those are some of the layers: a Gemma 4's narrow ones)
+      ...(qNorm ? { qNorm: { at: qNorm, size: headSize, ...stacked("q_norm") }, kNorm: { at: kNorm, size: headSize, ...stacked("k_norm") } } : {}),
       ...(bo ? { bo: { at: bo, size: dim }, b1: { at: b1, size: hidden }, b2: { at: b2, size: dim } } : {}),
       ...(attPost ? { attentionPost: { at: attPost, size: dim } } : {}), ...(ffnPost ? { ffnPost: { at: ffnPost, size: dim } } : {}),
       // T568.4: the kinds' own (forward/kinds.ts's gpu: T545 an LFM2's taps; T271.2 a Qwen3.5's taps, its gates' two
       // small matrices, their biases, decays and the norm of a value head)
-      ...own.vectors };
+      ...own.vectors,
+      // T334.1: a Gemma 4's own: the norms of its wide heads (of their stacks' layers), the norm of what every layer makes of
+      // its input of a table of its own, and every layer's number
+      ...(sized.qNormWide ? { qNormWide: { at: sized.qNormWide, size: wideHead, ...stacked("q_norm_wide") }, kNormWide: { at: sized.kNormWide, size: wideHead, ...stacked("k_norm_wide") } } : {}),
+      ...(sized.plePost ? { plePost: { at: sized.plePost, size: dim } } : {}), ...(layerScale ? { layerScale: { at: layerScale, size: 1 } } : {}) };
+  }
+  // (a vector's count of layers where its stack is of some of them alone, as its tensor counts them)
+  function stacked(tensor: TensorName) {
+    const count = counts[tensor];
+    return count !== undefined && count !== layers ? { count } : {};
   }
   // T545: the same, each with the kind of the layers it is of where it is not every layer's (kindOf()), for the plan
   function gpuVectorsOf(): Vectors {

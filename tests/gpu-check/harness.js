@@ -641,7 +641,8 @@ try {
     }
     // T558.1: of every attending layer, the first position of the prompt the CPU's cache still holds after it (a ring's,
     // a window's layer: the last period of positions, memory.ts's ringPositions(); every position otherwise)
-    const heldFrom = c.plan.layers.filter((layer) => layer.kind === "attention").map((layer) => {
+    // (T334.1: of those that keep their own, as the keys and values are read: a Gemma 4's that read another's keep none)
+    const heldFrom = c.plan.layers.filter((layer) => layer.kind === "attention" && layer.kept >= 0).map((layer) => {
       const period = ringPositions(layer.window ?? 0, c.plan.seq_len) / 2;
       return period ? Math.max(0, n - period + 1) : 0;
     });

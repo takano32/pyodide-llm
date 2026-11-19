@@ -22,11 +22,15 @@ export type GpuPacking = "int8" | "int6" | "ternary" | "binary" | "Q4_K" | "Q2_K
 // are (T547.2.3: unread where they are in its blocks: Q4_K's)]. T545: of: the kind of the layers it is a matrix of (an LFM2's q is its attending layers', its matrix in its
 // convolution layers'), whose places index layers; none: every layer's. T547.3.1: packing "layers", a stack whose
 // layers are each of a packing of its own (Saluki's, llama.cpp's types a tensor), and packings, each layer's by its place
-export type Matrix = { rows: number; n: number; packing: GpuPacking | "layers"; packings?: GpuPacking[]; layers: [number, number][]; of?: LayerKind };
+// T334.1: at, every layer's place in the matrix's stack (-1: none of it), where the stack is of some layers whatever
+// their kinds (a Gemma 4's narrow and wide heads', and its FFN's of the narrower), whose places index layers then
+export type Matrix = { rows: number; n: number; packing: GpuPacking | "layers"; packings?: GpuPacking[]; layers: [number, number][]; of?: LayerKind; at?: number[] };
 // a table (the classifier, the embedding): as a matrix, at [values, scales]
 export type Table = { rows: number; n: number; packing: GpuPacking; at: [number, number] };
 // a vector of every layer: where it is, and its size a layer (T545: of, as a matrix's)
-export type Vector = { at: number; size: number; of?: LayerKind };
+// T334.1: count, the layers of its stack where those are some of the layers alone, whatever their kinds (a Gemma 4's
+// norms of its narrow heads and of its wide ones)
+export type Vector = { at: number; size: number; of?: LayerKind; count?: number };
 
 // The vectors a model has (gpufit.ts's gpuVectors()): the norms' weights always; LayerNorm's biases (T154), Qwen2's
 // biases of q, k and v and Qwen3's norms of a head (T153), a GPT-2's biases after its matrices, where the model has them
@@ -56,6 +60,12 @@ export type Vectors = {
   dtBias?: Vector;
   decay?: Vector;
   deltaNorm?: Vector;
+  // T334.1: a Gemma 4's norms of the heads of q and k of its layers of wide heads, the norm of what every layer makes of
+  // its input of a table of its own, and the number every layer ends by multiplying the stream by (one a layer)
+  qNormWide?: Vector;
+  kNormWide?: Vector;
+  plePost?: Vector;
+  layerScale?: Vector;
 };
 
 // T625: a plan's matrices, by the names of the plan's tensors, and only those the model has
@@ -148,6 +158,19 @@ export type Started = KindNumbers & {
   // T271.1: a rotated basis (T237): its block, and where the signs of each width a matrix reads are (float32, Python's,
   // each times 1 / sqrt(block)); null: the model's own basis
   rotated: { block: number; signs: { width: number; at: number }[] } | null;
+  // T334.1: every layer's heads (their size, and whether they are the wide ones', whose tensors are the matrices named
+  // _wide and the vectors qNormWide and kNormWide), its places in its stacks (stack: of q, o and the norm of q's heads;
+  // kept: of k, v and the norm of k's heads, -1 where it reads another layer's keys and values; reads: the place among
+  // the attending layers of the layer whose keys and values it attends over), whether its FFN is the wider one (no block
+  // runs such a layer: forward/gpufit.ts), and the values of a head RoPE turns in it (0: none). A prompt's block runs the
+  // layers up to the last that keeps keys and values of its own or a state (forward/gpufit.ts's lastKept)
+  shapes: LayerShape[];
+  blockLayers: number;
+  // T334.1: the heads of v normalized (an RMSNorm of weights of ones: a Gemma 4's), and the inputs of every layer of a
+  // table of their own (a Gemma 4's: their width, and where the CPU puts a block's, [tokens][layers][width] floats;
+  // null: none), which every layer gates by the stream, projects back and adds to it normed (plePost)
+  valueNorm: boolean;
+  perLayer: { width: number; inputs: number } | null;
   // the most tokens of a block
   batch: number;
   matrices: Matrices;
@@ -176,6 +199,8 @@ export type Opened = { layers: number; matrices: Matrices; tables: Tables; force
 // places: the address of position 0's keys and values, position p's p rows after; or, where ring is not 0, a ring of so
 // many positions that holds position p at p mod ring, T510.1), the bytes of a position, and whether they are float16
 export type CachePlace = { keys: number; values: number; ring: number };
+// T334.1: a layer's heads and places in a Started plan (its shapes)
+export type LayerShape = { head: number; wide: boolean; stack: number; kept: number; reads: number; double: boolean; turned: number };
 export type Cache = { places: CachePlace[]; row: number; half: boolean };
 // the sampling of the steps (the engine's settings; T546: topK, minP and presence too, 0 where none; stops: the stop
 // tokens)

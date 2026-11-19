@@ -75,6 +75,8 @@ for (const [model, made, packed, direct] of runs) {
     }
     // (the forms forms.ts would choose on a device that computes: stand-ins of the tiles and the prompt's attention)
     const attention = { name: "a stand-in attention", pipeline: { code: "the prompt's attention", getBindGroupLayout: () => ({}) } };
+    // (T334.1: the same of each size of heads, which a tree after it binds by; one before it reads pipeline)
+    attention.pipelines = { [plan.headSize]: attention.pipeline };
     const form = { name: "a stand-in form", pipeline: { code: "the tiles", getBindGroupLayout: () => ({}) }, packed, tile: { rows: 4, tokens: 4 } };
     m.forms = { attention, form, tried: [] };
     // (a buffer by where it first comes in the record, a uniform by its bytes)

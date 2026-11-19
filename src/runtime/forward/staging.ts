@@ -9,7 +9,6 @@ import type { Cache } from "./cache.ts";
 /** staging: the place's address (0: none); attending: the layers that keep keys and values in the cache (in the cache's
  * order); kvDim: a position's keys of a layer */
 export function stagingReader({ k, cache, staging, attending, kvDim }: { k: Kernels; cache: Cache; staging: number; attending: number; kvDim: number }) {
-  const { KV } = cache;
   // T147: the keys and values of count positions from pos that the GPU's worker put into staging (float16, [keys,
   // values][layer][GPU_BLOCK positions]), into the cache
   // (T545: by the cache's places, the attending layers in order: every layer where every layer attends; and the
@@ -24,19 +23,24 @@ export function stagingReader({ k, cache, staging, attending, kvDim }: { k: Kern
       const ring = cache.ring(l);
       if (ring) {
         const twice = ring.size * ring.row;
+        // (T334.1: a position's of its own width, a Gemma 4's narrow layers')
+        const width = cache.width(l);
         for (let t = 0; t < count; t++) {
-          const slot = ((pos + t) % ring.size) * ring.row, key = staging + (l * GPU_BLOCK + t) * kvDim * 2, value = staging + ((attending + l) * GPU_BLOCK + t) * kvDim * 2;
-          cache.putHalves(ring.keys + slot, ring.values + slot, key, value);
-          cache.putHalves(ring.keys + slot + twice, ring.values + slot + twice, key, value);
+          const slot = ((pos + t) % ring.size) * ring.row, key = staging + l * GPU_BLOCK * kvDim * 2 + t * width * 2, value = staging + (attending + l) * GPU_BLOCK * kvDim * 2 + t * width * 2;
+          cache.putHalves(ring.keys + slot, ring.values + slot, key, value, width);
+          cache.putHalves(ring.keys + slot + twice, ring.values + slot + twice, key, value, width);
         }
         ring.latest = pos === 0 ? count - 1 : Math.max(ring.latest, pos + count - 1);
         continue;
       }
-      // (a layer's block among those that keep every position: l * KV a position in, where no ring is)
+      // (a layer's block among those that keep every position: l * KV a position in, where no ring is; T334.1: or of its
+      // own row, and none of a layer that reads another's keys and values: a Gemma 4's)
+      const width = cache.width(l), row = cache.row(l);
+      if (!width) continue;
       const offset = capacity * cache.offset(cache.index(l)), layerKeys = cache.keys + offset, layerValues = cache.values + offset;
       for (let t = 0; t < count; t++) {
-        cache.putHalves(layerKeys + (pos + t) * KV, layerValues + (pos + t) * KV,
-          staging + (l * GPU_BLOCK + t) * kvDim * 2, staging + ((attending + l) * GPU_BLOCK + t) * kvDim * 2);
+        cache.putHalves(layerKeys + (pos + t) * row, layerValues + (pos + t) * row,
+          staging + l * GPU_BLOCK * kvDim * 2 + t * width * 2, staging + (attending + l) * GPU_BLOCK * kvDim * 2 + t * width * 2, width);
       }
     }
   }
@@ -45,9 +49,11 @@ export function stagingReader({ k, cache, staging, attending, kvDim }: { k: Kern
   // (65536 and more), so that what a GPU computed wrong would be read from the cache as numbers ever after, by the CPU's
   // steps and its logits (T195 sees nothing then). They are looked at by their bits (finite_f16: the exponent's five)
   // before anything of them is written: one pass of a kernel over what fromStaging reads, none in the attention's loops
+  // (T334.1: each layer's of its own width, none of a layer that reads another's)
   function stagingFinite(count: number) {
     for (let part = 0; part < 2 * attending; part++) {
-      if (!k.finite_f16(staging + part * GPU_BLOCK * kvDim * 2, count * kvDim)) return false;
+      const width = cache.width(part % attending);
+      if (width && !k.finite_f16(staging + part * GPU_BLOCK * kvDim * 2, count * width)) return false;
     }
     return true;
   }

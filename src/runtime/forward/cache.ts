@@ -133,14 +133,15 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
     /** T147: a token's key and value in float16 (the GPU's) into the cache at keyAt and valueAt. T160: a float32 cache
      * (a grouped-query model's) widens them with a kernel, as attention_f16 reads them (halfToFloat one at a time took
      * 27 to 33 ns a value on CI's runners: 1.7 ms a token of Qwen3 0.6B's prompt) */
-    putHalves(keyAt: number, valueAt: number, key: number, value: number) {
+    // (T334.1: width values of each, a place's own; kvDim where it is not said)
+    putHalves(keyAt: number, valueAt: number, key: number, value: number, width = kvDim) {
       if (half) {
         const U = room.U;
-        U.copyWithin(keyAt, key, key + kvDim * 2);
-        U.copyWithin(valueAt, value, value + kvDim * 2);
+        U.copyWithin(keyAt, key, key + width * 2);
+        U.copyWithin(valueAt, value, value + width * 2);
       } else {
-        k.from_f16(keyAt, key, kvDim);
-        k.from_f16(valueAt, value, kvDim);
+        k.from_f16(keyAt, key, width);
+        k.from_f16(valueAt, value, width);
       }
     },
     /** the keys and values at positions from .. from + count - 1, in float32, [layers][count][kvDim] each (tests; T510.1:
