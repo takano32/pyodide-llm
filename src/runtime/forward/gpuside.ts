@@ -233,11 +233,13 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
         // (the owner, 2026-09-27: the prompts as well, which the GPU runs about five times as fast, weighed by use)
         if (direct) {
           const block = data.blocks.find((b) => b.count === GPU_BLOCK);
-          const verdict = aloneVerdict({ size: cpuReadBytes(direct.size, wo!.kind), layerWeights: direct.layerWeights, cpu: cpuOf(direct.cpu, wo!.kind), usage: direct.usage,
+          // (T313's review: the reason's GB/s is the one weighed, the ternary kernels' ratio on it)
+          const cpu = cpuOf(direct.cpu, wo!.kind);
+          const verdict = aloneVerdict({ size: cpuReadBytes(direct.size, wo!.kind), layerWeights: direct.layerWeights, cpu, usage: direct.usage,
             gpu: { stepMs: data.tokens!.ms, promptMs: block ? block.ms / block.count : undefined } });
           if (verdict.cpuFaster) {
             direct.verdict = { key: data.key, cpu: direct.cpu! };  // the page keeps it: the next load goes on the CPU at once
-            return stopGpu(REASONS.cpuFaster(direct.cpu!.GBps, verdict.cpu, verdict.gpu, direct.usage.prompt, direct.usage.written));
+            return stopGpu(REASONS.cpuFaster(cpu!.GBps, verdict.cpu, verdict.gpu, direct.usage.prompt, direct.usage.written));
           }
         }
         settleGpu?.(always ? PROMPTS_GPU : PROMPTS_UNTIMED);
