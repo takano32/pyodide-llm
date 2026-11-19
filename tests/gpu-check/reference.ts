@@ -25,8 +25,12 @@ def read_in_place(read):
     int8, in a file the native Python maps: referenceCase() below) is no second copy in a runner of 16 GB. The same
     values: the copy is for a checkpoint that may be let go, which this one is not while a Llama reads it"""
     def reading(checkpoint, place, whole=True, copy=False):
+        # (the table's own row first: a stack of layers of their own kinds has a kind of each, a tuple, which KINDS has
+        # not: synthetic-q4k's, the full suite's, run 44633537717)
+        if whole or place.row.name != "per_layer_table":
+            return read(checkpoint, place, whole, copy)
         kind = KINDS[place.kind] if place.kind is not None else None
-        if whole or place.row.name != "per_layer_table" or kind is None or kind.name != "int8":
+        if kind is None or kind.name != "int8":
             return read(checkpoint, place, whole, copy)
         shape = place.row.shape
         raw = np.frombuffer(checkpoint, dtype=np.uint8, count=place.scales - place.offset, offset=place.offset)
