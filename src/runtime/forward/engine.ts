@@ -316,7 +316,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       [["wq_wide", "wo_wide"], ({ kind, wide, stack }: Layer) => (kind === "attention" && wide ? stack : -1)],
       [["wk", "wv"], ({ kind, wide, kept }: Layer) => (kind === "attention" && !wide ? kept : -1)],
       [["wk_wide", "wv_wide"], ({ kind, wide, kept }: Layer) => (kind === "attention" && wide ? kept : -1)],
-      [["w1", "w2", "w3"], ({ double, ffn }: Layer) => (double ? -1 : ffn)]] satisfies [TensorName[], (fact: Layer, l: number) => number][])
+      [["w1", "w2", "w3"], ({ double, ffn }: Layer) => (double ? -1 : ffn)],
+      // (T334.2: and of its wider FFN, which a token's steps run: no block runs a layer of it)
+      [["w1_double", "w2_double", "w3_double"], ({ double, ffn }: Layer) => (double ? ffn : -1)]] satisfies [TensorName[], (fact: Layer, l: number) => number][])
       .flatMap(([names, place]) => names.map((name) => [name, facts.map(place)] as const))) : {},
     // (the layers of every stack of matrices, and of the norms of the heads: a Gemma 4's are some of its layers)
     counts: { ...Object.fromEntries(Object.entries(T).flatMap(([name, t]) =>
@@ -336,7 +338,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // its input of a table of its own (perLayer.ts: the gate, the projection back and its norm), where it has them
     layerScale,
     sized: {
-      matrices: Object.fromEntries((["wq_wide", "wk_wide", "wv_wide", "wo_wide", "per_layer_projection", "ple_gate", "ple_proj"] satisfies TensorName[])
+      // (T334.2: and its wider FFN's, which a token's steps read)
+      matrices: Object.fromEntries((["wq_wide", "wk_wide", "wv_wide", "wo_wide", "per_layer_projection", "ple_gate", "ple_proj", "w1_double", "w2_double", "w3_double"] satisfies TensorName[])
         .flatMap((name) => (matrix(name) ? [[name, matrix(name)!] as const] : []))),
       qNormWide: floats("q_norm_wide"), kNormWide: floats("k_norm_wide"), perLayerNorm: floats("per_layer_norm"), plePost: floats("ple_post"),
     },
