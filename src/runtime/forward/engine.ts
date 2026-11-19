@@ -123,8 +123,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T375.5: what sizes the model, as the plan says it (sizes.ts): the kinds are asked with it for what they put in a
   // token's frame and keep besides, as footprint() asks them before a model is loaded
   const sizes = sizesOfPlan(plan), had = kindsHad(sizes, kinds);
-  // T255: the layers RoPE leaves alone, as the GPU's plan lists them
-  const unturned = Array.from(plan.unturned || []);
   // T237: the block of a rotated basis (0: the model's own basis). llama2_numpy.py has the definition above hadamard()
   const rotated = plan.rotated || 0;
   const imports = { env: { memory } };
@@ -249,7 +247,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // made, and it takes its room last, below. T210: none on the GPU alone, whose keys and values are the GPU's alone
   // (no step runs here, and one that fails is loaded again on the CPU)
   const cache = keyValueCache({ room, k, kvDim, half: halfKV, start: direct ? 0 : Math.min(plan.kv_start, seqLen), seqLen });
-  const { KV } = cache;
   // T375.3: the layers, made by their kinds (the table's order), and the FFN: what each is handed is core (kinds.ts
   // says what is in it). Every layer's step is then in steps, which run() calls; the kinds that keep a state from
   // token to token are in keeping (follow())
@@ -285,9 +282,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const { columns, picked } = outlierColumns(channels);
   // T378.2: what the GPU's side (forward/gpuside.ts) reads of this model, as two things made once: the model's facts,
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
-  const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary: plan.rotary, kvStart: plan.kv_start,
+  const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, halfKV, eps, rotary: plan.rotary, kvStart: plan.kv_start,
     turning: facts.some(({ rope }) => rope), layerNorm, gatedFfn: plan.gated_ffn, activation: plan.activation,
-    local: facts.some(({ window, local }) => window > 0 || local), parallel, unturned,
+    local: facts.some(({ window, local }) => window > 0 || local), parallel,
     // T568.4: what the GPU's side reads of each kind of the model's layers that the GPU's worker has a step for (kinds.ts's
     // gpu: the names of its tensors, why the GPU would not take its layers, its numbers in the GPU's plan)
     gpuKinds: had.flatMap(({ kind }) => { const gpu = kinds[kind].gpu; return gpu ? [{ kind: kind as LayerKind, names: gpu.names, unfit: gpu.unfit?.(sizes) ?? null, plan: gpu.plan?.(sizes) ?? {} }] : []; }),

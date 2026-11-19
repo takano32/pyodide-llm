@@ -24,9 +24,10 @@ export const lastKept = ({ layerShapes, kinds }: Pick<Shape, "layerShapes" | "ki
 // the model's facts
 export type Shape = {
   dim: number; hidden: number; layers: number; heads: number; kvHeads: number; headSize: number; kvDim: number; qDim: number; vocab: number; seqLen: number;
-  // the bytes of a token's row, and of a position's keys in the cache; whether the cache is float16
-  D: number; KV: number; halfKV: boolean;
-  eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; gatedFfn: boolean; parallel: boolean; unturned: number[];
+  // the bytes of a token's row; whether the cache is float16 (T334.2: a position's bytes of each layer are the cache's
+  // places', cpuSide.places(); the layers RoPE leaves alone are each layer's shape's, layerShapes)
+  D: number; halfKV: boolean;
+  eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; gatedFfn: boolean; parallel: boolean;
   // T261: the FFN's activation, and whether some layer attends a window or is turned by tables of its own; T261.4: and
   // every layer's window (0: every position) and the layers turned by those tables; extras: what the GPU's layers have
   // not (T283: a BitNet's norms in front of wo and w2)

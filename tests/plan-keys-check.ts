@@ -224,7 +224,8 @@ const returned = (fn) => {
   // T375.2: forward.ts reads every layer's facts and the widths (T359.5's keys) and the two facts of the architecture
   // from the plan. The architecture's name is read by nothing of the engine from then on: it stays in the plan for a
   // person who looks at one
-  const unread = { arch: "no engine reads an architecture's name (T375.2): its facts are layer_norm, gated_ffn, the layers' and the tensors'" };
+  const unread = { arch: "no engine reads an architecture's name (T375.2): its facts are layer_norm, gated_ffn, the layers' and the tensors'",
+    unturned: "every layer's fact says whether RoPE turns it (rope), which the engine and the GPU's plan read (T334.2: the GPU's plan had the list for T255's turnedAt())" };
   held("the plan's keys, Python to forward.js", keys, readKeys, unread);
   // (a name forward.js asks for that no model of these has is a tensor of no architecture: floats() answers 0 for it)
   // (T261: and one it asks floats() for that is a derived table alone, as the local layers' RoPE tables are, is held

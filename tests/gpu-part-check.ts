@@ -50,8 +50,8 @@ const linearSizes = (linear, dim = 8) => ({ dim, numbers: { linear }, widths: { 
 
 const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
-const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
-  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, activation: "silu", local: false, windows: [0, 0], locals: [], extras: false, scoresCapped: false, parallel: false, unturned: [], gpuKinds: kindsOf(["attention"]), stateful: false, rotated: 0,
+const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, halfKV: true,
+  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, activation: "silu", local: false, windows: [0, 0], locals: [], extras: false, scoresCapped: false, parallel: false, gpuKinds: kindsOf(["attention"]), stateful: false, rotated: 0,
   sharedClassifier: true, kinds: ["attention", "attention"], places: [0, 1], attending: 2, stateBytes: 0,
   // (T334.1: every layer's heads and places, none of a Gemma 4's facts)
   layerShapes: [0, 1].map((l) => ({ head: 4, wide: false, stack: l, kept: l, reads: l, double: false, turned: 4 })), valueNorm: false, softcap: 0, perLayer: null, counts: {}, stackPlaces: {} };
