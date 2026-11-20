@@ -372,3 +372,21 @@ def test_a_gguf_alone_of_before_gives_the_tokenizer_it_gave():
         rows.append((blob[at + 8:at + 8 + length].decode(), score))
         at += 8 + length
     assert rows == [("a", -1e9), ("b", -1e9), ("ab", 0.0), ("<s>", -1e9), ("<x>", -1e9), ("", -1e9)]
+
+
+def test_a_gguf_with_an_attn_factor_that_names_no_bos_stops_at_the_eos_alone():
+    """The review of T259: from_gguf() makes the attention_factor of a yarn's attn_factor into a new config, and the BOS
+    nobody named is taken out of the config the options are made of. Taken out of the old one, token 1 stayed a stop
+    token (the guess of the review of T203), and only a GGUF that has an attn_factor did it."""
+    config, tensors, published = small()
+    more = [EPS, ("tokenizer.chat_template", 8, CHATML), ("llama.rope.scaling.type", 8, "yarn"),
+            ("llama.rope.scaling.factor", 6, 4.0), ("llama.rope.scaling.original_context_length", 4, 4096)]
+    stops = {}
+    for attn in (None, 0.5):
+        file = gguf_file(tensors, published, config["vocab_size"], bos=None, eos=END,
+                         more=more + ([("llama.rope.scaling.attn_factor", 6, attn)] if attn else []),
+                         vocabulary=chat_vocabulary(config["vocab_size"]))[0]
+        got = fed(file, "int8")
+        stops[attn] = got.options["stop_tokens"]
+        assert ("attention_factor" in got.options["rope_scaling"]) is bool(attn)
+    assert stops == {None: [END], 0.5: [END]}
