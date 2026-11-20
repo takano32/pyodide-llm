@@ -13,9 +13,11 @@ import { flashParams } from "../shaders/attention.ts";
 import { perLayerParams } from "../shaders/steps.ts";
 import { isBlock, asTernary } from "./packings.ts";
 import { roundsMs } from "./timing.ts";
+import { gatedBy } from "./activations.ts";
 import type { Model } from "./device.ts";
 import type { Added, BlockStep, KindBlock, Product, Quantizing, State } from "./kinds.ts";
-import type { Activation, LayerKind, TensorName } from "../contracts/plan.ts";
+import type { LayerKind, TensorName } from "../contracts/plan.ts";
+import type { Gated } from "../forward/alone.ts";
 import type { Cache as Sent, Started, Vectors } from "../contracts/gpu/protocol.ts";
 
 // T368.6: this module's record, m.block, as prepare() makes it (the layers' bind groups and the keys and values come
@@ -121,9 +123,9 @@ type Timed = [TensorName, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
 // layers' bind groups in it once the forms are chosen, grow() the keys and values); forms.ts and tokens.ts read its
 // pipelines and buffers for their own bind groups
-// the shader of a gated FFN's activation, by its name, SwiGLU's where the plan names none (forward/gpufit.ts takes no
-// other to the GPU: a BitNet's squared ReLU stays on the CPU)
-const GATED: Partial<Record<Activation, string>> = { silu: ENGINE.SWIGLU, gelu: ENGINE.GEGLU, gelu_erf: ENGINE.GEGLU_ERF };
+// the shader of a gated FFN's activation, by its name (forward/gpufit.ts takes no other to the GPU: a BitNet's squared
+// ReLU stays on the CPU; T344 review: gatedBy() refuses one outside forward/alone.ts's GATED)
+const GATE_SHADERS: Record<Gated, string> = { silu: ENGINE.SWIGLU, gelu: ENGINE.GEGLU, gelu_erf: ENGINE.GEGLU_ERF };
 async function prepare(m: Model) {
   const { plan, device } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
   // (T568.2: and what a kind's layers quantize besides: T271.2 a Qwen3.5's linear-attention layers' read, which z's gate
@@ -136,7 +138,7 @@ async function prepare(m: Model) {
   // where the model has those
   const posts = Boolean(plan.vectors.attentionPost || plan.vectors.ffnPost);
   const [norm, headNorm, add, rope, activation, quantize, normAdd] = await within(Promise.all([plan.layerNorm ? ENGINE.LAYER_NORM : ENGINE.RMSNORM,
-    ENGINE.HEAD_NORM, ENGINE.ADD, ENGINE.ROPE, !gated ? ENGINE.GELU : GATED[plan.activation] ?? ENGINE.SWIGLU, ENGINE.QUANTIZE,
+    ENGINE.HEAD_NORM, ENGINE.ADD, ENGINE.ROPE, !gated ? ENGINE.GELU : gatedBy(GATE_SHADERS, plan.activation), ENGINE.QUANTIZE,
     ...(posts ? [ENGINE.RMSNORM_ADD] : [])].map((code) => pipelineOf(m, code))), "the small steps' shaders");
   // a block's tokens, each array dense: token t's row at t times its width
   const x = buffer(m, B * plan.dim * 4, STORAGE | COPY_DST);

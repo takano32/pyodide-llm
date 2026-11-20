@@ -10,8 +10,10 @@ import { GROUP } from "../shaders/common.ts";
 import { quantizedLikeCpu } from "../shaders/prompt.ts";
 import { CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
+import { gatedBy } from "./activations.ts";
 import type { GpuPacking, Started, Vectors } from "../contracts/gpu/protocol.ts";
-import type { Activation, TensorName } from "../contracts/plan.ts";
+import type { TensorName } from "../contracts/plan.ts";
+import type { Gated } from "../forward/alone.ts";
 
 // what says how a row is packed (a plan's matrix or table), a row as [its int8 values, its scales], a row's bytes and
 // scales as the check read them back from the GPU, and a list of numbers as its sums read one (an array or a typed array)
@@ -59,8 +61,9 @@ const geluErf = (value: number) => {
   const y = 1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z));
   return 0.5 * value * (1 + Math.sign(value) * y);
 };
-// the gate of a gated FFN, by its activation (forward/gpufit.ts takes no other to the GPU)
-const GATES: Partial<Record<Activation, (value: number) => number>> = { silu: (value) => value / (1 + Math.exp(-value)), gelu, gelu_erf: geluErf };
+// the gate of a gated FFN, by its activation (forward/gpufit.ts takes no other to the GPU; T344 review: gatedBy()
+// refuses one outside forward/alone.ts's GATED)
+const GATES: Record<Gated, (value: number) => number> = { silu: (value) => value / (1 + Math.exp(-value)), gelu, gelu_erf: geluErf };
 // RMSNorm with an epsilon; and (T226) the stream's norm, RMSNorm or (T154) LayerNorm with its bias, as the CPU's kernels
 // have them
 const rms = (x: Float64Array, weights: ArrayLike<number>, eps: number) => {
@@ -180,7 +183,7 @@ function referenceOf({ plan, memory, packed, back = {} }: { plan: Started; memor
       const xn2 = normOf(plan.parallel ? x0 : h1, vectorOf("ffn")!, vectorOf("ffnBias"));
       const gate = plus(matmul("w1", xn2), "b1"), up = plan.matrices.w3 && matmul("w3", xn2);
       // (T261.4.2: GELU in the gate, a Gemma 3's GEGLU; T344: the exact GELU, a Spark-X2.5's)
-      const activation = GATES[plan.activation] ?? GATES.silu!;
+      const activation = gatedBy(GATES, plan.activation);
       const activated = gate.map(!up ? gelu : (value, i) => activation(value) * up[i]);
       const down = behind(plus(matmul("w2", activated), "b2"), "ffnPost");
       return h1.map((value, i) => value + down[i]);

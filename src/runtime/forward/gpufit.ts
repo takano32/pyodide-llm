@@ -5,7 +5,7 @@
 import { PACKED, packingOf } from "../jobs.ts";
 import { gpuWeightBytes } from "./alone.ts";
 import { REASONS } from "./reasons.ts";
-import { rotatedBlockUnfit, GATED } from "./alone.ts";
+import { rotatedBlockUnfit, isGated } from "./alone.ts";
 import type { Packed } from "../jobs.ts";
 import type { Held } from "./kinds.ts";
 import type { Direct } from "./alone.ts";
@@ -164,7 +164,7 @@ export function gpuFit({ shape, weights, device, direct }:
     // Spark-X2.5's, whose gate of each head of the attention's output is HEAD_GATE). Not an activation no shader has (a
     // BitNet's squared ReLU), nor norms behind LayerNorms, nor what a Gemma 4 has besides (T261: until T261.4 a Gemma 3
     // was kept off by this line too). An FFN without a gate is GELU's on the GPU, as it was (T154)
-    if ((gatedFfn && !GATED.includes(activation)) || extras) return REASONS.pair;
+    if ((gatedFfn && !isGated(activation)) || extras) return REASONS.pair;
     if ((attPost || ffnPost) && layerNorm) return REASONS.pair;
     // T334.1: a Gemma 4's layers are on the GPU's blocks (heads of their sizes, keys and values of another layer's, the
     // heads of v normalized, an input of every layer, the layer's number), but for an FFN of its wider ones in a layer a

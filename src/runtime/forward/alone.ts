@@ -264,9 +264,14 @@ const BINDS_AT = 256;
 // T219: what a model on the GPU alone says where the GPU sampled an id outside the vocabulary (its logits were not
 // finite numbers, most likely: the words of T195's NOT_FINITE, llama2_numpy.py), since no CPU can take the step again
 export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed.";
-// the activations of a gated FFN the GPU's shaders have (gpu/block.ts's GATED, gpu/tokens.ts's GLUS): SwiGLU's, GEGLU
-// (T261.4) and (T344) GEGLU of the exact GELU; gpufit.ts reads it too
-export const GATED: Activation[] = ["silu", "gelu", "gelu_erf"];
+// the activations of a gated FFN the GPU's shaders have: SwiGLU's, GEGLU (T261.4) and (T344) GEGLU of the exact GELU;
+// gpufit.ts reads it too. (T344 review: the one list of them: the GPU's tables of a gate by its activation
+// (gpu/block.ts's GATE_SHADERS, gpu/tokens.ts's GLUS, gpu/reference.ts's GATES) are each a Record of Gated, so tsc says
+// where one lacks a row, and gpu/activations.ts's gatedBy() refuses an activation outside it rather than take it as
+// SwiGLU's)
+export const GATED = ["silu", "gelu", "gelu_erf"] as const satisfies readonly Activation[];
+export type Gated = (typeof GATED)[number];
+export const isGated = (activation: Activation): activation is Gated => (GATED as readonly Activation[]).includes(activation);
 /** T382: why a model of these facts cannot go on the GPU alone, or null: the first fact that keeps it off, each by its
  * own reason (stateful: it has a layer that keeps a state the GPU alone does not hold, T271.4: an LFM2's convolution
  * layers; the rest are its architecture's line). Apart from gpuOnlyUnfit() so that a set of facts no architecture of
@@ -282,7 +287,7 @@ export function aloneFactsUnfit({ stateful, positions, gatedFfn, layerNorm, acti
   // T334.3: a Gemma 3's and a Gemma 4's GELU gate and their layers that attend a window are the GPU alone's too (its
   // layers are the same shaders as the prompts' and the steps' beside the CPU, T261.4: what differs is where the weights
   // and the keys and values are), and so are a PLaMo 3's windows; T344: and a Spark-X2.5's exact GELU and gate of its heads
-  if (!GATED.includes(activation)) return REASONS.aloneActivation;
+  if (!isGated(activation)) return REASONS.aloneActivation;
   return null;
 }
 // T271.1: the largest block of a rotated basis the GPU's ROTATE_QUANTIZE and UNROTATE hold in a workgroup's memory

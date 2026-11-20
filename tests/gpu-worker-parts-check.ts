@@ -15,7 +15,9 @@
 //   - requests.js: a prompt's block answered in the control area (done, failed, the beat), a request given up
 //     answered nowhere, and a device lost before or during the work read as it is then: failed, and said.
 //   - tokens.js (T379.1), of what makes no pipeline: the WGSL of every form of a token's layer is the catalogue's
-//     (shaders/engine.ts), and the matrices are those of the model's own packing of the weights.
+//     (shaders/engine.ts), and the matrices are those of the model's own packing of the weights;
+//   - block.js and tokens.js (T344's review): the gate of a gated FFN is the plan's activation's own (the exact GELU's
+//     GEGLU_ERF and geglu_erf, not the tanh GELU's), and an activation the GPU has no shader of is refused.
 // Not here, because their work is checked against JavaScript by a device that computes: forms.js, the rest of tokens.js,
 // tokenattention.js, tokenforms.js (m.forms and m.tokens are made after checks pass) and start.js.
 // The type check holds their names (tests/types.ts), tests/gpu-modules-check.ts their owners. Node only, under a second:
@@ -495,6 +497,48 @@ console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as f
 }
 console.log("gpu-worker-parts-check: a binary model's bits go up as ternary's codes, from the shared memory and as the checkpoint of a model on the GPU alone comes in stretches of any size");
 
+// ---- T344's review: the gate of a gated FFN by the plan's activation, in the prompt's block (block.js's activation,
+// which a token's step of gate and up apart dispatches too) and in a token's fused write of gate and up (tokens.js's
+// glu): the exact GELU's (a Spark-X2.5's) is GEGLU_ERF and "geglu_erf", not the tanh GELU's GEGLU and "geglu" (the
+// two differ by 9e-4, which no line of gpu-check sees: activations-check runs them, this holds which one is taken);
+// and an activation none of the GPU's shaders has (a BitNet's squared ReLU) is refused, not taken as SwiGLU's
+{
+  const { tokenShape, tokenCandidates, tokenCodes } = await import(runtimeUrl("gpu/tokens.js"));
+  const { ENGINE_SHADERS } = await import(runtimeUrl("shaders.js"));
+  const { GEGLU, GEGLU_ERF } = await import(runtimeUrl("shaders/steps.js"));
+  const rowOf = new Map(ENGINE_SHADERS.map((row) => [row.text(), row]));
+  const { GATED } = await import(runtimeUrl("forward/alone.js"));
+  assert.deepEqual([...GATED], ["silu", "gelu", "gelu_erf"], "the activations of a gated FFN the GPU has (forward/alone.ts's GATED)");
+  const blockOf = async (activation) => {
+    standIn();
+    const { plan: made, bytes } = planned({ activation });
+    const opened = await openDevice(made);
+    handed({ buffer: new SharedArrayBuffer(bytes) }, made);
+    await upload(opened);
+    const stand = (code) => ({ code, getBindGroupLayout: () => ({}) });
+    opened.forms = { attention: { pipeline: stand("attention"), pipelines: { [HEAD]: stand("attention") } }, form: { pipeline: stand("tiles"), packed: true, tile: { rows: 4, tokens: 4 } }, tried: [] };
+    return prepare(opened).then(() => opened.block.activation.code, (error) => error);
+  };
+  const shapeOf = (activation) => {
+    const matrices = Object.fromEntries(["wq", "wk", "wv", "wo", "w1", "w2", "w3"].map((name) => [name, { rows: 64, n: 64, packing: "int8", layers: [] }]));
+    const shaped = { plan: { kinds: ["attention"], matrices, vectors: {}, tokens: { classifier: matrices.wq }, activation, layerNorm: false }, own: null, weights: { matrices } };
+    try { return tokenShape(shaped); } catch (error) { return error; }
+  };
+  for (const [activation, shader, glu] of [["silu", SWIGLU, "swiglu"], ["gelu", GEGLU, "geglu"], ["gelu_erf", GEGLU_ERF, "geglu_erf"]]) {
+    assert.equal(await blockOf(activation), shader, `${activation}: the prompt's block's gate is its own shader`);
+    const shape = shapeOf(activation);
+    assert.equal(shape.glu, glu, `${activation}: a token's fused write of gate and up is its own`);
+    for (const candidate of tokenCandidates({ own: null, features: { subgroups: true, packed: true }, plan: { layerNorm: false } })) {
+      const [, code] = tokenCodes(candidate, shape).find(([key]) => key === "glu");
+      assert.equal(rowOf.get(code)?.given.output, glu, `${activation}, ${candidate.name}: the glu's text is the catalogue's row of ${glu}`);
+    }
+  }
+  for (const activation of ["relu2", "a made-up one"]) {
+    assert.match(String(await blockOf(activation)), /no gated FFN whose activation is/, `${activation}: refused by the prompt's block`);
+    assert.match(String(shapeOf(activation)), /no gated FFN whose activation is/, `${activation}: refused by a token's shape`);
+  }
+  console.log("gpu-worker-parts-check: the gate of each activation the GPU has is its own (the exact GELU's GEGLU_ERF and geglu_erf, not the tanh GELU's) in the block and a token's write, and a squared ReLU is refused");
+}
 // ---- block.js: m.block, from the weights' record and a stand-in for the forms'
 gpu.calls.length = 0;
 // (forms.js makes m.forms once its checks have passed on a device that computes: here the test stands for it)

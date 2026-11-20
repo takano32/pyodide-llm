@@ -15,10 +15,12 @@ import { PACKINGS, isBlock, packingsOf, asTernary } from "./packings.ts";
 import type { Model, Bound, Pass } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
+import { gatedBy } from "./activations.ts";
 import type { Kept } from "./block.ts";
 import type { Steps } from "./kinds.ts";
 import type { Activation, LayerKind, TensorName } from "../contracts/plan.ts";
 import type { FusedOutput } from "../shaders/fused.ts";
+import type { Gated } from "../forward/alone.ts";
 import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 
 // T368.6: a form of a token's layer: one of TOKEN_FORMS (Candidate), and, once tokenforms.ts's choose() tries it, its
@@ -168,7 +170,7 @@ function tokenCandidates(m: Model) {
 // (T261.4.2: glu, the output of gate and up by the gate's activation: SwiGLU's, GEGLU (a Gemma 3's) or, T344, GEGLU of
 // the exact GELU (a Spark-X2.5's); posts, the norms behind the attention and the FFN, so that o and down write their
 // rows as they are, which RMSNORM_ADD norms into the stream)
-const GLUS: Partial<Record<Activation, FusedOutput>> = { silu: "swiglu", gelu: "geglu", gelu_erf: "geglu_erf" };
+const GLUS: Record<Gated, FusedOutput> = { silu: "swiglu", gelu: "geglu", gelu_erf: "geglu_erf" };
 const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && PACKINGS[m.plan.tokens!.classifier.packing].on === "int8";
 // T334.2: each layer's width of the FFN: the model's, or a Gemma 4's wider one's (the rows of its gate's stack _double)
 const hiddensOf = (plan: Model["plan"]) => [...Array(plan.layers).keys()].map((l) => (plan.shapes[l]?.double ? plan.matrices.w1_double!.rows : plan.hidden));
@@ -201,7 +203,7 @@ const tokenShape = (m: Model) => {
   // (T547.3.6: and the classifier's type, a token's matrix too)
   roles.set("classifier", new Set([PACKINGS[plan.tokens!.classifier.packing].on]));
   return { apart: Boolean(plan.vectors.bq || plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), up: Boolean(m.weights.together?.up),
-    glu: GLUS[plan.activation] ?? "swiglu", layerNorm: plan.layerNorm, floatHead: floatHead(m), roles };
+    glu: gatedBy(GLUS, plan.activation), layerNorm: plan.layerNorm, floatHead: floatHead(m), roles };
 };
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
