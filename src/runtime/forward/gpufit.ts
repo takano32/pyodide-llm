@@ -19,7 +19,6 @@ export type LayerShape = { head: number; wide: boolean; stack: number; kept: num
 // the keys and values alone, need not run them)
 export const lastKept = ({ layerShapes, kinds }: Pick<Shape, "layerShapes" | "kinds">) =>
   layerShapes.reduce((last, { kept }, l) => (kinds[l] !== "attention" || kept >= 0 ? l : last), -1);
-
 // ---- (T368.4, the types) what createForward() (engine.ts) makes once and hands gpuFit() and gpuSide() (gpuside.ts)
 // the model's facts
 export type Shape = {
@@ -222,8 +221,8 @@ export function gpuFit({ shape, weights, device, direct }:
     // multiplied as floats of int8)
     // (T334.1: a Gemma 4's steps stayed here until T334.2, which gave a token's layer what its layers have besides, which a
     // prompt's block has, and the cap of its logits; its inputs of every layer read a token's rows of a table the CPU
-    // keeps, a step a request (gpuside.ts's tokensMost). On the GPU alone, whose table is there, they stay here: T334.3)
-    if (perLayer && direct) return REASONS.ownSteps;
+    // keeps, a step a request (gpuside.ts's tokensMost). T334.3: on the GPU alone too, whose table stays where the CPU
+    // reads its rows)
     // (T334.2's review: and the matrices of the steps' alone as they are packed, as gpuUnfit() asks of the prompts': a
     // Gemma 4's wider FFN, which no layer of a block has)
     if (!Object.values(gpuMatrices(true)).every(onGpuAs)) return REASONS.floats;

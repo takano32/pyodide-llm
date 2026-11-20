@@ -198,21 +198,26 @@ const KINDS = { attention: plain, echo };
   // own, the first of them in aloneFactsUnfit()'s order (said to nobody but the tests: the worker reads yes or no)
   const POSITIONS = "a table of positions is not on the GPU alone yet",
     FFN = "an FFN without a gate is not on the GPU alone yet", NORMS = "LayerNorms are not on the GPU alone yet", STATE = "layers that keep a state are not on the GPU yet",
-    ACTIVATION = "a gate of the FFN that is no SiLU's is not on the GPU alone yet", LOCAL = "layers that attend a window are not on the GPU alone yet";
-  for (const [arch, { gatedFfn, layerNorm, positions, activation, local }] of Object.entries(ARCHITECTURES)) {
+    ACTIVATION = "a gate of the FFN that is neither SiLU's nor GELU's is not on the GPU alone",
+    PER_LAYER = "a table of every layer's inputs goes on the GPU alone where a test asks for it";
+  for (const [arch, { gatedFfn, layerNorm, positions, activation }] of Object.entries(ARCHITECTURES)) {
     const said = gpuOnlyUnfit(header, "int8", { arch }, adapter);
-    assert.equal(said, positions ? POSITIONS : !gatedFfn ? FFN : layerNorm ? NORMS : activation !== "silu" ? ACTIVATION : local ? LOCAL : null, `${arch}: ${said}`);
+    assert.equal(said, positions ? POSITIONS : !gatedFfn ? FFN : layerNorm ? NORMS : activation !== "silu" && activation !== "gelu" ? ACTIVATION : null, `${arch}: ${said}`);
   }
-  assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2", "gemma3", "spark"].map((arch) => gpuOnlyUnfit(header, "int8", { arch }, adapter)),
-    [null, POSITIONS, FFN, null, null, ACTIVATION, ACTIVATION]);
+  // (T334.3: a Gemma 3's and a Gemma 4's GELU gate and windows, and a PLaMo 3's windows, are the GPU alone's too)
+  assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2", "gemma3", "gemma4", "plamo3", "spark", "bitnet"].map((arch) => gpuOnlyUnfit(header, "int8", { arch }, adapter)),
+    [null, POSITIONS, FFN, null, null, null, null, null, ACTIVATION, ACTIVATION]);
+  // (T334.3: but a table of every layer's inputs where a test asks for it alone, ?gpuTest=only: the owner's choice)
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma4", per_layer: 32 }, adapter), PER_LAYER);
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma4", per_layer: 32 }, adapter, { only: true }), null);
   // (T487: the table's five lines never have one of these facts without another, so each is asked by itself here, of
   // facts no architecture has: RMSNorms with GPT-2's FFN, LayerNorms with a gated one, a table of positions alone)
   const LLAMAS = { stateful: false, positions: false, gatedFfn: true, layerNorm: false, activation: "silu", local: false };
   assert.equal(aloneFactsUnfit(LLAMAS), null);
-  // (T261: a GELU in the gate and local layers, which only a Gemma 3 has and has together; an activation nobody
-  // named, or none, is no SiLU's either)
+  // (T261: an activation nobody named, or none, is neither a SiLU's nor a GELU's; T334.3: a GELU and local layers are the
+  // GPU alone's)
   for (const [fact, value, reason] of [["stateful", true, STATE], ["positions", true, POSITIONS], ["gatedFfn", false, FFN], ["layerNorm", true, NORMS],
-    ["activation", "gelu", ACTIVATION], ["activation", "relu", ACTIVATION], ["activation", undefined, ACTIVATION], ["local", true, LOCAL]]) {
+    ["activation", "gelu", null], ["activation", "gelu_erf", ACTIVATION], ["activation", "relu", ACTIVATION], ["activation", undefined, ACTIVATION], ["local", true, null]]) {
     assert.equal(aloneFactsUnfit({ ...LLAMAS, [fact]: value }), reason, `a model that is a Llama but for ${fact} = ${value}`);
   }
   // (the order: the first of them that holds)

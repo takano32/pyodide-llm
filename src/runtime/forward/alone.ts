@@ -13,6 +13,7 @@ import { REASONS } from "./reasons.ts";
 import type { Header } from "./memory.ts";
 import type { Formed, Sizes } from "./sizes.ts";
 import type { CacheForm } from "./attention.ts";
+import type { Rows } from "./perlayer.ts";
 import type { Dtype, Rotated } from "../contracts/form.ts";
 import type { Force, GpuPacking, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
 import type { Alone, CpuSpeed, Usage } from "../contracts/messages.ts";
@@ -34,11 +35,14 @@ export type Hole = [number, number];
 // T156: a model on the GPU alone, as the worker makes it and the engine reads it: the bytes kept in the memory (stored)
 // of size, where each is (place), the multiply-adds of its layers, /benchmark/'s CPU reading and the page's use (what
 // the GPU is held against), and onLost(why), told where the GPU stops under it. The GPU's side writes verdict: the CPU
-// is faster here (the page keeps it)
+// is faster here (the page keeps it). T334.3: rows, what reads the rows of a table of every layer's inputs (a Gemma
+// 4's) from where the model is kept, where the table is neither in the memory nor on the GPU (place() leaves its
+// offsets as they are in the checkpoint then: its stretch is one of the holes, gpuOnlyWeights()'s apart)
 export type Direct = {
   stored: number;
   size: number;
   place(offset: number): number;
+  rows?: Rows;
   layerWeights: number;
   cpu: CpuSpeed | undefined;
   usage: Usage;
@@ -134,8 +138,11 @@ export function gpuBytes(header: Header, { dtype = "int8", ...form }: GpuForm & 
 // layers' and the gate of its attending layers' output), each of the layers of its kind where some layers are of
 // another kind than attention (T568.4: the kind of the model's whose tensors it is, kinds.ts's gpu.names). T641.3:
 // every model's (gpufit.ts's too), then those of each kind the GPU alone may hold of its own (kinds.ts's gpu.matrices)
+// T334.3: and a Gemma 4's own (gpufit.ts's sized: its wide heads' stacks, the projection of its embedded rows into the
+// inputs of every layer and every layer's gate and projection back of its input, its wider FFN's stacks), last
 const LAYER_MATRICES: TensorName[] = ["wq", "wk", "wv", "wo", "w1", "w2", "w3",
-  ...Object.values(LAYER_KINDS).flatMap(({ gpu }) => (gpu?.alone ? gpu.matrices ?? [] : []))];
+  ...Object.values(LAYER_KINDS).flatMap(({ gpu }) => (gpu?.alone ? gpu.matrices ?? [] : [])),
+  "wq_wide", "wk_wide", "wv_wide", "wo_wide", "per_layer_projection", "ple_gate", "ple_proj", "w1_double", "w2_double", "w3_double"];
 // T210: and its tables, the embedding and a classifier of its own (wcls is the embedding's tensor where it is shared):
 // the GPU embeds a prompt's rows too (shaders.ts's EMBED_ROWS), and nothing of them is here
 const GPU_ALONE: TensorName[] = [...LAYER_MATRICES, "token_embedding_table", "wcls"];
@@ -260,18 +267,17 @@ export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are
  * layers; the rest are its architecture's line). Apart from gpuOnlyUnfit() so that a set of facts no architecture of
  * the table has can be asked too (the tests). (T271.4: a gate of the attending layers' output is a token's layer's now,
  * a Qwen3.5's; a Spark-X2.5's gate of its heads goes with its exact GELU, below) */
-export function aloneFactsUnfit({ stateful, positions, gatedFfn, layerNorm, activation, local }:
-  Pick<Architecture, "positions" | "gatedFfn" | "layerNorm" | "activation" | "local"> & { stateful: boolean }) {
+export function aloneFactsUnfit({ stateful, positions, gatedFfn, layerNorm, activation }:
+  Pick<Architecture, "positions" | "gatedFfn" | "layerNorm" | "activation"> & { stateful: boolean }) {
   if (stateful) return REASONS.stateful;
   if (positions) return REASONS.alonePositions;
   if (!gatedFfn) return REASONS.aloneFfn;
   if (layerNorm) return REASONS.aloneNorms;
-  // T261: a Gemma 3's facts (its norms behind the attention and the FFN are rows of its file, which no line says: the
-  // other two keep it off). An activation that is not a SiLU's is none the GPU's gate has, whatever it is. (T261.4: a
-  // Gemma 3's prompts and (T261.4.2) steps go to the GPU beside the CPU; the GPU alone has its GELU gate and its windows
-  // not yet, nor need of them: the 270M and the 1B, 0.3 and 1.1 GB, are held twice where a GPU is)
-  if (activation !== "silu") return REASONS.aloneActivation;
-  if (local) return REASONS.aloneLocal;
+  // T261: an activation that is neither a SiLU's nor a GELU's is none the GPU's gate has, whatever it is (a
+  // Spark-X2.5's exact GELU, a BitNet's squared ReLU). T334.3: a Gemma 3's and a Gemma 4's GELU gate and their layers
+  // that attend a window are the GPU alone's too (its layers are the same shaders as the prompts' and the steps' beside
+  // the CPU, T261.4: what differs is where the weights and the keys and values are), and so are a PLaMo 3's windows
+  if (activation !== "silu" && activation !== "gelu") return REASONS.aloneActivation;
   return null;
 }
 // T271.1: the largest block of a rotated basis the GPU's ROTATE_QUANTIZE and UNROTATE hold in a workgroup's memory
@@ -299,6 +305,10 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // T641.3: a layer of a kind the GPU alone may not hold, kinds.ts's gpu.alone)
   const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), stateful: sizes.kinds.some((kind) => !LAYER_KINDS[kind as LayerKind].gpu?.alone) });
   if (facts) return facts;
+  // T334.3: a model with a table of every layer's inputs (a Gemma 4's) where a test asks for the GPU alone (?gpuTest=only)
+  // and nowhere else yet: on a device that says 8 GB its E2B is as much too large to hold twice as its E4B, and where the
+  // E2B goes is the owner's choice (TASKS.md's T334.3: this line goes then)
+  if (form.per_layer && !force.only) return REASONS.alonePerLayer;
   // T271.1: nor a rotated basis whose blocks the GPU's shader does not take
   if (form.rotated && rotatedBlockUnfit(Number(form.rotated.block))) return REASONS.rotatedBlock;
   // T363.5: nor a model whose rows have kinds of their own (llama.cpp's blocks are the CPU's kernels' alone: gpu.ts
@@ -361,10 +371,13 @@ const FLOW_BYTES = 64 * 2 ** 20, FLOW_STALL_MS = 60000;
  * place(offset), and posts those in them to the worker (a copy each); room() resolves once the worker is no more than
  * FLOW_BYTES behind, drained() once it has all of them; stored is what memory holds (the checkpoint less the holes).
  * gone() (T377): the worker takes no more (the bytes for it are dropped from then on, and room() and drained() resolve). */
-export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
-  { memory: WebAssembly.Memory; base: number; size: number; tensors: Tensors; worker: { postMessage(message: ToGpu, transfer: Transferable[]): void } }) {
-  const holes = gpuHoles(tensors), place = placer(holes);
-  const stored = size - holes.reduce((sum, [start, end]) => sum + (end - start), 0);
+// T334.3: apart, a stretch of the checkpoint neither in the memory nor on the GPU (a Gemma 4's table of every layer's
+// inputs, which stays where the model is kept as it comes: perlayer.ts's tableHole()), or null: its bytes go nowhere
+// here, and place() leaves it out as it leaves the GPU's holes out
+export function gpuOnlyWeights({ memory, base, size, tensors, worker, apart = null }:
+  { memory: WebAssembly.Memory; base: number; size: number; tensors: Tensors; worker: { postMessage(message: ToGpu, transfer: Transferable[]): void }; apart?: Hole | null }) {
+  const holes = gpuHoles(tensors), all = apart ? [...holes, apart].sort((a, b) => a[0] - b[0]) : holes, place = placer(all);
+  const stored = size - all.reduce((sum, [start, end]) => sum + (end - start), 0);
   const flow = new SharedArrayBuffer(8), taken = new BigInt64Array(flow);
   let sent = 0n, gone = false;
   const wait = async (ahead: bigint) => {
@@ -384,14 +397,15 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
     sent += BigInt(to - from);
   };
   return {
-    holes, place, stored, flow,
+    holes: all, place, stored, flow,
     write(offset: number, chunk: Uint8Array) {
       let at = 0;
-      for (const [start, end] of holes) {
+      for (const hole of all) {
+        const [start, end] = hole;
         if (end <= offset + at || start >= offset + chunk.length) continue;
         const from = Math.max(start - offset, at), to = Math.min(end - offset, chunk.length);
         if (from > at) new Uint8Array(memory.buffer, base + place(offset + at), from - at).set(chunk.subarray(at, from));
-        post(offset, chunk, from, to);
+        if (hole !== apart) post(offset, chunk, from, to);
         at = to;
       }
       if (at < chunk.length) new Uint8Array(memory.buffer, base + place(offset + at), chunk.length - at).set(chunk.subarray(at));
@@ -406,6 +420,44 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
     },
   };
 }
+// T334.1: what a layer's places in a Gemma 4's stacks are read from (Python's layer_facts(): the plan's layers, or T334.3
+// stackFactsOf() below, of the form): its kind, whether its heads are the wide ones, its place in its attention's stacks (q, o) and
+// in those of k and v (-1: it reads another's), whether its FFN is the wider one, and its place in its FFN's stacks
+export type StackFact = { kind: LayerKind; wide: boolean; stack: number; kept: number; double: boolean; ffn: number };
+/** T334.1: every layer's place in a Gemma 4's stacks of its narrow and wide heads and of its narrower and wider FFN, by
+ * the tensor's name (-1: the layer has none of it), and of the projection of its embedded rows into the inputs of every
+ * layer (perLayer), a matrix of the model's, not a layer's: the first's. None where every stack is every layer's (no wide
+ * heads, no wider FFN, no layer that reads another's keys and values, no such inputs). T334.3: of the plan's layers
+ * (engine.ts, the GPU's plan as it starts) and of the form's (gpuOnlyPlan() below, the plan a model on the GPU alone
+ * opens with, before there is a plan): the two are the same places */
+export function stackPlacesOf(facts: StackFact[], perLayer: boolean): Partial<Record<TensorName, number[]>> {
+  if (!facts.some(({ wide, double, kept }) => wide || double || kept < 0) && !perLayer) return {};
+  return Object.fromEntries(([
+    [["per_layer_projection"], (_: StackFact, l: number) => (l === 0 ? 0 : -1)],
+    [["wq", "wo"], ({ kind, wide, stack }: StackFact) => (kind === "attention" && !wide ? stack : -1)],
+    [["wq_wide", "wo_wide"], ({ kind, wide, stack }: StackFact) => (kind === "attention" && wide ? stack : -1)],
+    [["wk", "wv"], ({ kind, wide, kept }: StackFact) => (kind === "attention" && !wide ? kept : -1)],
+    [["wk_wide", "wv_wide"], ({ kind, wide, kept }: StackFact) => (kind === "attention" && wide ? kept : -1)],
+    [["w1", "w2", "w3"], ({ double, ffn }: StackFact) => (double ? -1 : ffn)],
+    // (T334.2: and of its wider FFN, which a token's steps run: no block runs a layer of it)
+    [["w1_double", "w2_double", "w3_double"], ({ double, ffn }: StackFact) => (double ? ffn : -1)]] satisfies [TensorName[], (fact: StackFact, l: number) => number][])
+    .flatMap(([names, place]) => names.map((name) => [name, facts.map(place)] as const)));
+}
+
+// T334.3: every layer's facts of its places in the stacks (StackFact above), of the form, as Python's layer_facts()
+// says them of the plan (engine/plan.py, its Dims's layers()): a layer's place among the attending layers of its heads'
+// size (the form's wide), among those of them that keep keys and values of their own (none of the form's kv_shared:
+// -1), and among the layers of its FFN's width (the form's double). A layer of another kind's places are its own kind's
+// (no Gemma 4 has one: the stacks of every layer's, where they are of some layers, are a Gemma 4's alone)
+function stackFactsOf(kinds: LayerKind[], { wide, kv_shared, double: doubled }: GpuForm): StackFact[] {
+  const double = doubled ?? [], attending = kinds.flatMap((kind, l) => (kind === ATTENTION ? [l] : [])), wideLayers = wide?.layers ?? [], shared = kv_shared?.layers ?? [];
+  return kinds.map((kind, l) => {
+    const isWide = wideLayers.includes(l), alike = attending.filter((one) => wideLayers.includes(one) === isWide), isDouble = double.includes(l);
+    const place = kinds.slice(0, l).filter((other) => other === kind).length;
+    return { kind, wide: isWide, stack: kind === ATTENTION ? alike.indexOf(l) : place, kept: kind === ATTENTION ? alike.filter((one) => !shared.includes(one)).indexOf(l) : place,
+      double: isDouble, ffn: kinds.map((_, one) => one).filter((one) => double.includes(one) === isDouble).indexOf(l) };
+  });
+}
 /** T156: what the GPU's worker opens with (gpu/start.ts's open(): the device, and a buffer for every piece of every layer's
  * matrices, before a byte comes): each matrix's rows and length and, a layer each, where its values and scales start in
  * the checkpoint (the offsets the bytes come with). T210: and the tables' ({ classifier, embedding }, the embedding
@@ -413,20 +465,25 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
 // T271.4: form, the model's (FORM): a Qwen3.5's linear-attention layers, whose matrices (and the attending layers') are
 // of the layers of their kind alone: the plan says every layer's kind and its place among the layers of its kind then,
 // and those matrices' kind (of), as the plan of { type: "start" } does
-export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {}, remembered?: Remembered, form: Formed = {}): Opened {
+export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {}, remembered?: Remembered, form: GpuForm = {}): Opened {
   const layers = header[2], kinds = sizesOfForm(header, form, LAYER_KINDS).kinds as LayerKind[], mixed = kinds.some((kind) => kind !== ATTENTION);
   const places = kinds.map((kind, l) => kinds.slice(0, l).filter((other) => other === kind).length);
+  // (T334.3: every layer's place in a Gemma 4's stacks of some of its layers, as the GPU's plan has them when it starts:
+  // stackPlacesOf(), of the form's layers as Python's layer_facts() makes them of its plan)
+  const stacks = stackPlacesOf(stackFactsOf(kinds, form), Boolean(form.per_layer));
   // (T232: the bytes of a layer's values are its packing's, jobs.ts's PACKED; T547.1: its name is what the GPU's worker is told)
   const matrices = Object.fromEntries(LAYER_MATRICES.filter((name) => tensors[name]).map((name): [string, Matrix] => {
-    const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, layerBytes = t.layers ? 0 : packingOf(t.kind)!.rowBytes(perLayer);
-    const of = mixed ? kinds.find((kind) => LAYER_KINDS[kind].gpu?.names.includes(name)) : undefined, count = of ? kinds.filter((kind) => kind === of).length : layers;
+    // (T334.3: a matrix of the model's, not a layer's, is one layer of a stack: a Gemma 4's projection of its embedded rows)
+    const t = tensors[name]!, [rows, n] = t.shape.slice(-2), perLayer = rows * n, layerBytes = t.layers ? 0 : packingOf(t.kind)!.rowBytes(perLayer);
+    const at = stacks[name], of = mixed ? kinds.find((kind) => LAYER_KINDS[kind].gpu?.names.includes(name)) : undefined;
+    const count = at ? (t.shape.length === 3 ? t.shape[0] : 1) : of ? kinds.filter((kind) => kind === of).length : layers;
     // (T547.3.7: a stack whose layers are each of a kind of their own, each layer where its own part is)
     if (t.layers) {
       return [name, { rows, n, packing: "layers", packings: t.layers.map((part) => gpuPacking(part.kind)), layers: t.layers.map((part): [number, number] => [part.offset, part.scales]),
         ...(of ? { of } : {}) }];
     }
     return [name, { rows, n, packing: gpuPacking(t.kind), layers: Array.from({ length: count }, (_, l) =>
-      [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * packingOf(t.kind)!.scale]), ...(of ? { of } : {}) }];  // (T533: ternary's scales float16s)
+      [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * packingOf(t.kind)!.scale]), ...(of ? { of } : {}), ...(at ? { at } : {}) }];  // (T533: ternary's scales float16s)
   }));
   const table = (t: Tensor): Table => ({ rows: t.shape[0], n: t.shape[1], packing: gpuPacking(t.kind), at: [t.offset, t.scales] });
   const embedding = tensors.token_embedding_table!, classifier = tensors.wcls ?? embedding;

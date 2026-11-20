@@ -255,7 +255,9 @@ function caseOf(py, directory, id, options, reference, checkpoint) {
   // (T226: Qwen2 and Qwen3 with it; T232: and of ternary weights, T634.3 of binary ones; T271.4: and a Qwen3.5, whose form the GPU alone's plan
   // is made with: options, in the case)
   let places;
-  if (["llama", "qwen35"].includes(options.arch ?? "llama") && ["int8", "ternary", "binary"].includes(options.dtype)) {
+  // (T334.3: and a Gemma 3, a Gemma 4 and a PLaMo 3, whose GELU gate (a PLaMo 3's is a SiLU's) and windows are the GPU
+  // alone's too; a Gemma 4's table of every layer's inputs stays apart from it)
+  if (["llama", "qwen35", "gemma3", "gemma4", "plamo3"].includes(options.arch ?? "llama") && ["int8", "ternary", "binary"].includes(options.dtype)) {
     py.globals.set("HEADER", py.toPy([...new Int32Array(read(0, 28).buffer)]));
     places = py.runPython(`external_tensors(HEADER, OPTIONS["dtype"], OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   }

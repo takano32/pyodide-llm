@@ -9,7 +9,7 @@ import { pyodide, llama2_numpy, forwardModule, jsKernels, sharedKernels, wideKer
 import { threadsRequest, gpuRequest, loadsAhead, benching, switchesNow } from "./request.ts";
 import { pooledWeights, forwardOptions, afterCheckpoint, sharedWanted, placesOf, pooled, weightsInPython } from "./pool.ts";
 import { gpuOnlyEnding, builtOrLetGo, loadingKey, modelKey, aloneBegan, spawnThread, openGpu, gpuOnlyWeightsFor, gpuOnlyBuffer } from "./alone.ts";
-import type { GpuOnly, Placed } from "./alone.ts";
+import type { GpuOnly, Placed, TableApart } from "./alone.ts";
 import type { keeper, Reader } from "../kept.ts";
 import type { Form } from "../contracts/form.ts";
 import type { Listed } from "../contracts/messages.ts";
@@ -34,7 +34,7 @@ export type Weights =
   | { write: Write; slice(begin: number, end: number): Uint8Array<ArrayBuffer>; llama(tokenizer: Bytes, options: EngineOptions): Made; destroy(): void; direct?: undefined;
     hole: [number, number] | null; attach(reader: Reader): void }
   | { write: Write; llama(tokenizer: Bytes, options: EngineOptions): Made; destroy(): void; direct: GpuOnly; room: GpuOnlyWeights["room"]; drained: GpuOnlyWeights["drained"];
-    hole: null; attach(reader: Reader): void };
+    hole: [number, number] | null; attach(reader: Reader): void };
 
 // T329.2.2: what the engine of the model loaded now reads its table of every layer's inputs from (a sync access handle
 // of the kept checkpoint: the only one its file can have), or undefined; and the models whose table could not be read
@@ -78,6 +78,34 @@ export function tableInMemoryFromNow(model: Listed) {
 /** T503: the model loading now keeps llama.cpp's blocks in its entry, and this load widens them (true), or not */
 export function blocksWidenedNow(widened: boolean) {
   blocksWidened = widened;
+}
+
+/** T329.2.2: a table of every layer's inputs that stays where the model is kept (hole: its stretch of the checkpoint),
+ * read a row at a time: from the file of this visit's conversion as it comes (keep, where keeps: it is kept as the dtype
+ * it is converted to), or from a kept one's handed in by attach() before the engine is built. rows(memory): what reads
+ * a row's bytes into that memory (a scratch of the widest read, then there: a shared one is not handed to the file
+ * system); built(): the engine is built on it, and the file is the loaded model's, let go of with it (rowsLetGo()).
+ * T334.3: a model on the GPU alone's too (worker/alone.ts's gpuOnlyBuffer()) */
+function tableInFile(hole: [number, number], keep: Keeper | undefined, keeps: boolean): TableApart {
+  let reader: Reader | undefined = keeps ? keep : undefined, scratch = new Uint8Array(0);
+  if (keeps) keep!.holding(hole);
+  return {
+    hole,
+    rows: (memory) => (offset, bytes, to) => {
+      if (scratch.length < bytes) scratch = new Uint8Array(bytes);
+      const into = scratch.subarray(0, bytes);
+      if (reader!.read(into, offset) !== bytes) throw new Error("The kept model gave fewer bytes than a row of its table has.");
+      new Uint8Array(memory.buffer, to, bytes).set(into);
+    },
+    attach(given) {
+      reader = given;
+      rowsNow = given;  // (T329.2.2, review: let go of by the next load's letGo() even if llama() below never ran or threw)
+    },
+    built() {
+      rowsNow = reader;
+      rowsWhole = reader === keep ? keep!.whole : undefined;
+    },
+  };
 }
 
 // a Python bytearray that JavaScript fills in place
@@ -156,7 +184,9 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
     // decided before any memory is made for it (a memory of the whole checkpoint would be one too many, T96)
     const deviceMemory = self.navigator?.deviceMemory ?? 4;
     const onGpu = gpuOnlyWeightsFor(held, header, options, after, deviceMemory);
-    if (onGpu.mode === "gpu") return gpuOnlyBuffer(size, header, options, onGpu as Required<Placed>, keep);
+    // T329.2.2: the table's rows read from where the checkpoint is kept (T334.3: on the GPU alone too)
+    const table = hole ? tableInFile(hole, keep, Boolean(keeps)) : undefined;
+    if (onGpu.mode === "gpu") return gpuOnlyBuffer(size, header, options, onGpu as Required<Placed>, keep, table);
     const gpuRoom = onGpu.gpuRoom;
     const wide = forceWide || forward.needsWide(held, after);
     if (wide && !wideKernels?.plain) {
@@ -175,10 +205,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
     const spawn = shared ? spawnThread : undefined;
     pooled(memory);
     // T329.2.2: where the table is apart, every byte to the file as it comes, and what is not the table to the memory
-    // (after the table, as much lower as it is long); the table's rows are read from the file (a scratch of the widest
-    // read, then into the memory: a shared one is not handed to the file system)
-    let reader: Reader | undefined = hole && keeps ? keep : undefined;
-    if (hole && keeps) keep.holding(hole);
+    // (after the table, as much lower as it is long); the table's rows are read from the file (tableInFile())
     const place = hole ? forward.placer([hole]) : (offset: number) => offset;
     const write: Write = !hole ? (offset, chunk) => new Uint8Array(memory.buffer, base + offset, chunk.length).set(chunk) : (offset, chunk) => {
       const end = offset + chunk.length;
@@ -186,28 +213,15 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
       if (end > hole[1]) new Uint8Array(memory.buffer, base + place(Math.max(offset, hole[1])), end - Math.max(offset, hole[1])).set(chunk.subarray(Math.max(offset, hole[1]) - offset));
       if (keeps) keep.write(offset, chunk);
     };
-    let scratch = new Uint8Array(0);
-    const rows = (offset: number, bytes: number, to: number) => {
-      if (scratch.length < bytes) scratch = new Uint8Array(bytes);
-      const into = scratch.subarray(0, bytes);
-      if (reader!.read(into, offset) !== bytes) throw new Error("The kept model gave fewer bytes than a row of its table has.");
-      new Uint8Array(memory.buffer, to, bytes).set(into);
-    };
-    const apart: Apart | undefined = hole ? { place, stored: held, rows } : undefined;
+    const apart: Apart | undefined = table ? { place, stored: held, rows: table.rows(memory) } : undefined;
     return {
       hole,
-      attach(given) {
-        reader = given;
-        rowsNow = given;  // (T329.2.2, review: let go of by the next load's letGo() even if llama() below never ran or threw)
-      },
+      attach: (given) => table?.attach(given),
       write,
       slice: (begin, end) => new Uint8Array(memory.buffer, base + begin, end - begin).slice(),
       llama: (tokenizer, options) => {
         // (T329.2.2: the file the table is read from is the loaded model's, let go of with it)
-        if (apart) {
-          rowsNow = reader;
-          rowsWhole = reader === keep ? keep!.whole : undefined;
-        }
+        table?.built();
         // (not on the benchmark's page, ?bench=, T45: it times the CPU's combinations, which a GPU starting beside
         // them would slow down with its upload and compilation; its first load is one of them)
         // (nor under the rounds of /benchmark/'s model section, T184: the same; its page path, timed on the first load

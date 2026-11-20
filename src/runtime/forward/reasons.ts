@@ -39,9 +39,6 @@ export const REASONS = {
   layersRoom: (bytes: number) => `the layers on the GPU as well (${Math.round(bytes / 1e6)} MB) would not leave this device enough memory`,
   // ---- what the model is: its answers' steps stay on the CPU (gpuFit()'s tokensUnfit(), and a generation's stops)
   floatClassifier: "a classifier of float weights is not on the GPU's tokens",
-  // T334.1: a Gemma 4's (heads of two sizes, keys and values shared, the heads of v normalized, an input of every layer,
-  // the layer's number, the cap of the logits), whose prompts are on the GPU's blocks: its steps until T334.2
-  ownSteps: "a Gemma 4's answers are not on the GPU yet",
   classifierRoom: (bytes: number) => `the classifier on the GPU as well (${Math.round(bytes / 1e6)} MB with the layers) would not leave this device enough memory`,
   stops: (most: number) => `more than ${most} stop tokens`,
   // ---- what the device is (the engine's side without a GPU; gpu/device.ts as it opens one; alone.ts)
@@ -59,8 +56,12 @@ export const REASONS = {
   alonePositions: "a table of positions is not on the GPU alone yet",
   aloneFfn: "an FFN without a gate is not on the GPU alone yet",
   aloneNorms: "LayerNorms are not on the GPU alone yet",
-  aloneActivation: "a gate of the FFN that is no SiLU's is not on the GPU alone yet",  // T261
-  aloneLocal: "layers that attend a window are not on the GPU alone yet",  // T261
+  // (T261; T334.3: a SiLU's or a GELU's are, a Gemma 3's and 4's, and their layers that attend a window)
+  aloneActivation: "a gate of the FFN that is neither SiLU's nor GELU's is not on the GPU alone",
+  // T334.3: a model with a table of every layer's inputs (a Gemma 4's) goes on the GPU alone where a test asks for it
+  // (?gpuTest=only) until the owner chooses (TASKS.md's T334.3): its E2B and E4B are both too large to hold twice on a
+  // device that says 8 GB, and the E2B's place is the owner's to change
+  alonePerLayer: "a table of every layer's inputs goes on the GPU alone where a test asks for it",
   aloneDtype: (dtype: string) => `${dtype} weights stay on the CPU`,
   aloneHeads: "heads of a size that is no multiple of 4",
   aloneStarts: "q, k and v or gate and up would not start where this GPU binds a buffer",

@@ -32,6 +32,7 @@ const { GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, STOPS_MOST, PROMPTS_U
 const { OUTSIDE_VOCABULARY } = await import(runtimeUrl("forward/alone.js"));
 const { DELTA_THREADS } = await import(runtimeUrl("shaders.js"));
 const { LAYER_KINDS } = await import(runtimeUrl("forward/kinds.js"));
+const { halfToFloat } = await import(runtimeUrl("forward/memory.js"));
 // T568.4: what createForward() (forward/engine.ts) hands the GPU's side of the kinds of a model's layers, a second copy of
 // its lines over the kinds' own (forward/kinds.ts's gpu): of each kind (in the table's order), the names of its tensors,
 // why the GPU would not take its layers and its numbers in the GPU's plan, of the sizes given (sizes.ts's: the numbers
@@ -103,7 +104,9 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
       words[1 + GPU_TOKENS] = answer.notFinite ? 1 : 0;
       beside.now += beside.stepMs * data.count;
     }
-    if (data.type === "keys") {
+    // (T334.3: or as the check says, answer.keys(halves, count): a model of layers of their own widths)
+    if (data.type === "keys" && answer.keys) answer.keys(halves, data.count);
+    else if (data.type === "keys") {
       // every half says where it is: 0x3c00 (1.0) + side, layer and position, read back below
       for (let side = 0; side < 2; side++) for (let l = 0; l < SHAPE.layers; l++) for (let t = 0; t < data.count; t++) for (let i = 0; i < SHAPE.kvDim; i++) {
         halves[(STAGING + ((side * SHAPE.layers + l) * GPU_BLOCK + t) * SHAPE.kvDim * 2) / 2 + i] = 0x4000 + side * 0x400;  // 2.0 and 4.0
@@ -483,6 +486,19 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   await part.release();
   said();
 }
+// T334.3: and on the GPU alone, whose table stays with the CPU too: the GPU embeds the tokens, the CPU reads their rows of
+// the table, a step a request
+{
+  const { part, beside } = made({ direct: { onLost() {} }, shape: { perLayer: { width: 4 } } });
+  beside.ready();
+  assert.equal(await part.note, "prompts and answers on WebGPU");
+  feed(part, 16);
+  assert.deepEqual([part.tokenBlock(), beside.inputs, beside.embedded], [1, [16], []], "a request of one step; the block's rows of the table read for its 16 tokens, none of the embedding");
+  assert.deepEqual([step(part, 16, { count: 1 }), requests(beside, "tokens").map(({ count }) => count), beside.inputs], [[(500 + 16) % SHAPE.vocab], [1], [16, 1]],
+    "the step's rows are read for its one token");
+  await part.release();
+  said();
+}
 {
   // a model whose steps are not asked of the GPU, and a GPU that did not make them
   const none = made({ tokensWhyNot: "a classifier of float weights is not on the GPU's tokens", steps: false });
@@ -625,14 +641,28 @@ console.log("ok: a request with no answer, a failure, an id outside the vocabula
   assert.equal(lost.length, 1, "and not when the model is let go");
   said();
 }
-// T334.4's review: the GPU's keys and values are read back by the model's heads, so a model whose layers are not all
-// alike (a Gemma 4's: a layer of wider heads, or one that reads another's keys and values) is refused, with nothing asked
-for (const [what, other] of [["a layer of wider heads", { head: 8 }], ["a layer that reads another's keys and values", { kept: -1 }]]) {
-  const { part, beside } = made({ direct: { onLost() {} }, shape: { layerShapes: SHAPE.layerShapes.map((shape, l) => (l === 1 ? { ...shape, ...other } : shape)) } });
+// T334.3 (T334.4's review refused them): the GPU's keys and values of a model whose layers are not all alike (a Gemma
+// 4's: a layer of wider heads, or one that reads another's keys and values) are read back each of its own width and
+// none of a layer that keeps none, as the CPU's cache reads its own ([layers][count][width]): in staging a layer's
+// positions are of its own width, dense, in a place of the widest's (block.ts's keysOut())
+for (const [what, other, widths] of [["a layer of wider heads", { head: 8, wide: true }, [4, 8]], ["a layer that reads another's keys and values", { kept: -1 }, [4, 0]]]) {
+  const kvDim = Math.max(...widths);
+  const { part, beside } = made({ direct: { onLost() {} }, shape: { kvDim, layerShapes: SHAPE.layerShapes.map((shape, l) => (l === 1 ? { ...shape, ...other } : shape)) } });
+  // (each half of layer l, position t and value i says so: 0x3c00 + side, layer, position and value, all finite)
+  const bitsOf = (side, l, t, i) => 0x3c00 + side * 0x200 + l * 0x100 + t * 0x10 + i;
+  beside.answer.keys = (halves, count) => {
+    for (let side = 0; side < 2; side++) for (let l = 0; l < 2; l++) for (let t = 0; t < count; t++) for (let i = 0; i < widths[l]; i++) {
+      halves[(STAGING + (side * 2 + l) * GPU_BLOCK * kvDim * 2 + t * widths[l] * 2) / 2 + i] = bitsOf(side, l, t, i);
+    }
+  };
   beside.ready();
   await part.note;
-  assert.throws(() => part.keysAndValues(0, 4), /The GPU's keys and values are read back by the model's heads, and this model's layers are not all alike/, `keysAndValues() refuses ${what}`);
-  assert.equal(requests(beside, "keys").length, 0, "with nothing asked of the GPU");
+  const got = part.keysAndValues(2, 3);
+  for (const [side, floats] of [got.keys, got.values].entries()) {
+    const want = widths.flatMap((width, l) => [0, 1, 2].flatMap((t) => Array.from({ length: width }, (_, i) => halfToFloat(bitsOf(side, l, t, i)))));
+    assert.deepEqual([...floats], want, `keysAndValues() reads ${what} by its own width (${side ? "values" : "keys"})`);
+  }
+  assert.deepEqual(requests(beside, "keys").map(({ count, pos }) => [count, pos]), [[3, 2]]);
   await part.release();
   said();
 }
@@ -863,8 +893,8 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     // prompts' keeps the prompts there)
     const floated = { sized: { ...WEIGHTS.sized, matrices: { w1_double: matrixOf(48, 8, 60000, { kind: "f32" }) } } };
     assert.deepEqual([fitOf(shape, floated).unfit(), fitOf(shape, floated).tokensUnfit()], [null, "float32 weights are not on the GPU yet"], "the steps' own matrices as they are packed");
-    // (T334.2: on the GPU alone, a Gemma 4's steps are not the GPU's yet: T334.3)
-    assert.deepEqual([fitOf({ perLayer: { width: 4 } }).tokensUnfit(), fitOf({ perLayer: { width: 4 } }, {}, {}, { size: 1 }).tokensUnfit()], [null, "a Gemma 4's answers are not on the GPU yet"]);
+    // (T334.3: a Gemma 4's steps are the GPU's on the GPU alone too, as beside the CPU)
+    assert.deepEqual([fitOf({ perLayer: { width: 4 } }).tokensUnfit(), fitOf({ perLayer: { width: 4 } }, {}, {}, { size: 1 }).tokensUnfit()], [null, null]);
   }
   // T334.2's review: each attending layer's keys and values of its own heads' width (a Gemma 4's wide layers', in local
   // layers of their own: the tables are of one head's angles a kind)

@@ -97,8 +97,9 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   // T334.2: the most steps of a request: GPU_TOKENS, or one where the GPU's step reads the token's rows of a table the
   // CPU keeps (a Gemma 4's inputs of every layer, which it reads from the saved file a token at a time: the token a step
   // feeds is the step before's, which the GPU samples, so that a request of more would need the table on the GPU, 2.6 GB
-  // of the E2B's in int8. T334.3's model on the GPU alone has its table there)
-  const tokensMost = perLayer && !direct ? 1 : GPU_TOKENS;
+  // of the E2B's in int8). T334.3: on the GPU alone too, whose table stays with the CPU (the E4B's is 3.2 GB: on the GPU
+  // it would be 8.7 GB there, past what a phone of 8 GB has; TASKS.md's T334.3 weighs the two)
+  const tokensMost = perLayer ? 1 : GPU_TOKENS;
   // T243: what the status line says of a GPU stopped for keys or values that are no finite numbers (where: the request)
   // ---- T135: a prompt on the GPU. gpu() makes the GPU's worker (gpu.ts), which puts this model's layers on the GPU
   // once (a second copy of them: the CPU keeps its own, for the tokens after the prompt), and then runs each block of a
@@ -349,8 +350,9 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     views();
     // the GPU reads the rows from there (T210: on the GPU alone, it embeds the tokens itself)
     if (!direct) embed(tokens, pos0, gpuRows, D);
-    // (T334.1: and the inputs of every layer of a table of their own, which the CPU computes as for its own layers)
-    if (perLayer && !direct) layersInputs(tokens);
+    // (T334.1: and the rows of the table of every layer's inputs, which the CPU reads as for its own layers; T334.3: on
+    // the GPU alone too, whose table stays with the CPU)
+    if (perLayer) layersInputs(tokens);
     const fresh = stateUp(pos0);
     const answer = asked((serial) => ({ type: "prompt", serial, count, pos: pos0, fresh, ...(direct ? { tokens } : {}) }));
     if (answer !== "done") {
@@ -378,12 +380,15 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     return true;
   }
   // T210: the GPU's own keys and values of count positions from pos (a model on the GPU alone keeps none here), read
-  // back GPU_BLOCK positions a request through staging: in float32, [layers][count][kvDim] each, as keysAndValues
+  // back GPU_BLOCK positions a request through staging: in float32, [layers][count][width] each, as keysAndValues
+  // (T545: the attending layers', by their places. T334.3: each of its own heads' width, a Gemma 4's narrow and wide
+  // ones, and none of a layer that reads another's keys and values: as the CPU's cache reads its own, cache.ts's read();
+  // in staging a layer's positions are of its own width, dense, in a place of the widest's, kvDim, as block.ts's keysOut()
+  // puts them)
+  const keptWidths = layerShapes.flatMap(({ head, kept }, l) => (kinds[l] === "attention" ? [kept < 0 ? 0 : kvHeads * head] : []));
   function gpuKeysAndValues(pos: number, count: number) {
-    // (T545: the attending layers', by their places)
-    // (T334.4: counted by the model's heads, which a Gemma 4's layers are not all of, nor all of their own keys: T334.3)
-    if (layerShapes.some(({ head, kept }) => head !== headSize || kept < 0)) throw new Error("The GPU's keys and values are read back by the model's heads, and this model's layers are not all alike");
-    const out = [0, 1].map(() => new Float32Array(attending * count * kvDim));
+    const starts = keptWidths.map((_, p) => keptWidths.slice(0, p).reduce((sum, width) => sum + width, 0) * count);
+    const out = [0, 1].map(() => new Float32Array(keptWidths.reduce((sum, width) => sum + width, 0) * count));
     for (let at = 0; at < count; at += GPU_BLOCK) {
       const part = Math.min(GPU_BLOCK, count - at);
       if (!gpuOn) throw new Error(`The GPU stopped (${directLost ?? gpuReason}), and this model's keys and values were on it alone`);
@@ -392,13 +397,12 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       }
       views();
       for (let side = 0; side < 2; side++) {
-        for (let l = 0; l < attending; l++) {
+        keptWidths.forEach((width, l) => {
           for (let t = 0; t < part; t++) {
-            const from = (staging + ((side * attending + l) * GPU_BLOCK + t) * kvDim * 2) / 2, to = (l * count + at + t) * kvDim;
-
-            for (let i = 0; i < kvDim; i++) out[side][to + i] = halfToFloat(cpuSide.H[from + i]);
+            const from = (staging + (side * attending + l) * GPU_BLOCK * kvDim * 2 + t * width * 2) / 2, to = starts[l] + (at + t) * width;
+            for (let i = 0; i < width; i++) out[side][to + i] = halfToFloat(cpuSide.H[from + i]);
           }
-        }
+        });
       }
     }
     return { keys: out[0], values: out[1] };
@@ -465,8 +469,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     views();
     const fresh = stateUp(pos);
     // (T334.2: and the rows of the table of every layer's inputs of the token fed, as a block's: the GPU's worker projects
-    // its embedded row itself)
-    if (perLayer && !direct) layersInputs([token]);
+    // its embedded row itself. T334.3: on the GPU alone too)
+    if (perLayer) layersInputs([token]);
     // (T210: on the GPU alone, no cache here to go up from, nor any position the GPU does not hold)
     const answer = asked((serial) => ({ type: "tokens", serial, count, pos, fresh, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length, written,
       cache: direct ? null : { places: cpuSide.places(), half: halfKV }, settings: { temperature, topp, penalty, topK, minP, presence, stops: stopList }, randoms: list(randoms) }));

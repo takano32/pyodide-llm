@@ -239,6 +239,12 @@ export async function gpuAnswers() {
       const [gate] = called("swiglu", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
       bound(entries, 0).set(gate.subarray(0, bound(entries, 0).length));
     }) as Model,
+    // (T334.3: a Gemma 3's GELU gate apart from the matrix, a block's: GEGLU, as SWIGLU)
+    geglu: ((entries, x, y) => {
+      if (x * 64 < words(entries, 2)[0] || y < words(entries, 3)[0]) return;
+      const [gate] = called("geglu", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
+      bound(entries, 0).set(gate.subarray(0, bound(entries, 0).length));
+    }) as Model,
     // (T465.6.5) a ternary classifier's outlier channels: TAKE_OUTLIERS (x, picked, Outliers: one workgroup) and
     // TERNARY_COLUMNS (the table, its scales, picked, the logits, Outliers: 256 rows a workgroup)
     takeOutliers: ((entries, x) => {

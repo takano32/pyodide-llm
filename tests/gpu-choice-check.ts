@@ -446,6 +446,28 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     else assert.ok(counts[i] === 0 && stored[place(i)] === checkpoint[i], `byte ${i} in memory at ${place(i)}`);
   }
   assert.equal(weights.stored, size - holes.reduce((sum, [a, b]) => sum + b - a, 0));
+  // T334.3: a stretch apart from both (a Gemma 4's table of every layer's inputs, here the norms after wo, which stays
+  // where the model is kept): no byte of it posted nor in the memory, and the memory packed without it as without the
+  // GPU's
+  {
+    const apart = [tensors.rms_ffn_weight.offset, tensors.rms_ffn_weight.offset + 2 * 64 * 4];
+    posted.fill(0);
+    counts.fill(0);
+    new Uint8Array(memory.buffer).fill(0);
+    const without = gpuOnlyWeights({ memory, base, size, tensors, worker, apart });
+    flow = new BigInt64Array(without.flow);
+    for (let at = 0, k = 0; at < size; at += steps[k++ % steps.length]) without.write(at, checkpoint.subarray(at, Math.min(size, at + steps[k % steps.length])));
+    await without.drained();
+    const all = [...holes, apart].sort((a, b) => a[0] - b[0]), placed = placer(all), there = new Uint8Array(memory.buffer, base, without.stored);
+    assert.equal(without.stored, weights.stored - (apart[1] - apart[0]));
+    for (let i = 0; i < size; i++) {
+      if (i >= apart[0] && i < apart[1]) assert.ok(counts[i] === 0, `byte ${i} of the stretch apart is not posted`);
+      else if (inHole(i)) assert.ok(counts[i] === 1 && posted[i] === checkpoint[i], `byte ${i} posted once`);
+      else assert.ok(counts[i] === 0 && there[placed(i)] === checkpoint[i], `byte ${i} in memory at ${placed(i)}`);
+    }
+    assert.equal(without.place(tensors.rms_final_weight.offset), placed(tensors.rms_final_weight.offset), "place() leaves the stretch apart out");
+    assert.equal(new Uint8Array(memory.buffer, base + without.stored, apart[1] - apart[0]).every((byte) => byte === 0), true, "and nothing of it after the rest");
+  }
   // what gpu.js opens with: each layer's values and scales where they start in the checkpoint
   const plan = gpuOnlyPlan([64, 96, 2, 4, 2, 100, 32], tensors);
   assert.deepEqual(plan.matrices.w2.layers[1], [tensors.w2.offset + 64 * 96, tensors.w2.scales + (64 * 96 / 32) * 4]);

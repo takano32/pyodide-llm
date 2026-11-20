@@ -15,7 +15,8 @@ import type { Dtype } from "../contracts/form.ts";
 import type { ToGpu } from "../contracts/gpu/protocol.ts";
 import type { GpuAlone, Listed } from "../contracts/messages.ts";
 import type { Llama, Options } from "../contracts/python.ts";
-import type { Direct, Engine, GpuOnlyWeights, Header, Outside, Place, Thread } from "../forward.ts";
+import type { Direct, Engine, GpuOnlyWeights, Header, Outside, Place, Rows, Thread } from "../forward.ts";
+import type { Reader } from "../kept.ts";
 import type { Tensors } from "../contracts/plan.ts";
 
 // T156: a model on the GPU alone: what forward.ts reads of it (Direct), its GPU's worker, why the GPU stopped under
@@ -25,6 +26,10 @@ export type GpuOnly = Direct & { worker: Worker; lost: string | null; room: GpuO
 // where a model goes (gpuOnlyWeightsFor()): forward.ts's place and, where it may go on the GPU alone, its tensors,
 // the bytes kept in the memory then and those with the forward pass after them
 export type Placed = Place & { tensors?: Tensors; stored?: number; gpuOnly?: number };
+// T329.2.2, T334.3: a table of every layer's inputs that stays where the model is kept (weights.ts's tableInFile()): its
+// stretch of the checkpoint (hole), what reads its rows into a memory (rows), a kept file's handle handed in (attach),
+// and the engine built on it (built)
+export type TableApart = { hole: [number, number]; rows(memory: WebAssembly.Memory): Rows; attach(reader: Reader): void; built(): void };
 
 // T156: the model on the GPU alone that is loading or loaded now (what gpuOnlyBuffer() made), or undefined
 let gpuOnlyNow: GpuOnly | undefined;
@@ -141,7 +146,9 @@ export function gpuOnlyWeightsFor(size: number, header: Header, options: Options
 }
 // T156: the weights of a model on the GPU alone: the layers' matrices to the GPU's worker as they come (forward.ts's
 // gpuOnlyWeights), the rest into a memory of their size, and every byte to keep's file where the conversion is kept
-export function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors, stored, gpuOnly }: Required<Placed>, keep?: Keeper): Weights {
+// (T334.3, table: a table of every layer's inputs that stays where the model is kept, neither in the memory nor on the
+// GPU: its stretch is apart from both, and the engine reads its rows from there)
+export function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors, stored, gpuOnly }: Required<Placed>, keep?: Keeper, table?: TableApart): Weights {
   const forward = forwardModule!;  // (T476: the forward module, which a load that places weights has: taken once)
   // (T576: the GPU's plan first: what makes it may throw (gpuPacking()), before a memory is taken or a worker opened)
   const plan = forward.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered, options);
@@ -175,7 +182,7 @@ export function gpuOnlyBuffer(size: number, header: Header, options: Options, { 
   // failed), and the engine, which listens from start() on, is handed the error it missed once it is built (failed)
   let failed: ErrorEvent | undefined;
   try {
-    weights = forward.gpuOnlyWeights({ memory, base, size, tensors, worker });
+    weights = forward.gpuOnlyWeights({ memory, base, size, tensors, worker, apart: table?.hole });
     worker.addEventListener("error", (event) => {
       failed ??= event;
       weights.gone();
@@ -195,8 +202,8 @@ export function gpuOnlyBuffer(size: number, header: Header, options: Options, { 
   let built = false;
   return {
     direct,
-    hole: null,
-    attach() {},
+    hole: table?.hole ?? null,
+    attach: (reader) => table?.attach(reader),
     write(offset, chunk) {
       weights.write(offset, chunk);
       keep?.write(offset, chunk);
@@ -204,6 +211,9 @@ export function gpuOnlyBuffer(size: number, header: Header, options: Options, { 
     room: weights.room,
     drained: weights.drained,  // every byte of the layers on the GPU (or the GPU failed: start() says so)
     llama: (tokenizer, engineOptions) => {
+      // (T334.3: the table's rows read from where the model is kept, which the engine reads them by)
+      table?.built();
+      if (table) direct.rows = table.rows(memory);
       // (no oneThread, T371: a model on the GPU alone is one on a shared memory, which ?threads=1 does not ask for)
       const outside = forward.external({ memory, base, size, kernels, spawn: spawnThread, gpu: () => worker, gpuForce, halfKeys: true, direct,
         gpuRemembered: gpuRequest?.remembered });

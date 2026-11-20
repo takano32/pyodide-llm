@@ -159,7 +159,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   answers.add(ENGINE.TOKEN_ROPE, answers.tokenRope);
   // (T465.6.4: an LFM2's convolution layers, a Qwen3.5's linear-attention layers, SwiGLU apart)
   for (const [name, model] of [["SHORT_CONV", answers.shortConv], ["CONV_STATE", answers.convState], ["DELTA_GATES", answers.deltaGates],
-    ["DELTA_CONV", answers.deltaConv], ["DELTA_CONV_STATE", answers.deltaConvState], ["DELTA_NET", answers.deltaNet], ["SWIGLU", answers.swiglu], ["OUTPUT_GATE", answers.outputGate],
+    ["DELTA_CONV", answers.deltaConv], ["DELTA_CONV_STATE", answers.deltaConvState], ["DELTA_NET", answers.deltaNet], ["SWIGLU", answers.swiglu], ["GEGLU", answers.geglu], ["OUTPUT_GATE", answers.outputGate],
     ["TAKE_OUTLIERS", answers.takeOutliers], ["TERNARY_COLUMNS", answers.ternaryColumns]]) {
     answers.add(ENGINE[name], spoil[name] ?? model);
   }

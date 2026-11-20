@@ -101,20 +101,23 @@ async function started(options = {}, on = (device, lose) => {}) {
   // once here), then start(): ready, every form chosen, a token's too, every dispatch answered (a prompt's rows from the
   // ids, EMBED_ROWS, and its RoPE among them)
   // (a start.ts of its own each: what open() and take() keep is a worker's, which a load has anew, tests/fresh.ts)
-  const alone = async () => {
+  // (T334.3: and a Gemma 3's, its GELU gate, its norms behind and its windows: the GPU alone's too)
+  const alone = async (model = "llama") => {
     posted.length = 0;
-    const { plan, memory, answers } = await made({ sane: true, direct: true });
+    const { plan, memory, answers } = await made({ model, sane: true, direct: true });
     const own = await fresh(runtimeUrl("gpu/start.ts"));
     own.open(plan, new SharedArrayBuffer(8));
     own.take({ type: "weights", offset: 0, bytes: new Uint8Array(memory.buffer).slice() });
     await own.start(memory, plan);
     return { said: posted.filter(({ type }) => type !== "progress"), answers };
   };
-  const { said: [ready], answers } = await alone();
-  assert.equal(ready?.type, "ready", `a model on the GPU alone: ready, not ${JSON.stringify(ready).slice(0, 200)}`);
-  assert.ok(ready.tokens?.form && ready.tokensWhy === null, "its token's form");
-  assert.deepEqual(answers.missed, [], "every dispatch answered");
-  console.log("ok: a model on the GPU alone: ready with every form chosen (its first layer and tables read back), every dispatch answered");
+  for (const model of ["llama", "gemma3"]) {
+    const { said: [ready], answers } = await alone(model);
+    assert.equal(ready?.type, "ready", `a ${model} on the GPU alone: ready, not ${JSON.stringify(ready).slice(0, 200)}`);
+    assert.ok(ready.tokens?.form && ready.tokensWhy === null, `a ${model}'s token's form`);
+    assert.deepEqual(answers.missed, [], `every dispatch of a ${model}'s answered`);
+  }
+  console.log("ok: a model on the GPU alone (a Llama, a Gemma 3): ready with every form chosen (its first layer and tables read back), every dispatch answered");
 }
 {
   // (T465.5's review) the device out of memory for the layers (the scope start() pushes first, opened with the device):

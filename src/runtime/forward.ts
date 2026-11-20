@@ -91,7 +91,10 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, gpu
       // checkpoint, which only the GPU's worker reads)
       if (direct) {
         // (T477: the entries `as const`, tuples, which Object.fromEntries types; an array of two it reads as any)
-        plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, GPU_ALONE.includes(name as TensorName) ? t
+        // (T334.3: and the table of every layer's inputs where it stays in the file, whose rows direct.rows reads by their
+        // offsets there, as apart.rows does below)
+        const kept = (name: string) => GPU_ALONE.includes(name as TensorName) || (Boolean(direct.rows) && name === "per_layer_table");
+        plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, kept(name) ? t
           : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) }] as const)) as Plan["tensors"];
       }
       // (T329.2.2: every tensor where it is in memory; the table of every layer's inputs is the hole, whose offsets
@@ -101,7 +104,7 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, gpu
           ...(t.layers ? { layers: t.layers.map((part) => ({ ...part, offset: place(part.offset), ...(part.scales ? { scales: place(part.scales) } : {}) })) } : {}) }] as const)) as Plan["tensors"];
       }
       outside.engine = createForward({ memory, base, size: direct ? direct.stored : apart ? apart.stored : size, kernels, spawn, gpu, gpuRoom,
-        gpuRemembered, gpuForce, halfKeys, direct, trying, plan, rows: apart?.rows, oneThread });
+        gpuRemembered, gpuForce, halfKeys, direct, trying, plan, rows: apart?.rows ?? direct?.rows, oneThread });
       return outside.engine;
     },
   };

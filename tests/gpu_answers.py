@@ -534,6 +534,16 @@ def swiglu(gate, up, size, step):
     return g.tobytes()
 
 
+def geglu(gate, up, size, step):
+    """(T334.3) GEGLU: each token's n values of gate, gelu(gate) × up (the tanh approximation, its argument clamped, as
+    gelu() has it), in place -> gate, as bytes"""
+    n, tokens = int(u32s(size)[0]), int(u32s(step)[0])
+    g, u = f32s(gate).copy(), f32s(up).astype(np.float64)
+    v = g[: tokens * n].astype(np.float64)
+    g[: tokens * n] = 0.5 * v * (1.0 + np.tanh(np.clip(0.7978845608028654 * (v + 0.044715 * v ** 3), -9.010913, 9.010913))) * u[: tokens * n]
+    return g.tobytes()
+
+
 def output_gate(x, gate, size, step):
     """OUTPUT_GATE: each token's n values of x times sigmoid of the gate's, in place -> x, as bytes"""
     n, tokens = int(u32s(size)[0]), int(u32s(step)[0])

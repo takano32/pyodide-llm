@@ -16,6 +16,7 @@ import { perLayer } from "./perlayer.ts";
 import { controlArea } from "./control.ts";
 import { softwareThreads } from "./threads.ts";
 import { gpuFit } from "./gpufit.ts";
+import { stackPlacesOf } from "./alone.ts";
 import { gpuSide } from "./gpuside.ts";
 import { blockTables } from "./blocks.ts";
 import { stagingReader } from "./staging.ts";
@@ -28,7 +29,7 @@ import type { Spawn } from "./threads.ts";
 import type { Rows } from "./perlayer.ts";
 import type { Force, Remembered } from "../contracts/gpu/protocol.ts";
 import type { Core, Held, Kinds, Product, Room } from "./kinds.ts";
-import type { Derived, Layer, LayerKind, Plan, TensorName } from "../contracts/plan.ts";
+import type { Derived, LayerKind, Plan, TensorName } from "../contracts/plan.ts";
 
 // T334.1: the norms of the heads whose stacks are of some of the layers alone (a Gemma 4's narrow and wide ones), whose
 // layers the GPU's plan counts as it counts a stack of matrices
@@ -305,18 +306,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       turned: !rope ? 0 : rotary > 0 && rotary < head ? rotary : head })),
     valueNorm: Boolean(plan.value_norm), softcap: softcap || 0,
     perLayer: perLayered ? { width: perLayered.width } : null,
-    // (T334.1: every layer's place in a Gemma 4's stacks of its narrow and wide heads and of its narrower FFN, and the
-    // projection of its embedded rows into the inputs of every layer, a matrix of the model's, not a layer's: the first's)
-    stackPlaces: facts.some(({ wide, double, kept }) => wide || double || kept < 0) || perLayered ? Object.fromEntries(([
-      [["per_layer_projection"], (_: Layer, l: number) => (l === 0 ? 0 : -1)],
-      [["wq", "wo"], ({ kind, wide, stack }: Layer) => (kind === "attention" && !wide ? stack : -1)],
-      [["wq_wide", "wo_wide"], ({ kind, wide, stack }: Layer) => (kind === "attention" && wide ? stack : -1)],
-      [["wk", "wv"], ({ kind, wide, kept }: Layer) => (kind === "attention" && !wide ? kept : -1)],
-      [["wk_wide", "wv_wide"], ({ kind, wide, kept }: Layer) => (kind === "attention" && wide ? kept : -1)],
-      [["w1", "w2", "w3"], ({ double, ffn }: Layer) => (double ? -1 : ffn)],
-      // (T334.2: and of its wider FFN, which a token's steps run: no block runs a layer of it)
-      [["w1_double", "w2_double", "w3_double"], ({ double, ffn }: Layer) => (double ? ffn : -1)]] satisfies [TensorName[], (fact: Layer, l: number) => number][])
-      .flatMap(([names, place]) => names.map((name) => [name, facts.map(place)] as const))) : {},
+    // (T334.1: every layer's place in a Gemma 4's stacks of its narrow and wide heads and of its narrower and wider FFN,
+    // and of the projection of its embedded rows into the inputs of every layer: alone.ts's stackPlacesOf())
+    stackPlaces: stackPlacesOf(facts, Boolean(perLayered)),
     // (the layers of every stack of matrices, and of the norms of the heads: a Gemma 4's are some of its layers)
     counts: { ...Object.fromEntries(Object.entries(T).flatMap(([name, t]) =>
       (t && (t.shape.length === 3 || (STACKED_VECTORS as readonly string[]).includes(name)) ? [[name, t.shape[0]] as const] : []))),
@@ -360,8 +352,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T147, T243: the keys and values the GPU's worker put there, looked at and written into the cache (staging.ts)
   const { fromStaging, stagingFinite } = stagingReader({ k, cache, staging, attending, kvDim });
   const gpuRows = staging && !direct ? alloc(GPU_BLOCK * D) : 0;
-  // (T334.1: and a Gemma 4's inputs of every layer of a block's tokens, [token][layer][width] floats, layersInputs())
-  const gpuInputs = staging && !direct && perLayered ? alloc(GPU_BLOCK * layers * perLayered.width * 4) : 0;
+  // (T334.1: and a Gemma 4's inputs of every layer of a block's tokens, [token][layer][width] floats, layersInputs(); T334.3:
+  // on the GPU alone too, whose table of them stays where the CPU reads its rows: the GPU's worker embeds the tokens, not
+  // their rows of that table)
+  const gpuInputs = staging && perLayered ? alloc(GPU_BLOCK * layers * perLayered.width * 4) : 0;
   // T152: why a generation's steps stay on the CPU where the prompt's blocks may go to the GPU (else null), and where
   // the GPU's worker writes the ids of the steps it took ([sampled, id, ...])
   const tokensWhyNot = staging ? fit.tokensUnfit() : null;

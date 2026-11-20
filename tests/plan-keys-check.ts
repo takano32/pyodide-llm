@@ -170,6 +170,27 @@ const returned = (fn) => {
   });
   ok(`Python's plan has the same ${keys.size} keys for ${plans.length} made-up models (${families.length} of the layouts' families in five dtypes), ${tensors.size} tensors among them`);
 
+  // T334.3: a model on the GPU alone opens with every layer's places in its stacks of some layers (a Gemma 4's) said of
+  // its form, before there is a plan (alone.ts's gpuOnlyPlan()), which the GPU's plan as it starts says of the plan's
+  // layers (stackPlacesOf() of Python's layer_facts()): the two the same, and every stack's layers as many as its
+  // tensor's
+  {
+    const { gpuOnlyPlan, stackPlacesOf } = await import(runtimeUrl("forward/alone.ts"));
+    let held = 0;
+    plans.forEach((plan, index) => {
+      const { name, header, form, dtype } = cases[index];
+      if (!["int8", "ternary"].includes(dtype) || name.includes("blocks")) return;
+      const opened = gpuOnlyPlan(header, plan.tensors, {}, undefined, form), places = stackPlacesOf(plan.layers, Boolean(form.per_layer));
+      for (const [tensor, matrix] of Object.entries(opened.matrices)) {
+        assert.deepEqual(matrix.at, places[tensor], `${name}, ${dtype}: the GPU alone's places of ${tensor} are the plan's`);
+        if (matrix.at) assert.equal(matrix.layers.length, Math.max(...matrix.at) + 1, `${name}, ${dtype}: ${tensor}'s layers are as many as its places say`);
+        held += matrix.at ? 1 : 0;
+      }
+    });
+    assert.ok(held >= 12, `the places of a Gemma 4's stacks are held (${held})`);
+    ok(`a model on the GPU alone opens with its stacks' places of the form, the plan's to the layer (${held} stacks of some layers)`);
+  }
+
   // T368.2: and the types say the same (src/runtime/contracts/plan.ts, which whatever is TypeScript reads the plan by; the
   // form's two kinds of layers are form.ts's): the keys, the tensors' names, a tensor's keys and the ways it is stored,
   // the derived tables, a layer's facts and its kinds, the widths

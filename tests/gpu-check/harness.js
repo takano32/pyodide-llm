@@ -4,12 +4,13 @@ const { ringPositions } = await import("/runtime/forward/memory.ts" + search);  
 const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.ts" + search);
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 // T334.5: a file read as it comes, each piece handed to put(where it is in the file, its bytes): no copy of it whole
+// (T334.3: put may be async, waited for before the next piece: the GPU alone's room())
 const streamed = async (url, put) => {
   const reader = (await fetch(url)).body.getReader();
   for (let at = 0; ;) {
     const { done, value } = await reader.read();
     if (done) return at;
-    put(at, value);
+    await put(at, value);
     at += value.length;
   }
 };
@@ -178,6 +179,8 @@ try {
     const size = c.size, tokens = c.reference.tokens, n = tokens.length - 1, hole = tableHole(plan.tensors);
     const stored = hole ? size - (hole[1] - hole[0]) : size, table = hole && new Uint8Array(hole[1] - hole[0]);
     const checkpoint = hole ? null : await fetched(c.checkpoint);
+    // (T334.3: the tensors where the checkpoint has them, which the GPU alone's plan places itself: external())
+    const unmoved = plan.tensors;
     if (hole) {
       const place = placer([hole]), moved = (t) => ({ ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) });
       plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, { ...moved(t), ...(t.layers ? { layers: t.layers.map(moved) } : {}) }]));
@@ -587,29 +590,43 @@ try {
     // still counted as taken, the GPU lost with the reason as the engine starts, a step on the CPU throws. cpu (the made-up
     // model only): /benchmark/'s CPU reading made up, far slower than the GPU (it stays) or far faster (the GPU is given
     // up as it is ready, and the verdict to keep has the device's key)
+    // (T334.3: a Gemma 4's too, whose table of every layer's inputs stays apart, hole, neither in the memory nor on the GPU
+    // (the page's: where the model is kept), its rows read from the harness's copy (rows): the checkpoint streamed again,
+    // as the real E2B's does not fit here whole)
     const direct = async (force, cpu) => {
       const worker = openGpu();
-      const weights = gpuOnlyWeights({ memory, base, size, tensors: c.places, worker });
-      // (T271.4: by the model's form, a Qwen3.5's layers of two kinds)
+      const weights = gpuOnlyWeights({ memory, base, size, tensors: c.places, worker, apart: hole });
+      // (T271.4: by the model's form, a Qwen3.5's layers of two kinds; T334.3: a Gemma 4's stacks of some of its layers)
       worker.postMessage({ type: "open", plan: gpuOnlyPlan(c.reference.header, c.places, force, undefined, c.options), flow: weights.flow });
       const began = performance.now(), stretches = [1234567, 777, 3, 65536, 1 << 20];
-      for (let at = 0, k = 0; at < size; at += stretches[k++ % stretches.length]) {
-        weights.write(at, checkpoint.subarray(at, Math.min(size, at + stretches[k % stretches.length])));
-        await weights.room();
-      }
+      let k = 0;
+      const inStretches = async (from, bytes) => {
+        for (let at = 0; at < bytes.length; at += stretches[k++ % stretches.length]) {
+          weights.write(from + at, bytes.subarray(at, Math.min(bytes.length, at + stretches[k % stretches.length])));
+          await weights.room();
+        }
+      };
+      if (hole) await streamed(c.checkpoint, inStretches);
+      else await inStretches(0, checkpoint);
       await weights.drained();
       let lostWhy = null;
-      const told = { place: weights.place, stored: weights.stored, onLost: (why) => { lostWhy = why; }, size, cpu,
+      const told = { place: weights.place, stored: weights.stored, onLost: (why) => { lostWhy = why; }, size, cpu, rows,
         layerWeights: layerWeightsOf(c.reference.header, { head_dim: c.headDim }), usage: { prompt: 1, written: 1 } };
       const outside = external({ memory, base, size, kernels, gpu: () => worker, gpuForce: force, halfKeys: true, direct: told });
-      const engine = outside.start(structuredClone(plan));
+      const engine = outside.start(structuredClone({ ...plan, tensors: unmoved }));
       const note = await engine.gpu;
       const out = { note, stored: weights.stored };
       if (!lostWhy) {
         for (let at = 0; at < n; at += 16) engine.forwardMany(tokens.slice(at, Math.min(at + 16, n)), at);
         const { keys, values } = engine.keysAndValues(0, n);
-        Object.assign(out, { keys: b64(keys), values: b64(values), gpuTokens: engine.gpuTokens, status: engine.gpuStatus,
-          first: engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, 4, 0, 0.9, 1, [], []) });
+        // (T334.3: 4 greedy steps in requests of the most the engine hands the GPU at once: a Gemma 4's one a request, each
+        // fed the id the one before sampled, as the run with the weights here takes them: ask())
+        const first = [];
+        for (let ids = []; ids && first.length < 4; first.push(...(ids ?? []))) {
+          ids = engine.generateMany(first.length ? first[first.length - 1] : tokens[n], n + first.length, tokens.slice(-64), tokens.length + first.length,
+            Math.min(engine.tokenBlock || 4, 4 - first.length), 0, 0.9, 1, [], []);
+        }
+        Object.assign(out, { keys: b64(keys), values: b64(values), gpuTokens: engine.gpuTokens, status: engine.gpuStatus, first: first.length ? first : undefined });
       }
       out.lost = lostWhy;  // (before the step on the CPU below, which loses the GPU: the worker would load it again)
       out.verdict = told.verdict;
