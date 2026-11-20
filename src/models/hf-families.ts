@@ -372,7 +372,7 @@ export const HF_FAMILIES: Entry[] = [
   gemma4("E4B", { original: "ee0ef6023621cff504d758262d4e04895a5af4a2", gguf: "b8093469224f83f5c38f691eb906c380e9e63114" }, 8031242688, 5226606788,
     "fetches 8.0 GB (GGUF) → int8 8.4 GB (5.2 GB in memory)", 8.4e9),
   // T343: XHToken's Spark-X2.5 (T339 to T342: a Llama with a gate a head after the attention, an erf GELU in the FFN, and
-  // three layers of four that see the last 512 positions alone, with a RoPE of their own; on the CPU alone, T344).
+  // three layers of four that see the last 512 positions alone, with a RoPE of their own; on the GPU too since T344).
   // XHToken's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals (their q and k in the HF order,
   // which the family reads), with the vocabulary, config.json and chat template of the originals. Its template thinks
   // by default and answers at once with enable_thinking false: the two formats by hand (SPARK_THINKING,
