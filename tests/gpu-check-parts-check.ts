@@ -642,8 +642,9 @@ check("the harness is a module, and the runtime's files it names are in this tre
   const file = new URL("./gpu-check/harness.js", import.meta.url), text = fs.readFileSync(file, "utf8");
   // (T584: parsed as a module, whatever runs this: Bun's --check runs a file)
   assert.doesNotThrow(() => parse(text, { sourceType: "module" }), "harness.js is no module that parses");
-  // the two constants its window puts before it (engines.ts), and nothing else of Node's side
+  // the three constants its window puts before it (engines.ts), and nothing else of Node's side
   assert.match(text, /\bONLY\b/);
+  assert.match(text, /\bSTEPS\b/);
   assert.match(text, /\bNAN_ROUNDS\b/);
   // what it takes from the runtime: by the server's paths, each a file of this tree; engines.ts rewrites the imports
   // for Dawn's worker thread by their beginning, and the GPU's worker is a Worker of the same path

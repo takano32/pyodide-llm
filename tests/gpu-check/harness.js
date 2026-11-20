@@ -655,9 +655,13 @@ try {
     // the CPU)
     // T209: the classifier and the embedding in pieces of about a third of the table (as a table past what the device
     // binds: Llama 3.2 3B's on the owner's Android), so that EMBED's and the classifier's pieces are what the steps read
+    // (T344's review: forms[0] is the first of promptForms(), a float form on every device but where --forms leaves none
+    // or the model's shaders are its own (DP4A's alone): the float steps after it are held to their float line, steps.ts.
+    // And --steps leaves out the runs of the forms and attentions whose names hold none of its parts)
+    const stepsAsked = (name) => !STEPS.length || STEPS.some((part) => name.includes(part));
     if (gpu[0].steps?.planned !== false) {
-      for (const form of tokenForms.filter((name) => ternary || c.arch === "llama" || name !== "DP4A, fused (T175)")) gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: form, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
-      for (const attention of tokenAttentions) {
+      for (const form of tokenForms.filter((name) => (ternary || c.arch === "llama" || name !== "DP4A, fused (T175)") && stepsAsked(name))) gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: form, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
+      for (const attention of tokenAttentions.filter(stepsAsked)) {
         gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: tokenForms[0], tokenAttention: attention, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
       }
     }

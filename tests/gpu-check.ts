@@ -4,6 +4,7 @@
 //
 //   node tests/gpu-check.ts [model id | synthetic | made-up ...] [--engine chromium|chrome|msedge] [--forms <part,part>]
 //   node tests/gpu-check.ts ... --engine dawn --webgpu <the npm package webgpu's directory>
+//   ... [--steps <part,part>]   (T344's review: the forced runs of a token's layer whose form or attention holds one)
 //   ... [--minutes 90]   (T645: the tool's limit from its start; progress lines go to stderr as the harness goes)
 //   ... [--part k/n]   (T645 (b): of the made-up models "made-up" stands for, every n-th from the k-th; named models all)
 //   ... [--text english|japanese]   (T334.5: the prompt's text of a <prefix>.json's model; english by default)
@@ -51,6 +52,10 @@ const option = (name, value) => (args.includes(name) ? args.splice(args.indexOf(
 const engine = option("--engine", "chromium");
 // T147: --forms <part,part>: only the matrices' shaders whose names hold one of these (all of them by default)
 const only = option("--forms", "");
+// T344's review: --steps <part,part>: only the forced runs of a token's layer whose form or attention's name holds one of
+// these (all of them by default; "none" none): the real Spark-X2.5 1.7B's six took 44 of its 81 minutes on Dawn (run
+// 44738530414), which --forms does not split, so a real model's run goes in two dispatches (AGENTS.md, WebGPU)
+const steps = option("--steps", "");
 const webgpu = option("--webgpu", "");
 // T645: the minutes the tool may take from its start, under its job's (gpu-prompt.yml: 120, of which the setup takes up to
 // 20); past them it gives the verdicts of the models through, and fails naming the model and the run it was at
@@ -78,9 +83,9 @@ fs.mkdirSync(directory, { recursive: true });
 const cases = ids.map((id) => referenceCase(py, directory, id, language));
 
 // ---- the browser or Dawn: what the harness posted
-const server = served(cases, only, nanRounds);
+const server = served(cases, only, nanRounds, steps);
 const lines = [];
-const outcome = engine === "dawn" ? await inDawn({ webgpu, directory, server, only, nanRounds, lines, minutes }) : await inBrowser({ engine, server, lines, minutes });
+const outcome = engine === "dawn" ? await inDawn({ webgpu, directory, server, only, steps, nanRounds, lines, minutes }) : await inBrowser({ engine, server, lines, minutes });
 server.close();
 if (lines.length) console.log(lines.join("\n"));
 // T147: the list of forms comes from an adapter of its own, which SwiftShader now and then does not give (AGENTS.md)

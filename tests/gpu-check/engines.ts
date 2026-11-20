@@ -24,7 +24,7 @@ worker.onmessage = ({ data }) => (data.line !== undefined ? console.log(data.lin
 worker.onerror = (event) => Object.assign(got, { error: event.message ?? "the harness did not start", ended: true });
 </script>`;
 const types = { ".js": "text/javascript", ".wasm": "application/wasm", ".json": "application/json", ".html": "text/html; charset=utf-8" };
-const serving = (cases, only, nanRounds) => http.createServer((req, res) => {
+const serving = (cases, only, nanRounds, steps) => http.createServer((req, res) => {
   const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
   const headers = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" };
   const send = (type, body) => {
@@ -33,7 +33,7 @@ const serving = (cases, only, nanRounds) => http.createServer((req, res) => {
   };
   const found = cases.find((c) => c.checkpoint === pathname);
   if (pathname === "/") return send(types[".html"], PAGE);
-  if (pathname === "/harness.js") return send(types[".js"], `const ONLY = ${JSON.stringify(only ? only.split(",") : [])};\nconst NAN_ROUNDS = ${JSON.stringify(nanRounds)};\n${HARNESS}`);
+  if (pathname === "/harness.js") return send(types[".js"], `const ONLY = ${JSON.stringify(only ? only.split(",") : [])};\nconst STEPS = ${JSON.stringify(steps ? steps.split(",") : [])};\nconst NAN_ROUNDS = ${JSON.stringify(nanRounds)};\n${HARNESS}`);
   // (T152: and NumPy's greedy ids after the prompt, which the harness feeds the GPU's steps)
   if (pathname === "/cases.json") return send(types[".json"], JSON.stringify(cases.map(({ file, reference: { tokens, header, greedy }, ...c }) => ({ ...c, reference: { tokens, header, greedy } }))));
   // (T334.5: streamed: the real E2B's checkpoint of 5.2 GB passes readFileSync()'s 2 GiB)
@@ -59,7 +59,7 @@ const serving = (cases, only, nanRounds) => http.createServer((req, res) => {
 // seconds at a time, and a connection the server closed meanwhile (5 s, Node's default) was taken again as open by the
 // next fetch, which failed: "TypeError: fetch failed" as the GPU alone streamed the E2B's checkpoint a second time, run
 // 44663016258)
-const served = (cases, only, nanRounds) => Object.assign(serving(cases, only, nanRounds), { keepAliveTimeout: 0 });
+const served = (cases, only, nanRounds, steps) => Object.assign(serving(cases, only, nanRounds, steps), { keepAliveTimeout: 0 });
 
 // T645: what the harness posts, as it goes: its forms and the quantizers' answers first, a model's result as each is
 // through ({ result }), and { ended } at its end or with its error. Its progress lines (harness.js's PROGRESS) go to
@@ -110,7 +110,7 @@ async function inBrowser({ engine, server, lines, minutes }) {
 
 // T147: the harness in a worker thread of Node, WebGPU from Dawn (the npm package webgpu at --webgpu), the GPU's
 // worker (src/runtime/gpu.js) in a worker thread of its own, the modules from their files and the rest from the server
-async function inDawn({ webgpu, directory, server, only, nanRounds, lines, minutes }) {
+async function inDawn({ webgpu, directory, server, only, steps, nanRounds, lines, minutes }) {
   const { Worker } = await import("node:worker_threads");
   if (!webgpu) throw new Error("--engine dawn wants --webgpu <the directory of the npm package webgpu>");
   const dir = path.join(directory, "dawn");
@@ -155,6 +155,7 @@ globalThis.Worker = class {
   terminate() { this.worker.terminate(); }
 };
 const ONLY = ${JSON.stringify(only ? only.split(",") : [])};
+const STEPS = ${JSON.stringify(steps ? steps.split(",") : [])};
 const NAN_ROUNDS = ${JSON.stringify(nanRounds)};
 ${HARNESS.replaceAll('import("/runtime/', `import(${JSON.stringify(runtimeUrl("").href.replace(/\/?$/, "/"))} + "`)}
 `);
