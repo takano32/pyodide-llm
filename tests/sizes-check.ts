@@ -31,7 +31,7 @@ const HEADER = [64, 192, 6, 4, 2, 1000, 128];
 {
   assert.ok(["llama", "gpt2", "neox", "qwen35", "lfm2"].every((name) => Object.hasOwn(ARCHITECTURES, name)));
   for (const [name, line] of Object.entries(ARCHITECTURES)) {
-    assert.deepEqual(Object.keys(line).sort(), ["activation", "gate", "gatedFfn", "layerNorm", "local", "positions", "rope"], name);
+    assert.deepEqual(Object.keys(line).sort(), ["activation", "gate", "gatedFfn", "headGate", "layerNorm", "local", "positions", "rope"], name);
     assert.equal(architectureOf(name), line);
   }
   for (const name of ["no such architecture", "toString", "constructor", ""]) assert.equal(architectureOf(name), ARCHITECTURES.llama, "a name the table has not is sized as a Llama (Python refuses it by its own words)");
@@ -55,7 +55,7 @@ const KINDS = { attention: plain, echo };
 // ---- a model's sizes of its header and its form
 {
   const none = sizesOfForm(HEADER, {}, KINDS);
-  assert.deepEqual(none, { dim: 64, hidden: 192, heads: 4, kvHeads: 2, seqLen: 128, kinds: Array(6).fill("attention"), widths: { q: 64, kv: 32, linear: null, rotated: [64, 192] }, gate: false, numbers: {} });
+  assert.deepEqual(none, { dim: 64, hidden: 192, heads: 4, kvHeads: 2, seqLen: 128, kinds: Array(6).fill("attention"), widths: { q: 64, kv: 32, linear: null, rotated: [64, 192] }, gate: false, headGate: false, numbers: {} });
   const form = { head_dim: 32, echo: { every: 3, wide: 256 } }, some = sizesOfForm(HEADER, form, KINDS);
   assert.deepEqual(some.kinds, ["echo", "attention", "attention", "echo", "attention", "attention"], "a layer is of the kind that says so of the form, and attends where none does");
   assert.deepEqual(some.widths, { q: 128, kv: 64, linear: null, echo: { wide: 256 }, rotated: [64, 128, 192, 256] },
@@ -71,7 +71,11 @@ const KINDS = { attention: plain, echo };
   assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2", undefined, "no such"].map((arch) => sizesOfForm(HEADER, { arch }, KINDS).gate), [false, false, false, true, false, false, false]);
   // and of a plan: what the plan says, said again
   const plan = { dim: 1, hidden_dim: 2, n_heads: 3, n_kv_heads: 6, seq_len: 4, layers: [{ kind: "a" }, { kind: "b" }], widths: { q: 5 }, tensors: { wg: {} } };
-  assert.deepEqual(sizesOfPlan(plan), { dim: 1, hidden: 2, heads: 3, kvHeads: 6, seqLen: 4, kinds: ["a", "b"], widths: plan.widths, gate: true, numbers: plan });
+  assert.deepEqual(sizesOfPlan(plan), { dim: 1, hidden: 2, heads: 3, kvHeads: 6, seqLen: 4, kinds: ["a", "b"], widths: plan.widths, gate: true, headGate: false, numbers: plan });
+  // (T344: a gate of each head, a Spark-X2.5's, of the form's architecture and of the plan's row)
+  assert.deepEqual(["qwen35", "spark", "llama"].map((arch) => [sizesOfForm(HEADER, { arch }, KINDS).gate, sizesOfForm(HEADER, { arch }, KINDS).headGate]),
+    [[true, false], [true, true], [false, false]]);
+  assert.deepEqual([sizesOfPlan({ ...plan, tensors: { head_gate: {} } }).gate, sizesOfPlan({ ...plan, tensors: { head_gate: {} } }).headGate], [true, true]);
   assert.equal(sizesOfPlan({ ...plan, tensors: {} }).gate, false);
   console.log("ok: a model's sizes of its header and form: every layer's kind by the kinds' own word, the widths, the kinds had in the table's order; and of a plan as the plan says");
 }
@@ -164,9 +168,10 @@ const KINDS = { attention: plain, echo };
 // ---- the GPU: what it would hold, and whether a model goes on it alone, by the same facts
 {
   const header = [2048, 8192, 16, 32, 8, 128256, 4096], [dim, hidden, layers] = header;
-  // (T271.4: and the gate of the attention's output, a matrix as wide as q, where the architecture has one)
-  for (const [arch, { gatedFfn, gate }] of Object.entries(ARCHITECTURES)) {
-    const matrices = 2 * dim * dim + 2 * (dim / 4) * dim + (gatedFfn ? 3 : 2) * hidden * dim + (gate ? dim * dim : 0);
+  // (T271.4: and the gate of the attention's output, a matrix as wide as q, where the architecture has one; T344: or a
+  // row a head, a Spark-X2.5's)
+  for (const [arch, { gatedFfn, gate, headGate }] of Object.entries(ARCHITECTURES)) {
+    const matrices = 2 * dim * dim + 2 * (dim / 4) * dim + (gatedFfn ? 3 : 2) * hidden * dim + (!gate ? 0 : headGate ? header[3] * dim : dim * dim);
     assert.equal(layerWeightsOf(header, { arch }), layers * matrices, `${arch}: the weights of a layer's matrices, ${gatedFfn ? "three" : "two"} of the FFN`);
     for (const dtype of ["int8", "int6", "ternary"]) {
       assert.equal(gpuBytes(header, { arch, dtype }) - gpuBytes(header, { arch: "llama", dtype }), layers * (matrices - layerWeightsOf(header, {}) / layers) * gpuWeightBytes(dtype), `${arch}, ${dtype}: on the GPU`);
@@ -194,7 +199,7 @@ const KINDS = { attention: plain, echo };
   }
   const adapter = { fallback: false, packed: true, limits: { maxStorageBufferBindingSize: 2 ** 31, maxBufferSize: 2 ** 32 } };
   // by the architecture's facts: RMSNorms, a gated FFN, no table of positions (T271.4: a gate of the attention's output
-  // is the GPU's alone too now, a Qwen3.5's; a Spark-X2.5's goes with its exact GELU). T382: each fact by a reason of its
+  // is the GPU's alone too now, a Qwen3.5's; T344: a Spark-X2.5's of its heads, and its exact GELU). T382: each fact by a reason of its
   // own, the first of them in aloneFactsUnfit()'s order (said to nobody but the tests: the worker reads yes or no)
   const POSITIONS = "a table of positions is not on the GPU alone yet",
     FFN = "an FFN without a gate is not on the GPU alone yet", NORMS = "LayerNorms are not on the GPU alone yet", STATE = "layers that keep a state are not on the GPU yet",
@@ -202,11 +207,12 @@ const KINDS = { attention: plain, echo };
     PER_LAYER = "a table of every layer's inputs goes on the GPU alone where a test asks for it";
   for (const [arch, { gatedFfn, layerNorm, positions, activation }] of Object.entries(ARCHITECTURES)) {
     const said = gpuOnlyUnfit(header, "int8", { arch }, adapter);
-    assert.equal(said, positions ? POSITIONS : !gatedFfn ? FFN : layerNorm ? NORMS : activation !== "silu" && activation !== "gelu" ? ACTIVATION : null, `${arch}: ${said}`);
+    assert.equal(said, positions ? POSITIONS : !gatedFfn ? FFN : layerNorm ? NORMS : !["silu", "gelu", "gelu_erf"].includes(activation) ? ACTIVATION : null, `${arch}: ${said}`);
   }
-  // (T334.3: a Gemma 3's and a Gemma 4's GELU gate and windows, and a PLaMo 3's windows, are the GPU alone's too)
+  // (T334.3: a Gemma 3's and a Gemma 4's GELU gate and windows, and a PLaMo 3's windows, are the GPU alone's too; T344:
+  // and a Spark-X2.5's exact GELU and gate of its heads; a BitNet's squared ReLU is not)
   assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2", "gemma3", "gemma4", "plamo3", "spark", "bitnet"].map((arch) => gpuOnlyUnfit(header, "int8", { arch }, adapter)),
-    [null, POSITIONS, FFN, null, null, null, null, null, ACTIVATION, ACTIVATION]);
+    [null, POSITIONS, FFN, null, null, null, null, null, null, ACTIVATION]);
   // (T334.3's review: a Gemma 2 passes by its architecture's facts, as the line above says, but not by its form: the cap
   // of its scores, which the converter writes, keeps it off the GPU alone before it is loaded; the name alone decides
   // nothing of it)
@@ -221,9 +227,9 @@ const KINDS = { attention: plain, echo };
   const LLAMAS = { stateful: false, positions: false, gatedFfn: true, layerNorm: false, activation: "silu", local: false };
   assert.equal(aloneFactsUnfit(LLAMAS), null);
   // (T261: an activation nobody named, or none, is neither a SiLU's nor a GELU's; T334.3: a GELU and local layers are the
-  // GPU alone's)
+  // GPU alone's; T344: the exact GELU too, and a BitNet's squared ReLU not)
   for (const [fact, value, reason] of [["stateful", true, STATE], ["positions", true, POSITIONS], ["gatedFfn", false, FFN], ["layerNorm", true, NORMS],
-    ["activation", "gelu", null], ["activation", "gelu_erf", ACTIVATION], ["activation", "relu", ACTIVATION], ["activation", undefined, ACTIVATION], ["local", true, null]]) {
+    ["activation", "gelu", null], ["activation", "gelu_erf", null], ["activation", "relu2", ACTIVATION], ["activation", "relu", ACTIVATION], ["activation", undefined, ACTIVATION], ["local", true, null]]) {
     assert.equal(aloneFactsUnfit({ ...LLAMAS, [fact]: value }), reason, `a model that is a Llama but for ${fact} = ${value}`);
   }
   // (the order: the first of them that holds)

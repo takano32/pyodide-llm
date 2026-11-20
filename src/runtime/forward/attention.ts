@@ -48,11 +48,12 @@ export const attention: Kind = {
   // T568.4: on the GPU (gpu/attention.ts): its matrices and vectors are an attending layer's (an LFM2's and a Qwen3.5's
   // are some of its layers), and a Qwen3.5's gate of the output is a matrix of them besides. T641.3: on the GPU alone
   // too, its q, k, v and o (and the gate) a layer (its keys and values are the cache's, which alone.ts counts apart).
-  // T334.4: of the layer's own heads (a Gemma 4's wide ones), and no k nor v where it reads another's keys and values
-  gpu: { names: ["wq", "wk", "wv", "wo", "wg", "bq", "bk", "bv", "qNorm", "kNorm"], matrices: ["wg"],
+  // T334.4: of the layer's own heads (a Gemma 4's wide ones), and no k nor v where it reads another's keys and values.
+  // T344: a Spark-X2.5's gate of each head of the output is a matrix of them too, a row a head
+  gpu: { names: ["wq", "wk", "wv", "wo", "wg", "head_gate", "bq", "bk", "bv", "qNorm", "kNorm"], matrices: ["wg", "head_gate"],
     alone: { matrices: (sizes, form, l) => {
-      const { head, kept } = factOf(form, sizes, l), { dim, gate, heads, kvHeads } = sizes, q = heads * head, kv = kept < 0 ? 0 : kvHeads * head;
-      return { wq: q * dim, wk: kv * dim, wv: kv * dim, wo: q * dim, ...(gate ? { wg: q * dim } : {}) };
+      const { head, kept } = factOf(form, sizes, l), { dim, gate, headGate, heads, kvHeads } = sizes, q = heads * head, kv = kept < 0 ? 0 : kvHeads * head;
+      return { wq: q * dim, wk: kv * dim, wv: kv * dim, wo: q * dim, ...(!gate ? {} : headGate ? { head_gate: heads * dim } : { wg: q * dim }) };
     } } },
   // a Qwen3.5's gate of the output beside q; and the scores of one token's attention, apart from its frame (tokens run
   // at once, each with scores of its own)

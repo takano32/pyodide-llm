@@ -224,6 +224,15 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-plamo3": [{ layers: 4, kv_heads: 1, arch: "plamo3", head_dim: 32, seq_len: 160 },
     { arch: "plamo3", head_dim: 32, local: { layers: [0, 1, 2], window: 64, rope_theta: 100 },
       rope_scaling: { rope_type: "yarn", factor: 4.0, original_max_position_embeddings: 32 } }],
+  // T344: a Spark-X2.5 (the exact GELU in its gate, GEGLU_ERF; a gate of each head of the attention's output, head_gate
+  // and HEAD_GATE; three local layers of four that turn their whole heads by a base of their own, the last a quarter of
+  // each head by its angles, as the 1.7B's and 4B's): heads of 32 where dim / heads is 16 (q and the attention's output
+  // 128 wide, as the 4B's are wider than its stream), two heads of keys and values, a window of 64 as the Gemma 3's
+  // above. A GPU whose GELU is the tanh form (4.7e-4 off erf's at the most), that widens a head's gate from the head
+  // before or reads the gate a value a value, or turns the last layer's whole heads or the local layers' quarter, is off
+  // in the next layer's keys
+  "synthetic-spark": [{ layers: 4, kv_heads: 2, arch: "spark", head_dim: 32, seq_len: 160 },
+    { arch: "spark", head_dim: 32, local: { layers: [0, 1, 2], window: 64, rope_theta: 100 }, rotary: 8, rope_theta: 5000, rms_norm_eps: 1e-6 }],
   // T545: an LFM2 (convolution layers among attending ones, an LFM2's norms of the heads of q and k), of six layers:
   // two of convolution first (the first, whose matrices the loading's check reads (T545.2), and one whose rows the second
   // block goes on from), then attending and convolution in turn, the last a convolution layer (a prompt's block leaves

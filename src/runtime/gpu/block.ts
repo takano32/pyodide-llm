@@ -15,7 +15,7 @@ import { isBlock, asTernary } from "./packings.ts";
 import { roundsMs } from "./timing.ts";
 import type { Model } from "./device.ts";
 import type { Added, BlockStep, KindBlock, Product, Quantizing, State } from "./kinds.ts";
-import type { LayerKind, TensorName } from "../contracts/plan.ts";
+import type { Activation, LayerKind, TensorName } from "../contracts/plan.ts";
 import type { Cache as Sent, Started, Vectors } from "../contracts/gpu/protocol.ts";
 
 // T368.6: this module's record, m.block, as prepare() makes it (the layers' bind groups and the keys and values come
@@ -121,6 +121,9 @@ type Timed = [TensorName, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
 // layers' bind groups in it once the forms are chosen, grow() the keys and values); forms.ts and tokens.ts read its
 // pipelines and buffers for their own bind groups
+// the shader of a gated FFN's activation, by its name, SwiGLU's where the plan names none (forward/gpufit.ts takes no
+// other to the GPU: a BitNet's squared ReLU stays on the CPU)
+const GATED: Partial<Record<Activation, string>> = { silu: ENGINE.SWIGLU, gelu: ENGINE.GEGLU, gelu_erf: ENGINE.GEGLU_ERF };
 async function prepare(m: Model) {
   const { plan, device } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
   // (T568.2: and what a kind's layers quantize besides: T271.2 a Qwen3.5's linear-attention layers' read, which z's gate
@@ -129,10 +132,11 @@ async function prepare(m: Model) {
   const widest = widestHead(plan), qDim = plan.heads * widest, kvDim = plan.kvHeads * widest, present = kindsOf(plan);
   const quantized = Math.max(plan.dim, qDim, plan.hidden, plan.perLayer?.width ?? 0, ...present.map((kind) => GPU_KINDS[kind].widest?.(plan) ?? 0));
   // T154: LayerNorm and GELU where the model has them (GPT-2, GPT-NeoX), else RMSNorm and SwiGLU (T261.4: or GEGLU, a
-  // Gemma 3's gate); and the norm added to the stream behind the attention and the FFN where the model has those
+  // Gemma 3's gate; T344: GEGLU_ERF, a Spark-X2.5's); and the norm added to the stream behind the attention and the FFN
+  // where the model has those
   const posts = Boolean(plan.vectors.attentionPost || plan.vectors.ffnPost);
   const [norm, headNorm, add, rope, activation, quantize, normAdd] = await within(Promise.all([plan.layerNorm ? ENGINE.LAYER_NORM : ENGINE.RMSNORM,
-    ENGINE.HEAD_NORM, ENGINE.ADD, ENGINE.ROPE, !gated ? ENGINE.GELU : plan.activation === "gelu" ? ENGINE.GEGLU : ENGINE.SWIGLU, ENGINE.QUANTIZE,
+    ENGINE.HEAD_NORM, ENGINE.ADD, ENGINE.ROPE, !gated ? ENGINE.GELU : GATED[plan.activation] ?? ENGINE.SWIGLU, ENGINE.QUANTIZE,
     ...(posts ? [ENGINE.RMSNORM_ADD] : [])].map((code) => pipelineOf(m, code))), "the small steps' shaders");
   // a block's tokens, each array dense: token t's row at t times its width
   const x = buffer(m, B * plan.dim * 4, STORAGE | COPY_DST);

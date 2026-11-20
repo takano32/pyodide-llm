@@ -11,7 +11,7 @@ import { quantizedLikeCpu } from "../shaders/prompt.ts";
 import { CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
 import type { GpuPacking, Started, Vectors } from "../contracts/gpu/protocol.ts";
-import type { TensorName } from "../contracts/plan.ts";
+import type { Activation, TensorName } from "../contracts/plan.ts";
 
 // what says how a row is packed (a plan's matrix or table), a row as [its int8 values, its scales], a row's bytes and
 // scales as the check read them back from the GPU, and a list of numbers as its sums read one (an array or a typed array)
@@ -53,6 +53,14 @@ const largest = (xs: Numbers) => xs.reduce((a, v) => Math.max(a, Math.abs(v)), 0
 const off = (got: ArrayLike<number>, want: Numbers) => largest(want.map((v, i) => got[i] - v));
 // GELU, the tanh approximation with its argument clamped, as the shaders have it
 const gelu = (value: number) => 0.5 * value * (1 + Math.tanh(Math.min(9.010913, Math.max(-9.010913, 0.7978845608028654 * (value + 0.044715 * value ** 3)))));
+// T344: the exact GELU, erf by Abramowitz and Stegun's 7.1.26 as the shaders (llama.cpp's) and the CPU's kernel have it
+const geluErf = (value: number) => {
+  const z = Math.abs(value) * 0.7071067811865476, t = 1 / (1 + 0.3275911 * z);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z));
+  return 0.5 * value * (1 + Math.sign(value) * y);
+};
+// the gate of a gated FFN, by its activation (forward/gpufit.ts takes no other to the GPU)
+const GATES: Partial<Record<Activation, (value: number) => number>> = { silu: (value) => value / (1 + Math.exp(-value)), gelu, gelu_erf: geluErf };
 // RMSNorm with an epsilon; and (T226) the stream's norm, RMSNorm or (T154) LayerNorm with its bias, as the CPU's kernels
 // have them
 const rms = (x: Float64Array, weights: ArrayLike<number>, eps: number) => {
@@ -171,8 +179,9 @@ function referenceOf({ plan, memory, packed, back = {} }: { plan: Started; memor
       // the shaders have it)
       const xn2 = normOf(plan.parallel ? x0 : h1, vectorOf("ffn")!, vectorOf("ffnBias"));
       const gate = plus(matmul("w1", xn2), "b1"), up = plan.matrices.w3 && matmul("w3", xn2);
-      // (T261.4.2: GELU in the gate, a Gemma 3's GEGLU)
-      const activated = gate.map(!up ? gelu : plan.activation === "gelu" ? (value, i) => gelu(value) * up[i] : (value, i) => (value / (1 + Math.exp(-value))) * up[i]);
+      // (T261.4.2: GELU in the gate, a Gemma 3's GEGLU; T344: the exact GELU, a Spark-X2.5's)
+      const activation = GATES[plan.activation] ?? GATES.silu!;
+      const activated = gate.map(!up ? gelu : (value, i) => activation(value) * up[i]);
       const down = behind(plus(matmul("w2", activated), "b2"), "ffnPost");
       return h1.map((value, i) => value + down[i]);
     },

@@ -17,7 +17,7 @@ import type { Rows } from "./perlayer.ts";
 import type { Dtype, Rotated } from "../contracts/form.ts";
 import type { Force, GpuPacking, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
 import type { Alone, CpuSpeed, Usage } from "../contracts/messages.ts";
-import type { LayerKind, Tensor, TensorName, Tensors } from "../contracts/plan.ts";
+import type { Activation, LayerKind, Tensor, TensorName, Tensors } from "../contracts/plan.ts";
 
 // (T368.4, the types) what of a form says whether a model can go on the GPU, and how many bytes it takes there
 // (T375.5: the architecture's name, the size of a head, and the numbers of the layers that keep a state: sizes.ts's Formed)
@@ -264,22 +264,25 @@ const BINDS_AT = 256;
 // T219: what a model on the GPU alone says where the GPU sampled an id outside the vocabulary (its logits were not
 // finite numbers, most likely: the words of T195's NOT_FINITE, llama2_numpy.py), since no CPU can take the step again
 export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed.";
+// the activations of a gated FFN the GPU's shaders have (gpu/block.ts's GATED, gpu/tokens.ts's GLUS): SwiGLU's, GEGLU
+// (T261.4) and (T344) GEGLU of the exact GELU; gpufit.ts reads it too
+export const GATED: Activation[] = ["silu", "gelu", "gelu_erf"];
 /** T382: why a model of these facts cannot go on the GPU alone, or null: the first fact that keeps it off, each by its
  * own reason (stateful: it has a layer that keeps a state the GPU alone does not hold, T271.4: an LFM2's convolution
  * layers; the rest are its architecture's line). Apart from gpuOnlyUnfit() so that a set of facts no architecture of
  * the table has can be asked too (the tests). (T271.4: a gate of the attending layers' output is a token's layer's now,
- * a Qwen3.5's; a Spark-X2.5's gate of its heads goes with its exact GELU, below) */
+ * a Qwen3.5's; T344: and a Spark-X2.5's gate of its heads) */
 export function aloneFactsUnfit({ stateful, positions, gatedFfn, layerNorm, activation }:
   Pick<Architecture, "positions" | "gatedFfn" | "layerNorm" | "activation"> & { stateful: boolean }) {
   if (stateful) return REASONS.stateful;
   if (positions) return REASONS.alonePositions;
   if (!gatedFfn) return REASONS.aloneFfn;
   if (layerNorm) return REASONS.aloneNorms;
-  // T261: an activation that is neither a SiLU's nor a GELU's is none the GPU's gate has, whatever it is (a
-  // Spark-X2.5's exact GELU, a BitNet's squared ReLU). T334.3: a Gemma 3's and a Gemma 4's GELU gate and their layers
-  // that attend a window are the GPU alone's too (its layers are the same shaders as the prompts' and the steps' beside
-  // the CPU, T261.4: what differs is where the weights and the keys and values are), and so are a PLaMo 3's windows
-  if (activation !== "silu" && activation !== "gelu") return REASONS.aloneActivation;
+  // T261: an activation none of the GPU's gates has (GATED above), whatever it is (a BitNet's squared ReLU).
+  // T334.3: a Gemma 3's and a Gemma 4's GELU gate and their layers that attend a window are the GPU alone's too (its
+  // layers are the same shaders as the prompts' and the steps' beside the CPU, T261.4: what differs is where the weights
+  // and the keys and values are), and so are a PLaMo 3's windows; T344: and a Spark-X2.5's exact GELU and gate of its heads
+  if (!GATED.includes(activation)) return REASONS.aloneActivation;
   return null;
 }
 // T271.1: the largest block of a rotated basis the GPU's ROTATE_QUANTIZE and UNROTATE hold in a workgroup's memory

@@ -13,7 +13,10 @@
 // prompts are the GPU's now: its worker is started, and the plan it is started with says what the GPU's worker runs
 // differently for it (GEGLU, the norms behind, every layer's window, the local layers and their tables); T261.4.2: and
 // its steps (the plan's tokens).
-// T342: and a Spark-X2.5, whose gate of the heads and exact GELU no shader has, by the same line (its FFN's activation).
+// T342: and a Spark-X2.5, whose gate of the heads and exact GELU no shader had, by the same line (its FFN's activation).
+// T344: a Spark-X2.5's prompts and steps are the GPU's now: its worker is started, with a plan that says what a Gemma 3's
+// says (every layer's window, the local layers and their tables; no norms behind), its exact GELU (GEGLU_ERF) and its
+// gate of each head of the attention's output (head_gate, a matrix of the attending layers, HEAD_GATE).
 // T612: and a Gemma 2, whose capped scores no shader has, by a line of its own.
 // T271.2: a Qwen3.5's prompts are the GPU's now: its worker is started once, with a plan of every layer's kind and place,
 // its linear-attention layers' heads, sizes and taps, their matrices (wqkv, wz, wout) and vectors (the taps, the gates'
@@ -52,7 +55,7 @@ const options = JSON.parse(fs.readFileSync(`${prefix}.json`, "utf8"));
 const REASONS = { qwen35: ["a Qwen3.5", "linear", null],
   lfm2: ["an LFM2", "convolution", null],
   gemma3: ["a Gemma 3", "local", null],
-  spark: ["a Spark-X2.5", "local", /this pair of norms and FFN is not on the GPU/],
+  spark: ["a Spark-X2.5", "local", null],
   gemma2: ["a Gemma 2", "local", /attention whose scores are capped is not on the GPU yet/] };
 assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2, no Gemma 3, no Spark-X2.5 and no Gemma 2`);
 const [model, layers, reasonOfArch] = REASONS[options.arch];
@@ -119,15 +122,17 @@ if (!reason && options.arch === "lfm2") {
     if (JSON.stringify(got) !== JSON.stringify(wanted)) failures.push(`the plan says ${JSON.stringify(got)}, where ${JSON.stringify(wanted)} is to be`);
   }
 } else if (!reason) {
-  // (T261.4: started once, with the plan of a Gemma 3)
+  // (T261.4: started once, with the plan of a Gemma 3; T344: or of a Spark-X2.5, the exact GELU, no norms behind and
+  // the gate of each head, a row a head of every layer)
   const { plan } = gpus[0]?.posted.find((data) => data.type === "start") ?? {};
-  const { layers: local, window } = options.local, count = plan?.layers;
+  const { layers: local, window } = options.local, count = plan?.layers, spark = options.arch === "spark";
   if (gpus.length !== 1 || !plan) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}, with ${plan ? "a plan" : "no plan"}`);
   else {
-    const wanted = { activation: "gelu", windows: Array.from({ length: count }, (_, l) => (local.includes(l) ? window : 0)), local: [...local].sort((a, b) => a - b),
-      posts: ["attentionPost", "ffnPost"], tables: true, tokens: true };
+    const wanted = { activation: spark ? "gelu_erf" : "gelu", windows: Array.from({ length: count }, (_, l) => (local.includes(l) ? window : 0)), local: [...local].sort((a, b) => a - b),
+      posts: spark ? [] : ["attentionPost", "ffnPost"], tables: true, tokens: true, gate: spark ? [plan.heads, count] : null };
+    const gate = plan.matrices.head_gate;
     const got = { activation: plan.activation, windows: plan.windows, local: plan.local, posts: Object.keys(plan.vectors).filter((name) => name.endsWith("Post")),
-      tables: plan.localCos > 0 && plan.localSin > 0 && plan.localCos !== plan.cos, tokens: Boolean(plan.tokens) };
+      tables: plan.localCos > 0 && plan.localSin > 0 && plan.localCos !== plan.cos, tokens: Boolean(plan.tokens), gate: gate ? [gate.rows, gate.layers.length] : null };
     if (JSON.stringify(got) !== JSON.stringify(wanted)) failures.push(`the plan says ${JSON.stringify(got)}, where ${JSON.stringify(wanted)} is to be`);
   }
 } else {
@@ -143,5 +148,5 @@ if (failures.length) {
 console.log(reason ? `ok: ${model} with a GPU adapter present stays on the CPU, its GPU's worker never started (${status})`
   : options.arch === "lfm2" ? `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its layers' kinds and places, its taps, and its steps`
   : options.arch === "qwen35" ? `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its layers' kinds and places, its linear-attention layers' sizes, matrices and vectors, and its steps`
-  : `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its window, its local layers' tables, its norms behind and GEGLU, and its steps`);
+  : `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its window, its local layers' tables, ${options.arch === "spark" ? "its exact GELU and the gate of its heads" : "its norms behind and GEGLU"}, and its steps`);
 process.exit(0);

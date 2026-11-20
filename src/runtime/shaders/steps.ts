@@ -514,6 +514,45 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
   gate[at] = 0.5 * v * (1.0 + tanh(clamp(0.7978845608028654 * (v + 0.044715 * v * v * v), -9.010913, 9.010913))) * up[at];
 }`;
 
+// T344: GEGLU of the exact GELU, gate = gelu(gate) * up with erf (a Spark-X2.5's gated FFN), for every token (the
+// dispatch's y): SWIGLU's frame above with llama.cpp's erf (glu.wgsl's OP_GEGLU_ERF, commit 2145525a, the notice above:
+// Abramowitz and Stegun's 7.1.26, the CPU's geglu_erf kernel's form too). Its op(a, b) is GELU_ERF_FN's gelu_erf(a)
+// times b, as written there but for DataType, which is f32 here, and the up, which the caller multiplies by. (The CPU
+// writes the negative half as x times the polynomial and the fused write here as 1 less the polynomial: the two
+// differ by float32's rounding of 1 - y, below a part in 1e7 of x.) fused.ts's "geglu_erf" write takes the function too
+const GELU_ERF_FN = /* wgsl */ `const p_erf: f32 = 0.3275911;
+const a1_erf: f32 = 0.254829592;
+const a2_erf: f32 = -0.284496736;
+const a3_erf: f32 = 1.421413741;
+const a4_erf: f32 = -1.453152027;
+const a5_erf: f32 = 1.061405429;
+const SQRT_2_INV: f32 = 0.7071067811865476;
+
+fn gelu_erf(a: f32) -> f32 {
+    let a_div_sqr2 = a * SQRT_2_INV;
+    let sign_x = sign(a_div_sqr2);
+    let x = abs(a_div_sqr2);
+    let t = 1.0 / (1.0 + p_erf * x);
+    let y = 1.0 - (((((a5_erf * t + a4_erf) * t + a3_erf) * t + a2_erf) * t + a1_erf) * t * exp(-x * x));
+    let erf_approx = sign_x * y;
+    return 0.5 * a * (1.0 + erf_approx);
+}`;
+export const GEGLU_ERF = /* wgsl */ `
+${SIZE_STRUCT}
+${STEP}
+${GELU_ERF_FN}
+@group(0) @binding(0) var<storage, read_write> gate: array<f32>;
+@group(0) @binding(1) var<storage, read> up: array<f32>;
+@group(0) @binding(2) var<uniform> size: Size;
+@group(0) @binding(3) var<uniform> step: Step;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {
+  let i = id.x * 64u + t;
+  if (id.y >= step.tokens || i >= size.n) { return; }
+  let at = id.y * size.n + i;
+  gate[at] = gelu_erf(gate[at]) * up[at];
+}`;
+
 // T545: an LFM2's convolution layer (convolution.ts and the CPU's short_conv kernel have the rule) for the tokens of a
 // block, between its matrix in and its matrix out. The form is llama.cpp's for that layer (src/models/lfm2.cpp: B times
 // z, the state before the block put in front of it, ggml_ssm_conv, then C times that; the state the last taps of what
@@ -794,4 +833,23 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
   x[at] = x[at] / (1.0 + exp(-g[at]));
 }`;
 
-export { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT };
+// T344: a Spark-X2.5's gate of each head of the attention's output (head_gate: a matrix of a row a head, of the same
+// input as q, k and v), x = x / (1 + exp(-g)) with g the value of x's head, as the CPU has it (forward/attention.ts
+// widens a head's value over the head and calls the gate kernel): OUTPUT_GATE's frame above, the gates of a token
+// size.n / size.head after another's
+export const HEAD_GATE = /* wgsl */ `
+struct HeadGate { n: u32, head: u32, unused0: u32, unused1: u32 }
+${STEP}
+@group(0) @binding(0) var<storage, read_write> x: array<f32>;
+@group(0) @binding(1) var<storage, read> g: array<f32>;
+@group(0) @binding(2) var<uniform> size: HeadGate;
+@group(0) @binding(3) var<uniform> step: Step;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {
+  let i = id.x * 64u + t;
+  if (id.y >= step.tokens || i >= size.n) { return; }
+  let at = id.y * size.n + i;
+  x[at] = x[at] / (1.0 + exp(-g[id.y * (size.n / size.head) + i / size.head]));
+}`;
+
+export { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT, GELU_ERF_FN };

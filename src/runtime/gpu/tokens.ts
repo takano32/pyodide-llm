@@ -17,7 +17,7 @@ import type { TablePiece } from "./weights.ts";
 import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
 import type { Kept } from "./block.ts";
 import type { Steps } from "./kinds.ts";
-import type { LayerKind, TensorName } from "../contracts/plan.ts";
+import type { Activation, LayerKind, TensorName } from "../contracts/plan.ts";
 import type { FusedOutput } from "../shaders/fused.ts";
 import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 
@@ -165,8 +165,10 @@ function tokenCandidates(m: Model) {
 // T150's matrix of floats, which needs no such thing)
 // (T232: a ternary classifier is no matrix of floats: its outlier channels are taken apart as the CPU takes them,
 // shaders/run.ts's TAKE_OUTLIERS and TERNARY_COLUMNS)
-// (T261.4.2: geglu, the gate's activation is GELU (a Gemma 3's); posts, the norms behind the attention and the FFN, so
-// that o and down write their rows as they are, which RMSNORM_ADD norms into the stream)
+// (T261.4.2: glu, the output of gate and up by the gate's activation: SwiGLU's, GEGLU (a Gemma 3's) or, T344, GEGLU of
+// the exact GELU (a Spark-X2.5's); posts, the norms behind the attention and the FFN, so that o and down write their
+// rows as they are, which RMSNORM_ADD norms into the stream)
+const GLUS: Partial<Record<Activation, FusedOutput>> = { silu: "swiglu", gelu: "geglu", gelu_erf: "geglu_erf" };
 const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && PACKINGS[m.plan.tokens!.classifier.packing].on === "int8";
 // T334.2: each layer's width of the FFN: the model's, or a Gemma 4's wider one's (the rows of its gate's stack _double)
 const hiddensOf = (plan: Model["plan"]) => [...Array(plan.layers).keys()].map((l) => (plan.shapes[l]?.double ? plan.matrices.w1_double!.rows : plan.hidden));
@@ -199,7 +201,7 @@ const tokenShape = (m: Model) => {
   // (T547.3.6: and the classifier's type, a token's matrix too)
   roles.set("classifier", new Set([PACKINGS[plan.tokens!.classifier.packing].on]));
   return { apart: Boolean(plan.vectors.bq || plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), up: Boolean(m.weights.together?.up),
-    geglu: plan.activation === "gelu", layerNorm: plan.layerNorm, floatHead: floatHead(m), roles };
+    glu: GLUS[plan.activation] ?? "swiglu", layerNorm: plan.layerNorm, floatHead: floatHead(m), roles };
 };
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
@@ -208,13 +210,13 @@ const tokenShape = (m: Model) => {
 // matrix of them dispatches its key's counterpart; T547.3.6: the classifier's too, where it is one)
 // (T579: a role's key where a matrix of it is int8, and its keys of ternary (T642.14) and of blocks for the types its matrices have:
 // no pipeline that no matrix takes)
-const tokenCodes = ({ dp4a, subgroups, normApart }: Candidate, { apart, gated, up, geglu, layerNorm, floatHead, roles }: ReturnType<typeof tokenShape>): [string, string][] => {
+const tokenCodes = ({ dp4a, subgroups, normApart }: Candidate, { apart, gated, up, glu: gatedGlu, layerNorm, floatHead, roles }: ReturnType<typeof tokenShape>): [string, string][] => {
   const floats = (output: FusedOutput) => ENGINE.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
   const matrix = dp4a ? (output: FusedOutput) => ENGINE.fusedDp4aMatVec({ output, weights: "int8" }) : floats;
   // (a matrix whose input is no norm of the stream: the attention's output, the activation's)
   const plain = (output: FusedOutput) => (dp4a ? matrix(output) : ENGINE.fusedMatVec({ input: "plain", output, subgroups }));
   // (T547.3.2: gate and up apart are each written as they are)
-  const glu: FusedOutput = !gated || up ? "write" : geglu ? "geglu" : "swiglu";
+  const glu: FusedOutput = !gated || up ? "write" : gatedGlu;
   // [role, its output, the text of its matrices of int8]
   const texts: [TokenRole, FusedOutput, () => string][] = [["qkv", apart ? "write" : "rope", () => matrix(apart ? "write" : "rope")], ["add", "add", () => plain("add")],
     ["glu", glu, () => matrix(glu)], ["classifier", "write", () => (floatHead ? floats : matrix)("write")], ["write", "write", () => plain("write")],

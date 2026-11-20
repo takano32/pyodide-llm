@@ -239,6 +239,18 @@ export async function gpuAnswers() {
       const [gate] = called("swiglu", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
       bound(entries, 0).set(gate.subarray(0, bound(entries, 0).length));
     }) as Model,
+    // (T344: a Spark-X2.5's gate of each head of its attending layers' output: HEAD_GATE, as OUTPUT_GATE)
+    headGate: ((entries, x, y) => {
+      if (x * 64 < words(entries, 2)[0] || y < words(entries, 3)[0]) return;
+      const [out] = called("head_gate", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
+      bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
+    }) as Model,
+    // (T344: a Spark-X2.5's exact GELU gate apart from the matrix: GEGLU_ERF, as SWIGLU)
+    gegluErf: ((entries, x, y) => {
+      if (x * 64 < words(entries, 2)[0] || y < words(entries, 3)[0]) return;
+      const [gate] = called("geglu_erf", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
+      bound(entries, 0).set(gate.subarray(0, bound(entries, 0).length));
+    }) as Model,
     // (T334.3: a Gemma 3's GELU gate apart from the matrix, a block's: GEGLU, as SWIGLU)
     geglu: ((entries, x, y) => {
       if (x * 64 < words(entries, 2)[0] || y < words(entries, 3)[0]) return;

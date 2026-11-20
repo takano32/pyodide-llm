@@ -130,10 +130,26 @@ def embed_ternary(table, scales, state, n, first, rows):
     return (values * np.repeat(d, 4 * GROUP)).astype(np.float32).tobytes()
 
 
+def gelu_erf(v):
+    """(T344) the exact GELU, erf by Abramowitz and Stegun's 7.1.26, as the shaders' (llama.cpp's glu.wgsl) is written,
+    of float64s"""
+    z = np.abs(v) * 0.7071067811865476
+    t = 1.0 / (1.0 + 0.3275911 * z)
+    y = 1.0 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * np.exp(-z * z))
+    return 0.5 * v * (1.0 + np.sign(v) * y)
+
+
+# the activations of a gated FFN's output (a fused matrix's of gate and up), by the output's name
+GLUS = {"swiglu": lambda v: v / (1.0 + np.exp(-v)),
+        "geglu": lambda v: 0.5 * v * (1.0 + np.tanh(np.clip(0.7978845608028654 * (v + 0.044715 * v ** 3), -9.010913, 9.010913))),
+        "geglu_erf": gelu_erf}
+
+
 def fused(norm, output, weights, scales, x, params, norm_weight, dst):
     """fusedMatVec (shaders/fused.ts): the rows of an int8 matrix (float32 scales a group of 32 of a row) times x, x
     through the norm first where norm (its weight at params' normAt, the scale of x's mean square and eps), into dst:
-    "write" (as they are), "add" (to what is there), "swiglu" and "geglu" (the rows params' second after them are up's).
+    "write" (as they are), "add" (to what is there), "swiglu", "geglu" and (T344) "geglu_erf" (the rows params' second
+    after them are up's).
     -> dst, as bytes. (The "rope" write is fused_rope's.)"""
     rows, words, per_row, second, eps, norm_at = row_params(params)
     n = per_row * GROUP
@@ -148,17 +164,15 @@ def product(norm, output, weights, scales, v, params, norm_weight, dst, packing=
     if norm:
         scale = 1.0 / math.sqrt(float(np.mean(v * v)) + eps)
         v = v * np.frombuffer(bytes(norm_weight), dtype=np.float32)[norm_at: norm_at + n]
-    sums = matrix(weights, scales, per_row, rows + (second if output in ("swiglu", "geglu") else 0), packing) @ v * scale
+    sums = matrix(weights, scales, per_row, rows + (second if output in GLUS else 0), packing) @ v * scale
     out = np.frombuffer(bytes(dst), dtype=np.float32).astype(np.float64).copy()
     value = sums[:rows]
     if output == "write":
         out[:rows] = value
     elif output == "add":
         out[:rows] += value
-    elif output in ("swiglu", "geglu"):
-        up = sums[second: second + rows]
-        out[:rows] = (value / (1.0 + np.exp(-value)) if output == "swiglu"
-                      else 0.5 * value * (1.0 + np.tanh(np.clip(0.7978845608028654 * (value + 0.044715 * value ** 3), -9.010913, 9.010913)))) * up
+    elif output in GLUS:
+        out[:rows] = GLUS[output](value) * sums[second: second + rows]
     else:
         raise ValueError(f"gpu_answers: no answer for the fused output {output}")
     return out.astype(np.float32).tobytes()
@@ -542,6 +556,26 @@ def geglu(gate, up, size, step):
     v = g[: tokens * n].astype(np.float64)
     g[: tokens * n] = 0.5 * v * (1.0 + np.tanh(np.clip(0.7978845608028654 * (v + 0.044715 * v ** 3), -9.010913, 9.010913))) * u[: tokens * n]
     return g.tobytes()
+
+
+def geglu_erf(gate, up, size, step):
+    """(T344) GEGLU_ERF: each token's n values of gate, gelu_erf(gate) × up, in place -> gate, as bytes"""
+    n, tokens = int(u32s(size)[0]), int(u32s(step)[0])
+    g, u = f32s(gate).copy(), f32s(up).astype(np.float64)
+    g[: tokens * n] = gelu_erf(g[: tokens * n].astype(np.float64)) * u[: tokens * n]
+    return g.tobytes()
+
+
+def head_gate(x, gate, size, step):
+    """(T344) HEAD_GATE: each token's n values of x, a head of `head` values after another, times sigmoid of the head's
+    value of the gate (n / head of them a token), in place -> x, as bytes"""
+    n, head = (int(w) for w in u32s(size)[:2])
+    tokens = int(u32s(step)[0])
+    out, g = f32s(x).copy(), f32s(gate).astype(np.float64)
+    heads = n // head
+    widened = np.repeat(g[: tokens * heads], head)
+    out[: tokens * n] = out[: tokens * n].astype(np.float64) / (1.0 + np.exp(-widened))
+    return out.tobytes()
 
 
 def output_gate(x, gate, size, step):

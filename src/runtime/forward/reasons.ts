@@ -56,7 +56,8 @@ export const REASONS = {
   alonePositions: "a table of positions is not on the GPU alone yet",
   aloneFfn: "an FFN without a gate is not on the GPU alone yet",
   aloneNorms: "LayerNorms are not on the GPU alone yet",
-  // (T261; T334.3: a SiLU's or a GELU's are, a Gemma 3's and 4's, and their layers that attend a window)
+  // (T261; T334.3: a SiLU's or a GELU's are, a Gemma 3's and 4's, and their layers that attend a window; T344: the exact
+  // GELU too, a Spark-X2.5's: a BitNet's squared ReLU is what reads this)
   aloneActivation: "a gate of the FFN that is neither SiLU's nor GELU's is not on the GPU alone",
   // T334.3: a model with a table of every layer's inputs (a Gemma 4's) goes on the GPU alone where a test asks for it
   // (?gpuTest=only) until the owner chooses (TASKS.md's T334.3): its E2B and E4B are both too large to hold twice on a

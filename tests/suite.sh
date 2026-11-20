@@ -348,13 +348,13 @@ windows_of_a_made_up_gemma() {
   node tests/forward-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma4-long-float32 --varied --rounds 1 --positions 400
 }
 part "forward.js against NumPy, the windows of a made-up Gemma 3 and Gemma 4 on a text of every token" windows_of_a_made_up_gemma
-# T342: nor is a Spark-X2.5, whose gate of the heads and exact GELU no shader has: gpuUnfit's line of the pair of norms
-# and FFN (a few seconds)
-spark_stays_on_the_cpu() {
+# T342: a Spark-X2.5 (T344: whose prompts and steps are the GPU's now: the plan its worker is started with says its
+# exact GELU, its gate of each head and its windows; a few seconds)
+spark_on_the_gpu() {
   python tests/make_spark.py .tmp/made-up-spark-int8 int8
   node tests/gpu-hybrid-check.ts .tmp/made-up-spark-int8
 }
-part "a Spark-X2.5 where a GPU adapter is" spark_stays_on_the_cpu
+part "a Spark-X2.5 where a GPU adapter is" spark_on_the_gpu
 # T612: nor a Gemma 2, whose capped scores no shader has: a reason of its own (a few seconds)
 gemma2_stays_on_the_cpu() {
   python tests/make_gemma2.py .tmp/made-up-gemma2-int8 int8

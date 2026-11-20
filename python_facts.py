@@ -12,7 +12,8 @@
 #   python3 python_facts.py [the folder: src/runtime/built]
 #
 #   architectures  (forward/architectures.ts) of each of engine/layout.py's LAYOUTS: what sizes a model before it is
-#                  loaded: a learned table of positions, a gate of the attention's output (the rows wg or head_gate),
+#                  loaded: a learned table of positions, a gate of the attention's output (the rows wg or head_gate;
+#                  T344: whether it is head_gate's),
 #                  RoPE, a gated FFN, LayerNorms, the FFN's activation, local layers
 #   tokenizers     (src/page/folder.ts, T628.2) convert/conduct.py's TOKENIZERS: the tokenizers a conversion tries, in
 #                  its order, which the page looks for in a folder before Pyodide is there
@@ -58,7 +59,8 @@ def architectures():
         if layout.stateful is not None:
             form[layout.stateful.name] = KINDS[layout.stateful.name]
         rows = {row[0] for row in layout.rows(L.Dims([64, 128, 2, 4, 4, 100, 32], form))}
-        out[arch] = {"positions": "positions" in rows, "gate": "wg" in rows or "head_gate" in rows, "rope": layout.rope is not None,
+        out[arch] = {"positions": "positions" in rows, "gate": "wg" in rows or "head_gate" in rows, "headGate": "head_gate" in rows,
+                     "rope": layout.rope is not None,
                      "gatedFfn": layout.gated_ffn, "layerNorm": layout.layer_norm, "activation": layout.activation, "local": layout.local}
     return out
 

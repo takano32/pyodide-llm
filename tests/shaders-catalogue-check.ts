@@ -43,19 +43,20 @@ const ORDER = {
     "DELTA_GATES", "DELTA_CONV", "DELTA_CONV_STATE", "DELTA_NET", "OUTPUT_GATE",  // (T271.2: a Qwen3.5's linear-attention layers and its output gate)
     "SCALE", "PER_LAYER_INPUTS",  // (T334.1: a Gemma 4's number of a layer and its inputs of every layer)
     "SOFTCAP",  // (T334.2: a Gemma 4's logits capped)
+    "GEGLU_ERF", "HEAD_GATE",  // (T344: a Spark-X2.5's exact GELU in its gate and its gate of each head)
     // (T379.2: each maker's rows together; within a maker subgroups is the outer choice)
     ...EITHER.flatMap((subgroups) => EITHER.map((half) => `flashTile(half=${half}, subgroups=${subgroups})`)),
     ...EITHER.map((subgroups) => `flashVec(subgroups=${subgroups})`),
     ...EITHER.map((subgroups) => `flashVecReduce(subgroups=${subgroups})`),
-    ...EITHER.flatMap((subgroups) => ["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))),
+    ...EITHER.flatMap((subgroups) => ["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write", "geglu", "geglu_erf"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))),
     "fusedDp4aMatVec(output=rope, weights=int8)", "fusedDp4aMatVec(output=add, weights=int8)", "fusedDp4aMatVec(output=swiglu, weights=int8)", "fusedDp4aMatVec(output=write, weights=int8)",
-    "fusedDp4aMatVec(output=geglu, weights=int8)"],
+    "fusedDp4aMatVec(output=geglu, weights=int8)", "fusedDp4aMatVec(output=geglu_erf, weights=int8)"],
   ternary: [
     "fusedDp4aMatVec(output=rope, weights=ternary)", "fusedDp4aMatVec(output=add, weights=ternary)", "fusedDp4aMatVec(output=swiglu, weights=ternary)", "fusedDp4aMatVec(output=write, weights=ternary)",
-    "fusedDp4aMatVec(output=geglu, weights=ternary)",
+    "fusedDp4aMatVec(output=geglu, weights=ternary)", "fusedDp4aMatVec(output=geglu_erf, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS", "ROTATE_QUANTIZE", "UNROTATE"],
   // T547.2.4: a model's of llama.cpp's blocks besides int8 (T547.3.3: a type after another)
-  blocks: [...BLOCK_TYPES.flatMap((weights) => ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedDp4aMatVec(output=${output}, weights=${weights})`)),
+  blocks: [...BLOCK_TYPES.flatMap((weights) => ["rope", "add", "swiglu", "write", "geglu", "geglu_erf"].map((output) => `fusedDp4aMatVec(output=${output}, weights=${weights})`)),
     // (T547.3.6: the embedding's row of a table of each type)
     ...[false, true].flatMap((rows) => BLOCK_TYPES.map((weights) => `embedBlocks(weights=${weights}, rows=${rows})`))],
 };

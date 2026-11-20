@@ -74,7 +74,7 @@
 - T332 [追加][Gemma4] 12B（`gemma4_unified`） — 候補
 - T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 候補
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
-- T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 未着手
+- T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 進行中
 - T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 候補
 - T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 未着手
 - T136 [性能][変換] Hugging Face などからの取得を速くする — 段 ① は済
@@ -676,7 +676,14 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 状態: 保留（2026-10-05。規模 大。入らない）
 - `InternScience/Agents-A1` @`e4a30b76e439b5093ac4c14efa6017718781d48f`（`Qwen3_5MoeForConditionalGeneration`、40 層、幅 2048、専門家 256 のうち 8、全体 35.1B）。MoE の forward（ルータと専門家ごとの FFN）がエンジンに無く、int8 で約 35 GB は 64 ビットのメモリの 16 GiB を越える（3 値も無い）。動くのは、専門家を 4 ビット以下で持ち、要る専門家だけを読む形ができたときだけ（大きな設計）。
 
-### T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 状態: 未着手（2026-10-05。T343 の後。規模 中）
+### T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 状態: 進行中（2026-11-20、Opus medium、ブランチ `t344-spark-gpu`。前の状態: 未着手（2026-10-05。T343 の後。規模 中））
+- **形（2026-11-20）**: 窓・局所の層の 2 つ目の角の表・全位置の層の一部だけ回す角（`turned`）は Gemma 3（T261.4）と Gemma 4（T334）の部品のままで、足したのは 2 つ。
+  - **erf の GELU**: シェーダ `GEGLU_ERF`（プロンプトのブロックと、gate と up が別の型の答えのステップ）と、融合した行列の出力 `geglu_erf`（`fusedMatVec`・`fusedDp4aMatVec`）。erf は **llama.cpp の WebGPU の `glu.wgsl` の `OP_GEGLU_ERF`**（commit 2145525a、MIT: 通知は `steps.ts` と `fused.ts` の頭に前からある）をそのまま写した（Abramowitz と Stegun の 7.1.26: CPU のカーネル `geglu_erf` と同じ式。違いは負の側を「1 − 多項式」で書くか「x × 多項式」で書くかの float32 の丸めだけ）。取った訳: 公開の実装の中で erf の GELU を WGSL で書いたものはこれだけで、式が CPU と同じなので線を変えずに比べられる。tanh の近似（T342 の決めで CPU は erf）にすると GELU が 4.7e-4 ずれる。
+  - **head ごとの gate**: 行列 `head_gate`（attending の層の束、行は head の数）を Qwen3.5 の `wg` と同じ役（`mix`: 正規化した流れの行列を書くだけ）で掛け、シェーダ `HEAD_GATE`（`OUTPUT_GATE` の枠で、値を自分の head の gate で割る: `x / (1 + exp(-g[t·heads + i / head]))`）。CPU と同じく値の head の添字は前から（CPU は後ろの head から広げて上書きを避けるだけ）。Qwen3.5 の `OUTPUT_GATE` の文は変えていない。
+  - 門: `forward/gpufit.ts` の活性化の線と `forward/alone.ts` の `aloneFactsUnfit()` は表 `GATED`（`alone.ts`、silu・gelu・gelu_erf）を読む。GPU だけの大きさ（`gpuBytes()`）は head の gate を「head の数 × dim」で数える（`Sizes.headGate`、書き出しの事実 `headGate`: 前の「q の幅 × dim」のままだと 4B で約 377 MB 多く数えた）。`REASONS.aloneActivation` は BitNet の ReLU の 2 乗がまだ読むので残す（文はそのまま）。
+  - 鍵: 目録に `GEGLU_ERF`・`HEAD_GATE` の 2 行と、融合の出力 `geglu_erf` の行（int8・3 値・塊の各型）を足したので、端末の鍵が 1 回動く。
+- **予定した違い（網）**: `shaders`（目録の行が増える: 鍵が全部動く）、`gpuworker`（GPU の Worker の文）、`exports`（`shaders.ts` の窓口に `GEGLU_ERF`・`HEAD_GATE`、`forward/alone.ts` の `GATED`）。`gpusteps` は今ある 8 つの作り物で同じのはず（Qwen3.5 の gate の置き場と順は前のまま）。
+- 確かめ（手元）: 型、`shaders-catalogue-check`・`device-key-check`・`sizes-check`・`plan-keys-check`・`gpu-worker-parts-check`・`gpu-forms-check`・`gpu-tokens-check`・`gpu-start-check`・`gpu-reference-check`・`gpu-choice-check`、`gpu-hybrid-check`（作り物の Spark: 今は GPU の Worker が `gelu_erf` と `head_gate` の計画で始まる）。CI の結果はこの下に。
 - 窓つきの flash attention（下限）、層ごとの RoPE の表、head ごとの gate（小さな行列 1 つと掛け算）、GELU の FFN（シェーダの GELU は tanh の近似: T342 の決めに合わせる）。
 - **追記（2026-10-16、T545 の WebGPU の洗い出しから）**: 窓つきの attention と層ごとの RoPE の表は T261.4（Gemma 3 を GPU に、実装中）が作るものを使う。項目の標本抽出は top-k なし（カードの `top_k=-1`）なので T546 は要らない。4B（int8 4.6 GB）は 2 重に入らない端末で GPU だけに置くので、`aloneFactsUnfit()` の `aloneGate`・`aloneActivation`（erf の GELU）・`aloneLocal` の 3 つを外すのもこのタスク。
 

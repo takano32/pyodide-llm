@@ -297,7 +297,7 @@ const returned = (fn) => {
     // T375.5: the architecture's line of the copy, against what this plan says of each of its facts
     // (T261: the FFN's activation, and local layers, which the architecture's line says a model may have: every family
     // of this check whose architecture may have them has some)
-    const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors || "head_gate" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
+    const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors || "head_gate" in plan.tensors, headGate: "head_gate" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
       gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm, activation: plan.activation, local: plan.layers.some(({ local }) => local) };
     plan.layers.forEach((layer, l) => {
       assert.equal(layer.place, (places[layer.kind] = (places[layer.kind] ?? -1) + 1), `${which}: the place of layer ${l} among the layers of the kind ${layer.kind}`);

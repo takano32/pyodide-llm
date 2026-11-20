@@ -815,7 +815,7 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
       forms += 1;
       // (T579: every role's matrices int8 or ternary, and of each type the model has)
       const roles = new Map(["qkv", "add", "glu", "classifier", "write", "mix"].map((role) => [role, new Set([ternary ? "ternary" : "int8", ...blocks])]));
-      const made = tokenCodes(form, { apart, gated, layerNorm, floatHead, roles });
+      const made = tokenCodes(form, { apart, gated, glu: "swiglu", layerNorm, floatHead, roles });
       const typeOf = (key) => key.split(":")[1];
       assert.deepEqual([...new Set(made.map(([key]) => typeOf(key)).filter(Boolean))], form.dp4a ? [...(ternary ? ["ternary"] : []), ...blocks] : [], `${form.name}: the matrices' keys of each type the model has, and none of another`);
       for (const [key, code] of made) {
@@ -834,7 +834,7 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   {
     const [form] = tokenCandidates({ own: "blocks", features, plan: { layerNorm: false } });
     const roles = new Map([["qkv", new Set(["Q4_K", "IQ2_XS"])], ["add", new Set(["int8", "Q4_K"])], ["glu", new Set(["IQ1_M"])], ["classifier", new Set(["Q2_K"])]]);
-    const keys = tokenCodes(form, { apart: false, gated: true, layerNorm: false, floatHead: false, roles }).map(([key]) => key);
+    const keys = tokenCodes(form, { apart: false, gated: true, glu: "swiglu", layerNorm: false, floatHead: false, roles }).map(([key]) => key);
     assert.deepEqual(keys, ["normQuantize", "qkv:Q4_K", "qkv:IQ2_XS", "add", "add:Q4_K", "glu:IQ1_M", "classifier:Q2_K"], `${form.name}: the keys of a model of blocks are those its matrices take (${keys})`);
   }
   // T579's review: the roles tokenShape() gathers from the kinds' matrices(), the FFN and the classifier: what joins the

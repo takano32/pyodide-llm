@@ -143,7 +143,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   // (T465.6.5: a token's row of a table of each type of llama.cpp's blocks)
   for (const packing of BLOCK_PACKINGS) answers.add(ENGINE.embedBlocks({ weights: packing, rows: false }), spoil.embedBlocks ?? answers.embedBlocks({ weights: packing }));
   for (const input of ["norm", "plain"]) {
-    for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
+    for (const output of ["rope", "add", "swiglu", "write", "geglu", "geglu_erf"]) {
       for (const subgroups of [false, true]) {
         const right = answers.fusedMatVec({ norm: input === "norm", output });
         answers.add(ENGINE.fusedMatVec({ input, output, subgroups }), spoil.fused ? spoil.fused(right, output) : right);
@@ -160,6 +160,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   // (T465.6.4: an LFM2's convolution layers, a Qwen3.5's linear-attention layers, SwiGLU apart)
   for (const [name, model] of [["SHORT_CONV", answers.shortConv], ["CONV_STATE", answers.convState], ["DELTA_GATES", answers.deltaGates],
     ["DELTA_CONV", answers.deltaConv], ["DELTA_CONV_STATE", answers.deltaConvState], ["DELTA_NET", answers.deltaNet], ["SWIGLU", answers.swiglu], ["GEGLU", answers.geglu], ["OUTPUT_GATE", answers.outputGate],
+    ["GEGLU_ERF", answers.gegluErf], ["HEAD_GATE", answers.headGate],
     ["TAKE_OUTLIERS", answers.takeOutliers], ["TERNARY_COLUMNS", answers.ternaryColumns]]) {
     answers.add(ENGINE[name], spoil[name] ?? model);
   }
@@ -172,7 +173,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   answers.add(ENGINE.QUANTIZE, spoil.quantize ?? quantize);
   // (T465.6.3: and of ternary weights and of each type of llama.cpp's blocks)
   for (const packing of ["int8", "ternary", ...BLOCK_PACKINGS]) {
-    for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
+    for (const output of ["rope", "add", "swiglu", "write", "geglu", "geglu_erf"]) {
       const right = answers.dp4a({ output, weights: packing });
       answers.add(ENGINE.fusedDp4aMatVec({ output, weights: packing }), spoil.dp4a ? spoil.dp4a(right, output) : right);
     }

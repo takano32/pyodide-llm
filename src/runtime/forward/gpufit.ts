@@ -5,7 +5,7 @@
 import { PACKED, packingOf } from "../jobs.ts";
 import { gpuWeightBytes } from "./alone.ts";
 import { REASONS } from "./reasons.ts";
-import { rotatedBlockUnfit } from "./alone.ts";
+import { rotatedBlockUnfit, GATED } from "./alone.ts";
 import type { Packed } from "../jobs.ts";
 import type { Held } from "./kinds.ts";
 import type { Direct } from "./alone.ts";
@@ -160,10 +160,11 @@ export function gpuFit({ shape, weights, device, direct }:
     if (scoresCapped) return REASONS.scoresCapped;
     // T261.4: and what a Gemma 3 has besides, which the GPU's layers have now: a GELU in the gate of its FFN (GEGLU), a
     // norm behind the attention and behind the FFN (RMSNORM_ADD), layers that attend a window (the flash tiles' window)
-    // or are turned by tables of their own (a second table of angles). Not an activation no shader has (a Spark-X2.5's
-    // exact GELU), nor norms behind LayerNorms, nor what a Gemma 4 has besides (T261: until T261.4 a Gemma 3 was kept
-    // off by this line too). An FFN without a gate is GELU's on the GPU, as it was (T154)
-    if ((gatedFfn && activation !== "silu" && activation !== "gelu") || extras) return REASONS.pair;
+    // or are turned by tables of their own (a second table of angles); T344: the exact GELU in the gate (GEGLU_ERF, a
+    // Spark-X2.5's, whose gate of each head of the attention's output is HEAD_GATE). Not an activation no shader has (a
+    // BitNet's squared ReLU), nor norms behind LayerNorms, nor what a Gemma 4 has besides (T261: until T261.4 a Gemma 3
+    // was kept off by this line too). An FFN without a gate is GELU's on the GPU, as it was (T154)
+    if ((gatedFfn && !GATED.includes(activation)) || extras) return REASONS.pair;
     if ((attPost || ffnPost) && layerNorm) return REASONS.pair;
     // T334.1: a Gemma 4's layers are on the GPU's blocks (heads of their sizes, keys and values of another layer's, the
     // heads of v normalized, an input of every layer, the layer's number), but for an FFN of its wider ones in a layer a

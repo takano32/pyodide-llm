@@ -13,6 +13,7 @@
 //   positions  the file has a learned table of positions (a row a position, no matrix), which a packed file leaves out
 //   gate       the layers that attend gate their output (the row wg; T342: head_gate, a value a head): a value more
 //              a token's frame
+//   headGate   (T344) that gate is head_gate's, a value a head (a Spark-X2.5's): its matrix is a row a head on the GPU
 //   rope       RoPE turns q and k: a float32 file has its two tables (else Python makes them, of zeros, at any dtype)
 //   gatedFfn   the FFN is gated (three matrices); else GPT-2's (two)
 //   layerNorm  the norms are LayerNorms; else RMSNorms
@@ -23,7 +24,7 @@ import { PYTHON_ARCHITECTURES } from "../built/facts/architectures.ts";
 import type { Arch } from "../contracts/form.ts";
 import type { Activation } from "../contracts/plan.ts";
 
-export type Architecture = { positions: boolean; gate: boolean; rope: boolean; gatedFfn: boolean; layerNorm: boolean; activation: Activation; local: boolean };
+export type Architecture = { positions: boolean; gate: boolean; headGate: boolean; rope: boolean; gatedFfn: boolean; layerNorm: boolean; activation: Activation; local: boolean };
 export const ARCHITECTURES: Record<Arch, Architecture> = PYTHON_ARCHITECTURES;
 const LLAMA = ARCHITECTURES.llama;
 /** An architecture's line. A name that is none of the table's is sized as a Llama, as it always was: Python refuses it

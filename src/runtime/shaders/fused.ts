@@ -18,7 +18,7 @@
 import { BLOCK_PACKINGS, GROUP, STEP } from "./common.ts";
 import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 import { BLOCK_COMMON, SUPERBLOCKS } from "./superblocks.ts";
-import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
+import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT, GELU_ERF_FN } from "./steps.ts";
 import type { BlockPacking, Packing } from "./common.ts";
 
 // (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
@@ -191,6 +191,12 @@ const FUSED_WRITES = {
             let gate = value;
             let up = totals[OUTPUTS_PER_WG + thread_id] * scale;
             dst[row] = 0.5 * gate * (1.0 + tanh(clamp(0.7978845608028654 * (gate + 0.044715 * gate * gate * gate), -9.010913, 9.010913))) * up;`), matrices: 2 },
+  // (T344: "geglu_erf", a Spark-X2.5's gate, the exact GELU by llama.cpp's erf, steps.ts's GELU_ERF_FN beside the
+  // bindings; the last: the rows before it are where they were)
+  geglu_erf: { bindings: `${DST_OUTPUT}
+${GELU_ERF_FN}`, write: rowWrite(`
+            let up = totals[OUTPUTS_PER_WG + thread_id] * scale;
+            dst[row] = gelu_erf(value) * up;`), matrices: 2 },
 };
 const FUSED_OUTPUTS = Object.keys(FUSED_WRITES) as FusedOutput[];
 // T226: RoPE and the cache of a generated token whose q, k and v cannot be turned on their matrix's write: Qwen2's

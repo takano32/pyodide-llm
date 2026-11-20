@@ -1,6 +1,6 @@
 // gpu/attention.ts (T568.2): the attending layers on the GPU, a kind of gpu/kinds.ts's table: in a block q, k and v of
 // the normed stream (T153: Qwen2's biases, Qwen3's norms of the heads; T271.2: a Qwen3.5's gate of the output, of the
-// same stream), RoPE into the GPU's own keys and values (block.ts's cache, an attending layer's by its place), the flash
+// same stream; T344: a Spark-X2.5's gate of each head of it, the same way), RoPE into the GPU's own keys and values (block.ts's cache, an attending layer's by its place), the flash
 // attention, the gate, o; a token's step the same in a fused form (T152, T226), and the check of an attending first
 // layer. What they keep is the keys and values, which go back and forth with the CPU's as they are (block.ts's keysIn,
 // keysOut; tokens.ts's runTokens): no state is staged.
@@ -12,20 +12,32 @@ import { ENGINE } from "../shaders/engine.ts";
 import type { GpuKind, Added } from "./kinds.ts";
 import type { Entry } from "./tokens.ts";
 import type { Pass } from "./device.ts";
-import type { Vectors } from "../contracts/gpu/protocol.ts";
+import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 
 // (the norm of every head of q or of k, HEAD_NORM's bind group and the heads)
 type HeadNorm = { group: GPUBindGroup; heads: number };
+// The gate of the attention's output, a matrix of the normed stream as q, k and v are, where the model has one: a
+// Qwen3.5's wg (T271.2), a value of the output each (OUTPUT_GATE), or T344 a Spark-X2.5's head_gate, a value a head
+// (HEAD_GATE: each head of the output by its value). Its matrix, its shader, its rows (the values a token) and the
+// shader's Size (the output's values a token, and those a value of the gate is of)
+const gateOf = (plan: Pick<Started, "matrices" | "heads" | "headSize">) => {
+  const qDim = plan.heads * plan.headSize;
+  return plan.matrices.wg ? { name: "wg" as const, code: ENGINE.OUTPUT_GATE, rows: qDim, size: [qDim, 0, 0, 0] }
+    : plan.matrices.head_gate ? { name: "head_gate" as const, code: ENGINE.HEAD_GATE, rows: plan.heads, size: [qDim, plan.headSize, 0, 0] } : null;
+};
 
 export const attention: GpuKind = {
   cached: true,
-  // (T271.3: a Qwen3.5's gate of the output, a matrix of the normed stream written as it is)
+  // (T271.3: a Qwen3.5's gate of the output, a matrix of the normed stream written as it is; T344: a Spark-X2.5's of
+  // its heads too)
   // (T334.2: a Gemma 4's of its wide heads too)
-  matrices: (plan) => ({ qkv: ["wq", "wk", "wv", "wq_wide", "wk_wide", "wv_wide"], ...(plan.matrices.wg ? { mix: ["wg"] } : {}), join: ["wo", "wo_wide"] }),
+  matrices: (plan) => ({ qkv: ["wq", "wk", "wv", "wq_wide", "wk_wide", "wv_wide"], ...(plan.matrices.wg ? { mix: ["wg"] } : plan.matrices.head_gate ? { mix: ["head_gate"] } : {}),
+    join: ["wo", "wo_wide"] }),
   async block(m) {
     const { plan } = m, B = plan.batch, qDim = plan.heads * plan.headSize;
-    // T271.2: the gate of a Qwen3.5's full-attention layers' output
-    const outputGate = plan.matrices.wg ? { pipeline: await within(pipelineOf(m, ENGINE.OUTPUT_GATE), "the output's gate"), gated: buffer(m, B * qDim * 4) } : null;
+    // T271.2: the gate of a Qwen3.5's full-attention layers' output (T344: or of a Spark-X2.5's heads)
+    const gating = gateOf(plan);
+    const outputGate = gating ? { ...gating, pipeline: await within(pipelineOf(m, gating.code), "the output's gate"), gated: buffer(m, B * gating.rows * 4) } : null;
     return {
       states: [],
       // a layer's bind groups: q, k and v (T153: a bias of each, Qwen2's, or the norm of every head of q and of k,
@@ -43,8 +55,8 @@ export const attention: GpuKind = {
         // (T334.1: and a Gemma 4's norm of v's heads, by weights of ones)
         const headNorms = [headNorm(b.q, wide ? "qNormWide" : "qNorm", plan.heads, stack), headNorm(b.k, wide ? "kNormWide" : "kNorm", plan.kvHeads, kept),
           b.ones && { group: bind(m, b.headNorm, [b.v, b.ones, normShape(m, head, 0, plan.eps), b.step]), heads: plan.kvHeads }].filter(Boolean) as HeadNorm[];
-        const gate = outputGate ? { into: product("wg", b.xb, outputGate.gated),
-          group: bind(m, outputGate.pipeline, [b.xb, outputGate.gated, uniform(m, new Uint32Array([qDim, 0, 0, 0])), b.step]) } : null;
+        const gate = outputGate ? { into: product(outputGate.name, b.xb, outputGate.gated),
+          group: bind(m, outputGate.pipeline, [b.xb, outputGate.gated, uniform(m, new Uint32Array(outputGate.size)), b.step]) } : null;
         const o = out(named("wo"), b.xb, stack), oBias = added(b.x, "bo"), flash = m.forms.attention.pipelines[head], quantizeAttention = b.quantizeHeads[head];
         // T153: as the CPU has it (forward.ts), the biases, then the norms of the heads, then RoPE; the attention over the
         // cache (block.ts's, as it is at the block: it grows), the gate, o
@@ -53,7 +65,7 @@ export const attention: GpuKind = {
           multiplied(q);
           multiplied(k);
           multiplied(v);
-          if (gate) multiplied(gate.into);  // (T271.2: a Qwen3.5's gate of the output)
+          if (gate) multiplied(gate.into);  // (T271.2: a Qwen3.5's gate of the output; T344: a Spark-X2.5's of its heads)
           biases.forEach(biased);
           for (const head of headNorms) dispatch(pass, b.headNorm, head.group, head.heads, count);
           dispatch(pass, b.rope, cache.rope[place], count);
@@ -126,8 +138,9 @@ export const attention: GpuKind = {
             v: plan.valueNorm && kept >= 0 ? norm(0, head, plan.heads + plan.kvHeads) : null };
         }) : null;
         // (T271.3: a Qwen3.5's gate of its attending layers' output, from the normed stream: wg's Params a layer with its
-        // norm, OUTPUT_GATE's size)
-        const gated = plan.matrices.wg ? { buffer: buffer(m, qDim * 4), params: layers.map((at) => params(qDim, plan.dim, 0, at)), size: uniform(m, new Uint32Array([qDim, 0, 0, 0])) } : null;
+        // norm, OUTPUT_GATE's size; T344: a Spark-X2.5's of its heads, head_gate's and HEAD_GATE's)
+        const gated = outputGate ? { name: outputGate.name, rows: outputGate.rows, buffer: buffer(m, outputGate.rows * 4),
+          params: layers.map((at) => params(outputGate.rows, plan.dim, 0, at)), size: uniform(m, new Uint32Array(outputGate.size)) } : null;
         return {
           // an attending layer l, at its place among the attending layers: q, k and v, RoPE into the cache, the attention, o
           step({ l, place, matrix, plain, joining, normed, ffnNorm, biased, bindAt, positions }) {
@@ -146,8 +159,8 @@ export const attention: GpuKind = {
                 : [matrix("qkv", W.joined[l].qk, normed.input, u.qk[l], qDim + kvDim, [[5, qkv!]])]),
                 matrix("qkv", W.matrices.wv!.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: vAt, size: kvDim * 4 }]])]
                 : [matrix("qkv", W.joined[l][wide ? "qkvWide" : "qkv"], normed.input, u.qkv[l], rows, qkv ? [[5, qkv]] : turned)]),
-              // (T271.3: a Qwen3.5's gate of the output, of the same normed stream)
-              ...(gated ? [matrix("mix", W.matrices.wg!.pieces[0].layers[place], normed.input, gated.params[l], qDim, [[5, gated.buffer]])] : []),
+              // (T271.3: a Qwen3.5's gate of the output, of the same normed stream; T344: a Spark-X2.5's of its heads)
+              ...(gated ? [matrix("mix", W.matrices[gated.name]!.pieces[0].layers[place], normed.input, gated.params[l], gated.rows, [[5, gated.buffer]])] : []),
               ...(qkvBias ? [added(qkv!, qkvBias, biasShapes![l], qDim + 2 * kvDim)] : []),
               // (T334.2: a Gemma 4's norms of q's and k's heads of its wide ones' where they are, and of v's heads by ones)
               ...(norms ? ([[V[wide ? "qNormWide" : "qNorm"], norms.q, plan.heads], [V[wide ? "kNormWide" : "kNorm"], norms.k, plan.kvHeads], [b.ones, norms.v, plan.kvHeads]] satisfies
@@ -208,10 +221,12 @@ export const attention: GpuKind = {
               const top = Math.max(...scores), weights = scores.map((score) => Math.exp(score - top)), total = weights[0] + weights[1];
               for (let d = 0; d < headSize; d++) att[at + d] = (weights[0] * values[0][kvAt + d] + weights[1] * values[1][kvAt + d]) / total;
             }
-            // (T271.3: a Qwen3.5's gate of the output, of the normed stream)
-            if (plan.matrices.wg) {
-              const gate = matmul("wg", xn);
-              att.forEach((value, i) => { att[i] = value / (1 + Math.exp(-gate[i])); });
+            // (T271.3: a Qwen3.5's gate of the output, of the normed stream; T344: a Spark-X2.5's of its heads, a value
+            // a head)
+            const gating = gateOf(plan);
+            if (gating) {
+              const gate = matmul(gating.name, xn), per = gating.size[1] || 1;
+              att.forEach((value, i) => { att[i] = value / (1 + Math.exp(-gate[Math.floor(i / per)])); });
             }
             return { o: behind(plus(matmul("wo", att), "bo"), "attentionPost"), k, v, wrong: null };
           },

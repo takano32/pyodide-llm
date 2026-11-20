@@ -94,8 +94,8 @@ class H16(np.ndarray):
 
 # the matrices a layer multiplies by (T545: an LFM2's in and out; T271.2: a Qwen3.5's of q, k and v, of z and out, and
 # its gate of the attention's output; T334.1: a Gemma 4's of its wide heads and wider FFN, and its layers' gates and
-# projections of their inputs of a table of their own)
-MATRICES = ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg", "wq_wide", "wk_wide", "wv_wide", "wo_wide",
+# projections of their inputs of a table of their own; T344: a Spark-X2.5's gate of each head)
+MATRICES = ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg", "head_gate", "wq_wide", "wk_wide", "wv_wide", "wo_wide",
             "w1_double", "w2_double", "w3_double", "per_layer_projection", "ple_gate", "ple_proj")
 
 def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=False, nudge=None):
@@ -312,8 +312,9 @@ function caseOf(py, directory, id, options, reference, checkpoint) {
   // is made with: options, in the case)
   let places;
   // (T334.3: and a Gemma 3, a Gemma 4 and a PLaMo 3, whose GELU gate (a PLaMo 3's is a SiLU's) and windows are the GPU
-  // alone's too; a Gemma 4's table of every layer's inputs stays apart from it)
-  if (["llama", "qwen35", "gemma3", "gemma4", "plamo3"].includes(options.arch ?? "llama") && ["int8", "ternary", "binary"].includes(options.dtype)) {
+  // alone's too; a Gemma 4's table of every layer's inputs stays apart from it; T344: and a Spark-X2.5, its exact GELU and
+  // gate of each head)
+  if (["llama", "qwen35", "gemma3", "gemma4", "plamo3", "spark"].includes(options.arch ?? "llama") && ["int8", "ternary", "binary"].includes(options.dtype)) {
     py.globals.set("HEADER", py.toPy([...new Int32Array(read(0, 28).buffer)]));
     places = py.runPython(`external_tensors(HEADER, OPTIONS["dtype"], OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   }

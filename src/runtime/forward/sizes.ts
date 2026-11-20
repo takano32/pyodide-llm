@@ -15,9 +15,11 @@ import type { Stateful } from "../contracts/form.ts";
 import type { Plan, Widths } from "../contracts/plan.ts";
 
 // dim, hidden (the FFN's inside: T331, of the widest layer's), heads, kvHeads (T641.6), seqLen: the header's. kinds: every layer's kind, by its name. widths: the
-// plan's (contracts/plan.ts). gate: the layers that attend gate their output. numbers: of the kinds that keep a state,
+// plan's (contracts/plan.ts). gate: the layers that attend gate their output; headGate (T344): by a value a head (a
+// Spark-X2.5's head_gate), not a value a value of it (a Qwen3.5's wg). numbers: of the kinds that keep a state,
 // each under its kind's name (the form's "linear" and "convolution", which the plan carries by the same names)
-export type Sizes = { dim: number; hidden: number; heads: number; kvHeads: number; seqLen: number; kinds: string[]; widths: Widths; gate: boolean; numbers: Stateful };
+export type Sizes = { dim: number; hidden: number; heads: number; kvHeads: number; seqLen: number; kinds: string[]; widths: Widths; gate: boolean; headGate: boolean;
+  numbers: Stateful };
 // what a form says of a model's sizes besides its header (contracts/form.ts's Form has each)
 // (T331: and the layers of wide heads, of an FFN twice as wide)
 export type Formed = { arch?: string; head_dim?: number; wide?: { layers: number[]; head_dim: number } | null; double?: number[] | null } & Stateful;
@@ -27,7 +29,8 @@ const ATTENTION = "attention";
 
 export const sizesOfPlan = (plan: Plan): Sizes => ({ dim: plan.dim, hidden: plan.layers.some(({ double }) => double) ? 2 * plan.hidden_dim : plan.hidden_dim,
   heads: plan.n_heads, kvHeads: plan.n_kv_heads, seqLen: plan.seq_len,
-  kinds: plan.layers.map(({ kind }) => kind), widths: plan.widths, gate: Boolean(plan.tensors.wg ?? plan.tensors.head_gate), numbers: plan });
+  kinds: plan.layers.map(({ kind }) => kind), widths: plan.widths, gate: Boolean(plan.tensors.wg ?? plan.tensors.head_gate), headGate: Boolean(plan.tensors.head_gate),
+  numbers: plan });
 
 /** the kinds of the table a model has layers of, in the table's order (the order they are made in, and so of what they
  * take of the memory), each with the number of its layers */
@@ -46,7 +49,7 @@ export function sizesOfForm(header: Header, form: Formed, kinds: Kinds): Sizes {
   });
   const widths: Widths = Object.assign({ q, kv, linear: null, rotated: [] }, ...Object.values(kinds).map((kind) => kind.widths?.(form) ?? {}));
   const sizes: Sizes = { dim, hidden, heads, kvHeads, seqLen, kinds: Array.from({ length: layers }, (_, l) => said.find(([, own]) => own[l])?.[0] ?? ATTENTION),
-    widths, gate: architectureOf(form.arch ?? "llama").gate, numbers: form };
+    widths, gate: architectureOf(form.arch ?? "llama").gate, headGate: architectureOf(form.arch ?? "llama").headGate, numbers: form };
   // T237: the widths of what the model's matrices read, each of which a rotated basis has signs for: the residual
   // stream, the attention's output, the FFN's inside, and what a kind's own matrices read (its frame says)
   const read = kindsHad(sizes, kinds).flatMap(({ kind }) => kinds[kind].frame(sizes).widest ?? []);

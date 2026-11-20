@@ -223,7 +223,7 @@ assert.deepEqual([...new Set(compiled)].sort(), [
   "form.blocks [packing]",  // (T547.2.3) the same form's text of a type of llama.cpp's blocks (T547.3.3), a tile of devicePromptForms too
   "rowsCode",  // EMBED_ROWS or EMBED_ROWS_TERNARY
   "ENGINE.SAMPLE", "ENGINE.TAKE_OUTLIERS", "ENGINE.TERNARY_COLUMNS", "ENGINE.TOKEN_ROPE", "ENGINE.WIDEN_SIX",
-  "ENGINE.OUTPUT_GATE",  // (T271.2: a Qwen3.5's gate of the attention's output)
+  "gating.code",  // (T271.2: a Qwen3.5's gate of the attention's output, OUTPUT_GATE; T344: a Spark-X2.5's of its heads, HEAD_GATE)
   "ENGINE.SCALE", "ENGINE.PER_LAYER_INPUTS",  // (T334.1: a Gemma 4's number of a layer and its inputs of every layer)
   "ENGINE.SOFTCAP",  // (T334.2: a Gemma 4's logits capped)
   "ENGINE.flashTile(shape)", "ENGINE.flashVec(sized.shape)", "ENGINE.flashVecReduce(sized.shape)",  // (T334.2: of each size of heads)

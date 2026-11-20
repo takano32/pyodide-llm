@@ -762,9 +762,9 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     // facts, which the CPU's engine runs, is not handed to the GPU's worker to find out)
     [{ gatedFfn: false }, { w3: null }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ layerNorm: true }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
-    // (T261.4: what a Gemma 3 has besides is the GPU's now (below); not an activation no shader has (a Spark-X2.5's
-    // exact GELU, one not named), norms behind LayerNorms, nor a Gemma 4's layers)
-    [{ activation: "gelu_erf" }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
+    // (T261.4: what a Gemma 3 has besides is the GPU's now (below); not an activation no shader has (a BitNet's squared
+    // ReLU, one not named), norms behind LayerNorms, nor a Gemma 4's layers. T344: a Spark-X2.5's exact GELU is, below)
+    [{ activation: "relu2" }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ activation: undefined }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ layerNorm: true, gatedFfn: false, activation: "gelu" }, { w3: null, attPost: 4096 }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ extras: true }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
@@ -855,7 +855,8 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false, activation: "gelu" }, { w3: null }).unfit(), null, "(whose activation is a GELU's, as the GPU's FFN without a gate has it)");
   // T261.4: a Gemma 3's prompts: each of what it has besides by itself, and all of them; T261.4.2: and its steps. The
   // norms behind are vectors the GPU reads
-  for (const [shape, weights] of [[{ activation: "gelu" }, {}], [{}, { attPost: 4096 }], [{}, { ffnPost: 4096 }], [{ local: true }, {}],
+  // (T344: and a Spark-X2.5's exact GELU)
+  for (const [shape, weights] of [[{ activation: "gelu" }, {}], [{ activation: "gelu_erf" }, {}], [{}, { attPost: 4096 }], [{}, { ffnPost: 4096 }], [{ local: true }, {}],
     [{ activation: "gelu", local: true, windows: [5, 0], locals: [0] }, { attPost: 4096, ffnPost: 8192, localCos: 53000, localSin: 54000 }]]) {
     assert.deepEqual([fitOf(shape, weights).unfit(), fitOf(shape, weights).tokensUnfit()], [null, null], JSON.stringify([shape, weights]));
   }
