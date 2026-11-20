@@ -18,13 +18,16 @@ def checkpoint_size(header, dtype, form=None):
 class Writer:
     """Puts pieces of the tensors of tensor_rows(), in any order, where they belong in the checkpoint buffer."""
 
-    def __init__(self, out, header, dtype, form=None, sink=None, quantize_rows=None):
+    def __init__(self, out, header, dtype, form=None, sink=None, quantize_rows=None, said=None):
         """out: a buffer of the checkpoint's size, or None with sink: an object with open(size, header, dtype,
         form) and write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly
         memory of src/runtime/forward.ts, which the header and the rest size, T115). Pyodide's own memory never shrinks,
         so a converted model that went through a Python buffer on its way there would keep taking its size twice.
         form (llama2_numpy.FORM, see checkpoint_form()): what the file does not say, which lays out its tensors and
-        sizes the forward pass besides the header; the sink gets it whole."""
+        sizes the forward pass besides the header; the sink gets it whole, and with it said: the options of the
+        model's family that the converter gives the engine besides (convert/beginning.py's options_of(): T334.3's
+        review, a Gemma 2's cap of its scores keeps it off the GPU alone before its weights come), none of which
+        lays out a row."""
         # quantize_rows: the dtypes' packing on the SIMD kernels (llama2_numpy.kernel_quantizer), the same bytes
         # several times faster, for rows of whole groups of 32; NumPy's (the dtype's pack) for anything else, and
         # where there are no kernels
@@ -35,7 +38,7 @@ class Writer:
         size = file_size(rows, self.dtype)
         if sink is not None:
             self.out = None
-            sink.open(size, list(header), self.dtype, form)
+            sink.open(size, list(header), self.dtype, {**form, **(said or {})})
         else:
             self.out = np.frombuffer(out, dtype=np.uint8)
             assert self.out.size == size, "the buffer has not the size of the checkpoint"

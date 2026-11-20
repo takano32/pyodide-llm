@@ -12,6 +12,7 @@ from convert.sources import header_rotated
 from convert.config import check_config, checkpoint_header, head_size, normalize
 from convert.plan import (checkpoint_form, factors, made, model_plan, resolved, source_shape, steps_of, transform_of,
                           transformed)
+from convert.families import family_of
 from convert.gguf import rope_freqs_agree
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
@@ -130,7 +131,10 @@ class Stream:
         if out is None and sink is None:
             out = bytearray(self.size(dtype))
         self.out = out  # None when the checkpoint goes to sink
-        self.writer = Writer(self.out, self.header, dtype, self.form, sink=sink, quantize_rows=quantize_rows)
+        # (T334.3's review: the sink gets the family's own options too, convert/beginning.py's options_of() has them
+        # last: what the worker asks before a byte comes and the form does not say, a Gemma 2's cap of its scores)
+        self.writer = Writer(self.out, self.header, dtype, self.form, sink=sink, quantize_rows=quantize_rows,
+                             said=family_of(config).options(config))
         plan, shapes = model_plan(config, self, self.header, self.form)
         self.total, self.done = sum(math.prod(shape) for shape in shapes), 0
         wanted, self.factors = {}, {}

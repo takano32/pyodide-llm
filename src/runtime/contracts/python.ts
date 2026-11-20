@@ -99,9 +99,10 @@ export type ConductModule = Proxy & { conduct: Proxy & { callKwargs(hf: Proxy, m
 export type Conduct = Generator<List<Request>, unknown>;
 
 // Where the converter writes a checkpoint (convert/checkpoint.py's Writer, sink=): open() once the size is known (and
-// again where another tokenizer is tried), then write() for every piece. header: the 7 ints; form: FORM as a dict
+// again where another tokenizer is tried), then write() for every piece. header: the 7 ints; form: FORM as a dict, with
+// the family's own options of the engine (T334.3's review: a Gemma 2's score_softcap, which the worker asks first)
 export type Sink = {
-  open(bytes: number, header: List<number[]>, dtype: Dtype, form: Dict<Partial<Form>>): void;
+  open(bytes: number, header: List<number[]>, dtype: Dtype, form: Dict<Partial<Form> & Record<string, unknown>>): void;
   write(offset: number, array: Bytes): void;
 };
 

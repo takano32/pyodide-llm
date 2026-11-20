@@ -91,6 +91,27 @@ def test_the_conversion_tells_the_engine_what_the_file_cannot(model):
         assert close(llama.forward(token, pos), want[pos]), pos
 
 
+@pytest.mark.parametrize("model", ["small", "no caps"])
+def test_the_sink_is_told_the_familys_options_before_the_weights(model):
+    """T334.3's review: what the worker sizes and places a model by as its bytes come (the sink's open()) has the
+    family's own options with the form, as the options say them at the end: a Gemma 2's cap of its scores keeps it off
+    the GPU alone before a byte goes there (forward/alone.ts's gpuOnlyUnfit()), on a first visit as on a kept one."""
+    tensors, config = gemma2_model(**MODELS[model])
+
+    class Sink:
+        def open(self, size, header, dtype, form):
+            self.form = form
+
+        def write(self, offset, raw):
+            pass
+
+    sink = Sink()
+    made = safetensors_conversion(tensors, config, unigram(config["vocab_size"]), "int8", sink=sink)
+    for key in ("score_softcap", "softcap", "local"):
+        assert sink.form.get(key) == made.options.get(key), key
+    assert ("score_softcap" in sink.form) == (model == "small")
+
+
 KINDS = ["self_attn.q_proj.weight", "self_attn.k_proj.weight", "self_attn.v_proj.weight", "self_attn.o_proj.weight",
          "input_layernorm.weight", "post_attention_layernorm.weight", "pre_feedforward_layernorm.weight",
          "post_feedforward_layernorm.weight", "mlp.gate_proj.weight", "mlp.up_proj.weight", "mlp.down_proj.weight"]
