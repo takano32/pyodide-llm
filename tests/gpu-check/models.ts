@@ -294,6 +294,10 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // (and an LFM2 of Q4_K blocks, the 4-bit Shisa's shape: its convolution layers' matrices in and out of Q4_K, q and k
   // of Q4_K with v int8 apart and the norms of the heads, attending layers among the others)
   "synthetic-q2k": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q2K_KINDS, valued: true }, { kinds: Q2K_KINDS }],
+  // (T334.3: a PLaMo 3 of Q4_K blocks, as the list's PLaMo 3 Translate models are (PFN's Q4_K_M): its windows and its
+  // norms behind with llama.cpp's blocks, on the GPU alone too, which takes both since T334.3)
+  "synthetic-plamo3-q4k": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 1, head_dim: 64, seq_len: 160, arch: "plamo3", kinds: Q4K_KINDS, valued: true },
+    { arch: "plamo3", head_dim: 64, local: { layers: [0, 1], window: 64, rope_theta: 100 }, kinds: Q4K_KINDS }],
   "synthetic-blocks-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: BLOCK_LAYERS, valued: true }, { kinds: BLOCK_LAYERS }],
   "synthetic-iq2": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ2_KINDS, valued: true }, { kinds: IQ2_KINDS }],
   "synthetic-iq2-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ2_LAYERS, valued: true }, { kinds: IQ2_LAYERS }],
@@ -370,7 +374,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
   "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-qwen35-rotated-1024", "synthetic-gemma3-ring", "synthetic-plamo3", "synthetic-q4k-wide",
-  "synthetic-lfm2-q4k", "synthetic-q4k-layers", "synthetic-gemma4-plain", "synthetic-gemma4-wide", "synthetic-gemma4-inputs", "synthetic-gemma4-e2b",
+  "synthetic-lfm2-q4k", "synthetic-q4k-layers", "synthetic-plamo3-q4k", "synthetic-gemma4-plain", "synthetic-gemma4-wide", "synthetic-gemma4-inputs", "synthetic-gemma4-e2b",
   "synthetic-lfm2-q4k-layers", "synthetic-q4k-qk-apart", "synthetic-q4k-up-apart",
   "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers",
   // (T547.3.6: the tables of blocks' shaders are synthetic-q4k-tied's and synthetic-saluki-tables'; on SwiftShader the
