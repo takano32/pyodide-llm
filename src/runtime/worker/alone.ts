@@ -121,7 +121,18 @@ export function gpuOnlyWeightsFor(size: number, header: Header, options: Options
     console.info("gpu: the CPU as /benchmark/ measured it was faster here than this model on the GPU alone, as the page kept it: " +
       "on the CPU (a new run of /benchmark/'s CPU section, another browser version or new shaders weigh the two again)");
   }
-  if (!eligible) return forward.weightsPlace({ cpu, gpu, deviceMemory });
+  if (!eligible) {
+    const place = forward.weightsPlace({ cpu, gpu, deviceMemory });
+    // (T334.2's review: where the GPU would take the model but not both copies, the numbers the room was weighed by,
+    // a line then alone: the status line says the GPU's bytes where they do not fit, not the room. Normal visits of
+    // a model held twice, or of a page with no GPU, say nothing)
+    if (place.mode === "cpu" && gpuAdapter && !benchPage) {
+      const mb = (bytes: number) => Math.round(bytes / 1e6);
+      console.info(`gpu: both copies would not fit: the CPU's ${mb(cpu)} MB and the GPU's ${mb(gpu)} MB, in ${mb(cpu + place.gpuRoom!)} MB of a device ` +
+        `that says ${deviceMemory} GB: the GPU's room beside the CPU's is ${mb(place.gpuRoom!)} MB`);
+    }
+    return place;
+  }
   // (T571: of the whole form as the options carry it, as gpuOnlyUnfit() is asked above: four keys of it went before, and a
   // Qwen3.5 on the GPU alone, whose linear-attention layers are in the form's linear, was refused by Python)
   const tensors = placesOf(header, dtype, options), stored = size - forward.gpuHoles(tensors).reduce((sum, [a, b]) => sum + b - a, 0);

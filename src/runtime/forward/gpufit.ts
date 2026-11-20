@@ -116,7 +116,7 @@ export type Taken = { matrices(steps?: boolean): Record<string, Held>; vectors()
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; sharedMemory: boolean; oneThread?: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, scoresCapped, gpuKinds, stateful,
-    rotated, sharedClassifier, kinds, attending, stateBytes, layerShapes, perLayer, counts, stackPlaces } = shape;
+    rotated, sharedClassifier, kinds, stateBytes, layerShapes, perLayer, counts, stackPlaces } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, sized,
     layerScale, channels } = weights;
   // (T334.1: the size of a Gemma 4's wide heads)
@@ -187,13 +187,17 @@ export function gpuFit({ shape, weights, device, direct }:
     return null;
   }
   // the bytes of the layers on the GPU, and its own keys and values (T334.2: steps, with what only the steps read)
+  // (T334.2's review: the keys and values of each attending layer that keeps its own, of its own heads, as the GPU's
+  // worker makes them (block.ts's grow()) and alone.ts's gpuBytes() counts them: a Gemma 4's layers that read another's
+  // keep none, and its narrow layers' are narrower than kvDim, the widest heads'. E2B's were counted 3.9 times over)
+  const keptWidth = layerShapes.reduce((sum, { head, kept }, l) => sum + (kinds[l] === "attention" && kept >= 0 ? shape.kvHeads * head : 0), 0);
   function layersOnGpu(steps = false) {
     // (T545: each of the layers it is of, and the keys and values of the attending ones; and the state the convolution
     // layers go on from, with its copy where a block's comes back; T271.2: the linear-attention layers' too)
     // (T547.3.1: a stack whose layers are each of a kind of their own, each layer's as its kind)
     return Object.entries(gpuMatrices(steps)).reduce((bytes, [name, m]) => bytes + m.rows * m.n *
       (m.layers ? m.layers.reduce((sum, layer) => sum + gpuWeightBytes(layer.kind), 0) : countOf(name) * gpuWeightBytes(m.kind)), 0) +
-      Object.entries(gpuVectors()).reduce((bytes, [name, { size }]) => bytes + countOf(name) * size * 4, 0) + 2 * attending * seqLen * kvDim * 2 +
+      Object.entries(gpuVectors()).reduce((bytes, [name, { size }]) => bytes + countOf(name) * size * 4, 0) + 2 * keptWidth * seqLen * 2 +
       2 * stateBytes;
   }
   // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.ts):
@@ -220,6 +224,9 @@ export function gpuFit({ shape, weights, device, direct }:
     // prompt's block has, and the cap of its logits; its inputs of every layer read a token's rows of a table the CPU
     // keeps, a step a request (gpuside.ts's tokensMost). On the GPU alone, whose table is there, they stay here: T334.3)
     if (perLayer && direct) return REASONS.ownSteps;
+    // (T334.2's review: and the matrices of the steps' alone as they are packed, as gpuUnfit() asks of the prompts': a
+    // Gemma 4's wider FFN, which no layer of a block has)
+    if (!Object.values(gpuMatrices(true)).every(onGpuAs)) return REASONS.floats;
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     const embedded = packingOf(embedding.kind)?.gpu && embedding.group === packingOf(embedding.kind)!.group ? packingOf(embedding.kind)!.gpu!.as : null;
     const blocks = Boolean(held && embedded) && (!PACKED[held!].scale || !PACKED[embedded!].scale);

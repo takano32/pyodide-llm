@@ -80,7 +80,7 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
   // (T545: follows, whether a block goes on from the CPU's state: false holds the GPU off it; stated, the positions
   // that came next as a block's state came back)
   // (T271.2: put, how many times the CPU's state was put where the GPU's worker takes it up)
-  const beside = { memory, ctl: control.ctl, now: 1000, ran: [], grown: [], embedded: [], staged: [], views: 0, follows: true, stated: [], put: 0, unfinite: Infinity,
+  const beside = { memory, ctl: control.ctl, now: 1000, ran: [], grown: [], embedded: [], staged: [], inputs: [], views: 0, follows: true, stated: [], put: 0, unfinite: Infinity,
     finite: true, capacity: 256, cpuMs: 1, gpuMs: (count) => 4 + count / 16, stepMs: 1, threads: { count: 1, searching: false },
     // what the stand-in GPU answers a request with: silent (no answer), failed, ended (says "ended" after a stop), and
     // for the steps: sampled (how many, by default all asked), ids (by default 500 + position), notFinite
@@ -123,6 +123,8 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
     grow(pos) { beside.grown.push(pos); beside.capacity = Math.max(2 * beside.capacity, pos + 1); },
     embed(tokens, pos0, rows, stride) { beside.embedded.push([tokens.length, pos0, rows, stride]); },
     fromStaging(pos, count) { beside.staged.push([pos, count]); },
+    // (T334.2's review: a Gemma 4's rows of the table of every layer's inputs, of the tokens of a block or a step)
+    layersInputs(tokens) { beside.inputs.push(tokens.length); },
     stagingFinite(count) { return beside.finite; },
     follows(pos) { return beside.follows; },
     unfiniteBy(pos) { return beside.unfinite <= pos; },
@@ -463,6 +465,23 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   assert.equal(step(part, 50, { stops: Array.from({ length: STOPS_MOST + 1 }, (_, i) => i) }), undefined);
   assert.deepEqual([said(), part.tokenBlock(), part.stepsWhyNot, part.cpuStepBegan(true)], [[`gpu: answers on the CPU (more than ${STOPS_MOST} stop tokens)`], 0, `more than ${STOPS_MOST} stop tokens`, false]);
   assert.equal(part.promptBlock() > 0 && part.ready !== undefined, true, "the prompts stay where they were");
+}
+// ---- T334.2's review: a Gemma 4's steps read the token's inputs of every layer from rows of a table the CPU keeps (a
+// block's as well): a request is of one step, whose rows the CPU reads for it, and one of more is the CPU's (nothing asked)
+{
+  const { part, beside } = made({ shape: { perLayer: { width: 4 } } });
+  beside.ready();
+  await part.note;
+  part.put("gpu");
+  feed(part, 16);
+  assert.deepEqual([part.tokenBlock(), beside.inputs], [1, [16]], "a request of one step; the block's rows were read for its 16 tokens");
+  assert.deepEqual([step(part, 16, { count: 1 }), requests(beside, "tokens").map(({ count }) => count), beside.inputs], [[(500 + 16) % SHAPE.vocab], [1], [16, 1]],
+    "the step's rows are read for its one token");
+  const before = beside.posted.length;
+  assert.deepEqual([step(part, 17, { count: 2 }), beside.posted.length, beside.inputs.length], [undefined, before, 2], "a request of two steps is not asked of the GPU");
+  assert.deepEqual(beside.posted[0].plan.perLayer, { width: 4, inputs: undefined }, "the GPU's plan says the width");
+  await part.release();
+  said();
 }
 {
   // a model whose steps are not asked of the GPU, and a GPU that did not make them
@@ -836,6 +855,23 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     assert.deepEqual([fitOf(shape, weights).matrices(), fitOf(shape, weights).matrices(true)].map((matrices) => Object.keys(matrices).includes("w1_double")), [false, true],
       "a matrix of the steps' alone goes up with them alone");
     assert.equal(fitOf(shape, weights, { gpuRoom: layers }).unfit(), null, "and the prompts' room does not count it");
+    // (T334.2's review: nor the keys and values of a layer that reads another's: it keeps none on the GPU)
+    const keys = 2 * SHAPE.seqLen * SHAPE.kvDim * 2;
+    assert.deepEqual([fitOf(shape, weights, { gpuRoom: layers - keys }).unfit(), fitOf(shape, weights, { gpuRoom: layers - keys - 1 }).unfit() === null], [null, false],
+      "the keys and values of the layers that keep their own alone, to the byte");
+    // (and a matrix of the steps' alone that the GPU does not take as it is packed keeps the steps on the CPU, as one of the
+    // prompts' keeps the prompts there)
+    const floated = { sized: { ...WEIGHTS.sized, matrices: { w1_double: matrixOf(48, 8, 60000, { kind: "f32" }) } } };
+    assert.deepEqual([fitOf(shape, floated).unfit(), fitOf(shape, floated).tokensUnfit()], [null, "float32 weights are not on the GPU yet"], "the steps' own matrices as they are packed");
+    // (T334.2: on the GPU alone, a Gemma 4's steps are not the GPU's yet: T334.3)
+    assert.deepEqual([fitOf({ perLayer: { width: 4 } }).tokensUnfit(), fitOf({ perLayer: { width: 4 } }, {}, {}, { size: 1 }).tokensUnfit()], [null, "a Gemma 4's answers are not on the GPU yet"]);
+  }
+  // T334.2's review: each attending layer's keys and values of its own heads' width (a Gemma 4's wide layers', in local
+  // layers of their own: the tables are of one head's angles a kind)
+  {
+    const wide = { locals: [1], layerShapes: SHAPE.layerShapes.map((each, l) => (l === 1 ? { ...each, head: 8, turned: 8 } : each)) }, more = 2 * SHAPE.seqLen * (8 - 4) * 2;
+    assert.deepEqual([fitOf(wide, {}, { gpuRoom: layers + more }).unfit(), fitOf(wide, {}, { gpuRoom: layers + more - 1 }).unfit() === null], [null, false],
+      "a layer of wider heads' keys and values, to the byte");
   }
   // (T232: ternary weights are a quarter of a byte and a scale a group of 128, 0.28125 bytes a weight)
   const ternaryOf = Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3 }).map(([name, m]) => [name, { ...m, kind: "ternary", group: 128 }]));

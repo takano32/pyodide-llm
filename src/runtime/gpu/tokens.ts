@@ -27,7 +27,7 @@ import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 type Candidate = { name: string; dp4a: boolean; subgroups: boolean; normApart?: boolean };
 // (T547.2.4: a matrix of llama.cpp's blocks takes the pipeline of its role's key with ":" and its type after it; T579:
 // a role's keys are those of the packings of its matrices alone, tokenShape's roles)
-type TokenForm = Candidate & { pipes: { [key: string]: GPUComputePipeline }; steps?: { cache: Kept | null; lists: Map<number, Pass[]> } };
+type TokenForm = Candidate & { pipes: { [key: string]: GPUComputePipeline }; steps?: { cache: Kept | null; lists: Map<string, Pass[]> } };
 // T579: the roles of a token's matrices, by the fused output each writes: q, k and v (qkv), a matrix whose output adds
 // to the stream (add), gate and up (glu), a matrix of a vector written as it is (write; a Gemma 3's o and down where
 // their norms behind come after), a matrix of the normed stream written as it is (mix), the classifier
@@ -451,8 +451,10 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
 }
 // a form's whole step for a run that reads up to positions, made again when the cache has grown (its buffers are others
 // then); T224: one a count of the attention's parts a head (flash_attn_vec's nwg goes by the positions)
+// (T334.2's review: the counts of every size of heads the layers have, a Gemma 4's narrow and wide: each its own nwg)
 function tokenStep(m: Model, form: TokenForm, positions: number) {
-  const a = m.tokenAttention!.attention, { cache } = m.block, parts = a.tiles ? 0 : flashVecSplits(a.shape, positions);
+  const a = m.tokenAttention!.attention, { cache } = m.block;
+  const parts = a.tiles ? "" : Object.values(a.sizes).map(({ shape }) => flashVecSplits(shape, positions)).join(" ");
   if (form.steps?.cache !== cache) form.steps = { cache, lists: new Map() };
   if (!form.steps.lists.has(parts)) form.steps.lists.set(parts, tokenPass(m, form, { positions }));
   return form.steps.lists.get(parts)!;
