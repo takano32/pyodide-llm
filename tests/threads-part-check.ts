@@ -392,6 +392,21 @@ console.log("ok: T120, a thread that never does its chunk is given up, the phase
 }
 console.log("ok: T661's review, a count overtaken by a give-up says lost");
 
+// T661's review: what a search's candidate finds out late is not what the last count asked for says (a thread of a
+// search that comes up after use() was told is of that search, not of use())
+{
+  const { part, beside } = made({ late: true });
+  await part.find({ from: 1, chose: () => {} });
+  const search = beside.waiting.length;  // the candidate 2's thread is starting
+  assert.equal([part.searching, search].join(), "true,1");
+  assert.equal(await part.use(1), 1, "one thread asked for and had");
+  part.stop();  // the search's thread comes up after the threads were let go of
+  beside.waiting.splice(0).forEach((release) => release());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(part.short, null, "the count last asked for (1) was had: nothing short, whatever a search's late thread found");
+}
+console.log("ok: T661's review, a search's late thread does not speak for the last count asked for");
+
 // ---- no threads where none can be started
 for (const [title, options, short] of [["no spawn (a model on the GPU alone)", { spawn: false }, "alone"], ["a memory that is not shared", { sharedMemory: false }, "unshared"]]) {
   const { part, beside } = made(options);

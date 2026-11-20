@@ -187,9 +187,9 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     search!.step = 0;
     if (helpers.length < candidate - 1) {
       search!.waiting = true;
-      ensureHelpers(candidate).then((complete) => {
+      ensureHelpers(candidate).then((why) => {
         if (!search) return;
-        if (complete) search.waiting = false;
+        if (!why) search.waiting = false;
         else finish();
       }, (error) => {
         // (T380.2: said. forward.ts's parts do not read failure.ts, so the caught value in its own words)
@@ -256,27 +256,24 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     helpers.splice(0).forEach((helper) => helper.terminate?.());
     threads = 1;
   }
-  // Resolves to whether the n threads are there. A helper that becomes ready after this engine let its helpers go
+  // Resolves to why the n threads are not there (T661: Short; the caller says it, so that a search's late thread does not
+  // speak for the count last asked for), or null where they are. A helper that becomes ready after this engine let its helpers go
   // (release(), stopThreads(), giveUp()) is ended at once: the review of T120 found such ones left alive when the
   // visitor chose another model while the search started more, and the next model's engine on the same memory
   // (T96) woke them, with the old engine's kernels (one threw holding a chunk: 10 s still, then one thread)
-  async function ensureHelpers(n: number) {
-    if (lost) {
-      short = "lost";
-      return false;  // T120: none again after a helper stopped under this engine
-    }
+  async function ensureHelpers(n: number): Promise<Short | null> {
+    if (lost) return "lost";  // T120: none again after a helper stopped under this engine
     const since = stops;
     if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl!, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
       const helper = await spawn!({ memory, wide, plain: kernels.plain, relaxed: kernels.relaxed, blocks: kernels.blocks ?? null, share: helpers.length + 1 });
       if (lost || stops !== since) {
         helper.terminate?.();
-        short = lost ? "lost" : "letGo";
-        return false;
+        return lost ? "lost" : "letGo";
       }
       helpers.push(helper);
     }
-    return true;
+    return null;
   }
 
   // ---- T378.1: what happens to the threads, as the rest of the engine tells it
@@ -289,7 +286,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
       return (threads = 1);
     }
     search = null;
-    if (!(await ensureHelpers(n))) return (threads = 1);
+    if ((short = await ensureHelpers(n))) return (threads = 1);
     threads = Math.max(1, n);
     return threads;
   }
@@ -308,7 +305,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     onCompared = compared;
     recheckEvery = recheck;
     const start = Math.max(1, remembered || from);
-    if (!(await ensureHelpers(start))) return (threads = 1);
+    if ((short = await ensureHelpers(start))) return (threads = 1);
     threads = start;
     if (remembered) {
       chosen = remembered;
