@@ -100,14 +100,18 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
     // T156: on the GPU alone the same shaders on the same weights write the same keys and values and ids as the run
     // with every byte in memory, to the bit; a step on the CPU throws; a GPU that fails as it opens is lost at once,
     // and says why
-    const { right: r, pieces: p } = alone;
-    const same = r.keys === alone.keys && r.values === alone.values && JSON.stringify(r.first) === JSON.stringify(alone.first);
+    // (T334.3: of the positions the CPU's ring still holds, rows(): the run with the weights here reads its keys and
+    // values back from the CPU's cache, whose ring of a window's layer holds the last positions alone, and the GPU alone
+    // from its own of every position: synthetic-gemma3-ring's and synthetic-gemma4-e2b's differed in those alone, run
+    // 44664946635)
+    const { right: r, pieces: p } = alone, alike = rows(r.keys) === rows(alone.keys) && rows(r.values) === rows(alone.values);
+    const same = alike && JSON.stringify(r.first) === JSON.stringify(alone.first);
     const good = !r.lost && r.gpuTokens === n && same && /^prompts and answers on WebGPU/.test(r.status ?? "") && /on it alone/.test(r.threw ?? "")
       && Boolean(p.lost) && /on it alone/.test(p.threw ?? "");
     // (the made-up model: a CPU far faster than the GPU is taken, and what the page keeps has the device's key)
     const f = alone.cpuFaster, cpuRight = !f || (/the CPU as \/benchmark\/ measured it/.test(f.lost ?? "") && f.verdict?.key === alone.key && /on it alone/.test(f.threw ?? ""));
     console.log(`  on the GPU alone (${(r.stored / 1e6).toFixed(2)} MB here): ${r.lost ? `lost (${r.lost})` : `${r.gpuTokens} tokens of the prompt, keys and values ` +
-      `${r.keys === alone.keys && r.values === alone.values ? "the same to the bit" : "NOT the same"} as with the weights here, steps ${JSON.stringify(r.first)} ` +
+      `${alike ? "the same to the bit" : "NOT the same"} as with the weights here${heldFrom?.some(Boolean) ? " (the positions the CPU's ring holds)" : ""}, steps ${JSON.stringify(r.first)} ` +
       `(${JSON.stringify(alone.first)}), "${r.status}", a step on the CPU ${r.threw ? "threw" : "ran"}`}; a GPU that fails as it opens: ${p.lost ? `lost (${p.lost})` : "not lost"}, ` +
       `a step on the CPU ${p.threw ? "threw" : "ran"}${f ? `; a CPU far faster: ${f.lost ? `lost (${f.lost})` : "not lost"}, the verdict ${f.verdict?.key === alone.key ? "with the device's key" : "WITHOUT the device's key"}` : ""}` +
       `${good && cpuRight ? "" : " — FAILED"}`);
