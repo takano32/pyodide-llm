@@ -75,7 +75,7 @@
 - T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 候補
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
 - T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 候補
-- T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 未着手
+- T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 反映済み
 - T136 [性能][変換] Hugging Face などからの取得を速くする — 段 ① は済
 - T137 [性能][変換] 変換のレジューム: 取得と変換が途中で止まっても、次は続きから — 第 0 段
 - T83 [文書][文書] gist に計測の表（`30-measurements.md`）を足し、`10-overview.md` を今の姿に直す — 未着手
@@ -678,13 +678,15 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
 
-### T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
-```
+### T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 状態: 反映済み（2026-11-20、Opus medium。2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 - transformers は読まない名前。llama.cpp が読むかを確かめ、カードの勧める実行のしかたと、両方の読みの perplexity で決める。
+- **結論（2026-11-20）: 読む。意味は「yarn の倍率 0.1 ln(factor) + 1 に掛ける」**。全文は docs/notes/t259-deepseek-yarn-2026-11-20.md。
+  - 値 0.8782488562869419 は 1 / (0.1 ln 4 + 1) で、倍率を 1.1386 から 1.0 に戻す。掛けるのは vLLM 0.8.5〜0.9・SGLang 0.4.6.post1 と main（Qwen3-8B のカードが挙げる配備の道。DeepSeek のカードは「Qwen3-8B と同じ形で、設定はこのリポジトリのもので」）と、llama.cpp の GGUF の鍵 `rope.scaling.attn_factor`。transformers 5.16.1 と vLLM の main は読まない（1.1386）。llama.cpp の変換器は config の `attn_factor` を `rope.scaling.yarn_attn_factor` に書き、それを読むのは Grok だけ。公開の Q8_0 の GGUF（unsloth・lmstudio-community・bartowski・cecloud33）はどれも鍵を持たず、llama.cpp では 1.1386。
+  - ページの道（int8・カーネル・7 ビット）の perplexity（yarn 1.1386 / attn 1.0 / 素の RoPE）: 日本語 1500・窓 512 は 16.529 / 15.802 / 16.027、英語 13.563 / 13.239 / 13.194、日本語 4096・窓 4096 は 10.543 / 10.324 / 10.331、英語 8.523 / 8.217 / 8.113。**1.1386 は 4 つとも最悪（+2.1〜+4.6%）**、1.0 と素の RoPE は ±1.4% で向きがそろわない。run 44788389143・44788392635・44788397193・44788401545・44788406235・44788409943、同じ CPU の対照 44797804867（全部の桁が同じ）。道具はブランチ `t259-probe` の `tests/t259_probe.sh`（本線に入れない）。
+  - **取りまとめ役の決め（訳）**: 変換器が読む（`convert/config.py` の `yarn_attention()` が `normalize()` の中で `attention_factor` = 倍率 × `attn_factor` に直す。GGUF だけの変換も）。勧めの案（カードの道・perplexity で最良か同等）で、今あるモデルに `attn_factor` を書くものが無いので一覧のどの答えも変わらず、戻すのは 1 コミット。`attention_factor` か `mscale` と一緒の `attn_factor` は実装で読みが割れるので今までどおり断る。`CONVERTER` は上げない（出力の変わる変換が無い。前は断っていたので保存も無い）。
+  - 確かめ: pytest 4371 件（手元）、`tests/conversions_compare.py`（手元、origin/main と: 「216 of 216 entries the same in everything」）。CI を回した。訳: 検証手順 7 の実物の参照（`reference_qwen35.sh --only=real`）は手元で回らない: run 44806949047（軽い組も通った。transformers と 96 位置の最大差 1.89e-4、最尤 96/96、greedy の文も同じ）。
+  - **持ち主に聞くこと**: 一覧に足すか（8B、int8 9.2 GB で Chrome と Firefox だけ、CPU だけ）。足すなら note に「何をするか」の節（取り込み元、GGUF の `gguf_agrees()` が `attn_factor` の無い GGUF を断る件、書式・BOS・名前）。RoPE は config のまま（素の RoPE にする理由は無い）。
 
-**新しいアーキテクチャ**
-
-```
 ### T136 [性能][変換] Hugging Face などからの取得を速くする — 状態: **段 ① は済（8 項目を GGUF に、レビュー済み、2026-09-26）。段 ② は仕様に 10 点を足して進めてよい（レビュー、2026-09-26）。段 ② は実装して 19 項目を替えた。レビュー済み（must-fix 1 つを直した、2026-09-26 の 4 回目）。段 ③ の GPT-2 と GPT-NeoX（6 項目）は持ち主の判断で替える（2026-09-27、ブランチ `t136-stage3`）。レビュー済み（must-fix 0、記録の直し 2、2026-09-27）。残りは段 ③ の DeepSeek-R1（MIT のカードの Q8_0 が複数ある、未検査）と完了条件の本番の前後の数字**（**仕様はレビュー済み、2026-09-26。(2) を段に分けて進めてよい**）（2026-09-26、持ち主の指示「すぐにできそうなら着手、無理そうなら仕様をいったんレビューする」。計測したら、この開発機の回線ではすぐ効く手が無かった）（2026-09-26、持ち主の指示「Hugging Face などからのダウンロードの高速化を台帳に追加したい」。**まず計測から**。順番は持ち主が決める（Opus の提案: T128 の後、T134・T135 と並べて）。規模 小〜中）
 - 根拠: 大きいモデルの準備完了の大半は取得。日本の回線（この開発機）で huggingface.co から 8.3 MB/s（16 MiB × 6 本、T123）、1B 級で約 300 秒、7〜8B（15〜17GB）では約 30〜35 分。CI（米国）では部品の大きさが効き（Qwen2.5 0.5B が 4 MiB で 23 秒、16 MiB で 8.3 秒）、並列数は 4 → 12 で 1 割前後（T107）。**その値は米国の CI で決めたもので、日本の回線では測っていない**。
 - 試す手（どれも未計測）: (1) **日本の回線で部品の大きさと並列数を振る**（`?hfParts=&hfConnections=` と `fetch.yml` の表。持ち主の回線か、日本の開発機の Node で取得だけを測る）。(2) **小さい取り込み元**: 原本と同じ重みの Q8_0 の GGUF なら取得は bf16 の約半分（T74: SmolLM2 135M で 269MB → 145MB、int8 の結果は +0.13%）。モデルごとに `tests/gguf_check.py tensors` で原本と同じ重みか先に確かめる（Qwen2.5 の公式 GGUF は別の重みだった）。(3) **途中からの再開** → **T137 に分けた**（2026-09-26）。(4) **取得先**: HF の CDN（xet の保存など）で、Range 要求の待ちが短い道があるか調べる。サイトのモデル（GitHub Pages）の部品の取得（T68: 8 MiB × 8 本）も同じ目で見る。

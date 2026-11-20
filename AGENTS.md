@@ -377,7 +377,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **特殊トークンの後のダミーの空白（`prefixed`）と、最初の文の前のダミーの空白（`spaced`）は別の物**（`tests/test_prefixed.py`）。`do_lower_case` は options の `lowercase`。 `prefixed` は無ければ最初の文にだけ、`"every"` は特殊トークンの後のどの文にも、`"wanting"` は空白で始まらない文にだけ、`"never"` はどの文の前にも付けない。**「▁」をどこにも足さない tokenizer.json は、変換器が `prefixed: "never"` を言う**。`spaced` を読むのは unigram の道だけ。**書式から何かを外す・足す変更は、sentencepiece 系と byte-level の両方の項目で送る ID を比べる。**
 - **変換の transform** は `None` か `TRANSFORMS`（`convert/plan.py`）の名前で始まる段か段の並びで、知らない名前はどの読み手も拒否する。
 - **実物のモデルの固定値（T86）**: 合成モデルでは「動くが文章が壊れる」を捕まえられない。**取り込み元を替えたら、前の道を通る固定値が残っているかを見る**。`--write` は `--only` と一緒には使えない。
-- **yarn の RoPE は cos と sin に 0.1 ln(factor) + 1 を掛ける**（`rope_magnitude()`。落としてもエラーにならない）。設定と factor は transformers 5.16.1 のとおり（`YARN_KEYS`・`yarn_contexts()`）、ほかの鍵（`attn_factor`）は断る。**ページの文脈（4096）では yarn のほうが素の RoPE より perplexity が高い**ので、一覧の Ternary Bonsai は `rope_scaling: {}`（`PLAIN_ROPE`。`null` は使わない: `jsnull`）。
+- **yarn の RoPE は cos と sin に 0.1 ln(factor) + 1 を掛ける**（`rope_magnitude()`。落としてもエラーにならない）。設定と factor は transformers 5.16.1 のとおり（`YARN_KEYS`・`yarn_contexts()`）、ほかの鍵は断る。**ただし `attn_factor` だけは読む**（T259、`yarn_attention()`: 倍率 × `attn_factor` を `attention_factor` に。vLLM 0.8.5〜0.9・SGLang・llama.cpp の GGUF の `rope.scaling.attn_factor` と同じ。transformers は読まない。`attention_factor` か `mscale` と一緒なら断る）。DeepSeek-R1-0528-Qwen3-8B の 0.878 は倍率を 1.0 に戻し、ページの道の perplexity は transformers の読み（1.1386）より 2〜5% 低い（docs/notes/t259-deepseek-yarn-2026-11-20.md）。**ページの文脈（4096）では yarn のほうが素の RoPE より perplexity が高い**ので、一覧の Ternary Bonsai は `rope_scaling: {}`（`PLAIN_ROPE`。`null` は使わない: `jsnull`）。
 
 ### トークナイザ
 
