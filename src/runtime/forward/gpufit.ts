@@ -105,7 +105,7 @@ export type Placed = {
 // what the GPU is to take of the model (gpuFit()'s matrices and vectors), why it would take none or no steps, and the
 // places in the memory it answers into (0: none)
 // (T334.1: inputs, a Gemma 4's inputs of every layer of a block's tokens)
-export type Taken = { matrices(): Record<string, Held>; vectors(): Vectors; whyNot: string | null; tokensWhyNot: string | null; staging: number; rows: number; ids: number;
+export type Taken = { matrices(steps?: boolean): Record<string, Held>; vectors(): Vectors; whyNot: string | null; tokensWhyNot: string | null; staging: number; rows: number; ids: number;
   inputs: number };
 
 /** T349: what the GPU would hold of one engine's model, and why it would not take it (createForward() asks before it
@@ -116,7 +116,7 @@ export type Taken = { matrices(): Record<string, Held>; vectors(): Vectors; whyN
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; sharedMemory: boolean; oneThread?: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, scoresCapped, gpuKinds, stateful,
-    rotated, sharedClassifier, kinds, attending, stateBytes, layerShapes, perLayer, counts } = shape;
+    rotated, sharedClassifier, kinds, attending, stateBytes, layerShapes, perLayer, counts, stackPlaces } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, sized,
     layerScale, channels } = weights;
   // (T334.1: the size of a Gemma 4's wide heads)
@@ -129,10 +129,15 @@ export function gpuFit({ shape, weights, device, direct }:
   // (T153: with Qwen2's biases, Qwen3's norms of the heads and heads of another size than dim / heads as well; T154:
   // GPT-2's and GPT-NeoX's as well, whose FFN has no gate: w3 is null; T155: int6 weights and 64-bit memories too)
   // (a function, not a const: gpuUnfit runs before this line, AGENTS.md)
-  function gpuMatrices() {
+  // T334.2: steps, those of a generation's steps too: a matrix no layer a prompt's block runs has (a Gemma 4's wider FFN,
+  // whose layers come after the last that keeps keys and values: its stacks' places of those layers are all -1) goes to
+  // the GPU only where the steps do (E2B's are some 1.1 GB, which a device of 8 GB's room for the prompts' layers
+  // had not, models.yml's run 44647159901)
+  function gpuMatrices(steps = false) {
+    const block = lastKept(shape) + 1, blockless = (name: string) => stackPlaces[name as TensorName]?.slice(0, block).every((place) => place < 0) ?? false;
     // (T568.4: and the kinds' own, after every model's)
     // (T334.1: and a Gemma 4's own)
-    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, ...own.matrices, ...sized.matrices }).filter(([, m]) => m)) as Record<string, Held>;
+    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, ...own.matrices, ...sized.matrices }).filter(([name, m]) => m && (steps || !blockless(name)))) as Record<string, Held>;
   }
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.ts; T232: ternary weights
   // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers: the
@@ -181,12 +186,12 @@ export function gpuFit({ shape, weights, device, direct }:
     if (gpuRoom !== undefined && onGpu > gpuRoom && !direct) return REASONS.layersRoom(onGpu);
     return null;
   }
-  // the bytes of the layers on the GPU, and its own keys and values
-  function layersOnGpu() {
+  // the bytes of the layers on the GPU, and its own keys and values (T334.2: steps, with what only the steps read)
+  function layersOnGpu(steps = false) {
     // (T545: each of the layers it is of, and the keys and values of the attending ones; and the state the convolution
     // layers go on from, with its copy where a block's comes back; T271.2: the linear-attention layers' too)
     // (T547.3.1: a stack whose layers are each of a kind of their own, each layer's as its kind)
-    return Object.entries(gpuMatrices()).reduce((bytes, [name, m]) => bytes + m.rows * m.n *
+    return Object.entries(gpuMatrices(steps)).reduce((bytes, [name, m]) => bytes + m.rows * m.n *
       (m.layers ? m.layers.reduce((sum, layer) => sum + gpuWeightBytes(layer.kind), 0) : countOf(name) * gpuWeightBytes(m.kind)), 0) +
       Object.entries(gpuVectors()).reduce((bytes, [name, { size }]) => bytes + countOf(name) * size * 4, 0) + 2 * attending * seqLen * kvDim * 2 +
       2 * stateBytes;
@@ -229,7 +234,7 @@ export function gpuFit({ shape, weights, device, direct }:
     // (GPT-2's positions on the GPU as well, a row a position)
     // (T261.4.2: a Gemma 3's local layers' table of RoPE as well; T334.2: a Gemma 4's first table is of its wide heads)
     // (T545.2: and the state as the last step of a request leaves it, read back with its ids)
-    const onGpu = layersOnGpu() + table + (sharedClassifier ? 0 : embeddingBytes) + (wideHead + (local ? headSize : 0)) * seqLen * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0) +
+    const onGpu = layersOnGpu(true) + table + (sharedClassifier ? 0 : embeddingBytes) + (wideHead + (local ? headSize : 0)) * seqLen * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0) +
       stateBytes;
     if (gpuRoom !== undefined && onGpu > gpuRoom) return REASONS.classifierRoom(onGpu);
     return null;

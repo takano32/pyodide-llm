@@ -828,6 +828,15 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   const weightsOf = (m) => SHAPE.layers * m.rows * m.n * 1.125, { wq, wk, wv, wo, w1, w2, w3 } = WEIGHTS;
   const layers = [wq, wk, wv, wo, w1, w2, w3].reduce((sum, m) => sum + weightsOf(m), 0) + 2 * SHAPE.layers * 8 * 4 + 2 * SHAPE.layers * SHAPE.seqLen * SHAPE.kvDim * 2;
   assert.deepEqual([fitOf({}, {}, { gpuRoom: layers }).unfit(), fitOf({}, {}, { gpuRoom: layers - 1 }).unfit() === null], [null, false], "the layers on the GPU, to the byte");
+  // T334.2: a matrix no layer of a block has (a Gemma 4's wider FFN: its stack's places are -1 up to the last layer that
+  // keeps keys and values) goes to the GPU with the steps alone, and the prompts' room does not count it
+  {
+    const shape = { stackPlaces: { w1_double: [-1, 0] }, layerShapes: SHAPE.layerShapes.map((each, l) => (l === 1 ? { ...each, kept: -1, reads: 0 } : each)) };
+    const weights = { sized: { ...WEIGHTS.sized, matrices: { w1_double: matrixOf(48, 8, 60000) } } };
+    assert.deepEqual([fitOf(shape, weights).matrices(), fitOf(shape, weights).matrices(true)].map((matrices) => Object.keys(matrices).includes("w1_double")), [false, true],
+      "a matrix of the steps' alone goes up with them alone");
+    assert.equal(fitOf(shape, weights, { gpuRoom: layers }).unfit(), null, "and the prompts' room does not count it");
+  }
   // (T232: ternary weights are a quarter of a byte and a scale a group of 128, 0.28125 bytes a weight)
   const ternaryOf = Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3 }).map(([name, m]) => [name, { ...m, kind: "ternary", group: 128 }]));
   const ternaryLayers = layers - [wq, wk, wv, wo, w1, w2, w3].reduce((sum, m) => sum + weightsOf(m), 0) * (1 - 0.28125 / 1.125);

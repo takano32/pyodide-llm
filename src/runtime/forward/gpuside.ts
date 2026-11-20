@@ -182,7 +182,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // (T545: a matrix of some of the layers, an LFM2's attending or convolution layers', is theirs alone: of says whose)
     // (T547.3.1: a stack whose layers are each of a kind of their own, packing "layers" and each layer's packing, its
     // values where its own matrix has them)
-    const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] => {
+    // (T334.2: and what only a generation's steps read, where they go to the GPU)
+    const matrices = Object.fromEntries(Object.entries(gpuMatrices(!tokensWhyNot)).map(([name, m]): [string, Matrix] => {
       // (T334.1: of the layers of its stack, where those are some of the layers whatever their kinds: a Gemma 4's)
       const of = kindOf(name, shape), count = counts[name as TensorName] ?? (of ? kinds.filter((kind) => kind === of).length : layers);
       const at = (l: number) => (m.layers ? m.layers[l].layer(0) : m.layer(l)).slice(0, 2) as [number, number];
