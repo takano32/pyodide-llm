@@ -923,6 +923,10 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False, binary=False)
     def tensor(row):
         values = (rng.standard_normal(row.shape) * 0.3).astype(np.float32)
         if row.role == VECTOR:
+            # (T334.2's review: a Gemma 4's number of a layer, 0.25 to about 1.5, where 1 + 0.03 N let a step that left it
+            # out of the layers past the block's pass as a near tie: run 44654104559. The same numbers drawn)
+            if row.name == "layer_scale":
+                return (0.25 + 2 * np.abs(values)).astype(np.float32)
             values = values if row.name in BIASES else 1.0 + values * (1.0 if calm else 0.1)
             if outliers and row.name == "rms_final_weight":
                 values[np.arange(outliers) * spread % row.shape[-1]] = 12.0
