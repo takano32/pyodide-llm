@@ -84,7 +84,7 @@ const answerWllama = (route) => {
 };
 const site = await serving();
 
-const context = await playwright.chromium.launchPersistentContext(scratch("wllama-profile-"), { headless: true, viewport: { width: 1280, height: 900 } });
+const context = await playwright.chromium.launchPersistentContext(scratch("wllama-profile-"), { headless: true, viewport: { width: 1280, height: 900 }, args: (process.env.WLLAMA_CHROMIUM_ARGS ?? "").split(" ").filter(Boolean) });
 await context.route(`${wllamaUrl}**`, answerWllama);
 const browserVersion = context.browser()?.version() ?? "";
 const cpu = os.cpus()[0]?.model ?? null;
