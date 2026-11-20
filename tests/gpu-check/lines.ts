@@ -105,7 +105,16 @@ const K_HALF = 3;
 // that reads layer 0's FFN norm) were measured against 3
 const K_PACKED_STEPS = 3;
 // T674: how many more times NumPy's E16, Q8 and H16 are taken, each run rounding numbers a millionth off (reference.ts's
-// nudged()), so that a layer's line is K times the largest of the samples, not of one (see verdicts.ts)
+// nudged()). One sample swung threefold from layer to layer on the real Gemma 4 E2B in English, where a GPU as it should
+// be went past its line (TF.js's tiles with the f16 attention 1.07, DP4A 1.56: T334.5, run 44603874358). The float32
+// and f16 forms' layers are held to K × the largest of E16's (H16's) samples: in NumPy alone (T674's ledger, the
+// made-up models with the wrong GPUs made there), the largest is 1.00 to 1.28 times the one sample, and the wrong ones
+// keep their ratios (layer 0's biases in every layer on the made-up Qwen2: float32 39.5 to 39.2, f16 32.8 to 29.4; a
+// Gemma 4's plePost of layer 0: 6.0 and 3.6 as they were, the made-up E2B's 22.7 and 7.7; layer 0's FFN norm, float32
+// 5.1 (Qwen2) to 56.7 (E2B) and f16 3.7 to 21.0, as they were). The packed shaders' stay on Q8's one sample: its largest of three is 1.14 to 1.70 times it at the
+// made-up E2B's deep layers, and the wrong GPU there that reads layer 0's FFN norm (1.38 of the one sample's line) fell
+// to 1.02; layer 0's biases on the made-up Qwen2 stayed 1.41. A real model's packed shaders past their line are said,
+// with their ratio to K_PACKED × the largest sample, and do not fail (verdicts.ts)
 const NUDGES = 2;
 
 export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, SCALE_LINE, TIE };
