@@ -107,7 +107,7 @@
 - T619 [追加][モデル] LFM3（lfm3） — 候補
 - T655 [改善][モデル] モデルが自分で開く複数トークンの考えの印を追う（PLaMo 3 の考える形の上限） — 候補
 - T657 [追加][モデル] PLaMo 3 NICT 2B・8B base を原本と照らさずに一覧に — 未着手
-- T662 [運用][遠隔試験] 毎週の `browsers.yml` が、隔離されなかったページを落とさない — 未着手
+- T662 [運用][遠隔試験] 毎週の `browsers.yml` が、隔離されなかったページを落とさない — 進行中
 - T663 [バグ][解析分割] Qwen3 0.6B で 4 文・Pythia 70M で 6 文、本物の tokenizers と読みが違う — 未着手
 - T664 [調査][モデル] plamo-translate-desktop から取り込むものの洗い出しと順 — 調べは完了
 - T665 [追加][解析分割] PFML3 のプロンプトを Python で組む（言語・文体・文脈・用語集・履歴） — 未着手
@@ -1064,8 +1064,10 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **調べ（2026-11-12、Opus medium。製品のコードは変えていない）: Translate の config では開けない。** (1) mmnga-o の GGUF（どちらも 2025-12-29 に作られた）は `plamo3.context_length` 4096 で yarn の鍵が無い（`rope.scaling.*` なし。寸法は 2B が 24 層・幅 2560・head 24・鍵と値 4、8B が 32 層・4096・32・4、語彙 107,520、`tokenizer.ggml.model` plamo2、BOS 1・EOS 2）。Translate 2B・8B の config は `max_position_embeddings` 262144・`rope_scaling_factor` 256・`initial_context_length` 4096（全体の層に yarn）・`eos_token_id` 1。(2) 変換器の `gguf_agrees()` は yarn を比べるので、この組は「its yarn RoPE scaling is None here and {…} there」で断る（mradermacher の 610M の GGUF を断ったのと同じ線: T614）。線を外して通すと、base に yarn の倍率 1.55 と縮めた角が掛かって文が壊れる。(3) base の本当の config は yarn なし: ゲートの無い写し（midorin-Linux/plamo-3-nict-8b-base-bnb-4bit @ 47abe245d181af0b9557ee36d109db95c003d7c7（2026-02、config・`tokenizer.jsonl`・書式あり）、WayBob/Way-sft-plamo-3-8b-chat、midorin-Linux/plamo-3-12b-self-merged-base）の config は 3 つとも `max_position_embeddings` 4096・`rope_scaling_factor` なし・`initial_context_length` なし・`eos_token_id` 2。GGUF の 4096 と合う（llama.cpp が yarn を書くようになったのは 2026-09-27 の 9adc7f42 で、GGUF はその前だが、文脈 4096 は config の値）。2B の base の config のゲートの無い写しは見つからない（Gurunath/plamo-3-nict-2b-tool-calling-lora は LoRA と `tokenizer.jsonl` だけ）。原本は 2B が 2026-08-21、8B が 2026-10-08 に更新されているが、ゲートで中は見えない。
 - **持ち主に出す選択肢**（取りまとめ役へ）: (a)（勧め）一覧の項目が語彙のリポジトリの config.json の鍵を上書きできる形を変換器と段取りに足す（新しい T 番号、規模 中: 項目に `max_position_embeddings: 4096`・`rope_scaling_factor: 1`・`eos_token_id: 2` を書き、`gguf_agrees()` は上書きの後の config と比べる。今ある変換の出すものは変わらないので `CONVERTER` は上げない）。2B・8B とも Translate の語彙で開ける。(b) 8B だけ、語彙と config を midorin-Linux の写し（第三者がゲートの原本から写したもの、PLaMo Community License）から取って今の形のまま足す。2B は足さない。(c) 足さない。
 
-### T662 [運用][遠隔試験] 毎週の `browsers.yml` が、隔離されなかったページを落とさない — 状態: 未着手（2026-11-13、T449 のレビューから。規模 小）
+### T662 [運用][遠隔試験] 毎週の `browsers.yml` が、隔離されなかったページを落とさない — 状態: 進行中（2026-11-13、T449 のレビューから。規模 小）
 - `tests/e2e.ts` は `isolated` を JSON の行とステータス行に出すだけで `failures` に入れない。隔離を失っても毎週の run は緑のまま。落とす形にする前に、隔離できない既知の組（OS × ブラウザ）が無いかを直近の run の `isolated` で数える。あればその組だけを訳つきで許す。
+- **数えた**（2026-11-20）: artifact の残る直近 2 回の毎週の run（43856274024・42609531338）の `results.jsonl` 398 行が全部 `isolated: true`。5 つの OS（linux x64・linux arm64・win32 x64・win32 arm64・darwin arm64）× Playwright の Chromium・Firefox・WebKit と Chrome・Edge（Linux の arm64 は 3 つ）と、HF のモデルの Chromium と WebKit。それより前の run はログも artifact も消えていた。**許す組は無い**。
+- **した**: 判定を `tests/unisolated.ts` の `unisolated()` の 1 か所に（隔離されていない・訪問の URL が `coi=off` を言わない・表 `UNISOLATED`（`"<platform> <arch> <browser>"` → 訳、いまは空）に無い、のとき failures の文）。`tests/e2e.ts` は開いた URL（`visited`）と一緒に聞いて failures に入れる。`e2e.ts` を回すほかの所（`models.yml`・`fetch.yml`・`preview.yml`・`gemma4_in_browser.sh`・`saluki_in_browser.sh`・`repository_in_browser.sh`）もこれで落ちるようになる: わざと隔離しないのは `models.yml` の `query` に `coi=off` を渡す訪問だけで、それは許す（`?coi=off` を見る `coi-off-in-browser.ts` は `e2e.ts` を使わない）。試験は `tests/summary-check.ts`（軽い組）: 隔離されない run が落ちる・`coi=off` と表の組が落ちない・`coi=on` と別の OS・別のブラウザは許さない・`e2e.ts` の文が聞いて failures に入れること。壊し方 2 つ（`coi` の値を見ずに許す・`e2e.ts` が failures に入れずに書くだけ）がどちらも落ちた。
 
 ### T663 [バグ][解析分割] Qwen3 0.6B で 4 文・Pythia 70M で 6 文、本物の tokenizers と読みが違う — 状態: 未着手（2026-11-13、T509 のレビューから。規模 小。T509 より前から同じ数）
 - `tests/tokenizer_json_check.py`（BMP、約 23 万文）で Qwen3 0.6B が 4 wrong、Pythia 70M が 6 wrong（`c9bb1efa~1` でも同じ）。どの文か・どの前分割の境かを出して、一覧の同じ語彙の項目（Qwen3 の全部、Pythia の 5 段）に当たるかを見る。直すと送る ID が変わるなら、数と例を持ち主に見せてから。

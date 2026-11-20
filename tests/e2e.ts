@@ -1,5 +1,6 @@
 // End-to-end check in a real browser: serves dist/ under the GitHub Pages base path, waits until the model is
-// ready, runs the default prompt, and checks that text streams in and that the page itself never scrolls.
+// ready, runs the default prompt, and checks that text streams in and that the page itself never scrolls. The page
+// must be cross-origin isolated too (T662), but where the query says coi=off or tests/unisolated.ts knows the pair.
 //
 //   npm run build && node tests/e2e.ts [model id] [chromium|firefox|webkit|msedge|chrome] [url of a deployed site]
 //
@@ -70,6 +71,7 @@ import * as playwright from "playwright-core";
 import { DEFAULT_MODEL, MODELS } from "../src/models.ts";
 import { closed, leave, scratch } from "./leave.ts";
 import { serving } from "./serving.ts";
+import { unisolated } from "./unisolated.ts";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
 // an id the list does not have opens the page's default model, and the run passed on it (T144: models.yml with a
@@ -310,7 +312,8 @@ if (process.env.E2E_QUOTA) {
   await protocol.send("Storage.overrideQuotaForOrigin", { origin, quotaSize: Number(process.env.E2E_QUOTA) });
   console.log(`quota of ${origin} set to ${Number(process.env.E2E_QUOTA).toLocaleString("en")} bytes`);
 }
-await page.goto(`${url}?${query}${process.env.E2E_QUERY ? `&${process.env.E2E_QUERY}` : ""}`);
+const visited = `${url}?${query}${process.env.E2E_QUERY ? `&${process.env.E2E_QUERY}` : ""}`;
+await page.goto(visited);
 if (process.env.E2E_QUOTA) {
   // what the page itself is told of its quota (the reload of the first visit may interrupt the question: asked again)
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -452,6 +455,10 @@ for (const [where, line] of [["the status line", result.status], ["the line unde
   if (otherwise) failures.push(`${where} says ${otherwise} (${line})`);
 }
 if (result.pageScrolls) failures.push("the page itself scrolls");
+// T662: a page that is not cross-origin isolated answers on one thread, and the run once passed on it: it fails, but where
+// the visit asked for no isolation (?coi=off) or the system and browser are a pair known not to isolate (tests/unisolated.ts)
+const notIsolated = unisolated({ isolated: result.isolated, os: `${os.platform()} ${os.arch()}`, engine, visited });
+if (notIsolated) failures.push(notIsolated);
 // (T577: an answer the query cut short with steps= is the start of the expected text, which it does not reach)
 // (and the URL's steps= stood: the page wrote no more tokens than it, the prompt's counted: a test that overrode it ran to 256)
 const wrote = Number(/(\d+) tokens/.exec(result.generated ?? "")?.[1]);
