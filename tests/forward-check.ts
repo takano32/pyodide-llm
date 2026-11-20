@@ -65,6 +65,9 @@ const MADE_UP_LINE = 0.5;
 // positions and NumPy's jitter 1.68e-3 (8: 4.8e-5 and 7.9e-5; 64: 8.3e-4 and 8.1e-4), with the norms of q and k
 // halved 1.9e-5. Its shared layers reading another layer's keys and values were 7.7 from NumPy at 8 positions.
 const JITTERS = 4;
+// T660's review: the jitter's line stops here, so a made-up model whose own jitter grows past it fails rather than
+// letting any error through (the shared Gemma 4 read every token at 400 positions is 7.9e-3).
+const JITTER_CEILING = 3e-2;
 function madeUpLine(name) {
   return name.startsWith("made-up-ternary-rotated") ? 0.12 : MADE_UP_LINE;
 }
@@ -496,7 +499,7 @@ for pos in range(${positions}):
     sequence.append(following)
 agreement, change, relative = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1, math.sqrt(apart / size)
 del jittered
-float_line = max(1e-3, ${JITTERS} * jitter)
+float_line = min(max(1e-3, ${JITTERS} * jitter), ${JITTER_CEILING})
 ok = (agree == ${positions} and largest <= float_line) if not int8 else relative <= ${entry.line ?? MADE_UP_LINE} if ${entry.madeUp ? "True" : "False"} else (agreement >= 0.85 and abs(change) <= 0.05)
 kv_start, engine.model.KV_START = engine.model.KV_START, 8
 one, many = kernel_llama(data, vocabulary, **OPTIONS), kernel_llama(data, vocabulary, **OPTIONS)
