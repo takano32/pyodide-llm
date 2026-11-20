@@ -22,6 +22,8 @@
 // browser has no WebGPU here), the same number of threads (the page: ?threads=, which counts the coordinator, as
 // wllama's n_threads counts its own), wllama's prompt cache off (cache_prompt false: every round reads the whole prompt).
 //
+// WLLAMA_CHROMIUM_ARGS (a space-separated list) adds arguments to Chromium's, such as --js-flags=--no-liftoff for a control.
+//
 // The speeds are each side's own: the page's line under an answer ("prompt N tokens · x tok/s", "generated N tokens ·
 // y tok/s": src/python/engine/generation.py, whose prompt count leaves out the last token of the prompt, whose forward
 // gives the first token written), and llama-server's timings (prompt_per_second, predicted_per_second).
@@ -87,9 +89,6 @@ const site = await serving();
 
 const context = await playwright.chromium.launchPersistentContext(scratch("wllama-profile-"), { headless: true, viewport: { width: 1280, height: 900 }, args: (process.env.WLLAMA_CHROMIUM_ARGS ?? "").split(" ").filter(Boolean) });
 await context.route(`${wllamaUrl}**`, answerWllama);
-// (which wasm wllama fetched: its own from this routing, or the compat build's from a CDN)
-const wasmFetched = new Set();
-context.on("request", (request) => { if (/\.wasm(\?|$)|jsdelivr|unpkg/.test(request.url())) wasmFetched.add(request.url().replace(/\?.*/, "")); });
 const browserVersion = context.browser()?.version() ?? "";
 const cpu = os.cpus()[0]?.model ?? null;
 const hint = await (await context.newPage()).evaluate(() => navigator.hardwareConcurrency);
@@ -174,7 +173,7 @@ const loadWllama = async (fetched) => {
   await theirs.waitForFunction(() => window.harnessReady === true);
   const loaded = await theirs.evaluate((asked) => window.load(asked), { url: spec.url, threads, context: spec.context ?? 4096 });
   record({ side: "wllama", what: "load", fetched, ...loaded });
-  say(`wllama ready ${fetched ? "with the fetch" : "again"} in ${loaded.seconds.toFixed(1)}s (${loaded.threads} threads, multithread ${loaded.multithread}, isolated ${loaded.isolated}, jspi ${loaded.jspi}, mem64 ${loaded.mem64}, wasm ${[...wasmFetched].join(" ")}, n_batch ${loaded.n_batch}, llama.cpp ${loaded.libllama})`);
+  say(`wllama ready ${fetched ? "with the fetch" : "again"} in ${loaded.seconds.toFixed(1)}s (${loaded.threads} threads, multithread ${loaded.multithread}, isolated ${loaded.isolated}, jspi ${loaded.jspi}, mem64 ${loaded.mem64}, n_batch ${loaded.n_batch}, llama.cpp ${loaded.libllama})`);
   return loaded;
 };
 const firstLoad = await loadWllama(true);
@@ -182,6 +181,8 @@ const firstLoad = await loadWllama(true);
 const second = await loadWllama(false);
 if (second.fetchSeconds !== null && second.fetchSeconds > 5) failures.push(`wllama fetched the model again (${second.fetchSeconds.toFixed(1)}s)`);
 if (!firstLoad.multithread && threads > 1) failures.push("wllama ran on one thread");
+// (without JSPI or Memory64 wllama fetches its compat build from a CDN, which is much slower: not the build this compares with)
+if (!firstLoad.jspi || !firstLoad.mem64) failures.push(`wllama ran its compat build (jspi ${firstLoad.jspi}, mem64 ${firstLoad.mem64})`);
 const askWllama = async (tokens) => {
   const got = await theirs.evaluate((asked) => window.ask(asked), { prompt: spec.prompt, raw: spec.raw ?? null, chat: Boolean(spec.chat), kwargs: spec.kwargs ?? null, tokens });
   const t = got.timings ?? {};
