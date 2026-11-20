@@ -410,7 +410,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **KV は 256 から倍々に、その場で伸ばす**（`grow()`）。 `footprint()` がヘッダから後ろに置くものの上限を出し（relaxed の補正・外れ値の列・活性値の枠・RoPE の表・状態・KV）、`tests/memory-check.ts` が実物の確保と比べる（上回り約 1 MiB）。float16 の KV は読む量が半分だが広げに 2.4〜2.9 倍かかり、GQA のモデルでは損。**作ったときに足りないと分かる共有メモリは共有でないメモリに替える**。
 - **64 ビットのメモリの上限は 16 GiB**（越えるモデルは `pastWide()` が取得の前に断る）。64 ビットの上のカーネルは約 1 割遅いので 4GB を超えるモデルにだけ。**ソフトウェアスレッドへの仕事の表は float64**（32 ビットに番地を置くと上の桁が切れた）。 AssemblyScript の Wasm64 の出力は `kernels/wasm64.ts`（asc の transform）が直す。
 - **スレッドの本数の検索**: 判定は本数ごとの下側の中央値。 1 回の比べは best・候補・候補・best の 4 つの塊。前の訪問の本数はその訪問の最初の生成で検索し直す（その後は 8 回ごと）。鍵はモデルごと（`threads:<モデル>:<論理コア>:<メモリ>:<UA>`）。Worker 間の `postMessage` の往復は 0.1〜0.3ms。**覚える本数は GPU の準備と並ばずに測った答えだけ**。作り物の速さは実物の本数を言わない。試験は偽の時計（`createForward` の `clock`）。
-- **`?threads=N` に届かなければ worker が訳を 1 行言う**（T661: `threads: ?threads=N was not reached (<訳>): 1 thread`。訳は `forward/threads.ts` の `Short` と `shortWords()`（共有でないメモリは `REASONS` の文）で、worker はエンジンの `threadsShort` を読むだけ）。検索が選んだ本数と `?threads=` の無い訪問は言わない。`?threads=` を名指したのに 1 本でこの行も無ければ、`fixed` が worker に届かず検索が走った。
+- **`?threads=N` に届かなければ worker が訳を 1 行言う**（T661: `threads: ?threads=N was not reached (<訳>): 1 thread`。訳は `forward/threads.ts` の `Short` と `shortWords()`（共有でないメモリは `REASONS` の文）で、worker はエンジンの `threadsShort` を読むだけ）。検索が選んだ本数と `?threads=` の無い訪問は言わない。`?threads=` を名指したのに 1 本でこの行も無ければ、`fixed` が worker に届かず検索が走った。**CI の通った run はコンソールを残さない**ので、行は `tests/e2e.ts` の JSON の行の `threadsNotReached` に入る（無ければ null）。
 - **変換したモデルの保存は OPFS**（`keptName()`、古い版の保存は `replaced()` が消す）。 2 回目の準備完了は llm-jp-3 440M で 18.4 → 4.4 秒。
 
 ### CPU のカーネル
