@@ -370,6 +370,28 @@ console.log("ok: a generation, a token or its end told out of turn change nothin
 }
 console.log("ok: T120, a thread that never does its chunk is given up, the phase run again here, and the engine keeps to one thread");
 
+// T661's review: a thread that comes up after a give-up says "lost", not "let go of" (the two words differ where the
+// engine gave up while more threads started)
+{
+  const { part, beside } = made({ stalledMs: 40, late: true });
+  const two = part.use(2);
+  beside.waiting.splice(0).forEach((release) => release());
+  assert.equal(await two, 2);
+  const four = part.use(4);  // two more threads are starting ...
+  const jobs = [jobOf(64)];
+  beside.onRun = () => {
+    beside.onRun = null;
+    Atomics.add(beside.ctl, COUNTER, 1);  // ... as a thread that took the next chunk and was stopped by the browser
+  };
+  await quietly(() => part.phase(jobs));
+  assert.equal(part.lost, true, "given up while the threads of use(4) started");
+  beside.waiting.splice(0).forEach((release) => release());
+  assert.equal(await four, 1, "use(4) that was overtaken by a give-up says 1");
+  assert.equal(part.short, "lost", "and why: a thread stopped, not that the threads were let go of");
+  assert.equal(beside.ended, beside.started, "every thread started is ended");
+}
+console.log("ok: T661's review, a count overtaken by a give-up says lost");
+
 // ---- no threads where none can be started
 for (const [title, options, short] of [["no spawn (a model on the GPU alone)", { spawn: false }, "alone"], ["a memory that is not shared", { sharedMemory: false }, "unshared"]]) {
   const { part, beside } = made(options);
