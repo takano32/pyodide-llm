@@ -190,6 +190,7 @@ let refetched = 0;
 // (Firefox words it as `[JavaScript Error: "Failed to read data from the ReadableStream: “TypeError: Error in input stream”."]`,
 // as run 38046609290 printed it: not at the start of the text)
 const BROKEN_STREAM = /Failed to read data from the ReadableStream: /;
+let threadsNotReached;  // (T661: the console line of worker/load.ts's startThreads(), the first of the visit)
 let threadReports = 0;  // T172: the page's lines about the worker's search for the number of threads
 // T397: the worker loads Pyodide's jinja2 before it first converts a model, for the model's chat template. What it
 // asked the CDN for (the wheel's name, as Pyodide's lock has it)
@@ -209,6 +210,8 @@ page.context().on("request", (request) => {
 page.on("console", (message) => {
   if (message.type() === "error") errors.push(message.text());
   if (/^threads: /.test(message.text())) threadReports++;
+  // T661's review: the worker's line where ?threads=N was not reached, kept in the run's JSON line (a run that passes keeps no console)
+  if (/^threads: \?threads=\d+ was not reached /.test(message.text())) threadsNotReached ??= message.text();
   if (/ broke off \(.*\): fetched again$/.test(message.text())) refetched++;
   remember(`[${message.type()}] ${message.text()}`);
 });
@@ -616,6 +619,7 @@ record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Numb
          backend: result.status, meta: result.meta, failures, isolated: result.isolated, load: reported?.seconds ?? null,
          heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null, notKept: reported?.notKept ?? null, again, offline, gpuVerdict,
          threadReports: threadReportsSeen,
+         threadsNotReached: threadsNotReached ?? null,
          ...(then.length ? { then } : {}) });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
