@@ -4,6 +4,7 @@
 // cases' checkpoints are written into, a model's id.
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { pyodideWithEngine } from "../engine.ts";
 import { MODELS } from "../../src/models.ts";
@@ -192,8 +193,17 @@ def answers(data, vocabulary, text, count, options):
         nudges.append(each)
     return {**exact, "keys16": rounded["keys"], "values16": rounded["values"], "logits16": rounded["logits"],
             "keys8": eight["keys"], "values8": eight["values"], "logits8": eight["logits"], "keysH": halves["keys"], "valuesH": halves["values"],
-            "nudged": nudges}
+            "nudged": nudges, "numpy": np.__version__, "blas": blas()}
+
+def blas():
+    """(T674's review) the BLAS this NumPy was built with, said in the log beside its version"""
+    try:
+        each = np.show_config(mode="dicts")["Build Dependencies"]["blas"]
+        return f"{each.get('name')} {each.get('version')}"
+    except Exception as error:
+        return f"unknown ({type(error).__name__})"
 `;
+
 // Pyodide with the engine as the page has it, the Python above and the made-up models' maker
 async function referencePython() {
   const { pyodide: py } = await pyodideWithEngine();
@@ -243,7 +253,9 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(`${prefix}.tokenizer.bin`));
     py.runPython(`vocabulary = open("tokenizer.bin", "rb").read()`);
     // (T334.5: the checkpoint read where it is, not whole into Node: the real E2B's 5.2 GB pass readFileSync()'s 2 GiB)
-    return { ...caseOf(py, directory, id, options, JSON.parse(native.stdout), `${prefix}.bin`), numpySeconds };
+    // (T674's review: a real model, <prefix>.json, whose packed shaders past their line are reported up to a ceiling
+    // where every other model's fail: verdicts.ts)
+    return { ...caseOf(py, directory, id, options, JSON.parse(native.stdout), `${prefix}.bin`), numpySeconds, cpu: cpuName(), real: true };
   } else {
     const entry = MODELS.find((m) => m.id === id);
     if (!entry) throw new Error(`no model ${id} in src/models.ts`);
@@ -259,9 +271,14 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
   // (T560: a made-up model's run may say its own count of tokens)
   const reference = py.runPython(`answers(data, vocabulary, TEXT, ${run.count ?? COUNT}, OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   const numpySeconds = (performance.now() - began) / 1000;
-  // (T674: whether it is a made-up model, whose packed shaders' layers are held to their lines where a real model's are
-  // reported: verdicts.ts)
-  return { ...caseOf(py, directory, id, options, reference, py.runPython("data").toJs()), numpySeconds, madeUp: Boolean(SYNTHETIC[id]), ...run };
+  // (T674's review: no `real` here, a made-up model's and src/models.ts's: their packed shaders past their line fail)
+  return { ...caseOf(py, directory, id, options, reference, py.runPython("data").toJs()), numpySeconds, cpu: cpuName(), ...run };
+}
+// (T674's review: the CPU the reference ran on, said beside NumPy's version: one sample of the real E2B's layer 10 moved
+// twofold between runs, T334.5's and T674's)
+function cpuName() {
+  const cpus = os.cpus();
+  return `${cpus[0]?.model ?? "unknown"} × ${cpus.length}`;
 }
 // the plan forward.js gets from Python (the vocabulary in Pyodide's globals), recorded: Llama(external=) with a start()
 // that keeps it, and the case the browser runs. checkpoint: its bytes, or (T334.5) the file that holds them, read a

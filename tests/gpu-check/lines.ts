@@ -114,7 +114,14 @@ const K_PACKED_STEPS = 3;
 // 5.1 (Qwen2) to 56.7 (E2B) and f16 3.7 to 21.0, as they were). The packed shaders' stay on Q8's one sample: its largest of three is 1.14 to 1.70 times it at the
 // made-up E2B's deep layers, and the wrong GPU there that reads layer 0's FFN norm (1.38 of the one sample's line) fell
 // to 1.02; layer 0's biases on the made-up Qwen2 stayed 1.41. A real model's packed shaders past their line are said,
-// with their ratio to K_PACKED × the largest sample, and do not fail (verdicts.ts)
+// with their ratio to K_PACKED × the largest sample, and do not fail (verdicts.ts) up to REAL_CEILING times their line
 const NUDGES = 2;
+// T674's review: a real model's packed shaders past REAL_CEILING times their line fail as a made-up model's do. 3 is a
+// first value: the runs as they should be read 1.56 at the most against the one sample's line (T334.5's E2B in English,
+// layer 10) and 0.79 (the E2B), 0.83 (Qwen3 0.6B) and 0.42 (Qwen2.5 0.5B) against the largest sample's; the wrong GPUs
+// made went 1.02 (the made-up E2B's) to 2222 (Qwen2.5 0.5B's) times theirs: the ceiling catches the large ones on a
+// real model, the made-up models (no ceiling) the small. To be raised where a real model's run as it should be goes past
+// it (the logits' KL and the most likely token as the CPU's), lowered where a wrong one hides under it
+const REAL_CEILING = 3;
 
-export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, SCALE_LINE, TIE };
+export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, REAL_CEILING, SCALE_LINE, TIE };

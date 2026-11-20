@@ -67,6 +67,8 @@ for (const [id, layers] of Object.entries(MODELS)) {
   assert.deepEqual(own.slice(samples + 2, samples + 2 + layers).map((row) => row.split(" | ")[0]), Array.from({ length: layers }, (_, l) => `| ${l}`));
   assert.ok(own.some((line) => line.startsWith("- CPU: forward.js on the CPU: ")) && own.some((line) => line.startsWith(`- ${String.fromCharCode(64 + of.length)}: no form, no attention: `)));
   assert.ok(own.some((line) => line.startsWith(`seconds of ${id}: NumPy (with its cache in float16, Q8 and H16) `)));
+  // (T674's review: and the reference's NumPy, its BLAS and the CPU, as Pyodide says them)
+  assert.ok(own.some((line) => new RegExp(`^the reference of ${id}: NumPy \\d+\\.\\d+\\.\\S+ \\(BLAS [^)]+\\) on .+ × \\d+$`).test(line)), `${id}: the reference's line`);
 }
 // T645: the progress on stderr, as the harness went: each model begun and done in its order, and its runs between
 const progress = ran.stderr.split("\n").filter((line) => /^\[\d+\.\d min\] /.test(line));

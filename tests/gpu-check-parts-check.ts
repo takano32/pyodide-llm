@@ -26,7 +26,7 @@ import { parse } from "@babel/parser";
 import { runtime } from "./tree.ts";
 import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff } from "./gpu-check/measures.ts";
 import { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn } from "./gpu-check/models.ts";
-import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, SCALE_LINE, TIE } from "./gpu-check/lines.ts";
+import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, REAL_CEILING, SCALE_LINE, TIE } from "./gpu-check/lines.ts";
 import { promptsOnGpu, quantizersWrong, modelWrong } from "./gpu-check/verdicts.ts";
 import { unbound, stepsRight } from "./gpu-check/steps.ts";
 import { layerTables } from "./gpu-check/tables.ts";
@@ -110,7 +110,7 @@ check("the made-up models an engine runs", () => {
 check("the numbers a run is held to are the ones decided", () => {
   // each is a decision with its derivation in lines.ts (T187: the lines are the arithmetic's own distances): loosening one
   // lets a wrong GPU through, so changing one is changing this too, and saying why in TASKS.md
-  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4 }, K_PACKED: 5, K_PACKED_STEPS: 3, K_HALF: 3, NUDGES: 2, SCALE_LINE: 1e-4, TIE: Math.LN2 });
+  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, REAL_CEILING, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4 }, K_PACKED: 5, K_PACKED_STEPS: 3, K_HALF: 3, NUDGES: 2, REAL_CEILING: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
 });
 
 // ---- a made-up case: 2 layers, 3 positions of the prompt, keys and values 8 wide, a vocabulary of 6
@@ -140,7 +140,7 @@ const REFERENCE = { tokens: [1, 2, 3, 4], header: HEADER, keys: b64(KEYS), value
   logits: b64(LOGITS), logits16: b64(LOGITS.map((x) => x + 1e-3)), logits8: b64(LOGITS.map((x, i) => x + 0.01 * i)),
   greedy: GREEDY, greedyLogits: b64(greedyRows()), greedyKeys: b64(GREEDY_KEYS), greedyValues: b64(GREEDY_VALUES) };
 // (T545: plan.layers[0].kind, the kind of the first layer, which verdicts.ts reads: a Llama's attends)
-const CASE = { id: "made-up", madeUp: true, reference: REFERENCE, plan: { layers: [{ kind: "attention" }, { kind: "attention" }] }, headDim: 0, arch: "llama", dtype: "int8", numpySeconds: 1.25, planSeconds: 0.5 };
+const CASE = { id: "made-up", reference: REFERENCE, plan: { layers: [{ kind: "attention" }, { kind: "attention" }] }, headDim: 0, arch: "llama", dtype: "int8", numpySeconds: 1.25, planSeconds: 0.5 };
 const CPU = { keys: b64(moved(KEYS, 0.1)), values: b64(moved(VALUES, 0.1)), logits: b64(LOGITS.map((x, i) => x + 0.05 * i)), promptMs: 6, seconds: 2 };
 // a run of the GPU: its keys and values `off` from `from` (NumPy's by default), block by block and all at once
 const runOf = ({ form = "TF.js's tiles", off = 1e-3, keys = KEYS, values = VALUES, layers, logits = LOGITS, ...more } = {}) => {
@@ -314,13 +314,27 @@ check("a layer's line is K times the largest of NumPy's E16 or H16 and its nudge
   const madeUp = model([dp4a], {}, nudged);
   assert.equal(madeUp.value, true, madeUp.text);
   assert.match(runLine(madeUp.text), /; layer 1 2\.40 of its line; against 5 × the largest Q8 sample layer 1 0\.80\), the first layer's scale .* — FAILED\n {4}- the keys and values of the GPU's layer 1 are 2\.40e-1 and 2\.40e-1 from NumPy's \(its line 1\.00e-1\)$/);
-  const real = model([dp4a], {}, { ...nudged, madeUp: false });
+  const real = model([dp4a], {}, { ...nudged, real: true });
   assert.equal(real.value, false, real.text);
   assert.match(runLine(real.text), /; layer 1 2\.40 of its line; against 5 × the largest Q8 sample layer 1 0\.80\) \(T674: a real model's packed shaders past their line are reported, not failed: layer 1 2\.40e-1 and 2\.40e-1 from NumPy's, its line 1\.00e-1\), the first layer's scale /);
   // (a real model's float32 run past its line fails still, and a packed one with a NaN in its keys)
-  assert.equal(model([runOf({ off: 2e-2, layers: [1] })], {}, { ...nudged, madeUp: false }).value, true);
+  assert.equal(model([runOf({ off: 2e-2, layers: [1] })], {}, { ...nudged, real: true }).value, true);
   const nan = { ...dp4a, keys: b64(floats(dp4a.keys).map((x, i) => (i === N * KV + 3 ? NaN : x))) };
-  assert.equal(model([nan], {}, { ...nudged, madeUp: false }).value, true);
+  assert.equal(model([nan], {}, { ...nudged, real: true }).value, true);
+  // T674's review: only `real: true` reports (a case that forgets to say, or says it otherwise, or in the key of
+  // before, fails as a made-up model's), and up to REAL_CEILING times the line: 2.90 is reported, 3.40 fails
+  for (const said of [{}, { real: false }, { real: "yes" }, { madeUp: false }]) {
+    const run = model([dp4a], {}, { ...nudged, ...said });
+    assert.equal(run.value, true, `${JSON.stringify(said)}: ${run.text}`);
+  }
+  const at = (off) => runOf({ form: "ORT's DP4A", keys: floats(REFERENCE.keys8), values: floats(REFERENCE.values8), off, layers: [1] });
+  assert.ok(2.9e-1 < REAL_CEILING * K_PACKED * Q8 && REAL_CEILING * K_PACKED * Q8 < 3.4e-1);
+  const under = model([at(2.7e-1)], {}, { ...nudged, real: true });
+  assert.equal(under.value, false, under.text);
+  assert.match(runLine(under.text), /; layer 1 2\.90 of its line;.*\(T674: a real model's packed shaders past their line are reported, not failed/);
+  const over = model([at(3.2e-1)], {}, { ...nudged, real: true });
+  assert.equal(over.value, true, over.text);
+  assert.match(runLine(over.text), /- the keys and values of the GPU's layer 1 are 3\.40e-1 and 3\.40e-1 from NumPy's \(its line 1\.00e-1\) \(T674's review: past 3 times its line, where a real model's packed shaders fail too\)$/);
   // a NaN in a nudged run's E16 is the layer's yardstick, and fails the run
   const broken = { ...nudge, keys16: b64(floats(nudge.keys16).map((x, i) => (i === N * KV + 3 ? NaN : x))) };
   assert.equal(model([runs[0]], {}, { ...CASE, reference: { ...reference, nudged: [broken] } }).value, true);

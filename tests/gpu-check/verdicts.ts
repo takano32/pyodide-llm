@@ -3,7 +3,7 @@
 // answers), said in the log's lines, and whether any of them failed. Functions of what they are given: no GPU, no
 // browser, no Pyodide (tests/gpu-check-parts-check.ts runs them on made-up numbers).
 import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff, held, padded } from "./measures.ts";
-import { NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE } from "./lines.ts";
+import { NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, REAL_CEILING, SCALE_LINE, TIE } from "./lines.ts";
 import { stepsRight } from "./steps.ts";
 import { layerTables } from "./tables.ts";
 
@@ -168,14 +168,17 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
     // the worst layer (NaN the worst of all)
     const at = worstAt(ratios);
     Object.assign(gpu, { line: lines[at], ratio: ratios[at], layer: at });
-    // T674: a real model's (not one of models.ts's made-up ones) packed shaders past a layer's line are reported, with
+    // T674: a real model's (a <prefix>.json of real=, its case `real: true`) packed shaders past a layer's line are reported, with
     // their worst layer against K_PACKED × the largest Q8 sample (q8Spread), and do not fail: the 8 bits of a deep real
     // model part from Q8 by a boundary's side at one layer and run and not another (T562, T334.5's E2B in English 1.56
     // of its line where it is right), and the made-up models hold the packed shaders' wrong forms (a NaN fails still)
     const spread = packed ? lines.map((_, l) => Math.max(gpuLayers[l], againLayers[l]) / (K_PACKED * q8Spread[l])) : null;
-    const reported = packed && !c.madeUp && !Number.isNaN(ratios[at]) && !(ratios[at] <= 1);
+    // (T674's review: only a case that says it is real, reference.ts's <prefix>.json, so that a case that forgets to say
+    // fails; and up to REAL_CEILING times the line, past which a real model's fails as well)
+    const reported = packed && c.real === true && ratios[at] > 1 && ratios[at] <= REAL_CEILING;
     if (!(ratios[at] <= 1) && !reported) {
-      failures.push(`the keys and values of the GPU's layer ${at} are ${gpuLayers[at].toExponential(2)} and ${againLayers[at].toExponential(2)} from NumPy's (its line ${lines[at].toExponential(2)})`);
+      const ceiling = packed && c.real === true && ratios[at] > REAL_CEILING ?` (T674's review: past ${REAL_CEILING} times its line, where a real model's packed shaders fail too)` : "";
+      failures.push(`the keys and values of the GPU's layer ${at} are ${gpuLayers[at].toExponential(2)} and ${againLayers[at].toExponential(2)} from NumPy's (its line ${lines[at].toExponential(2)})${ceiling}`);
     }
     const spreadAt = spread && worstAt(spread);
     const spreadSaid = spread ? `; against ${K_PACKED} × the largest Q8 sample layer ${spreadAt} ${spread[spreadAt].toFixed(2)}` : "";
