@@ -8,8 +8,8 @@
 //
 // The spec (a JSON file): { model: an id of the list, url: the GGUF wllama reads, wllama: the folder of the npm
 // package (its esm/), version, prompt, chat: true (wllama renders the GGUF's chat template) or raw: a text with {prompt}
-// in it (wllama's raw completion, the same text the page's format writes), kwargs: chat_template_kwargs, threads (0:
-// half the logical cores, wllama's own default), tokens (the answer's length asked for), rounds, results: a file to
+// in it (wllama's raw completion, the same text the page's format writes), kwargs: chat_template_kwargs, query: more
+// of the page's address (such as without=relaxed), threads (0: half the logical cores, wllama's own default), tokens (the answer's length asked for), rounds, results: a file to
 // append the JSON lines to, timeout: seconds }.
 //
 // What it does: one browser profile on disk (so that both keep what they fetched across a reload, the page in its
@@ -94,7 +94,7 @@ say(`Chromium ${browserVersion}, ${cpu}, ${hint} logical cores, ${threads} threa
 const record = (entry) => {
   fs.mkdirSync(path.dirname(spec.results), { recursive: true });
   fs.appendFileSync(spec.results, JSON.stringify({ model: spec.model, os: `${os.platform()} ${os.arch()}`, cpu, cores: hint, threads,
-    browserVersion, wllama: spec.version, tokensAsked: spec.tokens, ...entry }) + "\n");
+    browserVersion, wllama: spec.version, tokensAsked: spec.tokens, query: spec.query ?? "", ...entry }) + "\n");
 };
 const failures = [];
 const watched = (page, side) => {
@@ -106,7 +106,8 @@ const watched = (page, side) => {
 // --- this page
 const ours = await context.newPage();
 watched(ours, "page");
-const query = new URLSearchParams({ model: spec.model, threads: String(threads), temperature: "0", repetition_penalty: "1", presence_penalty: "0", topp: "1" });
+const query = new URLSearchParams({ model: spec.model, threads: String(threads), temperature: "0", repetition_penalty: "1", presence_penalty: "0", topp: "1",
+  ...Object.fromEntries(new URLSearchParams(spec.query ?? "")) });
 // (the first visit reloads once under coi.js: a wait the reload breaks starts again)
 const acrossReload = async (wait) => {
   for (;;) {

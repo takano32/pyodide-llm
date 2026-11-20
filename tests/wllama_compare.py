@@ -3,7 +3,7 @@
 # it on none of the product's pages: the numbers go to docs/notes/t519-wllama-*.md and the ledger.
 #
 #   python tests/wllama_compare.py files                      # the sha256 of each file, the list's and wllama's own
-#   python tests/wllama_compare.py run [model id …] [--rounds 5] [--tokens 128] [--threads 0] [--results file.jsonl]
+#   python tests/wllama_compare.py run [model id …] [--rounds 5] [--tokens 128] [--threads 0] [--query without=relaxed] [--results file.jsonl]
 #   python tests/wllama_compare.py table <results.jsonl …>    # the tables, one per system and CPU
 #
 # run needs a build (npm run build) and Chromium for playwright-core; it fetches the npm package of the version pinned
@@ -122,13 +122,13 @@ def package():
     return folder / "package"
 
 
-def run(models, rounds, tokens, threads, results, timeout):
+def run(models, rounds, tokens, threads, query, results, timeout):
     folder = package()
     failed = []
     for model in models:
         row = MODELS[model]
         spec = {"model": model, "url": url_of(row), "wllama": str(folder), "version": VERSION, "prompt": row["prompt"],
-                "chat": row.get("chat", False), "raw": row.get("raw"), "kwargs": row.get("kwargs"), "threads": threads,
+                "chat": row.get("chat", False), "raw": row.get("raw"), "kwargs": row.get("kwargs"), "threads": threads, "query": query,
                 "tokens": tokens, "rounds": rounds, "results": str(results), "context": 4096, "timeout": timeout}
         path = WORK / f"spec-{model}.json"
         path.write_text(json.dumps(spec, ensure_ascii=False))
@@ -149,12 +149,14 @@ def read(paths):
 
 
 def same_start(a, b):
-    """How many characters the two answers begin with alike (after the spaces at their heads)."""
-    a, b = a.strip(), b.strip()
+    """How many characters the two answers begin with alike, as words: the page's is the text of its bubble, which drew
+    the Markdown (no "**", one line where the text had a blank one), wllama's is the text as written, so the marks of
+    Markdown are taken out of both and every run of spaces is one space."""
+    a, b = (" ".join(text.replace("*", "").replace("#", "").split()) for text in (a, b))
     n = 0
     while n < min(len(a), len(b)) and a[n] == b[n]:
         n += 1
-    return n
+    return f"{n} of {min(len(a), len(b))}"
 
 
 def fixed(value, digits=1):
@@ -166,10 +168,10 @@ def table(lines):
     out = []
     groups = {}
     for line in lines:
-        groups.setdefault((line["os"], line["cpu"], line["threads"], line.get("browserVersion", "")), []).append(line)
-    for (system, cpu, threads, browser), group in groups.items():
-        out.append(f"{system}, {cpu}, {group[0]['cores']} logical cores, {threads} threads each; Chromium {browser}, wllama {group[0]['wllama']}\n")
-        out.append("| model | side | ready with the fetch (s) | ready again (s) | prompt tokens | prompt tok/s | answer tokens | answer tok/s | page ÷ wllama, prompt | page ÷ wllama, answer | answers begin alike (chars) |")
+        groups.setdefault((line["os"], line["cpu"], line["threads"], line.get("query", ""), line.get("browserVersion", "")), []).append(line)
+    for (system, cpu, threads, query, browser), group in groups.items():
+        out.append(f"{system}, {cpu}, {group[0]['cores']} logical cores, {threads} threads each{f', the page with ?{query}' if query else ''}; Chromium {browser}, wllama {group[0]['wllama']}\n")
+        out.append("| model | side | ready with the fetch (s) | ready again (s) | prompt tokens | prompt tok/s | answer tokens | answer tok/s | page ÷ wllama, prompt | page ÷ wllama, answer | answers begin alike (characters, of the shorter) |")
         out.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for model in dict.fromkeys(line["model"] for line in group):
             of = [line for line in group if line["model"] == model]
@@ -209,6 +211,7 @@ def main():
     parser.add_argument("--rounds", type=int, default=5)
     parser.add_argument("--tokens", type=int, default=128)
     parser.add_argument("--threads", type=int, default=0)
+    parser.add_argument("--query", default="", help="more of the page's address, such as without=relaxed")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--results", default=str(WORK / "results.jsonl"))
     asked = parser.parse_args()
@@ -220,7 +223,7 @@ def main():
     unknown = [name for name in asked.names if name not in MODELS]
     if unknown:
         raise SystemExit(f"no row for {', '.join(unknown)}: {', '.join(MODELS)}")
-    ok = run(asked.names or list(MODELS), asked.rounds, asked.tokens, asked.threads, Path(asked.results), asked.timeout)
+    ok = run(asked.names or list(MODELS), asked.rounds, asked.tokens, asked.threads, asked.query, Path(asked.results), asked.timeout)
     if Path(asked.results).exists():
         sys.stdout.write(table(read([asked.results])))
     sys.exit(0 if ok else 1)
