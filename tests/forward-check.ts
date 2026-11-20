@@ -1,7 +1,8 @@
 // The forward pass of src/runtime/forward.js (the page's) against the NumPy forward of llama2_numpy.py, on the models of
 // this directory (make models kernels) or converted ones. Since T93 there is no other forward to hold it to.
 //   float32: the kernels add in another order than NumPy, so the last bits differ; the most likely token must be the
-//            same at every position, and no logit may differ by more than 1e-3 (measured 2026-09-25: 1.7e-5 to 3.7e-5).
+//            same at every position, and no logit may differ by more than 1e-3 (measured 2026-09-25: 1.7e-5 to 3.7e-5;
+//            T660: a made-up model's, more where 4 times NumPy's own jitter is: JITTERS below).
 //   int8: forward.js quantizes the activations too (7 bits with relaxed SIMD), NumPy does not, so the numbers
 //         differ by design. Measured 2026-09-25 on NumPy's greedy text: at 128 positions the most likely token the
 //         same at 93.8 to 100% and the perplexity -0.23 to +2.00% apart; at 64 positions llm-jp-3 150M was 87.5% and
@@ -57,6 +58,13 @@ const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename
 // 0.46 at a width of 256 or 384 (0.65 to 0.81 at 128, which the line of 0.5 sees): its line is 0.12, 1.9 times the right
 // value and 0.67 of the weakest fault.
 const MADE_UP_LINE = 0.5;
+// T660: a made-up model's float32 line is 1e-3, or this many times NumPy's own jitter where that is more (the largest
+// logit difference of NumPy from a NumPy whose RMS norms are nudged by an ulp, over the same positions). A made-up
+// Gemma 4's heads are scored with a scale of 1 (q and k normalized, weights around 1), its softmax near one-hot, and
+// an ulp grows with the positions: the shared one read every token in turn (--varied) was 1.43e-3 from NumPy at 256
+// positions and NumPy's jitter 1.68e-3 (8: 4.8e-5 and 7.9e-5; 64: 8.3e-4 and 8.1e-4), with the norms of q and k
+// halved 1.9e-5. Its shared layers reading another layer's keys and values were 7.7 from NumPy at 8 positions.
+const JITTERS = 4;
 function madeUpLine(name) {
   return name.startsWith("made-up-ternary-rotated") ? 0.12 : MADE_UP_LINE;
 }
@@ -460,10 +468,23 @@ llama.release(); del llama; gc.collect()
 page = kernel_llama(data, vocabulary, **OPTIONS)
 numpy = Llama(data, vocabulary, **{k: v for k, v in OPTIONS.items() if k not in ("disable", "half_keys")})
 int8 = any(name in page.backend for name in ("int8", "int6", "ternary", "binary"))  # they all quantize the activations (T98, T231, T634)
-sequence, agree, largest, nll, apart, size = [page.bos], 0, 0.0, [0.0, 0.0], 0.0, 0.0
+# T660: NumPy's own jitter, of a made-up model in float: a second NumPy whose every RMS norm's output is nudged by one
+# float32 ulp (2^-24 of it, a random sign), as the kernels' other order of adding moves the last bit
+jittered = Llama(data, vocabulary, **{k: v for k, v in OPTIONS.items() if k not in ("disable", "half_keys")}) if ${entry.madeUp ? "True" : "False"} and not int8 else None
+plain_norm, nudges = engine.model.rmsnorm, np.random.default_rng(0)
+def nudged_norm(v, w, eps):
+    y = plain_norm(v, w, eps)
+    return (y * (1 + np.float32(2.0 ** -24) * (2 * nudges.integers(0, 2, y.shape) - 1).astype(np.float32))).astype(np.float32)
+sequence, agree, largest, nll, apart, size, jitter = [page.bos], 0, 0.0, [0.0, 0.0], 0.0, 0.0, 0.0
 for pos in range(${positions}):
     a, b = page.forward(sequence[pos], pos).astype(np.float64), numpy.forward(sequence[pos], pos).astype(np.float64)
     largest = max(largest, float(np.abs(a - b).max()))
+    if jittered is not None:
+        engine.model.rmsnorm = nudged_norm
+        try:
+            jitter = max(jitter, float(np.abs(jittered.forward(sequence[pos], pos).astype(np.float64) - b).max()))
+        finally:
+            engine.model.rmsnorm = plain_norm
     apart, size = apart + float(((a - b) ** 2).sum()), size + float((b ** 2).sum())
     agree += int(a.argmax() == b.argmax())
     # NumPy's greedy text, which both read; T510, --varied: every token in turn (a made-up model's greedy text soon
@@ -474,7 +495,9 @@ for pos in range(${positions}):
         nll[i] -= shifted[following] - math.log(np.exp(shifted).sum())
     sequence.append(following)
 agreement, change, relative = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1, math.sqrt(apart / size)
-ok = (agree == ${positions} and largest <= 1e-3) if not int8 else relative <= ${entry.line ?? MADE_UP_LINE} if ${entry.madeUp ? "True" : "False"} else (agreement >= 0.85 and abs(change) <= 0.05)
+del jittered
+float_line = max(1e-3, ${JITTERS} * jitter)
+ok = (agree == ${positions} and largest <= float_line) if not int8 else relative <= ${entry.line ?? MADE_UP_LINE} if ${entry.madeUp ? "True" : "False"} else (agreement >= 0.85 and abs(change) <= 0.05)
 kv_start, engine.model.KV_START = engine.model.KV_START, 8
 one, many = kernel_llama(data, vocabulary, **OPTIONS), kernel_llama(data, vocabulary, **OPTIONS)
 quiet = kernel_llama(data, vocabulary, **OPTIONS)
@@ -525,7 +548,8 @@ def run(llama, positions):
     return time.perf_counter() - began
 (ok, f"{page.backend}: " + (f"most likely token the same at {agreement * 100:.1f}%, perplexity {change * 100:+.2f}% against NumPy"
      + (f", the logits {relative:.3f} of NumPy's apart (the line of a made-up model: ${entry.line ?? MADE_UP_LINE})" if ${entry.madeUp ? "True" : "False"} else "")
-     if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy")
+     if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy"
+     + (f" (NumPy's own jitter {jitter:.2e}, the line {float_line:.2e})" if ${entry.madeUp ? "True" : "False"} else ""))
      + (f"; the prompt in blocks {'the same to the bit' if same else 'DIFFERENT'}" if blocks else "; no blocks (NumPy)")
      + f", one token at a time without logits {'the same to the bit' if alone else 'DIFFERENT'}"
      + (f"; a position out of turn {'refused, and nothing changed' if refused else 'NOT REFUSED (or changed something)'}, a second run from 0 {'the first one again' if again else 'DIFFERS from the first (a state left behind)'}" if kept else ""))

@@ -107,7 +107,7 @@
 - T619 [追加][モデル] LFM3（lfm3） — 候補
 - T655 [改善][モデル] モデルが自分で開く複数トークンの考えの印を追う（PLaMo 3 の考える形の上限） — 候補
 - T657 [追加][モデル] PLaMo 3 NICT 2B・8B base を原本と照らさずに一覧に — 未着手
-- T660 [バグ][Gemma4][CPU] 作り物の Gemma 4（shared、float32）が全部のトークンを順に読むと NumPy との線を越える — 未着手
+- T660 [バグ][Gemma4][CPU] 作り物の Gemma 4（shared、float32）が全部のトークンを順に読むと NumPy との線を越える — 反映済み
 - T661 [整理][CPU] `?threads=N` に N 本届かなかったときに言う — 未着手
 - T662 [運用][遠隔試験] 毎週の `browsers.yml` が、隔離されなかったページを落とさない — 未着手
 - T663 [バグ][解析分割] Qwen3 0.6B で 4 文・Pythia 70M で 6 文、本物の tokenizers と読みが違う — 未着手
@@ -121,7 +121,6 @@
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
 - T675 [試験][Gemma4] 網の `calls` に、鍵と値を共有する層のある Gemma 4 を足す — 未着手
-- T676 [試験][Gemma4] `forward-check --varied` の作り物の Gemma 4（shared）の線を、作り物のゆれ込みで — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1067,8 +1066,14 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **調べ（2026-11-12、Opus medium。製品のコードは変えていない）: Translate の config では開けない。** (1) mmnga-o の GGUF（どちらも 2025-12-29 に作られた）は `plamo3.context_length` 4096 で yarn の鍵が無い（`rope.scaling.*` なし。寸法は 2B が 24 層・幅 2560・head 24・鍵と値 4、8B が 32 層・4096・32・4、語彙 107,520、`tokenizer.ggml.model` plamo2、BOS 1・EOS 2）。Translate 2B・8B の config は `max_position_embeddings` 262144・`rope_scaling_factor` 256・`initial_context_length` 4096（全体の層に yarn）・`eos_token_id` 1。(2) 変換器の `gguf_agrees()` は yarn を比べるので、この組は「its yarn RoPE scaling is None here and {…} there」で断る（mradermacher の 610M の GGUF を断ったのと同じ線: T614）。線を外して通すと、base に yarn の倍率 1.55 と縮めた角が掛かって文が壊れる。(3) base の本当の config は yarn なし: ゲートの無い写し（midorin-Linux/plamo-3-nict-8b-base-bnb-4bit @ 47abe245d181af0b9557ee36d109db95c003d7c7（2026-02、config・`tokenizer.jsonl`・書式あり）、WayBob/Way-sft-plamo-3-8b-chat、midorin-Linux/plamo-3-12b-self-merged-base）の config は 3 つとも `max_position_embeddings` 4096・`rope_scaling_factor` なし・`initial_context_length` なし・`eos_token_id` 2。GGUF の 4096 と合う（llama.cpp が yarn を書くようになったのは 2026-09-27 の 9adc7f42 で、GGUF はその前だが、文脈 4096 は config の値）。2B の base の config のゲートの無い写しは見つからない（Gurunath/plamo-3-nict-2b-tool-calling-lora は LoRA と `tokenizer.jsonl` だけ）。原本は 2B が 2026-08-21、8B が 2026-10-08 に更新されているが、ゲートで中は見えない。
 - **持ち主に出す選択肢**（取りまとめ役へ）: (a)（勧め）一覧の項目が語彙のリポジトリの config.json の鍵を上書きできる形を変換器と段取りに足す（新しい T 番号、規模 中: 項目に `max_position_embeddings: 4096`・`rope_scaling_factor: 1`・`eos_token_id: 2` を書き、`gguf_agrees()` は上書きの後の config と比べる。今ある変換の出すものは変わらないので `CONVERTER` は上げない）。2B・8B とも Translate の語彙で開ける。(b) 8B だけ、語彙と config を midorin-Linux の写し（第三者がゲートの原本から写したもの、PLaMo Community License）から取って今の形のまま足す。2B は足さない。(c) 足さない。
 
-### T660 [バグ][Gemma4][CPU] 作り物の Gemma 4（shared、float32）が全部のトークンを順に読むと NumPy との線を越える — 状態: 未着手（2026-11-13、T510 のレビューから。規模 小。原因は未確認）
+### T660 [バグ][Gemma4][CPU] 作り物の Gemma 4（shared、float32）が全部のトークンを順に読むと NumPy との線を越える — 状態: 反映済み（2026-11-13、T510 のレビューから。2026-11-20、Opus medium。T676 を寄せた。規模 小）
 - `forward-check --varied`（T510: 同じトークンのくり返しでなく全部のトークンを順に読ませる）を作り物の Gemma 4 の shared（float32）に当てると、128 位置で 1.06e-3（線 1e-3）、256 位置で 1.43e-3。shared でない Gemma 4 も 256 位置で 1.04e-3 で、位置とともに伸びる。桁違いの誤り（窓の取り違えは 0.5〜9）ではないので float32 の累積と読めるが、確かめていない。再現: `python tests/make_gemma4.py .tmp/made-up-gemma4-shared-float32 float32 shared` の後 `node tests/forward-check.ts .tmp/made-up-gemma4-shared-float32 --rounds 1 --positions 256 --varied`。先に層ごとの状態を NumPy と比べて、どの層・どの段から伸びるかを見る。累積なら `--varied` の線を位置に比例させるか shared の線を言い、誤りなら直す。
+- **結論: 論理の誤りでなく、作り物の重みが末尾のビットのゆれを位置とともに大きくしている（累積）。** 根拠: (1) NumPy 自身を 2 つ並べ、片方の RMS norm の出を毎回 float32 の 1 ulp（2^-24 の相対、符号は乱数）だけゆすると、2 つの NumPy の差が forward.js と NumPy の差と同じ大きさで同じに伸びる（ネイティブの NumPy、shared: 8 位置 7.9e-5・64 で 8.1e-4・256 で 1.68e-3。forward.js は 4.8e-5・8.3e-4・1.43e-3。shared でない small は 256 で NumPy どうし 1.09e-3、forward.js 1.04e-3）。(2) 訳は Gemma 4 の attention の尺度 1（q と k を head ごとに norm して、重みは 1 ± 0.3 の作り物）: 点数が head の幅の大きさになり softmax がほぼ 1 つに寄るので、ゆれが拡がる。q と k の norm の重みを半分にすると（点数は 4 分の 1）NumPy どうしの差は 256 位置で 1.9e-5 に落ちる（約 90 分の 1）。long の作り物（dim 128）は 400 位置でも 6.4e-5 で伸びない。層ごとの状態を forward.js から取り出して比べるのはやめた: NumPy どうしで同じ伸びが出るので、どの層かは forward.js の誤りを言わない。
+- **壊し方**（捨ての編集、戻した）: (a) 共有の層が読む鍵と値の置き場を同じ種類の別の層に（local の 8 → 7、wide の 5 → 2、`attention.ts` の `first + reads`）: 8 位置で float32 7.74（線 1e-3）、int8 0.742（正しいものは 0.151）。**レビューの覆す条件の読みどおり、論理の誤りはすぐ線を越える**。(b) 共有の層だけ窓を 1 位置狭く: `--varied` の 400 位置で 4.31（新しい線 7.9e-3）、greedy の 128 位置でも 1.58。
+- **直し（`tests/forward-check.ts`）**: 作り物の float のモデルの線を「1e-3、または NumPy 自身のゆれの 4 倍（`JITTERS`）の大きいほう」に。NumPy 自身のゆれは、上の (1) の 1 ulp ゆすった NumPy を同じ位置で走らせて測る（同じ回の中、作り物だけ。実物のモデルの線は 1e-3 のまま）。Pyodide の中で shared の `--varied` は 256 位置で 1.43e-3・ゆれ 1.22e-3・線 4.88e-3、400 位置で 1.43e-3・ゆれ 1.97e-3・線 7.88e-3。ほかの作り物は線 1e-3 のまま（greedy 128 位置: shared のゆれ 2.6e-4 で線 1.03e-3、ほかはゆれ 1.9e-5〜5.7e-5）。全部の組の `--varied` の作り物の値の広がりを変える手は取らなかった（`made_up.py` の作り物が全部変わり、網の記録も動く）。
+- **軽い組に足した**: `windows_of_a_made_up_gemma` に作り物の Gemma 4 の shared（float32）を `--varied` の 400 位置で（約 20 秒増える。共有の層が借りる窓を全部のトークンで見る）。
+- **int8（T676 の側）**: 線を作り物のゆれで持つ形は int8 には取れない。正しい int8 自身が位置とともに NumPy から離れ（relaxed で 8 位置 0.151、64 で 0.560、256 で 0.736。`--without relaxed` の 256 で 0.486）、256 位置では壊した版（a）の 0.742 と見分けがつかない（7 ビットの丸めのゆれが float の 1 ulp より大きいだけで、同じ拡がり）。だから int8 の shared は `--varied` で回さず、今の全部の組のとおり greedy の 128 位置で見る。置き場の誤りは dtype に依らない部品（`attention.ts`）なので float32 の `--varied` が見る。
+- CI を省いた。訳: 変えたのは試験の道具と組だけ（エンジンは触っていない）で、触った検査は手元で全部回した（forward-check の作り物 11 個、`windows_of_a_made_up_gemma` の 4 つ）。
 
 ### T661 [整理][CPU] `?threads=N` に N 本届かなかったときに言う — 状態: 未着手（2026-11-13、T84 のレビューから。規模 小）
 - T84 の x86-64 の Pythia 70M は `?threads=4` なのに 1 本で走った（run 43291611379、ページは隔離されていた。同じ URL の 28 回の読み直しは全部 4 本: 稀）。候補は、起動中に `stopHelpers()` が走ると `ensureHelpers()` が黙って false を返すこと（未確認）。`startThreads()` が頼まれた本数に届かなかったとき `console.warn` を 1 行（何が失敗したか・何が代わりになったか: `silent-check` の形）。正常な訪問でコンソールに 1 行も増やさないこと（`?threads=` を名指した訪問だけ）。
@@ -1125,7 +1130,3 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T675 [試験][Gemma4] 網の `calls` に、鍵と値を共有する層のある Gemma 4 を足す — 状態: 未着手（2026-11-20、T673 のレビューから。規模 小）
 - T673 の「logits の要らないトークンは `lastKept()` で止める」は、どの正しさの試験もビット単位の一致で見るので、`promptLayers` を全部の層に戻しても通る（推論）。見張りは CI の速さの比べだけ。
 - `tests/unchanged-calls.ts` は `forwardMany` のブロックと logits なしのトークンを既に記録している。`gemma3` の `later`（古い木では空）と同じ形で、共有の層のある作り物の Gemma 4 を 1 つ足す。予定した違い: 相手の木を T673 の前（e32fbc9c）にすると、Gemma 4 の呼び出しの列が短くなる。止める層を戻す壊し方で網が「違う」と言うことを見る。
-
-### T676 [試験][Gemma4] `forward-check --varied` の作り物の Gemma 4（shared）の線を、作り物のゆれ込みで — 状態: 未着手（2026-11-20、T673 のレビューから。規模 小。低優先）
-- `forward-check --varied` で作り物の Gemma 4 の shared は int8 で NumPy と 0.686（線 0.5、最尤 31.2% 一致）、float32 で 1.06e-3（線 1e-3）。T673 の前（e32fbc9c）も同じ数。float32 の差は位置とともに増える（8 位置 4.8e-5、32 で 2.5e-4、64 で 8.3e-4、256 以降 1.4e-3）。embedded は同じ位置で 5〜10 分の 1。`--without relaxed` なら int8 は 0.486 で線の内。全部の組は shared を `--varied` で回していないので見張りの穴は無い。
-- 読み（レビュー、推論）: 論理の誤りでなく、ランダムな重みの作り物で浮動小数のゆれが増幅されている。覆す条件: 共有の層が読む鍵と値の置き場を壊した版で、8 位置の差が 1e-3 を越えるなら論理の誤り。先にこの壊し方を回して読みを確かめ、通れば shared の `--varied` の線を作り物のゆれ込みで別に持つ。

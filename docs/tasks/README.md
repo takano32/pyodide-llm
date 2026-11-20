@@ -443,3 +443,4 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T659](T659.md) [バグ][変換] `?hf=microsoft/Phi-3-mini-4k-instruct` は tokenizer.model を読み、書式の印が無い — 2026-11-12
 - [T673](T673.md) [性能][Gemma4][CPU] プロンプトの CPU の道も、自分の鍵と値を持つ最後の層で止める — 2026-11-20
 - [T674](T674.md) [試験][WebGPU] gpu-check の層ごとの線の土台を、1 つの標本でなく揺れを含む値に — 2026-11-20
+- [T676](T676.md) [試験][Gemma4] `forward-check --varied` の作り物の Gemma 4（shared）の線を、作り物のゆれ込みで — 2026-11-20

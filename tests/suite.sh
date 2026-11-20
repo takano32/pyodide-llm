@@ -339,13 +339,16 @@ gemma3_goes_to_the_gpu() {
 part "a Gemma 3 where a GPU adapter is" gemma3_goes_to_the_gpu
 # T510's review: a window one position off showed in no logit of the made-up Gemma 3 (windows of 48 and 300) nor of the
 # Gemma 4's long one, whose greedy text soon repeats one token: --varied reads every token in turn (the one position
-# off: logits 3.4 and 0.56 apart, 3.7 for the Gemma 4's, against 6e-6 to 2e-5 of a right one; about 25 seconds)
+# off: logits 3.4 and 0.56 apart, 3.7 for the Gemma 4's, against 6e-6 to 2e-5 of a right one; about 25 seconds).
+# T660: and the Gemma 4's shared one, whose last layers read the window of another layer's keys and values (theirs one
+# position off: 4.3 apart, against 1.4e-3 of a right one under the line of NumPy's own jitter; about 20 seconds more)
 windows_of_a_made_up_gemma() {
   mkdir -p .tmp
   python tests/make_gemma3.py .tmp/made-up-gemma3-float32 float32
   python tests/make_gemma3.py .tmp/made-up-gemma3-long-float32 float32 long
   python tests/make_gemma4.py .tmp/made-up-gemma4-long-float32 float32 long
-  node tests/forward-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma4-long-float32 --varied --rounds 1 --positions 400
+  python tests/make_gemma4.py .tmp/made-up-gemma4-shared-float32 float32 shared
+  node tests/forward-check.ts .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma4-long-float32 .tmp/made-up-gemma4-shared-float32 --varied --rounds 1 --positions 400
 }
 part "forward.js against NumPy, the windows of a made-up Gemma 3 and Gemma 4 on a text of every token" windows_of_a_made_up_gemma
 # T342: a Spark-X2.5 (T344: whose prompts and steps are the GPU's now: the plan its worker is started with says its
