@@ -14,7 +14,7 @@
 //
 // What it does: one browser profile on disk (so that both keep what they fetched across a reload, the page in its
 // origin private file system and wllama in its own). This page from dist/ as GitHub Pages serves it (tests/serving.ts),
-// wllama's page from a server of its own with COOP and COEP (wllama needs the headers for its threads). Each loads the
+// wllama's page from the browser's own routing with COOP and COEP (wllama needs the headers for its threads). Each loads the
 // model once with the fetch (the page converts as it fetches) and once more after a reload, from what it kept. Then
 // one answer each to warm up and to learn the prompt's length (the page's steps count the prompt too), and `rounds`
 // answers each, by turns, the order turned round every round (AGENTS.md: the two sides in one process, by turns). Both
@@ -26,7 +26,6 @@
 // y tok/s": src/python/engine/generation.py, whose prompt count leaves out the last token of the prompt, whose forward
 // gives the first token written), and llama-server's timings (prompt_per_second, predicted_per_second).
 import fs from "node:fs";
-import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import * as playwright from "playwright-core";
@@ -72,26 +71,21 @@ window.ask = async ({ prompt, raw, chat, kwargs, tokens }) => {
 window.harnessReady = true;
 </script>`;
 const root = path.resolve(spec.wllama);
-const wllamaServer = http.createServer((req, res) => {
-  const name = decodeURIComponent(new URL(req.url, "http://localhost").pathname).replace(/^\/+/, "");
-  const headers = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp", "Cross-Origin-Resource-Policy": "same-origin" };
-  if (!name) {
-    res.writeHead(200, { ...headers, "Content-Type": TYPES[".html"] });
-    return res.end(HARNESS);
-  }
+// (no server of its own, tests/serving-check.ts: the browser's own routing answers for an origin nothing listens on,
+// 127.0.0.1, which is not the site's localhost: an origin of its own, and a secure context as localhost is)
+const wllamaUrl = "http://127.0.0.1:9/";
+const HEADERS = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp", "Cross-Origin-Resource-Policy": "same-origin" };
+const answerWllama = (route) => {
+  const name = decodeURIComponent(new URL(route.request().url()).pathname).replace(/^\/+/, "");
+  if (!name) return route.fulfill({ status: 200, headers: { ...HEADERS, "Content-Type": TYPES[".html"] }, body: HARNESS });
   const file = path.resolve(root, name);
-  if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-    res.writeHead(404);
-    return res.end();
-  }
-  res.writeHead(200, { ...headers, "Content-Type": TYPES[path.extname(file)] ?? "application/octet-stream" });
-  fs.createReadStream(file).pipe(res);
-});
-await new Promise((resolve) => wllamaServer.listen(0, resolve));
-const wllamaUrl = `http://localhost:${wllamaServer.address().port}/`;
+  if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return route.fulfill({ status: 404 });
+  return route.fulfill({ status: 200, headers: { ...HEADERS, "Content-Type": TYPES[path.extname(file)] ?? "application/octet-stream" }, path: file });
+};
 const site = await serving();
 
 const context = await playwright.chromium.launchPersistentContext(scratch("wllama-profile-"), { headless: true, viewport: { width: 1280, height: 900 } });
+await context.route(`${wllamaUrl}**`, answerWllama);
 const browserVersion = context.browser()?.version() ?? "";
 const cpu = os.cpus()[0]?.model ?? null;
 const hint = await (await context.newPage()).evaluate(() => navigator.hardwareConcurrency);
@@ -192,26 +186,27 @@ const askWllama = async (tokens) => {
 };
 
 // --- warming up, and the length of the prompt
+// (the page's Max tokens is a slider of 16 to the context by 8, and counts the prompt's positions with the answer's: the
+// page writes what it is set to less the prompt its line shows, and wllama is asked for as many, a few more than
+// spec.tokens. Either may stop before)
+const onSlider = (wanted) => Math.max(16, 16 + 8 * Math.ceil((wanted - 16) / 8));
 const warmTheirs = await askWllama(8);
-const warmSteps = warmTheirs.promptTokens + 8;
-const warmOurs = await askPage(warmSteps);
+const warmOurs = await askPage(onSlider(warmTheirs.promptTokens + 8));
 say(`the prompt: ${warmOurs.promptTokens} + 1 tokens on the page, ${warmTheirs.promptTokens} in wllama`);
-record({ side: "page", what: "warm", steps: warmSteps, ...warmOurs });
+record({ side: "page", what: "warm", ...warmOurs });
 record({ side: "wllama", what: "warm", ...warmTheirs });
-// (the positions of `steps` the page's line does not count as written: whatever they are, as many again this time, so
-// that the page writes spec.tokens as wllama does, where neither stops before)
-const steps = spec.tokens + warmSteps - warmOurs.answerTokens;
+const steps = onSlider(warmOurs.promptTokens + spec.tokens);
+const tokens = steps - warmOurs.promptTokens;
 for (let round = 0; round < spec.rounds; round++) {
   const order = round % 2 ? ["wllama", "page"] : ["page", "wllama"];
   for (const side of order) {
-    const got = side === "page" ? await askPage(steps) : await askWllama(spec.tokens);
+    const got = side === "page" ? await askPage(steps) : await askWllama(tokens);
     record({ side, what: "answer", round, ...got });
     say(`round ${round + 1}, ${side}: prompt ${got.promptTokens} at ${got.promptPerSecond?.toFixed(1)} tok/s, answer ${got.answerTokens} at ${got.answerPerSecond?.toFixed(1)} tok/s`);
   }
 }
 await closed(() => context.close());
 await site.close();
-wllamaServer.close();
 if (failures.length) {
   console.error(`FAILED\n${[...new Set(failures)].map((f) => `- ${f}`).join("\n")}`);
   record({ side: "tool", what: "failures", failures: [...new Set(failures)] });
