@@ -533,6 +533,11 @@ check("a generation's steps wrong in one thing", () => {
   wrong({ keys: b64(off) }, /- the keys and values of the steps' layer 1 are 1\.20e-2 from NumPy's \(its line 8\.00e-3\)/);
   assert.ok(GPU_LINE * 1.5 < K_PACKED * Q8);
   assert.equal(steps(stepsOf({ form: "ORT's DP4A", keys: b64(off) })).value, true);
+  // (T344: and a float form's steps after a prompt of DP4A, whose keys and values carry its 8-bit roundings: the packed
+  // line too, and no more than it)
+  const afterPacked = (keys) => said(() => stepsRight(CASE, stepsOf({ keys: b64(keys) }), { e16s: E16S, q8s: Q8S, kvDim: KV, prompt: PROMPT, promptPacked: true }));
+  assert.equal(afterPacked(off).value, true, afterPacked(off).text);
+  assert.equal(afterPacked(moved(GREEDY_KEYS, K_PACKED_STEPS * Q8 * 1.2, [1], GEN)).value, false);
   // (T562's review) the packed steps keep 3 × Q8 where the prompt's packed layers have 5: past the one, within the other
   const between = moved(GREEDY_KEYS, K_PACKED_STEPS * Q8 * 1.2, [1], GEN);
   assert.ok(K_PACKED_STEPS * Q8 * 1.2 < K_PACKED * Q8);

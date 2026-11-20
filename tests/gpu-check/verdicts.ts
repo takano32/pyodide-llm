@@ -239,7 +239,8 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
       (failures.length ? ` — FAILED\n    - ${failures.join("\n    - ")}` : ""));
     failed ||= failures.length > 0;
     // (evaluated, and said, whatever came before)
-    const stepsFine = gpu.steps ? stepsRight(c, gpu.steps, { e16s, q8s, kvDim, prompt: gpuLayers }) : true;
+    // (T344: and whether the prompt's form was packed, which the steps' keys and values carry)
+    const stepsFine = gpu.steps ? stepsRight(c, gpu.steps, { e16s, q8s, kvDim, prompt: gpuLayers, promptPacked: /DP4A/.test(gpu.form ?? "") }) : true;
     failed ||= !stepsFine;
   }
   // T241: a weight of the last layer that is no finite number on the GPU (the harness's brokenWeight): the step was

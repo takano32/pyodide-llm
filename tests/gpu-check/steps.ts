@@ -12,7 +12,11 @@
 // GPU's next ones whatever it chose); the keys and values the GPU wrote back of its first 4 positions in forward.js's
 // cache against NumPy's, a layer at a time (T187), to the line of the prompt's shaders of the same arithmetic (float32 GPU_LINE or K × E16;
 // DP4A K_PACKED_STEPS × Q8's distance) or the run's own prompt's distance, the larger (the steps' attention reads the
-// prompt's keys and values; the next 3 read the CPU's step's too, its 7-bit activations, and are held to their ids); a
+// prompt's keys and values; the next 3 read the CPU's step's too, its 7-bit activations, and are held to their ids). T344:
+// after a prompt of DP4A (promptPacked) the steps of a float form are held to the packed line too: their attention reads
+// keys and values of 8-bit roundings in every layer, which carry into theirs as into a DP4A step's (the real Spark-X2.5
+// 1.7B's float step after its DP4A prompt, run 44729143118: 1.59e-1 at layer 24, 1.66 Q8, where its prompt's distance
+// at that layer was 3.9e-2, and the same float steps after its float prompts 0.70 of their float line at the most); a
 // stop token (NumPy's second) ends the steps after it; a penalty of 100 on NumPy's first id (greedy) gives the largest
 // of NumPy's logits penalized so (or a near tie); two sampled steps at temperature 2 with random numbers of 0.02 and
 // 0.98 give two tokens of NumPy's nucleus, not the same (the random numbers reach the GPU: where either lands is not
@@ -49,7 +53,7 @@ function unbound(c) {
 
 // T152: the steps of a generation on the GPU against NumPy's greedy continuation (see the head of this file): a line
 // "  a token by <form>: ..." and whether it is right
-function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
+function stepsRight(c, steps, { e16s, q8s, kvDim, prompt, promptPacked = false }) {
   const ref = c.reference, greedy = ref.greedy, vocab = floats(ref.logits).length;
   const rows = floats(ref.greedyLogits), logitsOf = (i) => rows.subarray(i * vocab, (i + 1) * vocab);
   const failures = [], said = [];
@@ -126,7 +130,7 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
   const rowsAt = (all, l) => all.subarray(l * positions.length * kvDim, (l + 1) * positions.length * kvDim);
   const packed = /DP4A/.test(steps.form ?? "");
   const offs = Array.from({ length: layers }, (_, l) => Math.max(worstRow(rowsAt(gotK, l), rowsAt(wantK, l), kvDim), worstRow(rowsAt(gotV, l), rowsAt(wantV, l), kvDim)));
-  const lines = offs.map((_, l) => Math.max(packed ? K_PACKED_STEPS * q8s[l] : Math.max(GPU_LINE, K.float32 * e16s[l]), prompt[l]));
+  const lines = offs.map((_, l) => Math.max(packed || promptPacked ? K_PACKED_STEPS * q8s[l] : Math.max(GPU_LINE, K.float32 * e16s[l]), prompt[l]));
   const ratios = offs.map((off, l) => off / lines[l]);
   const at = worstAt(ratios);
   if (!(ratios[at] <= 1)) failures.push(`the keys and values of the steps' layer ${at} are ${offs[at].toExponential(2)} from NumPy's (its line ${lines[at].toExponential(2)})`);
