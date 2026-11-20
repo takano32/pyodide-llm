@@ -132,7 +132,8 @@ async function startThreads(model: Listed) {
   const engine = engineNow();
   const { fixed = 0, remembered = 0, hint = 1 } = threadsRequest ?? {};
   if (!engine?.findThreads) {
-    if (fixed > 1) console.warn(`threads: ?threads=${fixed} was not reached (NumPy computes this model): one thread`);
+    // (no engine of forward.ts's: the NumPy engine computes the model, or a translation model's kernels, on one thread)
+    if (fixed > 1) console.warn(`threads: ?threads=${fixed} was not reached (${model.translation ? "a translation model runs on one thread" : "NumPy computes this model"}): one thread`);
     return 1;
   }
   try {

@@ -516,6 +516,12 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
         of("progress").filter((p) => p.load === 69).every((p) => p.total === BYTES), of("ready").filter((r) => r.load === 69).length],
         [[], ["https://site.test/app/models/translations/en-ja-3.0/lex.bin.000"], true, true, 1],
         "a shortlist's parts are fetched beside the model's, its progress unsaid, and handed to translation()");
+      // T661's review: ?threads=N asked of a translation model (no engine of forward.ts's) is not said to be NumPy's
+      const before = said.length;
+      await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 70, threads: { fixed: 2 }, model: translation } });
+      await sleep(50);
+      assert.deepEqual([of("error"), said.slice(before)], [[], ["threads: ?threads=2 was not reached (a translation model runs on one thread): one thread"]],
+        "?threads=2 of a translation model says what it is");
       delete context.stand.pyodide.pyimport;
     }
 
