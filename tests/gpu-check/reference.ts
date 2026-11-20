@@ -259,7 +259,9 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
   // (T560: a made-up model's run may say its own count of tokens)
   const reference = py.runPython(`answers(data, vocabulary, TEXT, ${run.count ?? COUNT}, OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   const numpySeconds = (performance.now() - began) / 1000;
-  return { ...caseOf(py, directory, id, options, reference, py.runPython("data").toJs()), numpySeconds, ...run };
+  // (T674: whether it is a made-up model, whose packed shaders' layers are held to their lines where a real model's are
+  // reported: verdicts.ts)
+  return { ...caseOf(py, directory, id, options, reference, py.runPython("data").toJs()), numpySeconds, madeUp: Boolean(SYNTHETIC[id]), ...run };
 }
 // the plan forward.js gets from Python (the vocabulary in Pyodide's globals), recorded: Llama(external=) with a start()
 // that keeps it, and the case the browser runs. checkpoint: its bytes, or (T334.5) the file that holds them, read a
