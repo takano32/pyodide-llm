@@ -14,7 +14,7 @@ import { keyValueCache } from "./cache.ts";
 import { gatedFfn, plainFfn } from "./ffn.ts";
 import { perLayer } from "./perlayer.ts";
 import { controlArea } from "./control.ts";
-import { softwareThreads } from "./threads.ts";
+import { softwareThreads, shortWords } from "./threads.ts";
 import { gpuFit, lastKept } from "./gpufit.ts";
 import { stackPlacesOf } from "./alone.ts";
 import { gpuSide } from "./gpuside.ts";
@@ -575,6 +575,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     /** T120: whether a software thread stopped under this engine, which then went on with one */
     get lostThreads() {
       return threads.lost;
+    },
+    /** T661: why the count setThreads() or findThreads() was last asked for is not the count in use, or null
+     * (threads.ts's Short), in words (shortWords) */
+    get threadsShort() {
+      return shortWords(threads.short);
     },
     /** the float32 array of Python's that forward() fills with the logits */
     bind(array: Bound) {

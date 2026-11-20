@@ -6,7 +6,7 @@
 // bound to: jobs.js (where the words of the control area are) and choice.js's lowerMedian and BETTER.
 //
 // The state has one owner (T378.1): the rest of the engine tells it what happened (use, find, generationBegan,
-// tokenBegan and tokenEnded, stop) and reads count, lost and searching. Held here:
+// tokenBegan and tokenEnded, stop) and reads count, lost, searching and short (T661: why a count asked for was not had). Held here:
 //   - each of those changes what it says it changes, and nothing else that can be read;
 //   - a phase's rows are each run once, whole by one caller, with any count, and alone where there are no threads;
 //   - the search's turns: best, candidate, candidate, best in blocks of 5, the count in use the best one between tokens;
@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.ts";
 
-const { softwareThreads } = await import(runtimeUrl("forward/threads.js"));
+const { softwareThreads, shortWords } = await import(runtimeUrl("forward/threads.js"));
 const { controlArea } = await import(runtimeUrl("forward/control.js"));
 const { CONTROL_BYTES, JOB, ROWS, COUNT, COUNTER, QUIT, JOB_TABLE, BATCH } = await import(runtimeUrl("jobs.ts"));
 
@@ -97,9 +97,10 @@ const quietly = async (run) => {
   part.phase(jobs);
   assert.deepEqual(beside.ran.map(([job, from, to]) => [jobs.indexOf(job), from, to]), [[0, 0, 64], [1, 0, 7], [2, 0, 1]], "one thread: each job whole, in order");
   assert.equal(beside.started, 0, "no thread is started before one is asked for");
-  assert.deepEqual(Object.keys(part).sort(), ["count", "find", "generationBegan", "lost", "phase", "searchLog", "searching", "stop", "tokenBegan", "tokenEnded", "use"],
+  assert.deepEqual(Object.keys(part).sort(), ["count", "find", "generationBegan", "lost", "phase", "searchLog", "searching", "short", "stop", "tokenBegan", "tokenEnded", "use"],
     "what the part hands out");
-  for (const name of ["count", "lost", "searching"]) {
+  assert.equal(part.short, null, "T661: nothing asked, nothing short");
+  for (const name of ["count", "lost", "searching", "short"]) {
     assert.equal(Object.getOwnPropertyDescriptor(part, name).set, undefined, `${name} cannot be assigned from outside`);
   }
 }
@@ -109,7 +110,7 @@ console.log("ok: as made the part runs on one thread, and nothing of its state c
 {
   const { part, beside } = made();
   assert.equal(await part.use(4), 4);
-  assert.deepEqual([read(part), beside.started], [{ threads: 4, lost: false, searching: false, log: 0 }, 3], "use(4): 4 in use, 3 started");
+  assert.deepEqual([read(part), beside.started, part.short], [{ threads: 4, lost: false, searching: false, log: 0 }, 3, null], "use(4): 4 in use, 3 started, nothing short");
   const jobs = [jobOf(64), jobOf(7), jobOf(64, 4)];
   part.phase(jobs);
   const pieces = covered(beside, jobs);
@@ -257,6 +258,11 @@ console.log("ok: T451, a token's time is counted for the count it ran on");
   part.stop();
   beside.waiting.splice(0).forEach((release) => release());
   assert.equal(await using, 1, "use() that was overtaken by stop() says 1");
+  assert.equal(part.short, "letGo", "T661: and why: its threads were let go of while they started");
+  const again = part.use(2);
+  beside.waiting.splice(0).forEach((release) => release());
+  assert.deepEqual([await again, part.short], [2, null], "T661: a count reached again is nothing short");
+  part.stop();
   assert.deepEqual([part.count, beside.started, beside.ended], [1, beside.started, beside.started], "and every thread started is ended");
 }
 console.log("ok: a candidate's threads are waited for on the best count, untimed; a thread that comes up after stop() is ended");
@@ -352,6 +358,8 @@ console.log("ok: a generation, a token or its end told out of turn change nothin
   part.tokenEnded(5);  // the token that was the search's ends: nothing
   assert.deepEqual([read(part), told], [{ threads: 1, lost: true, searching: false, log: 0 }, []], "one thread after a give-up is not told the page");
   assert.equal(await part.use(4), 1, "no threads again under this engine");
+  assert.equal(part.short, "lost", "T661: and why");
+  assert.deepEqual([await part.use(1), part.short], [1, null], "T661: one thread asked for is nothing short");
   assert.equal(await part.find({ from: 8, chose: (count) => told.push(count) }), 1);
   part.generationBegan();
   for (let i = 0; i < 40; i++) token(part, ANDROID);
@@ -363,11 +371,14 @@ console.log("ok: a generation, a token or its end told out of turn change nothin
 console.log("ok: T120, a thread that never does its chunk is given up, the phase run again here, and the engine keeps to one thread");
 
 // ---- no threads where none can be started
-for (const [title, options] of [["no spawn (a model on the GPU alone)", { spawn: false }], ["a memory that is not shared", { sharedMemory: false }]]) {
+for (const [title, options, short] of [["no spawn (a model on the GPU alone)", { spawn: false }, "alone"], ["a memory that is not shared", { sharedMemory: false }, "unshared"]]) {
   const { part, beside } = made(options);
   const told = [];
   assert.equal(await part.use(4), 1, title);
+  assert.equal(part.short, short, `T661: ${title}, said why`);
+  assert.deepEqual([await part.use(1), part.short], [1, null], `T661: ${title}, one thread asked for is nothing short`);
   assert.equal(await part.find({ from: 8, remembered: 4, chose: (count) => told.push(count) }), 1, title);
+  assert.equal(part.short, short, `T661: ${title}, find() said why`);
   part.generationBegan();
   for (let i = 0; i < 40; i++) assert.equal(token(part, ANDROID), null, title);
   part.stop();
@@ -379,3 +390,23 @@ for (const [title, options] of [["no spawn (a model on the GPU alone)", { spawn:
   assert.deepEqual(beside.ran.map(([, from, to]) => [from, to]), [[0, 64]], title);
 }
 console.log("ok: with no spawn or on a memory that is not shared there is one thread whatever is asked, and no search");
+
+// ---- T661: why a count asked for was not had, in the words the worker tells the console (?threads=N): a memory that
+// is not shared as the GPU's side says it (the page not isolated, or else the memory), the others the part's own
+{
+  const { REASONS } = await import(runtimeUrl("forward/reasons.js"));
+  const isolated = Object.getOwnPropertyDescriptor(globalThis, "crossOriginIsolated");
+  const words = (flag) => {
+    Object.defineProperty(globalThis, "crossOriginIsolated", { value: flag, configurable: true });
+    return ["unshared", "alone", "lost", "letGo", null].map(shortWords);
+  };
+  try {
+    assert.deepEqual(words(true), [REASONS.notShared, "a model on the GPU alone has no software threads", "a software thread stopped under this engine",
+      "the threads were let go of while they started", null], "on an isolated page");
+    assert.equal(words(false)[0], REASONS.notIsolated, "on a page that is not isolated");
+  } finally {
+    if (isolated) Object.defineProperty(globalThis, "crossOriginIsolated", isolated);
+    else delete globalThis.crossOriginIsolated;
+  }
+}
+console.log("ok: T661, why a count asked for was not had, in words");

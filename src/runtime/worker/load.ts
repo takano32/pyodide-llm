@@ -126,15 +126,20 @@ async function checkpointLoaded(model: OfThisSite | OfTwoFiles | OfTwoUrls, kind
 // this device and model is used (and checked now and then); else forward.ts finds it while generating, from the
 // number of logical cores, and the page is told the answer to remember. The software threads of the starting count
 // are started and warmed here, before the model is ready.
+// T661: where ?threads=N is not reached, the console is told why (a run of T84 wrote on one thread where ?threads=4
+// asked, and nothing said why). Nothing is said of the count a search finds: that is no failure
 async function startThreads(model: Listed) {
   const engine = engineNow();
+  const { fixed = 0, remembered = 0, hint = 1 } = threadsRequest ?? {};
   if (!engine?.findThreads) {
+    if (fixed > 1) console.warn(`threads: ?threads=${fixed} was not reached (NumPy computes this model): one thread`);
     return 1;
   }
-  const { fixed = 0, remembered = 0, hint = 1 } = threadsRequest ?? {};
   try {
     if (fixed) {
-      return await engine.setThreads(fixed);
+      const count = await engine.setThreads(fixed);
+      if (count < fixed) console.warn(`threads: ?threads=${fixed} was not reached (${engine.threadsShort ?? "the engine said no reason"}): ${count} thread${count === 1 ? "" : "s"}`);
+      return count;
     }
     return await engine.findThreads({ from: hint, remembered,
       chose: (count) => postMessage({ type: "threads", model: model.id, count, from: remembered ? "remembered" : "hint", hint } satisfies Threads),

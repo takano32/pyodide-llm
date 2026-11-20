@@ -155,7 +155,7 @@ assert.deepEqual([...made.keys()].sort(), ["cpuSide", "gpuFit.device", "gpuSide.
 // part by functions named for that, and what is read of it is these getters and no other (that none can be assigned is
 // tests/threads-part-check.ts's and tests/gpu-part-check.ts's to see, and that each is a member where it is read, tsc's)
 const getters = (part) => [...objects.get(part)].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort();
-assert.deepEqual(getters("threads"), ["count", "lost", "searching"], "what is read of the software threads' state");
+assert.deepEqual(getters("threads"), ["count", "lost", "searching", "short"], "what is read of the software threads' state");
 assert.deepEqual(getters("onGpu"), ["chosen", "promptTokens", "ready", "sampled", "status", "stepsWhyNot", "whyNot"], "what is read of the GPU's side's state");
 // every threads.<name>, onGpu.<name>, fit.<name> and cpuSide.<name> is a member of that object, with a setter where it
 // is set. tsc says one that is misspelt, and one set that has no setter (T368.8); these lines are kept for what it

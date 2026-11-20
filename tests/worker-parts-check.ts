@@ -362,6 +362,36 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     context.stand.engineOf = undefined;
   }
 
+  // T661: ?threads=N that is not reached is said on the console, with why (the engine's threadsShort: its words are
+  // tests/threads-part-check.ts's to hold); N reached, a search that finds fewer than the hint, and a page that named no count say nothing
+  {
+    const before = said.length;
+    let short = null, count = 4;
+    const asked = [];
+    context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "a stand-in", get threads() { return count; }, stopThreads() {},
+      setThreads: async (wanted) => { asked.push(wanted); return count; }, findThreads: async () => count, get threadsShort() { return short; } });
+    await load({ load: 71, model: model("fixed"), threads: { fixed: 4, hint: 8 } });
+    assert.deepEqual([of("error"), of("ready").at(-1).threads, asked, said.length], [[], 4, [4], before], "?threads=4 reached: nothing said");
+    count = 1;
+    await load({ load: 72, model: model("searched"), threads: { fixed: 0, hint: 8 } });
+    await load({ load: 73, model: model("unnamed") });
+    assert.deepEqual([of("ready").at(-1).threads, asked, said.length], [1, [4], before], "a search that finds one thread, and a page that named no count: nothing said");
+    const lines = [];
+    for (const [why, line] of [["the engine's words of why (a stand-in)", "the engine's words of why (a stand-in)"], [null, "the engine said no reason"]]) {
+      short = why;
+      await load({ load: 74, model: model(`short-${lines.length}`), threads: { fixed: 4 } });
+      assert.deepEqual([of("error"), of("ready").at(-1).threads], [[], 1], `${why}: ready on one thread`);
+      lines.push(`threads: ?threads=4 was not reached (${line}): 1 thread`);
+    }
+    assert.deepEqual(said.slice(before), lines, "?threads=4 not reached: one line each, with the engine's why");
+    // the NumPy engine (no forward.js's engine: no findThreads) said where more than one was asked for
+    context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "a stand-in", threads: 1 });
+    await load({ load: 75, model: model("numpy"), threads: { fixed: 1 } });
+    await load({ load: 76, model: model("numpy-2"), threads: { fixed: 2 } });
+    assert.deepEqual(said.slice(before + lines.length), ["threads: ?threads=2 was not reached (NumPy computes this model): one thread"]);
+    context.stand.engineOf = undefined;
+  }
+
   // T380.2: two files of the visitor's, the second of which is no tokenizer.bin of the first: said with the last line
   // of what the engine threw, Python's own with the exception's name (failure.ts's lastLine(); failureOf() would say
   // a ValueError without its name and another exception by its whole traceback: another sentence)

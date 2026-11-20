@@ -6,6 +6,7 @@
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
   FIRST, TILE_ROWS } from "../jobs.ts";
 import { lowerMedian, BETTER } from "./choice.ts";
+import { REASONS } from "./reasons.ts";
 import type { Job } from "../jobs.ts";
 import type { Control } from "./control.ts";
 import type { ThreadsCompared } from "../contracts/messages.ts";
@@ -16,6 +17,19 @@ export type Thread = { terminate?(): void };
 // (blocks, T363.5: the modules of the kernels of llama.cpp's blocks, for a model with such rows; else null)
 export type Spawn = (start: { memory: WebAssembly.Memory; wide: boolean; plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; blocks: Blocks | null; share: number }) => Promise<Thread>;
 type Blocks = { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null };
+// T661: why the count last asked for (use(), find()'s start, a search's candidate) is not the count in use: the memory
+// is not a shared one, the engine starts no threads (a model on the GPU alone, whose memory is shared), a thread
+// stopped under this engine (T120), or its threads were let go of (stop()) while they started
+export type Short = "unshared" | "alone" | "lost" | "letGo";
+// ... and in words, as the worker tells the console where ?threads=N was not reached (worker/load.ts). A memory that
+// is not shared is said as the GPU's side says it (gpufit.ts): the page not isolated, or else the memory not shared
+const SHORT: Record<Exclude<Short, "unshared">, string> = {
+  alone: "a model on the GPU alone has no software threads",
+  lost: "a software thread stopped under this engine",
+  letGo: "the threads were let go of while they started",
+};
+export const shortWords = (why: Short | null) => !why ? null
+  : why === "unshared" ? (globalThis.crossOriginIsolated ? REASONS.notShared : REASONS.notIsolated) : SHORT[why];
 // a comparison of two counts as the page is told it, and as the log keeps it
 export type Compared = Omit<ThreadsCompared, "type" | "load" | "model">;
 type Logged = { best: number; candidate: number; times: Record<number, number[]>; faster: boolean; whileGpu: boolean };
@@ -35,7 +49,7 @@ const CHUNKS_PER_THREAD = 4;
  * how many to use (T199, T223, T239, T240).
  * T378.1: the state here (the count in use, the search, what a visit remembers) has this one owner. The rest of the
  * engine tells it what happened, by functions named for that (use, find, generationBegan, tokenBegan and tokenEnded,
- * stop), and reads three things of it (count, lost, searching); nothing outside assigns a variable of it. The engine
+ * stop), and reads four things of it (count, lost, searching, short); nothing outside assigns a variable of it. The engine
  * takes the functions out by name once (phase() and tokenBegan() are a token's path: plain calls of closures).
  * spawn: left out where no software thread is ever to run (a memory that is not shared has none either; the engine
  * leaves it out where the model is on the GPU alone, T156). gpuGettingReady(): whether the GPU's side is still getting
@@ -58,6 +72,10 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.ts)
   const helpers: Thread[] = [];
   let threads = 1, gen = 0;
+  // T661: why the count last asked for did not start (Short), or null
+  let short: Short | null = null;
+  // (a count of more than one that cannot be had here at all)
+  const never = (n: number): Short | null => n <= 1 ? null : lost ? "lost" : !ctl ? "unshared" : "alone";
   // T120: every helper goes, and this engine keeps to one thread from here on. The phase is then run again here:
   // each chunk writes only its own rows, from inputs that no phase changes while it runs, so what the helpers did
   // before they stopped is written over with the same numbers
@@ -243,13 +261,17 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // visitor chose another model while the search started more, and the next model's engine on the same memory
   // (T96) woke them, with the old engine's kernels (one threw holding a chunk: 10 s still, then one thread)
   async function ensureHelpers(n: number) {
-    if (lost) return false;  // T120: none again after a helper stopped under this engine
+    if (lost) {
+      short = "lost";
+      return false;  // T120: none again after a helper stopped under this engine
+    }
     const since = stops;
     if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl!, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
       const helper = await spawn!({ memory, wide, plain: kernels.plain, relaxed: kernels.relaxed, blocks: kernels.blocks ?? null, share: helpers.length + 1 });
       if (lost || stops !== since) {
         helper.terminate?.();
+        short = lost ? "lost" : "letGo";
         return false;
       }
       helpers.push(helper);
@@ -261,7 +283,11 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   /** n threads from the next token on, with no search: the helpers that are missing are started. Resolves to the count
    * in use: 1 where there are no software threads here, or one stopped under this engine (T120) */
   async function use(n: number) {
-    if (!shared || lost) return (threads = 1);
+    short = null;
+    if (!shared || lost) {
+      short = never(n);
+      return (threads = 1);
+    }
     search = null;
     if (!(await ensureHelpers(n))) return (threads = 1);
     threads = Math.max(1, n);
@@ -273,7 +299,11 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
    * resolves (to the count in use), so the first tokens do not wait for them */
   async function find({ from, remembered = 0, recheck = 8, chose, compared }:
     { from: number; remembered?: number; recheck?: number; chose?: (count: number) => void; compared?: (verdict: Compared) => void }) {
-    if (!shared || lost) return 1;
+    short = null;
+    if (!shared || lost) {
+      short = never(Math.max(1, remembered || from));
+      return 1;
+    }
     onChosen = chose;
     onCompared = compared;
     recheckEvery = recheck;
@@ -325,6 +355,8 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     get count() { return threads; },
     get lost() { return lost; },
     get searching() { return search !== null; },
+    /** T661: why the count last asked for is not the count in use (Short), or null where it is, or none was asked */
+    get short() { return short; },
   };
 }
 // (T368.4) what the rest of an engine has of its software threads
