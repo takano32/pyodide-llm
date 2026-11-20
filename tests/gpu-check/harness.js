@@ -5,8 +5,14 @@ const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jo
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 // T334.5: a file read as it comes, each piece handed to put(where it is in the file, its bytes): no copy of it whole
 // (T334.3: put may be async, waited for before the next piece: the GPU alone's room())
+// (and a fetch that fails before anything comes is said with its cause and asked once more: run 44663016258's second
+// stream of a checkpoint failed so, a connection the server had closed while this thread waited on the GPU)
 const streamed = async (url, put) => {
-  const reader = (await fetch(url)).body.getReader();
+  const response = await fetch(url).catch((error) => {
+    progress(`${url}: ${error?.message ?? error} (${error?.cause?.message ?? error?.cause ?? "no cause"}): asked again`);
+    return fetch(url);
+  });
+  const reader = response.body.getReader();
   for (let at = 0; ;) {
     const { done, value } = await reader.read();
     if (done) return at;

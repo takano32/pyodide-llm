@@ -24,7 +24,7 @@ worker.onmessage = ({ data }) => (data.line !== undefined ? console.log(data.lin
 worker.onerror = (event) => Object.assign(got, { error: event.message ?? "the harness did not start", ended: true });
 </script>`;
 const types = { ".js": "text/javascript", ".wasm": "application/wasm", ".json": "application/json", ".html": "text/html; charset=utf-8" };
-const served = (cases, only, nanRounds) => http.createServer((req, res) => {
+const serving = (cases, only, nanRounds) => http.createServer((req, res) => {
   const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
   const headers = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" };
   const send = (type, body) => {
@@ -55,6 +55,11 @@ const served = (cases, only, nanRounds) => http.createServer((req, res) => {
   if (typed(file)) return send(types[".js"], untyped(fs.readFileSync(file, "utf8"), file));
   send(types[path.extname(file)] ?? "application/octet-stream", fs.readFileSync(file));
 }).listen(0);
+// (T334.3: an idle connection is never closed by the server: the harness's thread waits on the GPU with Atomics.wait for
+// seconds at a time, and a connection the server closed meanwhile (5 s, Node's default) was taken again as open by the
+// next fetch, which failed: "TypeError: fetch failed" as the GPU alone streamed the E2B's checkpoint a second time, run
+// 44663016258)
+const served = (cases, only, nanRounds) => Object.assign(serving(cases, only, nanRounds), { keepAliveTimeout: 0 });
 
 // T645: what the harness posts, as it goes: its forms and the quantizers' answers first, a model's result as each is
 // through ({ result }), and { ended } at its end or with its error. Its progress lines (harness.js's PROGRESS) go to
