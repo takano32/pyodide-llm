@@ -646,6 +646,12 @@ def test_a_gguf_reads_its_attn_factor_as_llama_cpp_does():
     llama2_convert.gguf_weights(file, json.dumps({**published, "rope_scaling": {**YARN, "attn_factor": 0.5}}))
     with pytest.raises(ValueError, match="yarn RoPE scaling"):
         llama2_convert.gguf_weights(file, json.dumps(published))
+    # an attn_factor of 1 changes nothing: the original that says it agrees with a GGUF that says none
+    llama2_convert.gguf_weights(file_without_it(), json.dumps({**published, "rope_scaling": {**YARN, "attn_factor": 1.0}}))
+
+
+def file_without_it():
+    return bonsai_gguf()[2]
 
 
 def test_a_gguf_reads_yarns_bounds_by_transformers_names():

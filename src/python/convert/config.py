@@ -59,6 +59,9 @@ def yarn_attention(config):
             or any(scaling.get(key) is not None for key in ("attention_factor", "mscale", "mscale_all_dim")):
         return config
     rest = {key: value for key, value in scaling.items() if key != "attn_factor"}
+    if scaling["attn_factor"] == 1:
+        # (the review of T259: it says nothing, and a GGUF of the same yarn that says no attn_factor is the same model)
+        return {**config, "rope_scaling": rest}
     return {**config, "rope_scaling": {**rest, "attention_factor": rope_magnitude(rest) * scaling["attn_factor"]}}
 
 
