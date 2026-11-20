@@ -52,7 +52,7 @@ pyodide.globals.set("MODEL", pyodide.toPy({ checkpoint: name(model.checkpoint), 
   ...(fromFile ? { file: local(model.checkpoint) } : {}), ...(rows ? { rows } : {}) }));
 pyodide.globals.set("TEXT", text);
 pyodide.globals.set("TOKENS", Number(count));
-pyodide.globals.set("WINDOW", 512);
+pyodide.globals.set("WINDOW", Number(flags.find((flag) => flag.startsWith("--window="))?.split("=")[1] ?? 512));
 pyodide.runPython(fs.readFileSync(`${root}tests/perplexity.py`, "utf8"));
 const results = JSON.parse(pyodide.globals.get("RESULT"));
 
