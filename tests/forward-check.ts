@@ -477,10 +477,15 @@ agreement, change, relative = agree / ${positions}, math.exp((nll[0] - nll[1]) /
 ok = (agree == ${positions} and largest <= 1e-3) if not int8 else relative <= ${entry.line ?? MADE_UP_LINE} if ${entry.madeUp ? "True" : "False"} else (agreement >= 0.85 and abs(change) <= 0.05)
 kv_start, engine.model.KV_START = engine.model.KV_START, 8
 one, many = kernel_llama(data, vocabulary, **OPTIONS), kernel_llama(data, vocabulary, **OPTIONS)
+quiet = kernel_llama(data, vocabulary, **OPTIONS)
 engine.model.KV_START = kv_start
 fed = sequence[:${positions}]
+# T673: one with logits at every position, which runs every layer; quiet one token at a time without them, and many in
+# blocks, which stop at the last layer that keeps keys and values of its own (a Gemma 4's shared layers left out): the
+# last logits of the three the same to the bit
 for pos, token in enumerate(fed[:-1]):
-    one.forward(token, pos, need_logits=False)
+    one.forward(token, pos)
+    quiet.forward(token, pos, need_logits=False)
 blocks = many.forward_many is not None
 if blocks:
     for at in range(0, len(fed) - 1, 37):  # blocks that do not line up with forward.js's own BATCH
@@ -501,14 +506,17 @@ if kept:
     except Exception as error:
         refused = f"position {len(fed) - 1} comes next" in str(error)
 first = np.array(one.forward(fed[-1], len(fed) - 1)) if kept else None
-same = np.array_equal(first if kept else one.forward(fed[-1], len(fed) - 1), many.forward(fed[-1], len(fed) - 1))
+last = first if kept else np.array(one.forward(fed[-1], len(fed) - 1))
+same = np.array_equal(last, many.forward(fed[-1], len(fed) - 1))
+alone = np.array_equal(last, quiet.forward(fed[-1], len(fed) - 1))
+quiet.release(); del quiet
 if kept:
     for pos, token in enumerate(fed[:-1]):
         one.forward(token, pos, need_logits=False)
     again = np.array_equal(first, one.forward(fed[-1], len(fed) - 1))
 else:
     again = True
-ok = ok and same and refused and again
+ok = ok and same and alone and refused and again
 one.release(); many.release(); del one, many
 def run(llama, positions):
     token, began = llama.bos, time.perf_counter()
@@ -519,6 +527,7 @@ def run(llama, positions):
      + (f", the logits {relative:.3f} of NumPy's apart (the line of a made-up model: ${entry.line ?? MADE_UP_LINE})" if ${entry.madeUp ? "True" : "False"} else "")
      if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy")
      + (f"; the prompt in blocks {'the same to the bit' if same else 'DIFFERENT'}" if blocks else "; no blocks (NumPy)")
+     + f", one token at a time without logits {'the same to the bit' if alone else 'DIFFERENT'}"
      + (f"; a position out of turn {'refused, and nothing changed' if refused else 'NOT REFUSED (or changed something)'}, a second run from 0 {'the first one again' if again else 'DIFFERS from the first (a state left behind)'}" if kept else ""))
 `).toJs();
   const [ok, line] = verdict;

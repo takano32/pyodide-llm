@@ -15,7 +15,7 @@ import { gatedFfn, plainFfn } from "./ffn.ts";
 import { perLayer } from "./perlayer.ts";
 import { controlArea } from "./control.ts";
 import { softwareThreads } from "./threads.ts";
-import { gpuFit } from "./gpufit.ts";
+import { gpuFit, lastKept } from "./gpufit.ts";
 import { stackPlacesOf } from "./alone.ts";
 import { gpuSide } from "./gpuside.ts";
 import { blockTables } from "./blocks.ts";
@@ -337,6 +337,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       vectors: Object.fromEntries(had.flatMap(({ kind }) => Object.entries(kinds[kind].gpu?.vectors?.(sizes) ?? {}))
         .flatMap(([name, [tensor, size]]) => (floats(tensor) ? [[name, { at: floats(tensor), size }] as const] : []))),
     } };
+  // T673: the layers a token without logits runs: up to the last that keeps keys and values of its own or a state
+  // (gpufit.ts's lastKept(), where the GPU's block stops too). A Gemma 4's layers after it read another layer's keys
+  // and values and leave nothing a later position reads; every other model's last layer keeps its own
+  const promptLayers = lastKept(shape) + 1;
   // T349: what the GPU would hold of this model, and why it would not take it
   const fit = gpuFit({ shape, weights, device: { gpuRoom, sharedMemory, oneThread }, direct });
 
@@ -425,7 +429,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     if (keeping.length) follow(pos0);
     embed(tokens, pos0);
     if (perLayered) perLayered.inputs(tokens, count);
-    for (let l = 0; l < layers; l++) {
+    // (T673: a token without logits stops at the last layer that leaves something a later position reads)
+    for (let l = 0, through = needLogits ? layers : promptLayers; l < through; l++) {
       for (let t = 0; t < count; t++) {
         norm(xb + t * S, x + t * S, attW + l * D, attB + l * D);
         if (parallel) F.copyWithin((before + t * S) / 4, (x + t * S) / 4, (x + t * S) / 4 + dim);  // GPT-NeoX reads this layer's input twice
