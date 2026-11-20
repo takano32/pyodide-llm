@@ -58,6 +58,7 @@ window.load = async ({ url, threads, context }) => {
   const info = wllama.getLoadedContextInfo();
   return { seconds: (performance.now() - begun) / 1000, fetchSeconds: fetched === null ? null : fetched / 1000,
     threads: wllama.getNumThreads(), multithread: wllama.isMultithread(), isolated: self.crossOriginIsolated,
+    jspi: Boolean(WebAssembly.Suspending), mem64: (() => { try { new WebAssembly.Memory({ address: "i64", initial: 1n }); return true; } catch { return false; } })(),
     libllama: Wllama.getLibllamaVersion(), n_batch: info.n_batch, n_ubatch: info.n_ubatch, n_ctx: info.n_ctx };
 };
 window.ask = async ({ prompt, raw, chat, kwargs, tokens }) => {
@@ -86,6 +87,9 @@ const site = await serving();
 
 const context = await playwright.chromium.launchPersistentContext(scratch("wllama-profile-"), { headless: true, viewport: { width: 1280, height: 900 }, args: (process.env.WLLAMA_CHROMIUM_ARGS ?? "").split(" ").filter(Boolean) });
 await context.route(`${wllamaUrl}**`, answerWllama);
+// (which wasm wllama fetched: its own from this routing, or the compat build's from a CDN)
+const wasmFetched = new Set();
+context.on("request", (request) => { if (/\.wasm(\?|$)|jsdelivr|unpkg/.test(request.url())) wasmFetched.add(request.url().replace(/\?.*/, "")); });
 const browserVersion = context.browser()?.version() ?? "";
 const cpu = os.cpus()[0]?.model ?? null;
 const hint = await (await context.newPage()).evaluate(() => navigator.hardwareConcurrency);
@@ -170,7 +174,7 @@ const loadWllama = async (fetched) => {
   await theirs.waitForFunction(() => window.harnessReady === true);
   const loaded = await theirs.evaluate((asked) => window.load(asked), { url: spec.url, threads, context: spec.context ?? 4096 });
   record({ side: "wllama", what: "load", fetched, ...loaded });
-  say(`wllama ready ${fetched ? "with the fetch" : "again"} in ${loaded.seconds.toFixed(1)}s (${loaded.threads} threads, multithread ${loaded.multithread}, isolated ${loaded.isolated}, n_batch ${loaded.n_batch}, llama.cpp ${loaded.libllama})`);
+  say(`wllama ready ${fetched ? "with the fetch" : "again"} in ${loaded.seconds.toFixed(1)}s (${loaded.threads} threads, multithread ${loaded.multithread}, isolated ${loaded.isolated}, jspi ${loaded.jspi}, mem64 ${loaded.mem64}, wasm ${[...wasmFetched].join(" ")}, n_batch ${loaded.n_batch}, llama.cpp ${loaded.libllama})`);
   return loaded;
 };
 const firstLoad = await loadWllama(true);
