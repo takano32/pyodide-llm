@@ -9,7 +9,7 @@ import { pyodideWithEngine } from "../engine.ts";
 import { MODELS } from "../../src/models.ts";
 import { python as sources } from "../tree.ts";
 import { SYNTHETIC } from "./models.ts";
-import { COUNT, KV_START, GEN } from "./lines.ts";
+import { COUNT, KV_START, GEN, NUDGES } from "./lines.ts";
 
 const root = new URL("../../", import.meta.url).pathname;
 
@@ -40,10 +40,29 @@ def read_in_place(read):
 
 engine.tensors.read_tensor = read_in_place(engine.tensors.read_tensor)
 
+# T674: the generator of a run that rounds numbers a millionth off (answer(nudge=)), None for one that rounds them as
+# they are. What such runs differ by from NumPy's is how far a rounding lands from it when another order of float32
+# sums moves its numbers a little: the spread of the one sample E16, Q8 and H16 were (lines.ts). The same way as the
+# reference of Saluki 27B's (tests/reference_saluki_numpy.py's nudged())
+NUDGE = [None]
+
+def nudged(x, groups=False):
+    """x moved by a random amount of up to a millionth before it is rounded: of each value's size, or (groups: Q8's 8
+    bits a group of 32) of its group's largest, the step of that rounding. x itself where no run nudges"""
+    rng = NUDGE[0]
+    x = np.asarray(x, dtype=np.float32)
+    if rng is None:
+        return x
+    if groups:
+        blocks = x.reshape(-1, 32)
+        size = np.abs(blocks).max(axis=1, keepdims=True)
+        return (blocks + rng.uniform(-1e-6, 1e-6, blocks.shape).astype(np.float32) * size).reshape(x.shape)
+    return x + rng.uniform(-1e-6, 1e-6, x.shape).astype(np.float32) * np.abs(x)
+
 class Half(np.ndarray):
     """T153: a cache that keeps what is written into it rounded to float16 (the GPU's and the CPU's cache, T110)"""
     def __setitem__(self, key, value):
-        super().__setitem__(key, np.asarray(value, dtype=np.float32).astype(np.float16).astype(np.float32))
+        super().__setitem__(key, nudged(value).astype(np.float16).astype(np.float32))
 
     def __array_wrap__(self, array, context=None, return_scalar=False):
         # T183: what is computed from the cache is a plain array (the attention's scores and output, then the residual
@@ -57,7 +76,7 @@ class Q8(np.ndarray):
     makes it for matmul_q8 and the GPU's QUANTIZE for ORT's DP4A: the largest |value| / 127 the group's scale, each
     value times 1 / scale rounded half to even, in float32"""
     def __matmul__(self, x):
-        x = np.asarray(x, dtype=np.float32)
+        x = nudged(x, groups=True)
         groups = x.reshape(-1, 32)
         scale = np.abs(groups).max(axis=1, keepdims=True) / np.float32(127)
         inverse = np.divide(np.float32(1), scale, out=np.zeros_like(scale), where=scale > 0)
@@ -69,7 +88,7 @@ class H16(np.ndarray):
     activation in the workgroup's memory as f16, shaders/prompt.ts's regTile), rounded to the nearest as SwiftShader
     and lavapipe round"""
     def __matmul__(self, x):
-        x = np.asarray(x, dtype=np.float32).astype(np.float16).astype(np.float32)
+        x = nudged(x).astype(np.float16).astype(np.float32)
         return np.asarray(self).view(np.ndarray) @ x
 
 # the matrices a layer multiplies by (T545: an LFM2's in and out; T271.2: a Qwen3.5's of q, k and v, of z and out, and
@@ -78,11 +97,19 @@ class H16(np.ndarray):
 MATRICES = ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg", "wq_wide", "wk_wide", "wv_wide", "wo_wide",
             "w1_double", "w2_double", "w3_double", "per_layer_projection", "ple_gate", "ple_proj")
 
-def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=False):
+def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=False, nudge=None):
     """NumPy's keys and values of the prompt's first count - 1 positions ([layers][positions][kv dim] each) and the
     logits of its last token, and the tokens. half (T153): the cache rounded to float16, and nothing else (made whole
     at first, so that it never grows into an array of another class). q8 (T187): the inputs of the layers' matrices
-    quantized to 8 bits (Q8). h16 (T562): the layers' matrices and their inputs rounded to float16 (H16)"""
+    quantized to 8 bits (Q8). h16 (T562): the layers' matrices and their inputs rounded to float16 (H16). nudge (T674):
+    the seed of a run whose roundings (the cache's, Q8's, H16's inputs') take numbers a millionth off, nudged()"""
+    NUDGE[0] = None if nudge is None else np.random.default_rng(nudge)
+    try:
+        return answered(data, vocabulary, text, count, options, half, q8, h16)
+    finally:
+        NUDGE[0] = None
+
+def answered(data, vocabulary, text, count, options, half, q8, h16):
     numpy = Llama(data, vocabulary, **options)
     if h16:
         for name in MATRICES:
@@ -154,8 +181,18 @@ def answers(data, vocabulary, text, count, options):
     # (T562: and of answer(half=True, h16=True), the arithmetic of llama.cpp's f16 tiles)
     halves = answer(data, vocabulary, text, count, options, half=True, h16=True)
     gc.collect()
+    # (T674: and each of the three again, NUDGES times (lines.ts), rounding numbers a millionth off)
+    nudges = []
+    for seed in range(1, ${NUDGES} + 1):
+        each = {}
+        for name, rounding in (("16", {}), ("8", {"q8": True}), ("H", {"h16": True})):
+            run = answer(data, vocabulary, text, count, options, half=True, nudge=seed, **rounding)
+            gc.collect()
+            each["keys" + name], each["values" + name] = run["keys"], run["values"]
+        nudges.append(each)
     return {**exact, "keys16": rounded["keys"], "values16": rounded["values"], "logits16": rounded["logits"],
-            "keys8": eight["keys"], "values8": eight["values"], "logits8": eight["logits"], "keysH": halves["keys"], "valuesH": halves["values"]}
+            "keys8": eight["keys"], "values8": eight["values"], "logits8": eight["logits"], "keysH": halves["keys"], "valuesH": halves["values"],
+            "nudged": nudges}
 `;
 // Pyodide with the engine as the page has it, the Python above and the made-up models' maker
 async function referencePython() {

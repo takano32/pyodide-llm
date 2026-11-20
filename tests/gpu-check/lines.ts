@@ -104,5 +104,8 @@ const K_HALF = 3;
 // distance at the layer (steps.ts), which carries a deep layer's 8-bit roundings; the weak wrong GPUs of T226 (a layer
 // that reads layer 0's FFN norm) were measured against 3
 const K_PACKED_STEPS = 3;
+// T674: how many more times NumPy's E16, Q8 and H16 are taken, each run rounding numbers a millionth off (reference.ts's
+// nudged()), so that a layer's line is K times the largest of the samples, not of one (see verdicts.ts)
+const NUDGES = 2;
 
-export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, SCALE_LINE, TIE };
+export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, SCALE_LINE, TIE };

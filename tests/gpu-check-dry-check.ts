@@ -61,6 +61,10 @@ for (const [id, layers] of Object.entries(MODELS)) {
   assert.ok(table > 0, `${id}: the first table's columns`);
   assert.deepEqual(own.slice(table + 2, table + 3 + layers).map((row) => row.split(" | ")[0]), [...Array.from({ length: layers }, (_, l) => `| ${l}`), "| all"]);
   assert.equal(own.filter((line) => line === `| layer | CPU | ${letters} |`).length, 2, `${id}: the other two tables`);
+  // (T674: and the samples of the lines' yardsticks, NumPy's and its 2 nudged runs' of each, a row a layer)
+  const samples = own.indexOf("| layer | E16 | E16 1 | E16 2 | Q8 | Q8 1 | Q8 2 | H16 | H16 1 | H16 2 |");
+  assert.ok(samples > 0, `${id}: the samples' table`);
+  assert.deepEqual(own.slice(samples + 2, samples + 2 + layers).map((row) => row.split(" | ")[0]), Array.from({ length: layers }, (_, l) => `| ${l}`));
   assert.ok(own.some((line) => line.startsWith("- CPU: forward.js on the CPU: ")) && own.some((line) => line.startsWith(`- ${String.fromCharCode(64 + of.length)}: no form, no attention: `)));
   assert.ok(own.some((line) => line.startsWith(`seconds of ${id}: NumPy (with its cache in float16, Q8 and H16) `)));
 }

@@ -26,6 +26,13 @@ function quantizersWrong(outcome) {
   } else console.log(`the quantizers alone: not tried (${q?.skipped ?? "no answer"})`);
   return failed;
 }
+// T674: a yardstick of the lines by layer (keys16, keys8 or keysH and their values: "16", "8" or "H"), the largest at
+// each layer of NumPy's sample's distance from NumPy's and of each nudged run's (the reference's nudged, where it has
+// them), byLayer() measuring each. A NaN in any sample is the layer's (Math.max())
+function yardstick(ref, name, byLayer) {
+  const samples = [ref, ...(ref.nudged ?? [])].map((each) => byLayer({ keys: each[`keys${name}`], values: each[`values${name}`] }));
+  return samples[0].map((_, l) => Math.max(...samples.map((sample) => sample[l])));
+}
 // a model's lines (the CPU's, each run's, the steps', the tables) and whether any of them failed
 function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, remembered, alone, broken, nanSeconds, heldFrom }) {
   let failed = false;
@@ -39,7 +46,8 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
   const kept = (run) => run && { ...run, keys: rows(run.keys), values: rows(run.values), ...(run.again ? { again: kept(run.again) } : {}) };
   const r = found.reference, c = { ...found, reference: { ...r, ...kept(r), ...(r.keys16 ? { keys16: rows(r.keys16), values16: rows(r.values16) } : {}),
     ...(r.keys8 ? { keys8: rows(r.keys8), values8: rows(r.values8) } : {}),
-    ...(r.keysH ? { keysH: rows(r.keysH), valuesH: rows(r.valuesH) } : {}) } };
+    ...(r.keysH ? { keysH: rows(r.keysH), valuesH: rows(r.valuesH) } : {}),
+    ...(r.nudged ? { nudged: r.nudged.map((each) => Object.fromEntries(Object.entries(each).map(([name, b64]) => [name, rows(b64)]))) } : {}) } };
   const ref = c.reference, cpu = kept(cpuRun), runs = runsGiven.map(kept);
   const exact = { keys: ref.keys, values: ref.values };
   // T187: the worst row of every layer (the lines are held a layer at a time)
@@ -57,9 +65,13 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
   const cpuKv = kv(cpu);
   // T153: E16, NumPy's answer with its cache in float16 against NumPy's. T187: Q8, with the matrices' inputs in 8 bits
   const half = { keys: ref.keys16, values: ref.values16 }, eight = { keys: ref.keys8, values: ref.values8 };
-  const e16 = kv(half), q8 = kv(eight), q8First = firstKv(eight), e16s = byLayer(half), q8s = byLayer(eight);
-  // T562: H16, with the matrices' weights and inputs in float16 as well (the f16 tiles' arithmetic)
-  const h16s = ref.keysH ? byLayer({ keys: ref.keysH, values: ref.valuesH }) : e16s.map(() => 0);
+  const e16 = kv(half), q8 = kv(eight), q8First = firstKv(eight);
+  // T674: the lines' yardsticks a layer at a time, E16's, Q8's and (T562) H16's (the matrices' weights and inputs in
+  // float16 as well, the f16 tiles' arithmetic), each the largest of NumPy's sample and of its runs that round numbers a
+  // millionth off (reference.ts's nudged()): one sample of a deep model's roundings was 3 times larger at one layer than
+  // at the next (the real Gemma 4 E2B's, T334.5), and a GPU as it should be went past the lines there
+  const e16s = yardstick(ref, "16", byLayer), q8s = yardstick(ref, "8", byLayer);
+  const h16s = ref.keysH ? yardstick(ref, "H", byLayer) : e16s.map(() => 0);
   const want = floats(ref.logits), largest = want.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
   const p = logSoftmax(want), top = argmax(want);
   const tenBest = [...want.keys()].sort((i, j) => want[j] - want[i]).slice(0, 10);
@@ -236,4 +248,4 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
   return failed;
 }
 
-export { promptsOnGpu, quantizersWrong, modelWrong };
+export { promptsOnGpu, quantizersWrong, modelWrong, yardstick };

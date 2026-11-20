@@ -47,6 +47,18 @@ function layerTables(c, cpu, runs, { e16, q8, cpuLogits, logits, scale }) {
     for (let l = 0; l < layers; l++) console.log(`| ${l} | ${table.map((column) => e(column[l])).join(" | ")} |`);
     console.log(`| all | ${table.map((column) => e(Math.max(...column))).join(" | ")} |`);
   }
+  // T674: the samples the lines' yardsticks are the largest of (verdicts.ts's yardstick()), each against NumPy's: E16,
+  // Q8 and H16 of NumPy's, and of its runs that round numbers a millionth off ("E16 1"...), where the reference has them.
+  // Whether a layer's jump is the roundings' own shows here: in every sample at that layer, or in one alone
+  if (ref.nudged?.length) {
+    const sampled = [["E16", "16"], ["Q8", "8"], ...(ref.keysH ? [["H16", "H"]] : [])].flatMap(([name, key]) => [ref, ...ref.nudged].map((each, i) =>
+      [i ? `${name} ${i}` : name, { keys: each[`keys${key}`], values: each[`values${key}`] }]));
+    const table = sampled.map(([, got]) => byLayer(got, exact));
+    console.log(`\nkeys and values of ${c.id} by layer, the samples of the lines' yardsticks against NumPy's (T674: ${ref.nudged.length} more runs of each rounding numbers a millionth off; a layer's yardstick is the largest of its row's E16s, Q8s or H16s)\n`);
+    console.log(`| layer | ${sampled.map(([name]) => name).join(" | ")} |`);
+    console.log(`|---:|${table.map(() => "---:").join("|")}|`);
+    for (let l = 0; l < layers; l++) console.log(`| ${l} | ${table.map((column) => e(column[l])).join(" | ")} |`);
+  }
   console.log("");
   const all = (run) => Math.max(...byLayer(run, exact));
   const said = (x) => `logits KL ${e(x.kl)}, the ten most likely ${e(x.ten)}, most likely ${x.token}`;

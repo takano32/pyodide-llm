@@ -26,7 +26,7 @@ import { parse } from "@babel/parser";
 import { runtime } from "./tree.ts";
 import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff } from "./gpu-check/measures.ts";
 import { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn } from "./gpu-check/models.ts";
-import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, SCALE_LINE, TIE } from "./gpu-check/lines.ts";
+import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, SCALE_LINE, TIE } from "./gpu-check/lines.ts";
 import { promptsOnGpu, quantizersWrong, modelWrong } from "./gpu-check/verdicts.ts";
 import { unbound, stepsRight } from "./gpu-check/steps.ts";
 import { layerTables } from "./gpu-check/tables.ts";
@@ -110,7 +110,7 @@ check("the made-up models an engine runs", () => {
 check("the numbers a run is held to are the ones decided", () => {
   // each is a decision with its derivation in lines.ts (T187: the lines are the arithmetic's own distances): loosening one
   // lets a wrong GPU through, so changing one is changing this too, and saying why in TASKS.md
-  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4 }, K_PACKED: 5, K_PACKED_STEPS: 3, K_HALF: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
+  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, NUDGES, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4 }, K_PACKED: 5, K_PACKED_STEPS: 3, K_HALF: 3, NUDGES: 2, SCALE_LINE: 1e-4, TIE: Math.LN2 });
 });
 
 // ---- a made-up case: 2 layers, 3 positions of the prompt, keys and values 8 wide, a vocabulary of 6
@@ -286,6 +286,34 @@ check("an f16 form's layer by K_HALF × H16's distance, the f16 tiles' arithmeti
   assert.equal(model([f16(4e-2)], {}, withHalves).value, true);
   assert.equal(model([runOf({ off: 2.5e-2, layers: [1] })], {}, withHalves).value, true);
   assert.equal(model([f16(2.5e-2)]).value, true);
+});
+check("a layer's line is K times the largest of NumPy's E16, Q8 or H16 and its nudged runs' (T674)", () => {
+  // a nudged run whose E16, Q8 and H16 are larger at layer 1 than NumPy's sample (as a deep model's roundings are at
+  // one layer and not the next): a run past the one sample's line there passes, as far within the nudged one's
+  const H = 1e-2, keysH = moved(KEYS, H), valuesH = moved(VALUES, H);
+  const larger = (from, by) => b64(moved(from, by, [1]));
+  const nudge = { keys16: larger(moved(KEYS, E16), 3 * E16), values16: larger(moved(VALUES, E16), 3 * E16), keys8: larger(moved(KEYS, Q8), 2 * Q8),
+    values8: larger(moved(VALUES, Q8), 2 * Q8), keysH: larger(keysH, 2 * H), valuesH: larger(valuesH, 2 * H) };
+  // (and one smaller than NumPy's sample everywhere: the largest is taken, not the last)
+  const smaller = { keys16: b64(KEYS), values16: b64(VALUES), keys8: b64(KEYS), values8: b64(VALUES), keysH: b64(KEYS), valuesH: b64(VALUES) };
+  const reference = { ...REFERENCE, keysH: b64(keysH), valuesH: b64(valuesH) };
+  const one = { ...CASE, reference }, nudged = { ...CASE, reference: { ...reference, nudged: [nudge, smaller] } };
+  // float32: E16 4e-3 at layer 1, its line 4 × 4e-3; f16: H16 3e-2, its line 3 × 3e-2; DP4A: Q8 6e-2, its line 5 × 6e-2
+  assert.ok(GPU_LINE < 1.2e-2 && 1.2e-2 < K.float32 * 4 * E16 && HALF_LINE < 6e-2 && 6e-2 < K_HALF * 3 * H && K_PACKED * Q8 < 2.4e-1 && 2.4e-1 < K_PACKED * 3 * Q8);
+  const runs = [runOf({ off: 1.2e-2, layers: [1] }), runOf({ form: "llama.cpp tiles 32×32, f16", off: 6e-2, layers: [1] }),
+    runOf({ form: "ORT's DP4A", keys: floats(REFERENCE.keys8), values: floats(REFERENCE.values8), off: 2.2e-1, layers: [1] })];
+  const fine = model(runs, {}, nudged);
+  assert.equal(fine.value, false, fine.text);
+  assert.deepEqual([...fine.text.matchAll(/; layer (\d) (\S+) of its line\)/g)].map((m) => `${m[1]} ${m[2]}`), ["1 0.75", "1 0.67", "1 0.80"]);
+  // each past the line of NumPy's sample alone
+  for (const run of runs) assert.equal(model([run], {}, one).value, true, run.form);
+  // a NaN in a nudged run's keys is the layer's yardstick, and fails the run
+  const broken = { ...nudge, keys8: b64(floats(nudge.keys8).map((x, i) => (i === N * KV + 3 ? NaN : x))) };
+  assert.equal(model([runs[2]], {}, { ...CASE, reference: { ...reference, nudged: [broken] } }).value, true);
+  // the samples' table: a column a sample, a row a layer
+  const table = fine.text.split("\n").find((line) => line.startsWith("| layer | E16 | E16 1 | E16 2 | Q8 | Q8 1 | Q8 2 | H16 | H16 1 | H16 2 |"));
+  assert.ok(table, fine.text);
+  assert.match(fine.text, /\n\| 1 \| 1\.0e-3 \| 4\.0e-3 \| 0\.0e\+0 \| 2\.0e-2 \| 6\.0e-2 \| 0\.0e\+0 \| 1\.0e-2 \| 3\.0e-2 \| 0\.0e\+0 \|\n/);
 });
 check("the status of a GPU that takes the prompts", () => {
   for (const note of ["prompts on WebGPU", "prompts and answers on WebGPU", "prompts on WebGPU, answers on the CPU"]) assert.ok(promptsOnGpu(note), note);
@@ -602,8 +630,9 @@ check("the harness is a module, and the runtime's files it names are in this tre
 // ---- reference.ts's Python: the two classes that make E16 and Q8, in the native Python (NumPy alone)
 check("the cache in float16 and the matrix that takes its input in 8 bits", () => {
   // (the text imports the engine too: its classes are what this reads, cut out of it)
-  const classes = PYTHON.slice(PYTHON.indexOf("class Half"), PYTHON.indexOf("def answer("));
-  assert.ok(classes.includes("class Half(np.ndarray)") && classes.includes("class Q8(np.ndarray)"));
+  // (T674: and nudged(), which they round through)
+  const classes = PYTHON.slice(PYTHON.indexOf("NUDGE = [None]"), PYTHON.indexOf("def answer("));
+  assert.ok(classes.includes("def nudged(") && classes.includes("class Half(np.ndarray)") && classes.includes("class Q8(np.ndarray)"));
   const out = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", `import json, numpy as np
 ${classes}
 cache = np.zeros((2, 4), dtype=np.float32).view(Half)
@@ -613,9 +642,20 @@ cache[1] = [third, 3.0, 1e-30, -third]
 product = cache * np.float32(2)
 x = np.concatenate([[127.0, 0.5, 1.5, 2.5, -0.5, -1.5, 126.4, 126.6], np.zeros(24), np.zeros(32), [2.54, 1.0, 0.011, -2.54], np.zeros(28)]).astype(np.float32)
 w = np.eye(96, dtype=np.float32).view(Q8)
+def nudging(seed, made):
+    NUDGE[0] = None if seed is None else np.random.default_rng(seed)
+    out = [float(v) for v in made()]
+    NUDGE[0] = None
+    return out
+def written():
+    ties = np.zeros(64, dtype=np.float32).view(Half)
+    ties[:] = np.full(64, 0.5 + 2.0**-12, dtype=np.float32)
+    return ties
 print(json.dumps({"written": float(cache[0, 1]), "half": float(np.float32(third).astype(np.float16)), "row": [float(v) for v in cache[1]],
     "plain": type(product).__name__, "kept": type(cache).__name__, "doubled": float(product[0, 1]),
-    "q8": [float(v) for v in (w @ x)], "q8type": type(w @ x).__name__}))`], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
+    "q8": [float(v) for v in (w @ x)], "q8type": type(w @ x).__name__,
+    "nudged": [nudging(seed, lambda: w @ x) for seed in (1, 2)], "cacheNudged": [nudging(seed, written) for seed in (3, None)],
+    "h16Nudged": [nudging(seed, lambda: np.eye(64, dtype=np.float32).view(H16) @ np.full(64, 0.5 + 2.0**-12, dtype=np.float32)) for seed in (4, None)]}))`], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
   // what is written into the cache is the nearest float16 (under its range 0); what is computed of it is plain
   assert.equal(out.written, out.half);
   assert.notEqual(out.written, Math.fround(1 / 3));
@@ -627,6 +667,21 @@ print(json.dumps({"written": float(cache[0, 1]), "half": float(np.float32(third)
   const scale = Math.fround(Math.fround(2.54) / 127);
   assert.ok(Math.abs(out.q8[64] - 127 * scale) < 1e-6 && Math.abs(out.q8[65] - 50 * scale) < 1e-6 && Math.abs(out.q8[66] - scale) < 1e-6 && Math.abs(out.q8[67] + 127 * scale) < 1e-6, String(out.q8.slice(64, 68)));
   assert.equal(out.q8type, "ndarray");
+  // T674: nudged, a value a millionth of its group's largest from a tie may round to the other side (0.5 to 0 or 1, -1.5
+  // to -1 or -2), one far from a tie rounds to the same step as it did (its scale a millionth off, the largest's own
+  // nudge): the two seeds move some of the five ties between them
+  const ties = [1, 2, 3, 4, 5];
+  for (const nudged of out.nudged) {
+    nudged.forEach((value, i) => assert.ok(Math.abs(value - out.q8[i]) <= (ties.includes(i) ? 1 : 0) + 1e-3, `nudged ${i}: ${value} where ${out.q8[i]}`));
+  }
+  assert.ok(out.nudged.some((nudged) => ties.some((i) => Math.abs(nudged[i] - out.q8[i]) > 0.5)), "no nudge moved a tie");
+  // 64 values of the cache, and of an input of H16, at a tie of float16 (0.5 + 2^-12, between 0.5 and 0.5 + 2^-11):
+  // nudged, some round to either side; where no run nudges, all to the even one
+  for (const [name, [nudged, not]] of Object.entries({ cache: out.cacheNudged, H16: out.h16Nudged })) {
+    assert.ok(not.every((value) => value === 0.5), name);
+    assert.ok(nudged.every((value) => value === 0.5 || value === 0.5 + 2 ** -11), name);
+    assert.ok(nudged.includes(0.5) && nudged.includes(0.5 + 2 ** -11), `${name}: ${nudged}`);
+  }
 });
 
 console.log(`gpu-check-parts-check: ok (${checks} checks; ${Object.keys(SYNTHETIC).length} made-up models, a made-up case of ${LAYERS} layers and ${N} positions)`);
