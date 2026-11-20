@@ -23,7 +23,9 @@ import type { LayerKind, Tensor, TensorName, Tensors } from "../contracts/plan.t
 // (T375.5: the architecture's name, the size of a head, and the numbers of the layers that keep a state: sizes.ts's Formed)
 // (T334.4: and what sizes each layer of its own, attention.ts's CacheForm, and the width of every layer's input of a table of its own)
 type LayersForm = Formed & CacheForm & { per_layer?: number };
-export type GpuForm = LayersForm & { bias?: boolean; qk_norm?: boolean };
+// (T334.3's review: and the cap of the attention's scores, a Gemma 2's, which the converter writes into the options:
+// no FORM key, gemma2.py's gemma2_options())
+export type GpuForm = LayersForm & { bias?: boolean; qk_norm?: boolean; score_softcap?: number };
 // the adapter as the worker keeps it (worker/runtime.ts). keys: the device's key of a model by the shaders of its own
 // (shaders/key.ts's deviceKey(): plain, T232 ternary weights', T547.3.7 llama.cpp's blocks'), none where it was not made
 export type Adapter = { fallback: boolean; limits: { maxStorageBufferBindingSize: number; maxBufferSize: number }; packed: boolean;
@@ -305,6 +307,10 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // T641.3: a layer of a kind the GPU alone may not hold, kinds.ts's gpu.alone)
   const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), stateful: sizes.kinds.some((kind) => !LAYER_KINDS[kind as LayerKind].gpu?.alone) });
   if (facts) return facts;
+  // T334.3's review: nor attention whose scores are capped (a Gemma 2's: its GELU gate and windows pass the facts above
+  // since T334.3), which no shader has: refused here, before its bytes go to the GPU's worker, and not by the engine
+  // once built (gpufit.ts's scoresCapped), which would load it again on the CPU
+  if (form.score_softcap) return REASONS.scoresCapped;
   // T334.3: a model with a table of every layer's inputs (a Gemma 4's) where a test asks for the GPU alone (?gpuTest=only)
   // and nowhere else yet: on a device that says 8 GB its E2B is as much too large to hold twice as its E4B, and where the
   // E2B goes is the owner's choice (TASKS.md's T334.3: this line goes then)

@@ -207,6 +207,12 @@ const KINDS = { attention: plain, echo };
   // (T334.3: a Gemma 3's and a Gemma 4's GELU gate and windows, and a PLaMo 3's windows, are the GPU alone's too)
   assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2", "gemma3", "gemma4", "plamo3", "spark", "bitnet"].map((arch) => gpuOnlyUnfit(header, "int8", { arch }, adapter)),
     [null, POSITIONS, FFN, null, null, null, null, null, ACTIVATION, ACTIVATION]);
+  // (T334.3's review: a Gemma 2 passes by its architecture's facts, as the line above says, but not by its form: the cap
+  // of its scores, which the converter writes, keeps it off the GPU alone before it is loaded; the name alone decides
+  // nothing of it)
+  const CAPPED = "attention whose scores are capped is not on the GPU yet";
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma2" }, adapter), null);
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma2", score_softcap: 50 }, adapter), CAPPED, "a Gemma 2 whose scores are capped went on the GPU alone");
   // (T334.3: but a table of every layer's inputs where a test asks for it alone, ?gpuTest=only: the owner's choice)
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma4", per_layer: 32 }, adapter), PER_LAYER);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma4", per_layer: 32 }, adapter, { only: true }), null);
