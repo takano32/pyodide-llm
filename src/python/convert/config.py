@@ -2,6 +2,7 @@
 # in convert/families/ (T359), looked up here by the config's model_type.
 from convert.families import FAMILIES, family_of, named
 from convert.families.family import head_size, positive, refuse, rotary_dim, yarn  # noqa: F401
+from engine.layers import rope_magnitude
 
 
 def normalize(config):
@@ -20,7 +21,7 @@ def normalize(config):
         if "partial_rotary_factor" in rope:
             config["rotary_pct"] = rope["partial_rotary_factor"]
     # (the family again: before() may have given the config the model_type of what it holds, a Qwen3.5's text_config)
-    return family_of(config).after(yarn_contexts(config))
+    return family_of(config).after(yarn_attention(yarn_contexts(config)))
 
 
 def yarn_contexts(config):
@@ -41,6 +42,24 @@ def yarn_contexts(config):
     if "factor" in scaling and scaling["factor"] is None and positive(original) and positive(context):
         scaling["factor"] = context / original
     return {**config, "rope_scaling": scaling}
+
+
+def yarn_attention(config):
+    """T259: a yarn's attn_factor (DeepSeek-R1-0528-Qwen3-8B's 0.878, which is 1 / (0.1 ln 4 + 1)) as the engines that
+    read the name read it, the magnitude cos and sin are multiplied by: vLLM 0.8.5 to 0.9 and SGLang 0.4.6 (the
+    model's card runs it as Qwen3-8B, whose card names those) multiply yarn's own 0.1 ln(factor) + 1 by it, and llama.cpp
+    its GGUF key rope.scaling.attn_factor (rope_attn_factor). Made transformers' attention_factor, the magnitude itself
+    (rope_magnitude()), which the rest reads. transformers drops the name, and so do llama.cpp's GGUFs of the model
+    (its converter writes it as yarn_attn_factor, which only Grok reads): 1.1386 there, a perplexity 2% to 5% the higher
+    on the page's path (docs/notes/t259-deepseek-yarn-2026-11-20.md). Only alone: with an attention_factor or an mscale
+    the engines part ways, and check_config() refuses it by its name as before. Twice is once."""
+    scaling = config.get("rope_scaling")
+    if not isinstance(scaling, dict) or scaling.get("rope_type", scaling.get("type")) != "yarn" \
+            or not positive(scaling.get("attn_factor")) or not positive(scaling.get("factor")) \
+            or any(scaling.get(key) is not None for key in ("attention_factor", "mscale", "mscale_all_dim")):
+        return config
+    rest = {key: value for key, value in scaling.items() if key != "attn_factor"}
+    return {**config, "rope_scaling": {**rest, "attention_factor": rope_magnitude(rest) * scaling["attn_factor"]}}
 
 
 def check_config(config):
@@ -72,8 +91,9 @@ def check_config(config):
     if said is not None:
         # T235: yarn as Ternary-Bonsai's config.json says it, a factor and the original context; T532: and what else
         # transformers 5.16.1 reads of a yarn (rope_frequencies(), rope_magnitude()). Any other key is refused rather
-        # than dropped without a word: transformers drops attn_factor (DeepSeek-R1-0528-Qwen3-8B's), which vLLM and
-        # llama.cpp multiply by, and a GGUF's own (llama.cpp's names, families/llama.py) mean what llama.cpp makes of them
+        # than dropped without a word: a GGUF's own (llama.cpp's names, families/llama.py) mean what llama.cpp makes of
+        # them. T259: an attn_factor alone normalize() has made an attention_factor (yarn_attention()); one beside an
+        # attention_factor or an mscale is refused here
         for key in sorted(set(said) - set(YARN_KEYS)):
             refuse(f"its yarn RoPE scaling sets {key}, which the engine does not read")
         if not all(isinstance(said.get(key), (int, float)) and said[key] > 0 for key in ("factor", "original_max_position_embeddings")):

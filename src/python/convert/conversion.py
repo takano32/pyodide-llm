@@ -3,7 +3,7 @@ import json
 
 from engine.dtypes import dtype_of
 from engine.proxy import plain
-from convert.config import check_config, normalize
+from convert.config import check_config, normalize, yarn_attention
 from convert.stream import PIECE, Kept, Stream
 from convert.gguf import gguf_model, gguf_read, rope_freqs_values
 from convert.beginning import beginning_and_stops, options_of
@@ -55,7 +55,9 @@ class Conversion:
         # (T505.2: llama.cpp's table of a Llama 3's RoPE scaling, which a GGUF alone has in the place of the scaling)
         header, config = gguf_model(metadata, tensors, base, table=rope_freqs_values(head, tensors, base, metadata))
         self = cls.__new__(cls)
-        self.config = config
+        # T259: a yarn's attn_factor (llama.cpp's rope.scaling.attn_factor) made the attention_factor the engine reads:
+        # the rest of this config stays as the GGUF spells it, which the options carry
+        self.config = yarn_attention(config)
         check_config(normalize(config))  # a GPT-2's is in config.json's own spelling (T136's third stage)
         # the review of T203: every text begins with the BOS, and the answer stops at it and at the EOS
         # (beginning_and_stops()). A GGUF that names none would have tokens 1 and 2 there, '"' and '#' of a byte-level

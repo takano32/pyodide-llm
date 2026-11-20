@@ -619,7 +619,7 @@ def test_a_gguf_whose_yarn_is_not_the_originals_is_refused(theirs):
             llama2_convert.gguf_weights(plain, json.dumps(published))
 
 
-@pytest.mark.parametrize("key", ["attn_factor", "yarn_attn_factor", "yarn_log_multiplier", "yarn_ext_factor"])
+@pytest.mark.parametrize("key", ["yarn_attn_factor", "yarn_log_multiplier", "yarn_ext_factor"])
 def test_a_gguf_whose_yarn_says_more_than_the_tables_know_is_refused(key):
     """llama.cpp scales the turned values by a GGUF's attn_factor, or by its yarn_log_multiplier's: neither is
     transformers' attention_factor or mscale_all_dim (T532: llama.cpp multiplies by the one, and makes a ratio of the
@@ -630,6 +630,20 @@ def test_a_gguf_whose_yarn_says_more_than_the_tables_know_is_refused(key):
     config, published, file, _ = bonsai_gguf(also=[(f"qwen3.rope.scaling.{key}", 6, 0.5)])
     with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key}"):
         fed(file, "int8")
+    with pytest.raises(ValueError, match="yarn RoPE scaling"):
+        llama2_convert.gguf_weights(file, json.dumps(published))
+
+
+def test_a_gguf_reads_its_attn_factor_as_llama_cpp_does():
+    """T259: llama.cpp multiplies the magnitude of a yarn (0.1 ln(factor) + 1) by a GGUF's rope.scaling.attn_factor
+    (rope_attn_factor, llama-context.cpp), as vLLM and SGLang do a config.json's attn_factor: a GGUF alone that says it
+    makes the attention_factor of their product (normalize()), and the original's config.json that says the same
+    attn_factor agrees with it. One that does not is another model (the GGUFs of DeepSeek-R1-0528-Qwen3-8B say none)."""
+    config, published, file, _ = bonsai_gguf(also=[("qwen3.rope.scaling.attn_factor", 6, 0.5)])
+    magnitude = 0.5 * (0.1 * math.log(YARN["factor"]) + 1)
+    scaling = fed(file, "int8").options["rope_scaling"]
+    assert scaling["attention_factor"] == pytest.approx(magnitude) and "attn_factor" not in scaling
+    llama2_convert.gguf_weights(file, json.dumps({**published, "rope_scaling": {**YARN, "attn_factor": 0.5}}))
     with pytest.raises(ValueError, match="yarn RoPE scaling"):
         llama2_convert.gguf_weights(file, json.dumps(published))
 

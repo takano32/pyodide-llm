@@ -104,10 +104,11 @@ def gguf_config(key, tensors):
                 key("rope.scaling.original_context_length", key("context_length"))
             # T532: the two bounds mean in llama.cpp (ggml_rope_yarn_corr_dims(), which always rounds them outward)
             # what beta_fast and beta_slow mean in transformers, and are read as those. The rest keep llama.cpp's
-            # names, which check_config() refuses: llama.cpp multiplies the magnitude by attn_factor (config.json's
-            # attn_factor of DeepSeek-R1-0528-Qwen3-8B, which transformers drops), makes it of yarn_log_multiplier
-            # with an mscale of 1 it assumes (llama-context.cpp), and puts yarn_attn_factor aside for its own: none is
-            # transformers' attention_factor or mscale_all_dim
+            # names: llama.cpp multiplies the magnitude by attn_factor (rope_attn_factor), which normalize() reads as
+            # vLLM and SGLang read a config.json's (T259: yarn_attention()), makes it of yarn_log_multiplier with an
+            # mscale of 1 it assumes (llama-context.cpp), and puts yarn_attn_factor aside for its own (only Grok reads
+            # it; llama.cpp's converter writes a config.json's attn_factor there): those check_config() refuses, as
+            # neither is transformers' attention_factor or mscale_all_dim
             for name, ours in (("yarn_beta_fast", "beta_fast"), ("yarn_beta_slow", "beta_slow"),
                                ("attn_factor", "attn_factor"), ("yarn_attn_factor", "yarn_attn_factor"),
                                ("yarn_log_multiplier", "yarn_log_multiplier"), ("yarn_ext_factor", "yarn_ext_factor")):

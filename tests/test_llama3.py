@@ -192,6 +192,22 @@ def test_the_yarn_frequencies_are_what_transformers_printed(scaling, expected):
     assert rope_magnitude({**scaling, "attention_factor": 1.5}) == 1.5
 
 
+def test_a_yarns_attn_factor_multiplies_its_magnitude():
+    """T259: DeepSeek-R1-0528-Qwen3-8B's attn_factor, 1 / (0.1 ln 4 + 1), is read as vLLM 0.9 and SGLang read it: cos
+    and sin times (0.1 ln(factor) + 1) times it, 1 for that model (transformers drops it: 1.1386). As the
+    attention_factor the tables read, and the angles are yarn's as before. Twice is once."""
+    config, weights = synthetic_weights()
+    _, published = hugging_face(config, weights, True)
+    said = normalize({**published, "rope_scaling": {**YARN, "attn_factor": 0.8782488562869419}})
+    assert said["rope_scaling"] == {**YARN, "attention_factor": pytest.approx(1.0, abs=1e-15)}
+    assert normalize(said) == said
+    assert rope_magnitude(said["rope_scaling"]) == pytest.approx(1.0, abs=1e-15)
+    half = normalize({**published, "rope_scaling": {**YARN, "attn_factor": 0.5}})["rope_scaling"]
+    assert rope_magnitude(half) == pytest.approx(0.5 * rope_magnitude(YARN), abs=1e-15)
+    head = config["dim"] // config["n_heads"]
+    assert np.array_equal(rope_frequencies(head, 10000.0, half), rope_frequencies(head, 10000.0, YARN))
+
+
 def test_only_the_kinds_of_scaling_the_tables_know_are_let_through():
     config, weights = synthetic_weights()
     _, published = hugging_face(config, weights, True)
@@ -210,6 +226,12 @@ def test_only_the_kinds_of_scaling_the_tables_know_are_let_through():
     for key, value in (("attn_factor", 0.8782488562869419), ("finetuned", True), ("extrapolation_factor", 1.0)):
         with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key}, which"):
             check_config({**published, "rope_scaling": {**YARN, key: value}})
+    # T259: attn_factor alone is read (normalize(): the magnitude times it, as vLLM, SGLang and llama.cpp read it); with
+    # an attention_factor or an mscale, where those engines part ways, it is refused as before
+    check_config(normalize({**published, "rope_scaling": {**YARN, "attn_factor": 0.8782488562869419}}))
+    for also in ({"attention_factor": 1.2}, {"mscale": 1.0, "mscale_all_dim": 0.707}, {"mscale": 0.707}):
+        with pytest.raises(ValueError, match="yarn RoPE scaling sets attn_factor, which"):
+            check_config(normalize({**published, "rope_scaling": {**YARN, "attn_factor": 0.5, **also}}))
     for key, value in (("truncate", 0), ("beta_fast", "16"), ("attention_factor", -1.0), ("mscale", True)):
         with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key} to"):
             check_config({**published, "rope_scaling": {**YARN, key: value}})
