@@ -107,7 +107,7 @@
 - T655 [改善][モデル] モデルが自分で開く複数トークンの考えの印を追う（PLaMo 3 の考える形の上限） — 候補
 - T657 [追加][モデル] PLaMo 3 NICT 2B・8B base を原本と照らさずに一覧に — 未着手
 - T664 [調査][モデル] plamo-translate-desktop から取り込むものの洗い出しと順 — 調べは完了
-- T668 [追加][CPU] DRY の標本抽出（くり返しを罰する規則） — 進行中
+- T668 [追加][CPU] DRY の標本抽出（くり返しを罰する規則） — 反映済み
 - T669 [描画][モデル] PLaMo 3 Translate を 1 つの翻訳の項目にまとめ、翻訳先の言語と文体を選ぶ — 未着手
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
@@ -1067,7 +1067,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **作るもの（それぞれ自分の番号）と順**（取りまとめ役の決め: エンジンの側を先に、訪問者に見える所は文面を見せてから）: (1) T665 PFML3 のプロンプトを Python で組む → (2) T666 長文を段落の切れ端に分けて履歴つきで訳す → (3) T667 くり返しの検出と立て直し → (4) T668 DRY の標本抽出 → (5) T669 PLaMo 3 Translate を 1 つの翻訳の項目にまとめ、言語と文体を選ぶ（**文面と一覧の形は持ち主に見せてから**）→ (6) T670 文脈と用語集の欄（同じく）→ (7) T671 ほかの量子化と 31B → (8) T672 PFN の公表した品質の数を見せる（候補）。
 - **行を写すなら**、写したファイルのコメントに元の著作権の行と許諾文の全文（方針 10、MPL-2.0 と両立）。形と数（切れ端の大きさ、くり返しの線、DRY の値）を取るだけなら要らない。
 
-### T668 [追加][CPU] DRY の標本抽出（くり返しを罰する規則） — 状態: 進行中（2026-11-13、T664 から。T667 が使う。規模 小〜中。2026-11-21 に着手）
+### T668 [追加][CPU] DRY の標本抽出（くり返しを罰する規則） — 状態: 反映済み（2026-11-13、T664 から。T667 が使う。規模 小〜中。2026-11-21 に本線へ）
 - llama.cpp の DRY（倍率 0.8・底 1.75・許す長さ 2。向こうはくり返しの立て直しの最後の段だけで使う）を `Sampling` の欄に足す。AGENTS.md の「標本抽出の規則を足す」の全文（`docs/notes/adding/sampling.md`）のとおり: **既定は「その規則なし」**、kernel・NumPy・`likecpu.ts` の 3 つは同じ形、GPU の SAMPLE に足さない限りその設定の生成は CPU。
 - 形と式は llama.cpp の `llama-sampling.cpp` の DRY から（MIT: 行を写すなら許諾文）。翻訳の項目のほかに設定の欄に出すかは持ち主（出さないなら URL の名前も足さない）。
 - **T667 から**: 立て直しの最後の段の前のもう 1 回は `engine/document.py` の `PENALIZED`（今は None）の設定で回る。DRY を足したら `PENALIZED` をその設定（倍率 0.8・底 1.75・許す長さ 2、区切り `\n` `:` `"` `*`、窓は文脈の全部。向こうは生成したトークンだけを見る）にし、`test_document.py` の `penalized` の試験はそのまま通る。
@@ -1075,6 +1075,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **試験**: `tests/test_dry.py`（llama.cpp の `test-sampling.cpp` の `test_dry()` の 5 例を softmax まで同じ線 1e-5 で、手で数えた列（"5 6 7" が 3 回: 8 と 9 に 2、区切りで 8 が外れる・区切りがすぐ前で 0）、冪の伸びと上限（底 1e30 で指数 1）、底 1、400 の乱数の列で Z-algorithm を素の定義と、なれない値、`beyond()` と GPU のステップ、2 つの sampler（kernel は代役）が同じトークン（300 ステップ、作業領域が 256 を越えて伸びる）、kernel に渡す窓、`generate()` が区切りを渡す・DRY の無いときは語彙を歩かない、`containing()` が `<0x0A>` をそのバイトと読む、`PENALIZED`）。smoke: kernel と NumPy をビット単位で（24 の列 × 4 の設定、600 ステップで作業領域が 512 を越える、読み直しのリスト）、tiny-lm で DRY の生成が NumPy の sampler と同じ文で DRY なしと違う文、`dryLikeCpu` と kernel を 240 例でビット単位で（180 例で罰あり）。`tests/kernels-in-browser.ts` に手で数えた 4 例（周期 3 の 300 語で指数 158 の上限）。
 - **壊し方 17 本**（`.tmp` の道具で 1 本ずつ、PYTHONDONTWRITEBYTECODE=1）: Python 15 本（Z の箱の写しの `<` を `<=`・区切りで止めない・区切りを罰する・上限なし・最短の連なり・許す長さ + 1・history を見る・窓の始まりが 1 つずれ・NumPy で DRY を掛けない・kernel の写しを 1 語ずつ書かない・kernel に倍率でなく底・`generate()` が区切りを渡さない・`containing()` が語片の字で読む・窓 0 で DRY が入る・`PENALIZED` の倍率 0）はどれも落ちた（はじめは「history を見る」「窓の始まりのずれ」が通ったので、試験の history に "5 6 7 4" を、窓を 6 に替えた）。smoke で 2 本（kernel が語彙ごとの最長を 0 に戻さない・`dryLikeCpu` が指数を抑えない）もどちらも落ちた。
 - **確かめ**: pytest（4610 通る）・smoke・軽い組（手元 1263 秒）・`kernel_signatures.py`・`npm run types`・`npm run build` と `dist-check`・網 `unchanged.ts`（`python` は `test_dry.py` の新しい行だけが新しく、今ある試験の計算は全部同じ。`calls`・端末の鍵（192 の作り物の端末）・`models`・`page`・`bench`・`gpuworker`・`gpusteps` は同じ。`shaders` の窓口の export は新しい `dryLikeCpu` だけ。`exports` は予定どおり `jobs.js` の `ADDRESSES`（`dry` の行）と `Sampling`・`NumpySampler.drawing` の署名・`Tokenizer.containing`）。網の記録の道具 `unchanged_recorder.py` の `drawing` の包みが 3 つ目の引数を通す形に直した。 `worker-modules-check` は `Sampling` の欄と `Sampled` の鍵が同じことを見るので、ページの送らない DRY の 5 つを訳つきの一覧で外した（T669 で出すなら一覧から消す）。**CI を回した。訳**: カーネルを変えたので検証手順 5 の 1 本（WebKit・Chromium・Firefox の wasm のエンジン、run 44888330021: 3 つとも `dry` が 30000 回まで ok。はじめの run 44888210500 は `only_extra` に NumPy が無く `make kernels` の `python_facts.py` で落ちた: AGENTS.md の手順 5 の命令に `pip install numpy` を足した）。ページ・worker・WebGPU の道は変えていない（DRY の生成は CPU のステップで、一覧のどの項目も DRY を使わない）。
+- **本線**: `bfe1d81a`・`cd57c6c3`、デプロイ run 44890955587、本番の `models.yml` で stories260K が答えた（run 44891767283: 準備完了 5.8 秒、256 トークン）。DRY を実物の翻訳モデルで効かせる測りは未計測（T667 の 0.8B の測りではくり返しが 0 で、最後の段まで届かなかった）。
 
 ### T669 [描画][モデル] PLaMo 3 Translate を 1 つの翻訳の項目にまとめ、翻訳先の言語と文体を選ぶ — 状態: 未着手（2026-11-13、T664 から。T665 の後。規模 中。**文面と一覧の形は持ち主に見せてから**）
 - 今は大きさごとに「English → Japanese」「Japanese → English」の 2 項目（`shares` で変換は分け合う）。向こうは翻訳先を選び（既定は「日本語 ⇄ 英語（自動）」: 原文が日本語なら英語へ、ほかは日本語へ）、原文の言語はモデルに見分けさせる。
