@@ -93,7 +93,12 @@ console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables
   // (T667: loops is a translation of a long text's, engine/document.py's: no page sends it, and the stats say loop only
   // where it was asked for)
   assert.deepEqual([...own].sort(), ["echo", "loops", "prompt", "seed", "steps", "thinking"], "generate()'s own arguments are others now: say here which of them a page sends");
-  same("contracts/messages.ts's Sampled, to Sampling's fields and generate()'s steps, seed and thinking", typed.keysOf("Sampled"), new Set([...fields, "steps", "seed", "thinking"]));
+  // (T668: DRY's settings are no page's: Python's own document hands them, engine/document.py's PENALIZED. Whether the
+  // URL and the sheet have them is the owner's, TASKS.md's T669: then they are Sampled's keys, and out of this list)
+  const unsent = ["dry_multiplier", "dry_base", "dry_allowed_length", "dry_penalty_last_n", "dry_sequence_breakers"];
+  assert.deepEqual(unsent.filter((key) => !fields.has(key)), [], "a setting said to be no page's is no field of Sampling: take it out of the list");
+  same("contracts/messages.ts's Sampled, to Sampling's fields (but those no page sends) and generate()'s steps, seed and thinking", typed.keysOf("Sampled"),
+    new Set([...[...fields].filter((key) => !unsent.includes(key)), "steps", "seed", "thinking"]));
 
   // what the worker posts
   const declared = typed.membersOf("FromWorker"), sent = postedBy(trees, "owner");

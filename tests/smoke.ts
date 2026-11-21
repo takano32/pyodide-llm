@@ -1066,7 +1066,7 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
   if (narrowedSame < 0.95 * narrowedCases) throw new Error(`T274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases only`);
   // T668: DRY's penalty in JavaScript (shaders/likecpu.ts's dryLikeCpu(), no shader's) is the kernel's, bit for bit
   {
-    const { dryLikeCpu } = await import(runtimeUrl("shaders/likecpu.ts"));
+    const { dryLikeCpu } = await import(runtimeUrl("shaders.js"));
     const dried = pyodide.globals.get("kernel_dried");
     let changed = 0;
     for (let round = 0; round < 60; round++) {
