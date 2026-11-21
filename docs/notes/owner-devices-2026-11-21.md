@@ -9,8 +9,8 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 - **サイトの頭**: `https://takano32.github.io/pyodide-llm/`（下では「頭」と書く）。モデルは `頭?model=<ID>` で開く。計測のページは `頭benchmark/`。
 - **順の考え方**: (1) サイトのデータを消してから見るもの → (2) `/benchmark/` → (3) 小さいモデル → (4) 中くらい → (5) GB 級のモデル → (6) タブが落ちうるもの（`/benchmark/` の Page memory）の順。**GB 級の取得は Wi-Fi で、充電しながら**。PC は保存の空き（ディスク）を先に見る: 27B は 1 つで約 7〜8 GB を保存する。
 - **★の付いた手順**は、止まっているタスクの決めに要るもの。時間が足りなければ★だけ見て、残りは次の機会でよい。
-- **「CPU だけ」で比べたいとき**は `&threads=1` を足す（1 本だと GPU を使わない: 理由「one thread was asked for」）。速さは 1 本のぶん遅いので、比べるのは文の質だけ。GPU を切る旗は無い。GPU だけに置かれるモデル（[状] に「on the GPU alone」）にはこの旗は効かない。
-- `?gpuTest=on`・`?gpuTest=only` は試験の旗（ソフトウェアの GPU も GPU と見なし、速さを比べずに GPU を使う）。本物の GPU のある端末でだけ使う。ステータス行に「(gpuTest)」と出る。
+- **「CPU だけ」で比べたいとき**は `&threads=1` を足す（1 本だと GPU を使わない: 理由「one thread was asked for」）。速さは 1 本のぶん遅いので、比べるのは文の質だけ。GPU を切る旗は無い。効いたかは [状] が「prompts on the CPU (one thread was asked for)」と言うかで分かる（コンソールにも `gpu:` で始まる同じ訳の行が出るはず）。GPU だけに置かれるモデルにはこの旗は効かない（`&threads=1` を付けても [状] が「prompts and answers on WebGPU」のままで、「N threads」は付かない）。
+- `?gpuTest=on`・`?gpuTest=only` は試験の旗（ソフトウェアの GPU も GPU と見なし、速さを比べずに GPU を使う）。本物の GPU のある端末でだけ使う。ステータス行に「(gpuTest)」と出るのは `on` のときだけで、`only` では何も付かない。
 
 ### 写すもの（記号）
 
@@ -96,7 +96,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: 長い問い L を 1 つ。[状]・[答]・[コ]（`gpu:` の「a whole block: 16 tokens … ms, 64 tokens … ms」、`gpu: answers on the CPU (the classifier on the GPU as well (… MB with the layers) …)` の MB、`gpu: a step of a generation: …` があればその 2 つの数）（T334.1・T334.2）。
 2. ★ 同じ E2B を `頭?model=hf-gemma-4-e2b&gpuTest=only` で: 長い問い L を 1 つ。[状]（「prompts and answers on WebGPU」か）・[答]（tok/s が 1. より速いか、文が壊れていないか）・[コ]（`gpu: a token by … (a step of a run of 1: …)` の ms）。**T334.3 の置き場の判断（(a) 勧め・(b)・(c)）の材料**。判断の後は手順が変わる: (a) を選べば 1. のときから GPU だけになり 2. は要らない。
 3. Ternary Bonsai 4B `頭?model=hf-ternary-bonsai-4b` と 8B `頭?model=hf-ternary-bonsai-8b`: 1 つずつ日本語で。[状]・[答]・[目]（8B でタブが落ちないか）（T246）。
-4. Qwen3.5 4B `頭?model=hf-qwen3.5-4b` と Agents-A1 4B `頭?model=hf-agents-a1-4b`: 同じ短い問い J を送り、最初のトークンまでの秒の差（T337）。Qwen3.5 4B の [状] が GPU だけ（「on the GPU alone」）で準備完了まで行くか（T571）。余裕があれば Qwen3.5 9B `頭?model=hf-qwen3.5-9b` も（T571）。
+4. Qwen3.5 4B `頭?model=hf-qwen3.5-4b` と Agents-A1 4B `頭?model=hf-agents-a1-4b`: 同じ短い問い J を送り、最初のトークンまでの秒の差（T337）。Qwen3.5 4B が GPU だけ（[状] が「prompts and answers on WebGPU」で「N threads」が付かない）で準備完了まで行くか（T571）。余裕があれば Qwen3.5 9B `頭?model=hf-qwen3.5-9b` も（T571）。
 5. Spark-X2.5 4B `頭?model=hf-spark-x2.5-4b`: 1 つ。[状]・[答]（GPU だけに替わって tok/s が前より落ちていないか: T344）。
 6. Qwen2.5 3B `頭?model=hf-qwen2.5-3b-instruct`: 長い答えの問いを送り、答えの下の位置が 2048 を越えるまで書かせる（途中で止まったら「続けて」と送る）。メモリ不足にならないか、[コ] に `memory: the browser gave a shared memory of …` が出たか（T130・T226）。
 7. Llama 3.2 3B `頭?model=hf-llama-3.2-3b-instruct`: 1 つ。[状]（GPU だけか）・[答]（T210）。
@@ -158,8 +158,8 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 - Phi-3 mini `頭?model=hf-phi-3-mini-4k-instruct` と Phi-4 mini `頭?model=hf-phi-4-mini-instruct`（日本語で）: 1 つずつ。準備完了の秒・[状]（GPU の準備が通ったか、CPU に戻ったならその訳）・[答]（`<|end|>` で止まるか。`<|user|>` などの印が続けば止まりの誤り）。
 
 **B-8 27B の 3 つ（1 つ 6〜8 GB、メモリ 16 GB の PC で）（T547.3・T271.5・T233・T233 のレビュー (b)(c)・T237・T238）**
-1. ★ Underdog Saluki 27B `頭?model=hf-underdog-saluki-27b`: 1 つ。GPU だけに置かれるか、GPU の準備が終わるまでの秒、[状]（「prompts and answers on WebGPU」か）、[答]、[コ]（ステップの ms、「loaded again on the CPU」や `gpu:usage` で CPU に戻ったか）、[目]（タブが落ちないか）（T547.3）。
-2. Ternary Bonsai 2 27B `頭?model=hf-ternary-bonsai-2-27b`: 流行りの問い。準備完了の秒（取得 5.95 GB）・[状]（「on the GPU alone」か）・[答]（tok/s と本数）・[コ]（T271.5・T233・T237・T238）。考える形 `頭?model=hf-ternary-bonsai-2-27b-thinking` で 1 つ: 考えが終わるまでのトークン数と時間（T233）。最後にページを読み直し、2 回目の準備完了の秒（保存から開くか: T233 のレビュー (c)）。
+1. ★ Underdog Saluki 27B `頭?model=hf-underdog-saluki-27b`: 1 つ。GPU だけに置かれるか、GPU の準備が終わるまでの秒、[状]（「prompts and answers on WebGPU」か）、[答]、[コ]（ステップの ms、「loaded again on the CPU」か「the CPU as /benchmark/ measured it was faster here than this model on the GPU alone」が出て CPU に戻ったか）、[目]（タブが落ちないか）（T547.3）。
+2. Ternary Bonsai 2 27B `頭?model=hf-ternary-bonsai-2-27b`: 流行りの問い。準備完了の秒（取得 5.95 GB）・[状]（GPU だけか: 「prompts and answers on WebGPU」で「N threads」が付かない）・[答]（tok/s と本数）・[コ]（T271.5・T233・T237・T238）。考える形 `頭?model=hf-ternary-bonsai-2-27b-thinking` で 1 つ: 考えが終わるまでのトークン数と時間（T233）。最後にページを読み直し、2 回目の準備完了の秒（保存から開くか: T233 のレビュー (c)）。
 3. PC のメモリが 16 GB 未満なら: 27B を開いてどこで止まるか（準備完了の前にタブが落ちるか、「ran out of memory」が出るか: T233 のレビュー (b)）。16 GB 以上なら手順なし。
 
 **B-9 Gemma（T334.1・T334.2・T334.3）**
