@@ -582,5 +582,7 @@ if [ "$suite" = full ]; then
   part "Saluki's tool, on a made-up model" env STAGES=dry bash tests/page_saluki.sh
   # T206: the pre-tokenizers against the real ones at every code point (about 90 s, too long for the deploy)
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character
+  # T663: the NFC and NFKC at every code point, against the tokenizers library's (about 10 s)
+  part "the normalizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_tokenizer.py -q -k every_code_point
 fi
 echo "suite: $suite passed in $SECONDS s"
