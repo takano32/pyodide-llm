@@ -111,7 +111,6 @@
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
-- T680 [バグ][WebGPU] GPU だけのモデルで考えの上限に当たると、閉じる印を CPU の forward に頼まないか — 反映済み
 - T681 [バグ][WebGPU] GPU だけのモデルで止まりのトークンが 8 つを越えると、ステップを CPU に頼む — 候補
 <!-- 目次ここまで -->
 
@@ -1087,16 +1086,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T672 [描画][モデル] PFN が公表した品質の数を見せる — 状態: 候補（2026-11-13、T664 から。規模 小。持ち主の判断）
 - 向こうは量子化ごとに PFTB（日英）と FLORES+ chrF++（多言語）を量子化なしとの差で出す（`engine::models::QUALITY`、出どころは PFN の公表）。ここでは項目の note か About に 1 行。数の出どころ（PFN のブログかカード）を項目のコメントに書く。T671 で量子化を選ばせるなら要る。
-
-### T680 [バグ][WebGPU] GPU だけのモデルで考えの上限に当たると、閉じる印を CPU の forward に頼まないか — 状態: 反映済み（2026-11-21、T668 のレビューから。規模 小）
-- `generate()` の考えの上限（T520）の枝 `elif thinking and inside and thought >= thinking` は閉じる印を `model.forward(...)` で読む。GPU だけのモデルでは `src/runtime/forward/engine.ts` の `if (direct) throw onGpu.notHere()` が投げ、GPU が止まって CPU で読み直しになるように読める（T668 のレビューが DRY の同じ穴から見つけた: コードの読みだけ、動かしていない）。
-- 確かめ: 偽の GPU の Worker（`tests/gpu-hybrid-check.ts` の形）か作り物で、GPU だけのモデルが考えの上限に当たったときの道を回す。穴なら直す（閉じる印もステップとして GPU に頼む形など）。DRY の同じ穴は T669 の選択肢で決める。
-- **穴だった**（2026-11-21）。作り物で回した: GPU だけのモデルの代役（`forward()` が投げる・`forward_many` と GPU のステップがある）で考えの上限に当たると、上限の枝の `model.forward(token, pos, need_logits=False)` が呼ばれる（直す前の `generate()` に `tests/test_thinking.py` の新しい試験を当てると、その `forward()` で落ちる）。本物の forward.ts では `run()` の `if (direct) throw onGpu.notHere()` が GPU を止め、worker が CPU で読み直す。
-- **`generate()` が CPU の forward を呼ぶ枝の全部**（GPU だけのモデルで当たるもの）: (1) 考えの上限の閉じる印の前のトークン（この穴）。(2) **1 トークンのプロンプト**: `fed` を作る条件が `len(prompt_tokens) > 1` で、1 トークンのプロンプト（書式の無いモデルに 1 字など）は頭の BOS を `forward(…, need_logits=False)` で読んでいた（同じ穴、直した）。(3) GPU のステップが取らなかったステップ（`if not chosen`）: (a) 標本抽出の設定が GPU の SAMPLE に無い（`sampling.beyond(ON_GPU)`: いまは DRY だけ → T669 の選択肢）、(b) **止まりのトークンが 8（`STOPS_MOST`）を越えるモデル**（`generateMany()` が `undefined` を返して CPU のステップになる → T681）、(c) GPU が失われた後（読み直しが設計どおり）。プロンプトのブロックは GPU だけのモデルでは `always` で全部 GPU に行く。
-- **直し**: (1)(2) とも、logits を作らない強いたトークンを、ブロックを取るエンジンでは 1 つのブロック（`model.forward_many([token], pos)`）で読む。GPU の側は前からある道で、GPU だけのモデルは `always` なので `gpuTakes()` が取り、ステップが書いた鍵と値（と状態の層の状態）の続きから GPU が読む（ブロックとステップは `m.block.cache`・`m.block.states` を分け合う）。CPU のモデルとハイブリッドは `promptOnCpu()` → `run()` で前と同じカーネルを呼ぶ（ハイブリッドで 1 トークンのブロックが GPU に行くのは、計った時間が GPU を速いと言うときだけ）。シェーダの文と端末の鍵は変わらない。
-- **試験**: `tests/test_thinking.py` に GPU だけのモデルの代役（`forward()` が投げる）で考えの上限と 1 トークンのプロンプトの 2 つ（壊し方: 上限の枝を `forward()` に戻すと 2 つとも落ち、`fed` の条件を戻すと 1 トークンのほうが落ちる）。`tests/gpu-alone-check.ts` に「ステップの後の 1 トークンのブロックが GPU に行き、ステップがその後に続き、CPU のカーネルを何も呼ばない」。`tests/gpu-check` の GPU だけの run に、4 つのステップの後の 1 トークンのブロックとその後の 1 ステップ（語彙の中の ID）を足した（本物の GPU で見るのは CI）。
-- **DRY（T669）には使えない**: この口は logits を作らないトークンだけのもの。DRY のステップは logits が要るので、T669 の選択肢はそのまま。
-- **CI を回した**（訳: GPU だけの道の本物の GPU は手元で見られない）: `gpu-prompt.yml` の Dawn（run 44895690540、作り物 5 つ: synthetic・synthetic-qwen35・synthetic-gemma3-ring・synthetic-ternary・synthetic-q4k）はどれも「a token forced after them 1 on the GPU, a step after it [語彙の ID]」で、GPU だけの run の線は全部通った。軽い組 `tests.yml`（run 44895691637）も通った。シェーダの文は変えていないので端末の鍵は動かない。
 
 ### T681 [バグ][WebGPU] GPU だけのモデルで止まりのトークンが 8 つを越えると、ステップを CPU に頼む — 状態: 候補（2026-11-21、T680 の調べから。規模 小。未確認）
 - `generateMany()`（`forward/gpuside.ts`）は止まりのトークンが `STOPS_MOST`（8、SAMPLE の一様バッファの欄）を越えると `undefined` を返し、`generate()` は CPU の forward でステップを読む。GPU だけのモデルでは `notHere()` で GPU が止まり、worker が CPU で読み直す。一覧に 8 つを越える止まりを持つ項目があるかは未確認（`conversions_compare.py` の出す options の `stop_tokens` で数える）。無ければ GPU だけに置く門（`gpuOnlyUnfit()` か `weightsPlace()` の `eligible`）で断るのが勧め、あれば SAMPLE の欄を広げる（端末の鍵が動く）。

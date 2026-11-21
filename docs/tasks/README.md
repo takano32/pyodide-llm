@@ -457,3 +457,4 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T677](T677.md) [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 2026-11-21
 - [T678](T678.md) [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 2026-11-21
 - [T679](T679.md) [運用][遠隔試験] `ci.ts deploy` の again の run の選び方を、main の先頭が動いた場合と後から呼んだ場合にも — 2026-11-21
+- [T680](T680.md) [バグ][WebGPU] GPU だけのモデルで考えの上限に当たると、閉じる印を CPU の forward に頼まないか — 2026-11-21
