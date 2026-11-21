@@ -628,6 +628,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **手元のブラウザ。** a1-free では Playwright の Chromium で `tests/e2e.ts` が走る（WebKit は動かない。入れ方は docs/notes/dev-setup.md）。**7B 級は手元で動かさない**（`models.yml` で）。細部は pitfalls.md。
 - **開発機のメモリ。** 峰の読めない計測は `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0` で包む。**軽い組は `MemoryMax=3G` では OOM で止まる**（`5G` で通った）。細部は pitfalls.md。
 - **手元は shallow でないこと**（`git rev-parse --is-shallow-repository` が false）: 古い `.git/shallow` の印が残ると網が履歴を切る（直し方は pitfalls.md）。
+- **ワークツリーで `git add -A` しない**（2026-11-21、取りまとめ役: レビューのワークツリーに張った `make models` の産物へのリンク 4 つ（`llm-jp-3-150m`・`public/models`・`tiny-lm`・`translations`）が本線に入り、デプロイの `make models` が自分を指すリンクの `mkdir -p` で「Already exists」と落ちた。リンクはフォルダの `.gitignore` の型に当たらない。pull した本線の木ではフォルダが自分を指すリンクに替わり、手元の産物が消えた）。名指して `git add <ファイル>`、コミットの前に `git diff --cached --stat`。
 - **`git rm` は削除をすぐ登録する**（別のタスクのコミットに入った）。コミットの前に `git diff --cached --stat`。止められたシェルコマンドは途中まで実行されていることがある: `git status` で確かめる。
 - **走っている `tests/suite.sh` を書き換えない**（bash はスクリプトを少しずつ読む）。
 - **smoke の Python の節が落ちると、CI のログに訳が出ない**（例外の行として縮めたソースの全部が出て、ログが途中で切れる）。手元で `node tests/smoke.ts > .tmp/…/smoke.txt 2>&1` を回して、その行を除いて読む。
