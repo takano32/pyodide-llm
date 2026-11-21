@@ -451,3 +451,4 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T675](T675.md) [試験][Gemma4] 網の `calls` に、鍵と値を共有する層のある Gemma 4 を足す — 2026-11-21
 - [T676](T676.md) [試験][Gemma4] `forward-check --varied` の作り物の Gemma 4（shared）の線を、作り物のゆれ込みで — 2026-11-20
 - [T677](T677.md) [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 2026-11-21
+- [T678](T678.md) [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 2026-11-21
