@@ -171,6 +171,10 @@ def test_generate_takes_the_ids_of_a_request_as_it_takes_their_text():
         assert "".join(generation.generate(model, prompt, steps=20)) == "abx"
         assert (model.stats["tokens"], model.stats["prompt_tokens"]) == (3, 2)
     assert texts == ids
+    # an id that is no token (negative: another row of the table, or past it) is refused before any is read
+    for ids in ([-1], [ord("a"), 1000]):
+        with pytest.raises(ValueError, match="no token of the vocabulary"):
+            list(generation.generate(stand_in_model([], [0]), ids, steps=20))
     # ids that end in the opening mark of a thought open it, as a text that ends in the mark does
     X = ord("x")
     for prompt in ("a<think>", [ord("a"), 200]):

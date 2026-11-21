@@ -475,7 +475,7 @@ def stand_in_model(log, answers, stop_tokens=(0,), **more):
         return draw
 
     return types.SimpleNamespace(**{**dict(
-        tokenizer=Letters(), specials=(), bos=1, stop_tokens=set(stop_tokens), seq_len=64, stats={}, _run=0, forward=forward,
+        tokenizer=Letters(), specials=(), bos=1, stop_tokens=set(stop_tokens), seq_len=64, vocab_size=1000, stats={}, _run=0, forward=forward,
         sampler=types.SimpleNamespace(drawing=drawing), forward_many=None, prompt_block=lambda: 16, gpu_steps=None,
         token_block=lambda: 0), **more})
 

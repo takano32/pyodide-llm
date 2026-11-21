@@ -96,6 +96,8 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
         prompt_tokens = model.tokenizer.encode(prompt, model.specials, model.bos) if prompt else []
     else:  # T666: the ids of a request put together already (engine/pfml.py's pfml_tokens()), after the BOS
         prompt_tokens = [int(token) for token in prompt]
+        if not all(0 <= token < model.vocab_size for token in prompt_tokens):  # (an id out of range reads another row)
+            raise ValueError(f"The prompt has an id that is no token of the vocabulary (0 to {model.vocab_size - 1}).")
     # Right now we cannot run for more than seq_len steps
     if steps <= 0 or steps > model.seq_len:
         steps = model.seq_len
