@@ -119,6 +119,7 @@
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
 - T675 [試験][Gemma4] 網の `calls` に、鍵と値を共有する層のある Gemma 4 を足す — 未着手
+- T677 [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1119,3 +1120,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T675 [試験][Gemma4] 網の `calls` に、鍵と値を共有する層のある Gemma 4 を足す — 状態: 未着手（2026-11-20、T673 のレビューから。規模 小）
 - T673 の「logits の要らないトークンは `lastKept()` で止める」は、どの正しさの試験もビット単位の一致で見るので、`promptLayers` を全部の層に戻しても通る（推論）。見張りは CI の速さの比べだけ。
 - `tests/unchanged-calls.ts` は `forwardMany` のブロックと logits なしのトークンを既に記録している。`gemma3` の `later`（古い木では空）と同じ形で、共有の層のある作り物の Gemma 4 を 1 つ足す。予定した違い: 相手の木を T673 の前（e32fbc9c）にすると、Gemma 4 の呼び出しの列が短くなる。止める層を戻す壊し方で網が「違う」と言うことを見る。
+
+### T677 [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 状態: 未着手（2026-11-21、取りまとめ役が T259・T661・T662 のデプロイで見た。規模 小）
+- `deploy.yml` の Pages の段が「Found 0 artifact(s)」「Fetching artifact metadata failed. Is githubstatus.com reporting issues …」で落ちることが 2026-11-20〜21 に 4 回: run 44812611003（T259）、44831634768（T661 のレビュー）、44837232999 とその自動の再試行 44838295916（T662）。軽い組は通り、ワークフローの `again` か手の dispatch（44839922931）で公開された。GitHub の状態ページは平常（T662 の担当の読み）。
+- AGENTS.md の決まり「この変更とは関係ない落ち方で済ませない」: 原因を調べる（`actions/upload-pages-artifact` と `actions/deploy-pages` の版、成果物の名前と保持、同じ run の中の upload と deploy の間の秒、T652 の「Pages の段が 10 分を越える」との関係）。分からなければ、次に起きたら分かるように道具（`tests/ci.ts deploy` の報告に Pages の段の失敗の文と `again` の結論を 1 行）を直す。`again` が自動でやり直して通るなら、`ci.ts deploy` が「公開された」と読める形にする（今は exit 1 で取りまとめ役が毎回ログを読んでいる）。
