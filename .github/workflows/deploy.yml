@@ -23,16 +23,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    outputs:
-      pages: ${{ steps.deployment.outcome }}
+  # T677: the build uploads the site and the job "deploy" hands it to Pages, as GitHub's Pages starters do. In one job,
+  # deploy-pages listed the run's artifacts a quarter of a second after the upload was finalized and found none 4 times
+  # in 2026-11-20 and 21 ("Found 0 artifact(s)", runs 44812611003, 44831634768 and 44838295916: the artifact was there
+  # when listed later). Its list is not tried again (deploy-pages v5.0.1's getArtifactMetadata; actions/deploy-pages
+  # issue 451, open, says the same and that a job of its own fixed it). A job of its own also starts seconds later, and
+  # a rerun of a failed "deploy" uploads nothing, so it does not find two artifacts.
+  build:
     runs-on: ubuntu-latest
     # T262: a deploy is 3 to 4 minutes; without a limit of its own a stuck step held the queue for GitHub's 360
-    # T652: the build and the tests take up to 15 minutes, and Pages' step up to the action's 10
-    timeout-minutes: 40
+    # T652: the build and the tests take up to 15 minutes
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -82,16 +83,35 @@ jobs:
         with:
           path: 'dist'
 
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      pages: ${{ steps.deployment.outcome }}
+    runs-on: ubuntu-latest
+    # T652: Pages' step takes up to the action's 10 minutes
+    timeout-minutes: 15
+    steps:
+      # T677: what the list of the run's artifacts says before deploy-pages asks it (next time it finds none, this says
+      # whether the artifact was listed at all)
+      - name: The run's artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq ".artifacts[] | [.name, .id, .size_in_bytes, .created_at] | @tsv" || echo "(the artifacts could not be listed)"
+
       # T652: Pages sat in "syncing_files" or "updating_pages" past the action's 10 minutes 5 times in 11 deploys on
       # 2026-11-06 (the site is about 1 GB). The action caps its own timeout at 10 minutes and cancels the deployment
-      # as it gives up, so a second try in the same run finds it cancelled, and a rerun of the job finds two
-      # artifacts: the job "again" starts a new run instead, which went through each time it was tried
+      # as it gives up, so a second try in the same run finds it cancelled: the job "again" starts a new run instead,
+      # which went through each time it was tried
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
 
   again:
-    needs: deploy
+    needs: [build, deploy]
     # once, and only for Pages' step: a push's deploy whose Pages step failed starts a new run by dispatch, and
     # that run does not start another (a failure of the tests or the build is not tried again)
     if: failure() && github.event_name == 'push' && needs.deploy.outputs.pages == 'failure'

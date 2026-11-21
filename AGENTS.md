@@ -127,7 +127,7 @@
 | 回線の要る軽い組の検査 | `markdown-check.ts`（最新の marked を jsDelivr から）・`repository-check.ts`・`worker-fetches-check.ts`（jinja2 を jsDelivr から 1 回、検査の頭で: 作り物の時計の下で読ませると、30 秒の静けさが回線の 0.3 秒になって落ちた。T510 のレビュー） |
 | 塊の型の試験 | `test_blocks.py`・`saluki_form.py`・`test_kept.py`・`test_widened.py` / `tests/blocks-forward-check.ts`・`blocks-check.ts`（`blocks-model.ts`） |
 | Saluki の道具 | `reference_saluki.sh`・`page_saluki.sh`（段は各スクリプトの頭）・`saluki-kernel-bench.ts`（塊のカーネルの速さを測る唯一の道具） |
-| `tests/ci.ts`・`summary.ts`・`reports.ts` | **CI を待つのはこれで、いつも裏で**: `run <ワークフロー> key=value… [--ref <ブランチ>]`・`wait <ID …>`・`deploy`・`nightly`（`--minutes`・`--grep`。終わり方 0 成功・1 失敗・2 期限・3 待つ run が無い・4 ほかが待っている）/ 結果の表 / 訪問者のベンチの Issue |
+| `tests/ci.ts`・`summary.ts`・`reports.ts` | **CI を待つのはこれで、いつも裏で**: `run <ワークフロー> key=value… [--ref <ブランチ>]`・`wait <ID …>`・`deploy`・`nightly`（`--minutes`・`--grep`。終わり方 0 成功・1 失敗・2 期限・3 待つ run が無い・4 ほかが待っている・5 `deploy` で Pages の段が落ち、`again` が起こした run が公開した: 表に 2 行）/ 結果の表 / 訪問者のベンチの Issue |
 | `tests/smoke.ts` | Node の最新 Pyodide でエンジン・カーネル・モデル（約 10 秒）。Pyodide の 32 ビットの NumPy でしか出ない誤り |
 | `tests/types.ts` | 型検査と、tsc が言わない規則（`AMBIENT`・`ANY_MOST`） |
 | `tests/forward-check.ts`・`threads-check.ts` | forward を NumPy と / 本数を変えてもビット単位で同じ・途中で止まるスレッド |
@@ -611,6 +611,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **並べて走らせた CI の run は、ログの中の ID で突き合わせる**（`ci.ts` の出力の頭の「started … run <ID>」）。
 - **CI のブラウザと apt の入れる手順には、手順の期限と apt の time-out を付ける**（apt が止まってジョブの 120 分を使った）。apt を走らせる手順は `timeout-minutes: 20` と `bash tests/apt-timeouts.sh`（`tests/workflows-check.ts` が見る）。手順の期限が止めたら 1 回走らせ直す。
 - **デプロイが落ちた後の直しが記録と文書だけなら、デプロイは走らない**（`paths-ignore`）。2026-10-24、台帳の目次が古くて T571 のデプロイが軽い組で落ち、目次だけを直して push しても本番は古いままだった: `gh workflow run deploy.yml --ref main` で回す。台帳を直したら push の前に `python tests/ledger.py --check`。
+- **`deploy.yml` は成果物を上げるジョブ（`build`）と Pages に渡すジョブ（`deploy`）を分ける**（T677）。1 つのジョブで上げてすぐ `actions/deploy-pages@v5`（v5.0.1）が run の成果物を聞くと、上げ終わった 0.3〜0.4 秒後の一覧に出ず「Found 0 artifact(s)」「Fetching artifact metadata failed」で落ちることがあった（2026-11-20〜21 に 4 回。後で聞くと在った。deploy-pages は聞き直さない。上流の issue actions/deploy-pages#451 も同じ読み）。ジョブを分けると聞くのは数秒後で、`deploy` のジョブだけを走らせ直しても成果物は 2 つにならない。`deploy` のジョブは Pages の段の前に run の成果物の一覧をログに出す。`node tests/ci.ts deploy` は Pages の段が落ちて `again` が起こした run も待ち、それが公開すれば終わり方 5。
 - **`setup-python` の `3.x` は出たばかりの版になる**（T630: 2026-10 に 3.15・Unicode 17 になり、本物の tokenizers（Unicode 16）と全符号位置で比べる試験が 4,657 字で落ちた）。全部の組の `tests.yml` は 3.14 に留めてある。毎晩が急に落ちたら、まず道具の版（Python・tokenizers・Playwright）が動いていないかを見る。
 - **手動のワークフローの入力を空で渡しても「空」にはならない**（既定の値になる）。**空を「全部」の印にしない**（`only=all`）。手順が飛ばされたジョブも success になるので、分数か手順の結論を見る。
 - **ワークフローやシェルの中の `'`**: `run:` の `node -e '…'` の中にアポストロフィを書かない（コメントにも。`workflows-check` が `run:` を `bash -n` で読む）。`case` の中の `"${x:-it's}"` は後の引用符を飲み込み、`bash -n` は通る。**手動のワークフローに触ったら、その入力の形で 1 回 dispatch する。**

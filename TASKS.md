@@ -115,7 +115,7 @@
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
-- T677 [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 未着手
+- T677 [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 反映済み
 - T678 [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 未着手
 <!-- 目次ここまで -->
 
@@ -1109,9 +1109,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T672 [描画][モデル] PFN が公表した品質の数を見せる — 状態: 候補（2026-11-13、T664 から。規模 小。持ち主の判断）
 - 向こうは量子化ごとに PFTB（日英）と FLORES+ chrF++（多言語）を量子化なしとの差で出す（`engine::models::QUALITY`、出どころは PFN の公表）。ここでは項目の note か About に 1 行。数の出どころ（PFN のブログかカード）を項目のコメントに書く。T671 で量子化を選ばせるなら要る。
 
-### T677 [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 状態: 未着手（2026-11-21、取りまとめ役が T259・T661・T662 のデプロイで見た。規模 小）
+### T677 [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 状態: 反映済み（2026-11-21、取りまとめ役が T259・T661・T662 のデプロイで見た。規模 小）
 - `deploy.yml` の Pages の段が「Found 0 artifact(s)」「Fetching artifact metadata failed. Is githubstatus.com reporting issues …」で落ちることが 2026-11-20〜21 に 4 回: run 44812611003（T259）、44831634768（T661 のレビュー）、44837232999 とその自動の再試行 44838295916（T662）。軽い組は通り、ワークフローの `again` か手の dispatch（44839922931）で公開された。GitHub の状態ページは平常（T662 の担当の読み）。
 - AGENTS.md の決まり「この変更とは関係ない落ち方で済ませない」: 原因を調べる（`actions/upload-pages-artifact` と `actions/deploy-pages` の版、成果物の名前と保持、同じ run の中の upload と deploy の間の秒、T652 の「Pages の段が 10 分を越える」との関係）。分からなければ、次に起きたら分かるように道具（`tests/ci.ts deploy` の報告に Pages の段の失敗の文と `again` の結論を 1 行）を直す。`again` が自動でやり直して通るなら、`ci.ts deploy` が「公開された」と読める形にする（今は exit 1 で取りまとめ役が毎回ログを読んでいる）。
+- **実装（2026-11-21、Opus medium）**: **原因（ログで確かめた）**: 上げてすぐ聞く競り合い。落ちた 3 回の Pages の段（44812611003・44831634768・44838295916。44837232999 は push の run で、ジョブを持たずに取り消された: 同じ SHA の 44838295916 は dispatch）は、どれも「Artifact github-pages successfully finalized」の 0.27〜0.43 秒後に `actions/deploy-pages@v5`（v5 = v5.0.1 = 368f8252、2026-09-01）が run の成果物の一覧を聞いて「Found 0 artifact(s)」。今 API に聞くと、どの run にもその ID の成果物が在る。通った 44839922931 も間は 0.26 秒で「Found 1」: 間の長さでは決まらず、一覧が書いた直後の物をまれに言わない（なぜ 11-20 から続いたかは未確認）。v5.0.1 の `getArtifactMetadata()` は 0 件で聞き直さずに投げる（v5.0.1 の変更はデプロイの見張りの間合いだけ）。上流の issue actions/deploy-pages#451（2026-10-07、未解決）が同じ形を報告し、成果物を上げるジョブを分けて直ったと書く。T652 の 10 分越えとは別の物（こちらは段の頭の 1 秒で落ちる）。`again` はどちらでも同じく働いた。
+- **直し**: (1) `deploy.yml` を GitHub の Pages の雛形の形に: `build`（取得・試験・build・上げ、期限 30 分）と `deploy`（`needs: build`、環境 github-pages、期限 15 分）。聞くのは次のジョブが始まった数秒後になり、`deploy` のジョブだけの走らせ直しは成果物を 2 つにしない。`again` は `needs: [build, deploy]` で条件は同じ。(2) 次に起きたら分かるように、`deploy` のジョブは Pages の段の前に `gh api …/runs/<ID>/artifacts` の一覧（名前・ID・大きさ・時刻）をログに出す。(3) `tests/ci.ts deploy`: push の run が落ちて `again` が成功したら、同じ SHA の dispatch の run（`again` が始まった後に作られたもの）を見つけて続けて待ち、表に 2 行（前の run の結論に「again: success (run …)」）、それが成功なら終わり方 5（AGENTS.md の表）。deploy.yml の既定の grep に成果物の行（finalized・一覧・Found・Reported success・Timeout reached）を足し、飛ばされたジョブのログは取りに行かない。
+- **確かめ**: `node tests/workflows-check.ts`（13）、`node --check tests/ci.ts`。`ci.ts deploy` を前の落ちた run 44812611003 に向けた写しで回し、`again` の起こした 44814177192 を見つけて待ち、終わり方 5 と表の 2 行を見た。`deploy.yml` の分けは本線への push のデプロイが確かめ。CI を省いた。訳: ワークフローの変更は本線の push でしか走らない（デプロイがその確かめ）、`ci.ts` は手元で本物の run に向けて回せた。上流に足す案（報告はしていない）: 0 件のとき一覧を聞き直す（#451 の案）。
 
 ### T678 [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 状態: 未着手（2026-11-21、T663 のレビューから。規模 小）
 - T663 の表 `UNNORMALIZED`（`engine/tokenizer.py`）は Python の Unicode 16.0.0 と本物の tokenizers（Unicode 9.0 の表）の差。方針 2 で Pyodide が Python 3.15（Unicode 17）に上がると、Unicode 17 で足された字は黙って本物と違う読みになる。全符号位置の試験は CI の Python 3.14 で回るので名指さない（T630）。

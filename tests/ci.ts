@@ -9,7 +9,9 @@
 //   node tests/ci.ts nightly                      T193: the latest nightly (scheduled) runs of the full suites,
 //                                                  tests.yml and gpu-prompt.yml, waited for or read by their IDs
 //   node tests/ci.ts deploy [--sha <commit>]      the deploy of a commit (HEAD); if a newer push cancelled it while
-//                                                  it waited for its turn, the newer deploy (which has the commit too)
+//                                                  it waited for its turn, the newer deploy (which has the commit too);
+//                                                  T677: if Pages' step failed and the job "again" started a new run,
+//                                                  that run too (exit 5 when it published the site)
 //   options: [--minutes 60 (deploy: 20)] [--grep <regex> | --grep none] [--ref main]
 //   (written once, anywhere: --ref is every run's of the call, the ones after a + too. T425: a second --ref, a flag this
 //   tool does not know, or an input that is not key=value is refused before any run is started)
@@ -23,7 +25,8 @@
 // by another ci.ts is not waited for twice: that one's log is named instead.
 // Exit: 0 every run succeeded, 1 one ended otherwise (failure, cancelled...), 2 the deadline passed with one still
 // going, 3 there was no run to wait for (a dispatch failed, no deploy of that commit appeared, no run of that ID), 4
-// all were waited for by another ci.ts already.
+// all were waited for by another ci.ts already, 5 (deploy) the push's deploy failed at Pages' step and the run its job
+// "again" started published the site (the table has a line for each of the two).
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -112,7 +115,8 @@ const LINES = {
   "preview.yml": "^sections:|^model path:|FAILED|timed out",
   // T193: which suite ran, and the seconds of each of its parts (tests/suite.sh)
   "tests.yml": "^suite: |^--- .*: \\d+ s$",
-  "deploy.yml": "^suite: |^--- .*: \\d+ s$",
+  // T677: and what Pages' steps said of the artifact (uploaded, listed, found) and of the deployment
+  "deploy.yml": "^suite: |^--- .*: \\d+ s$|^Artifact .* successfully finalized|^github-pages\t|^Found \\d+ artifact|^Reported success|^Timeout reached",
   // T183: gpu-check's lines of each model and run, its tables by layer (against NumPy's and E16), each run's line and
   // ratio, and the seconds of each step
   // T241's review: and the line of the quantizers alone (every group's scale word as it is to be)
@@ -168,6 +172,7 @@ async function look(target) {
     if (target.jobs.get(job.id) !== jobState) say(`  ${target.id} job ${job.name}: ${jobState}`);
     target.jobs.set(job.id, jobState);
   }
+  target.jobList = jobs;
   if (run.status === "completed") target.run = run;
   return run;
 }
@@ -184,6 +189,32 @@ async function newerDeploy(target) {
   return true;
 }
 
+// T677: a push's deploy that failed and whose job "again" succeeded started a new run of the same commit by dispatch:
+// the wait goes on with that run, and the first is kept for the table
+async function againRun(target) {
+  const again = target.jobList?.find((job) => job.name === "again");
+  if (target.run.conclusion !== "failure" || again?.conclusion !== "success") return false;
+  for (;;) {
+    const { workflow_runs: runs } = await api(`repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?event=workflow_dispatch&head_sha=${target.run.head_sha}&per_page=10`);
+    const started = runs.filter((r) => r.id > target.id && Date.parse(r.created_at) >= Date.parse(again.started_at) - 60000)
+      .sort((a, b) => a.id - b.id)[0];
+    if (started) {
+      say(`the job "again" of run ${target.id} started run ${started.id} ${started.html_url}`);
+      await report(target).catch((error) => out(`== ${target.id}: no logs (${error.message})`));
+      release(target.id);
+      target.before = { id: target.id, title: target.title, url: target.url, run: target.run, again: again.conclusion };
+      Object.assign(target, { id: started.id, state: "", run: null, jobs: new Map(), jobList: null });
+      claim(started.id);
+      return true;
+    }
+    if (Date.now() > deadline) {
+      say(`the job "again" of run ${target.id} succeeded, but no run it started appeared by the deadline`);
+      return false;
+    }
+    await sleep(15000);
+  }
+}
+
 // what to read of a run that ended: the lines asked for (or the workflow's), and a failed job's lines up to its
 // first error
 async function report(target) {
@@ -191,7 +222,7 @@ async function report(target) {
   const pattern = grep === "none" ? null : grep ?? LINES[target.workflow];
   for (const job of jobs) {
     const failed = job.conclusion && !["success", "skipped"].includes(job.conclusion);
-    if (!pattern && !failed) continue;
+    if ((!pattern && !failed) || job.conclusion === "skipped") continue;
     let text;
     try {
       text = await gh(["api", `repos/{owner}/{repo}/actions/jobs/${job.id}/logs`]);
@@ -277,6 +308,7 @@ for (;;) {
     try {
       await look(target);
       if (target.deploy && target.run?.conclusion === "cancelled" && (await newerDeploy(target))) await look(target);
+      if (target.deploy && !target.before && target.run && (await againRun(target))) await look(target);
     } catch (error) {
       // a run that is not there (a mistyped ID) is not a run that failed: its wait ends with exit 3. What gh could not
       // get past after its tries is said, and the wait goes on to the deadline (a crash here read as a failed run)
@@ -301,10 +333,15 @@ out("");
 out("| run | title | result | min | url |");
 out("|---|---|---|---:|---|");
 for (const t of mine) {
+  if (t.before) {
+    const b = t.before;
+    out(`| ${b.id} | ${b.title ?? ""} | ${b.run.conclusion}, again: ${b.again} (run ${t.id}) | ${minutesSince(b.run.run_started_at, b.run.updated_at)} | ${b.url ?? ""} |`);
+  }
   const result = t.run ? t.run.conclusion : t.missing ? "no such run" : `still ${t.state || "unknown"} (deadline)`;
   const took = t.run ? minutesSince(t.run.run_started_at, t.run.updated_at) : "";
   out(`| ${t.id} | ${t.title ?? ""} | ${result} | ${took} | ${t.url ?? ""} |`);
 }
 if (startFailed) out("(a dispatch failed: see the top)");
 const going = mine.some((t) => !t.run && !t.missing);
-process.exit(going ? 2 : startFailed || mine.some((t) => t.missing) ? 3 : mine.every((t) => t.run.conclusion === "success") ? 0 : 1);
+const succeeded = mine.every((t) => t.run?.conclusion === "success");
+process.exit(going ? 2 : startFailed || mine.some((t) => t.missing) ? 3 : succeeded && mine.some((t) => t.before) ? 5 : succeeded ? 0 : 1);
