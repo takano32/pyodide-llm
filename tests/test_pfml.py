@@ -7,7 +7,7 @@ import itertools
 import pytest
 
 from conftest import detokenize
-from engine.pfml import EASY_JAPANESE, LANGUAGES, mark, pfml_pieces, pfml_tokens
+from engine.pfml import EASY_ALIAS, EASY_JAPANESE, LANGUAGES, mark, pfml_pieces, pfml_tokens
 from engine.tokenizer import Tokenizer
 from test_plamo_tokenizer import CONTROLS, NORMAL, jsonl, tokenizer_of
 
@@ -133,6 +133,16 @@ def test_only_a_plamo_tokenizer_reads_a_text_literally(made):
 def test_what_is_refused(parts, said):
     with pytest.raises(ValueError, match=said):
         pfml_pieces(**parts)
+
+
+def test_easy_japanese_is_written_ja_easy():
+    """the template's: ja-easy is what PFML3 writes, and ja(easy) (the first release's) an alias of it (a form is
+    still ja's only)"""
+    for code in (EASY_JAPANESE, EASY_ALIAS):
+        written = text_of(pfml_pieces("x", code, source=code))
+        assert written.count("<|plamo:val|>ja-easy<|plamo:msg|>") == 2 and "(" not in written, code
+    with pytest.raises(ValueError, match="only a translation into ja"):
+        pfml_pieces("x", EASY_ALIAS, form="plain")
 
 
 def test_the_languages_of_the_card():

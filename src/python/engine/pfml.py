@@ -33,8 +33,11 @@ LANGUAGES = {
     "sr": ("Serbian", "Српски"), "sw": ("Swahili", "Kiswahili"), "ta": ("Tamil", "தமிழ்"), "te": ("Telugu", "తెలుగు"),
     "th": ("Thai", "ไทย"), "tl": ("Tagalog", "Tagalog"), "ur": ("Urdu", "اردو"), "uz": ("Uzbek", "Oʻzbekcha"),
     "vi": ("Vietnamese", "Tiếng Việt")}
-# easy Japanese, which the template takes as a language and the card does not list (tanakh's calls it experimental)
-EASY_JAPANESE = "ja(easy)"
+# easy Japanese, which the card does not list (tanakh's calls it experimental): PFML3 writes it ja-easy (the template
+# says so since 2026-11-07, the model repository's 2c6192f7; its first release wrote ja(easy)), and the template
+# takes ja(easy) as an alias of it, as this does
+EASY_JAPANESE = "ja-easy"
+EASY_ALIAS = "ja(easy)"
 # the forms of a translation into Japanese (only "ja": not easy Japanese), plain (だ・である) and polite (です・ます)
 FORMS = ("plain", "polite")
 # the language whose translation may have a form
@@ -56,9 +59,9 @@ def written(value, said, empty=False):
 
 def pfml_pieces(text, target, source=None, form=None, context=None, glossary=(), history=()):
     """The request as its pieces in order: (True, a mark's piece) or (False, a text). text: what to translate;
-    target and source: codes of LANGUAGES (or EASY_JAPANESE; source None: not said); form: one of FORMS, into
-    Japanese only (None: the model's own choice); context: a text about the whole (None or empty: none); glossary:
-    (a term, its translation) pairs; history: (a text, its translation) pairs translated before, the earliest first.
+    target and source: codes of LANGUAGES (or EASY_JAPANESE, or its alias EASY_ALIAS; source None: not said); form:
+    one of FORMS, into Japanese only (None: the model's own choice); context: a text about the whole (None or empty:
+    none); glossary: (a term, its translation) pairs; history: (a text, its translation) pairs translated before, the earliest first.
     What the template refuses is refused here too, in its order (the pairs' texts and the text, the languages, the
     context, the form, the glossary), but for a mark written in a text (read literally), and a language the card does
     not list."""
@@ -70,6 +73,7 @@ def pfml_pieces(text, target, source=None, form=None, context=None, glossary=(),
         written(value, said)
     if target is None:
         raise ValueError("A translation needs the language to translate into.")
+    target, source = (EASY_JAPANESE if code == EASY_ALIAS else code for code in (target, source))
     for code, said in ((target, "target"), (source, "source")):
         if code is not None and code != EASY_JAPANESE and code not in LANGUAGES:
             raise ValueError(f"The {said} language {code!r} is not one PLaMo 3 Translate knows "

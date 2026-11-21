@@ -6,7 +6,8 @@ the engine reads it with the converter's specials) against pfml_tokens() of the 
 a text read as its characters. Run by hand (the files are PFN's; pytest has a made-up vocabulary, tests/test_pfml.py):
 
     python tests/pfml_check.py <a folder with chat_template.jinja, tokenizer.jsonl, tokenizer_config.json,
-        special_tokens_map.json and tokenization_plamo.py of a pfnet/plamo-3-translate-* revision>
+        special_tokens_map.json and tokenization_plamo.py of a pfnet/plamo-3-translate-* revision of 2026-11-07 or
+        later: the template of the first release writes easy Japanese ja(easy), not ja-easy (T665's review)>
 
 tokenization_plamo.py imports numba: PYTHONPATH names a folder of .tmp that has it (tests/plamo_tokenizer_check.py
 says how). Any request whose ids differ fails (exit 1) and is printed.
@@ -36,7 +37,7 @@ HISTORY = [("プロジェクトの管理画面を開きます。", "Open the pro
 def requests():
     """(text, target, parts) of every mix: each part with and without, over a few languages"""
     for text, (target, source), form, context, glossary, history in itertools.product(
-            TEXTS[:4], [("ja", None), ("en", "ja"), ("ja", "en"), ("zh-hans", None), ("ja(easy)", "en"), ("ceb", "ja(easy)")],
+            TEXTS[:4], [("ja", None), ("en", "ja"), ("ja", "en"), ("zh-hans", None), ("ja(easy)", "en"), ("ceb", "ja(easy)"), ("ja-easy", "en")],
             [None, "plain", "polite"], [None, "", "工作で折り紙を作っています。", " "], [[], GLOSSARY], [[], HISTORY]):
         if form is not None and target != "ja":
             continue
