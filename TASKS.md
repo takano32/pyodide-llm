@@ -115,7 +115,6 @@
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
-- T675 [試験][Gemma4] 網の `calls` に、鍵と値を共有する層のある Gemma 4 を足す — 反映済み
 - T677 [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 未着手
 - T678 [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 未着手
 <!-- 目次ここまで -->
@@ -1109,12 +1108,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T672 [描画][モデル] PFN が公表した品質の数を見せる — 状態: 候補（2026-11-13、T664 から。規模 小。持ち主の判断）
 - 向こうは量子化ごとに PFTB（日英）と FLORES+ chrF++（多言語）を量子化なしとの差で出す（`engine::models::QUALITY`、出どころは PFN の公表）。ここでは項目の note か About に 1 行。数の出どころ（PFN のブログかカード）を項目のコメントに書く。T671 で量子化を選ばせるなら要る。
-
-### T675 [試験][Gemma4] 網の `calls` に、鍵と値を共有する層のある Gemma 4 を足す — 状態: 反映済み（2026-11-21、Opus medium、本線に入れた。2026-11-20、T673 のレビューから。規模 小）
-- T673 の「logits の要らないトークンは `lastKept()` で止める」は、どの正しさの試験もビット単位の一致で見るので、`promptLayers` を全部の層に戻しても通る（推論）。見張りは CI の速さの比べだけ。
-- `tests/unchanged-calls.ts` は `forwardMany` のブロックと logits なしのトークンを既に記録している。`gemma3` の `later`（古い木では空）と同じ形で、共有の層のある作り物の Gemma 4 を 1 つ足す。予定した違い: 相手の木を T673 の前（e32fbc9c）にすると、Gemma 4 の呼び出しの列が短くなる。止める層を戻す壊し方で網が「違う」と言うことを見る。
-- **実装（2026-11-21）**: `tests/unchanged-calls.ts` に `gemma4`（`memory-check.ts` の「gemma4, sharing keys and values」と同じ形: 6 層、全位置の層 2・5 は head 128、層 4・5 は 2 倍幅の FFN で層 3・2 の鍵と値を読む、層ごとの埋め込みなし）を int8 と float32 で。`gemma3` と同じく別に聞き、Gemma 4 の無い古い木では空（`apart()`: 片方が断っても他方は残る）。鍵は場合ごとなので、ほかの記録は動かない（170 → 180 の鍵）。層ごとの埋め込みは入れない（表を読む口 `rows` が要り、止める層の見張りには要らない）。
-- **確かめ**: (1) 網 `calls`（相手 origin/main 2e3c34fc）: 180 のすべて「the same」。(2) 相手 e32fbc9c（T673 の前）: Gemma 4 の 8 つ（int8・float32 × relaxed の有無 × 共有の有無）だけが「differ」、呼び出しの数は前 10529・16024・30960 → 今 9047・12042・19722（短くなる）。(3) 壊し方（捨てのワークツリーで `promptLayers = layers` をコミットして相手に）: Gemma 4 の 8 つだけが「differ」。CI を省いた。訳: 試験の道具だけの変更で、網は手元で全部回る。
 
 ### T677 [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 状態: 未着手（2026-11-21、取りまとめ役が T259・T661・T662 のデプロイで見た。規模 小）
 - `deploy.yml` の Pages の段が「Found 0 artifact(s)」「Fetching artifact metadata failed. Is githubstatus.com reporting issues …」で落ちることが 2026-11-20〜21 に 4 回: run 44812611003（T259）、44831634768（T661 のレビュー）、44837232999 とその自動の再試行 44838295916（T662）。軽い組は通り、ワークフローの `again` か手の dispatch（44839922931）で公開された。GitHub の状態ページは平常（T662 の担当の読み）。
