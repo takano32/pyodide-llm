@@ -62,6 +62,8 @@ def test_the_requests_of_the_model_cards_examples():
         head + "<|plamo:tag|>context<|plamo:msg|> <|plamo:tag|>input<|plamo:msg|>x" \
                "<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:key|>form<|plamo:val|>polite<|plamo:msg|>"
     assert text_of(pfml_pieces("x", "ja", context="")) == text_of(pfml_pieces("x", "ja"))
+    # None is not said (the template's `is not none`), as an empty list is
+    assert text_of(pfml_pieces("x", "ja", glossary=None, history=None)) == text_of(pfml_pieces("x", "ja"))
 
 
 def test_the_ids_are_those_of_the_whole_text(made):

@@ -65,6 +65,7 @@ def pfml_pieces(text, target, source=None, form=None, context=None, glossary=(),
     What the template refuses is refused here too, in its order (the pairs' texts and the text, the languages, the
     context, the form, the glossary), but for a mark written in a text (read literally), and a language the card does
     not list."""
+    history, glossary = history or (), glossary or ()  # None: not said, as the template's `is not none`
     if any(not isinstance(pair, (tuple, list)) or len(pair) != 2 for pair in (*history, *glossary)):
         raise ValueError("A pair of the history or of the glossary is two texts.")
     said_texts = [(each, f"translated pair {i + 1}") for i, pair in enumerate(history) for each in pair] + [(text, "the text")]
