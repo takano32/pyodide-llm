@@ -47,7 +47,7 @@ assert.equal(unisolated(run({}), known), null, "a pair the table knows passes");
 assert.ok(unisolated(run({ os: "linux arm64" }), known), "the same browser on another system does not");
 assert.ok(unisolated(run({ engine: "chromium" }), known), "nor another browser on the same system");
 for (const [pair, why] of Object.entries(UNISOLATED)) {
-  assert.match(pair, /^(linux|win32|darwin) (x64|arm64) (chromium|firefox|webkit|chrome|msedge)$/, `UNISOLATED's ${pair}: "<platform> <arch> <browser>"`);
+  assert.match(pair, /^(linux|win32|darwin) (x64|arm64) (chromium|firefox|webkit|chrome|msedge|stock-firefox)$/, `UNISOLATED's ${pair}: "<platform> <arch> <browser>"`);
   assert.ok(typeof why === "string" && why.length > 20, `UNISOLATED's ${pair} says why`);
 }
 // and e2e.ts (which runs a browser as it is imported) asks it of every run, with the URL it opened, into its failures
@@ -55,4 +55,9 @@ const e2e = fs.readFileSync(new URL("./e2e.ts", import.meta.url), "utf8");
 assert.match(e2e, /const notIsolated = unisolated\(\{ isolated: result\.isolated, os: `\$\{os\.platform\(\)\} \$\{os\.arch\(\)\}`, engine, visited \}\);\nif \(notIsolated\) failures\.push\(notIsolated\);/,
   "tests/e2e.ts asks tests/unisolated.ts of every run and records what it says as a failure");
 assert.match(e2e, /await page\.goto\(visited\);/, "tests/e2e.ts hands it the URL it opened");
+// and tests/stock-firefox.ts (Selenium: the weekly browsers.yml's Firefox, no line in results.jsonl) asks it as well
+const stock = fs.readFileSync(new URL("./stock-firefox.ts", import.meta.url), "utf8");
+assert.match(stock, /const notIsolated = unisolated\(\{ isolated: result\.isolated, os: `\$\{os\.platform\(\)\} \$\{os\.arch\(\)\}`, engine: "stock-firefox", visited \}\);\n  if \(notIsolated\) failures\.push\(notIsolated\);/,
+  "tests/stock-firefox.ts asks tests/unisolated.ts and records what it says as a failure");
+assert.match(stock, /isolated: self\.crossOriginIsolated/, "tests/stock-firefox.ts reads the page's crossOriginIsolated");
 console.log("ok");

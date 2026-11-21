@@ -4,9 +4,11 @@
 // Chromium even on a bare SIMD loop with nothing of Pyodide (T59). Marionette, which geckodriver talks to, does not.
 //
 //   node tests/stock-firefox.ts [model id = stories260K] [url of the site]
+import os from "node:os";
 import { Builder, Key } from "selenium-webdriver";
 import firefox from "selenium-webdriver/firefox.js";
 import { closed, leave } from "./leave.ts";
+import { unisolated } from "./unisolated.ts";
 
 const [model = "stories260K", site = "https://takano32.github.io/pyodide-llm/"] = process.argv.slice(2);
 const expected = { stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park." };
@@ -25,7 +27,8 @@ try {
     throw new Error(`timed out waiting for: ${script}`);
   };
   const started = Date.now();
-  await driver.get(`${site}?model=${model}`);
+  const visited = `${site}?model=${model}`;
+  await driver.get(visited);
   await until('return !document.getElementById("run").disabled || !!document.querySelector(".error")', 600);
   const readySeconds = (Date.now() - started) / 1000;
   // 256 tokens, as in every other number of the documents
@@ -36,9 +39,13 @@ try {
     text: document.querySelector(".model .bubble")?.textContent ?? "",
     meta: document.querySelector(".model .meta summary")?.textContent ?? "",
     error: document.querySelector(".error .bubble")?.textContent ?? "",
-    status: document.getElementById("status-text")?.textContent ?? "" }`);
+    status: document.getElementById("status-text")?.textContent ?? "",
+    isolated: self.crossOriginIsolated }`);
   if (result.error) failures.push(`the page reported: ${result.error}`);
   if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
+  // T662's review: as tests/e2e.ts fails a page that is not cross-origin isolated (one thread: the speed this run is for is not Firefox's)
+  const notIsolated = unisolated({ isolated: result.isolated, os: `${os.platform()} ${os.arch()}`, engine: "stock-firefox", visited });
+  if (notIsolated) failures.push(notIsolated);
   if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
   console.log(`stock firefox ${capabilities.get("browserVersion")} (${capabilities.get("moz:geckodriverVersion")}), ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
   console.log(`status: ${result.status}`);

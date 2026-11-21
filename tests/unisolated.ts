@@ -10,10 +10,10 @@
 // every browser of each (Chromium, Firefox, WebKit, Chrome, Edge), and the models of Hugging Face in Chromium and
 // WebKit. A pair goes in only with a run that shows it, and the reason.
 //
-// Read by tests/e2e.ts; held by tests/summary-check.ts (Node alone, no browser).
+// Read by tests/e2e.ts and tests/stock-firefox.ts; held by tests/summary-check.ts (Node alone, no browser).
 
-/** "<os.platform()> <os.arch()> <engine>" (as e2e.ts's record writes os, and the browser as it was asked for) → why it
- *  is not isolated there */
+/** "<os.platform()> <os.arch()> <engine>" (as e2e.ts's record writes os, and the browser as it was asked for; "stock-firefox"
+ *  for tests/stock-firefox.ts's Selenium Firefox) → why it is not isolated there */
 export const UNISOLATED = {};
 
 /** The failure to record for a run, or null: `isolated` is the page's crossOriginIsolated, `os` is
