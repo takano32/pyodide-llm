@@ -10,7 +10,8 @@ GPU today, how the page chooses, and what has been measured.
 forward pass and the sampling of each on the GPU, the ids read back once), for Llama, Qwen2, Qwen3, GPT-2 and
 GPT-NeoX models. Each goes to the GPU only where the device measures it faster than the CPU.
 
-**Ternary weights** (Ternary Bonsai 1.7B, 4B and 8B, which are Qwen3 models) go to the GPU as they are: two bits a
+**Ternary weights** (Ternary Bonsai 1.7B, 4B and 8B, which are Qwen3 models, and the 1-bit Bonsai of the same sizes,
+whose signs are spread to ternary codes as they are uploaded) go to the GPU as they are: two bits a
 weight and one scale for every 128 weights, a quarter of the bytes of int8. The GPU multiplies them with packed
 int8 dot products only (below), so a browser whose WGSL lacks `dot4I8Packed` keeps such a model on the CPU and says
 so. No real GPU has run them yet: the numbers so far are correctness on CI's software adapters.

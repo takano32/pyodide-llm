@@ -131,7 +131,8 @@ and its speed against the same weights widened to int8, in tok/s (ternary / int8
 On three English and three Japanese articles (the first 1,500 tokens of each), ternary with 8-bit activations differs from int8 with
 7-bit activations by −0.31% to +0.30% (mean +0.02%); the sign changes from article to article.
 
-It runs on the CPU only for now (no GPU path), and has not been measured on a phone.
+Since 2026-10-02 it runs on WebGPU too where the device measures that faster (see [webgpu.md](webgpu.md)); it has
+not been measured on a phone.
 
 Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, held as 1.1 GB and 2.3 GB of ternary
 weights; widened to int8 they were 4.5 GB and 9.2 GB, on a 64-bit memory). On the site in Chromium on a CI x86-64 machine with four
@@ -257,6 +258,33 @@ writes, its most likely token is the float-activation path's at 395 of 398 posit
 format the constant does not show. The same model moves its logits by 17 when the norms' epsilon is 1e-6 instead of
 1e-5, because its residual stream is small (an rms of 0.006 to 0.03), so that epsilon is 6% to 28% of the mean square
 the norms divide by in its early layers.
+
+### 1-bit Bonsai
+
+Prism ML's 1-bit Bonsai 1.7B, 4B and 8B (Qwen3 models) and 27B (from Qwen3.6 27B, with the hybrid attention of
+Qwen3.5 and no rotated basis) come as Q1_0 GGUFs: every weight is plus or minus the scale of its 128, 18 bytes for
+the 128. Since 2026-11-04 the page keeps them that way, one bit a weight and the float16 scale; before, it held them
+as ternary weights. The kernels multiply them as the ternary ones do, so the logits are the same to the bit (in CI:
+64 positions of the 1.7B, 16 of the 27B). Measured in CI (2026-11-03 and 2026-11-04):
+
+| | 1.7B | 4B | 8B | 27B |
+|---|---:|---:|---:|---:|
+| fetched (Q1_0) | 248 MB | 572 MB | 1.16 GB | 3.80 GB |
+| held (1 bit) / as ternary before | 242 MB / 457 MB | 566 MB* / 1.07 GB | 1.2 GB* / 2.18 GB | 3.88 GB / 7.24 GB |
+| furthest tensor from the float16 original (relative) | 3.5e-5 | 4.8e-5 | 1.7e-8 | 1.4e-7 |
+| perplexity, first 1,500 tokens, English / Japanese | 27.507 / 73.399 | 20.095 / 49.702 | 17.891 / 38.251 | not measured this way |
+
+\* The list's estimate; the other sizes were measured.
+
+The 27B does not fit in a 32-bit memory even in one bit (4.18 GiB with what comes after the weights), so it still
+needs Chrome or Firefox. The 1.7B answers in English but breaks in Japanese (it repeats itself), so the list has it
+as an English model; the 4B, the 8B and the 27B answered the Japanese questions in Japanese. Against the ternary
+kernel on the same weights, the one-bit kernel was as fast on one thread and 1.02 times (x86-64, AMD EPYC 7763) and
+1.06 times (arm64, Neoverse-N2) as fast on four: what it saves is memory. On the deployed page, in Chromium on CI's
+runners with 4 threads, the 1.7B was ready in 20.3 s and wrote 16.9 tok/s (3.9 s to open what it kept on a second
+visit), and the 8B 60.3 s and 4.5 tok/s (5.8 s); held as ternary, the 4B wrote 7.6 tok/s and the 27B 1.3 tok/s
+(ready in 205 s). On the GPU the signs are spread to ternary codes as they are uploaded, and the ternary shaders
+multiply them: checked on CI's software adapters only. Not measured on any device.
 
 ## Other small effects
 
