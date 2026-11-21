@@ -62,19 +62,22 @@ def test_the_normalizers_are_the_tokenizers_librarys(text):
     assert tokenizer.normalized(text) == want
 
 
-# 1,112,064 code points, three texts each, for NFC and NFKC: the full suite's (tests/suite.sh full, EVERY_CODE_POINT=1)
+# 1,112,064 code points, five texts each, for NFC and NFKC: the full suite's (tests/suite.sh full, EVERY_CODE_POINT=1)
 @pytest.mark.skipif(not os.environ.get("EVERY_CODE_POINT"), reason="EVERY_CODE_POINT=1: tests/suite.sh full runs it")
 @pytest.mark.parametrize("form", ["NFC", "NFKC"])
 def test_every_code_point_is_normalized_as_the_tokenizers_library_does(form):
-    """T663: each code point alone, between marks of the classes 230 and 220 after a letter, and before two marks of
-    the classes 1 and 230: as the real normalizer makes them. The code points a newer Python's Unicode has that the
-    library's Unicode has not go into engine.tokenizer's UNNORMALIZED."""
+    """T663: each code point alone, between marks of the classes 230 and 220 after a letter, before two marks of
+    the classes 1 and 230, and decomposed: as the real normalizer makes them. The code points a newer Python's Unicode
+    has that the library's Unicode has not go into engine.tokenizer's UNNORMALIZED (one named here for a composition is
+    the composite: its decomposition's first code point goes in)."""
     normalizers = pytest.importorskip("tokenizers.normalizers", reason="pip install tokenizers to check against the real one")
     from engine.tokenizer import normalized_as_read
     real = getattr(normalizers, form)()
 
     def placed(char):
-        return f"{char}|q́{char}̖|{char}̴̀|"
+        # (and the character's own decompositions: the first half of a composition is a code point that only the second
+        # half beside it shows, as U+11935 beside U+11930)
+        return f"{char}|q́{char}̖|{char}̴̀|{unicodedata.normalize('NFD', char)}|{unicodedata.normalize('NFKD', char)}|"
 
     codes = [code for code in range(0x110000) if not 0xD800 <= code < 0xE000]
     wrong = []
