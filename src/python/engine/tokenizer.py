@@ -426,6 +426,8 @@ class Charsmap:
 PLAMO_SPECIAL = re.compile(r"(<\|plamo:[^|\s]{,64}\|>)")
 PLAMO_CUT = "\uee00"
 PLAMO_UNKNOWN = 10_000_000
+# T665: what the spelling of each of PLaMo's control pieces has in it (Tokenizer.literal_pieces)
+PLAMO_CONTROL = re.compile(r"<\|plamo:|plamo\|>")
 
 
 def plamo_breaks(breaks):
@@ -514,7 +516,7 @@ class Tokenizer:
         if kind not in TOKENIZER_KINDS:
             raise ValueError(f"Unsupported tokenizer kind: {kind!r} (the engine reads {', '.join(TOKENIZER_KINDS)})")
         # T639.4: what the kind does, from its row of TOKENIZER_KINDS, taken apart once (encode() and decode() read it)
-        self.kind, (self.encoding, self.decoding, self.prefixes, self.spaces, made) = kind, TOKENIZER_KINDS[kind]
+        self.kind, (self.encoding, self.decoding, self.prefixes, self.spaces, made, self.literally) = kind, TOKENIZER_KINDS[kind]
         self.nfkc, self.nfc, self.pretokenizer = nfkc, nfc, pretokenizer
         # T265: the text is made lower case before anything else (rinna's japanese-gpt2: tokenizer_config.json's
         # do_lower_case, with a vocabulary that has no capital Latin letter, each of which was <unk> without it)
@@ -573,11 +575,18 @@ class Tokenizer:
             made(self)
         self.unknown_score = min(score for score in self.scores if score > self.UNMATCHABLE) - 10.0
 
-    def encode(self, text, specials=(), after=None):
+    def encode(self, text, specials=(), after=None, literal=False):
         """specials: pieces such as "</s>" that stand for their token wherever they are written (a chat template
         puts them between the turns). As plain text they would be spelled out letter by letter. after (T258): the
         token the text follows (the BOS the engine begins with), which takes in the whitespace the text begins with
-        where it is a special that strips on its right."""
+        where it is a special that strips on its right. literal (T665): no control piece written in the text stands
+        for its token, where the kind's own search would take it (PLaMo's reads <|plamo:tag|> as its token whether it
+        is named a special or not): what a person typed, put between the specials of a format piece by piece
+        (engine/pfml.py). A kind whose row has no such reading (literally None) refuses it, as do specials with it."""
+        if literal and (self.literally is None or specials):
+            raise ValueError(f"A {self.kind} tokenizer reads no text literally" if self.literally is None
+                             else "A text read literally has no specials.")
+        encoding = self.literally if literal else self.encoding
         tokens, first = [], True
         for said, read in self.replaced:
             text = text.replace(said, read)
@@ -595,7 +604,7 @@ class Tokenizer:
                 if self.prefixes and self.prefixed != "never" and ((first and not (self.spaced and part.startswith(" "))) or self.prefixed == "every"
                                                                    or (self.prefixed and not part.startswith(" "))):
                     part = " " + part
-                tokens += self.encoding(self, part)
+                tokens += encoding(self, part)
             first = False
         return tokens
 
@@ -774,8 +783,12 @@ class Tokenizer:
         less than half of that last decimal: the converter checks)"""
         self.unigram_pieces()
         self.points = [round(score * 1e4) for score in self.scores]
+        # T665: and the pieces a literal text is searched with: those but the control pieces, each of which has
+        # PLAMO_CONTROL in it (the 59 of PLaMo 3's tokenizer.jsonl: <|plamo:tag|> ..., and <|plamo:begin_,
+        # <|plamo:end_ and :plamo|>, which its search finds in a text as any piece; none of its others has "plamo")
+        self.literal_pieces = {text: id for text, id in self.pieces.items() if not PLAMO_CONTROL.search(text)}
 
-    def encode_plamo(self, text):
+    def encode_plamo(self, text, pieces=None):
         """T649.1: PLaMo's own tokenizer (tokenization_plamo.py's, which this takes the form of; none of its lines):
         the text is cut around every <|plamo:…|> written in it, and then around the runs breaks says, and each stretch
         between two cuts is searched alone (PLaMo writes U+EE00 at the cuts, a piece of score 0 that it then leaves
@@ -789,11 +802,17 @@ class Tokenizer:
             text = self.breaks.sub(PLAMO_CUT + r"\1" + PLAMO_CUT, text)
         tokens = []
         for stretch in text.split(PLAMO_CUT):
-            tokens += self.plamo_search(stretch)
+            tokens += self.plamo_search(stretch, self.pieces if pieces is None else pieces)
         return tokens
 
-    def plamo_search(self, text):
-        n, pieces, points, reach = len(text), self.pieces, self.points, self.reach
+    def encode_plamo_literally(self, text):
+        """T665: the text as encode_plamo() reads it, cut at the same places, but searched without the control pieces
+        (literal_pieces): a <|plamo:tag|> written in it is its characters, as one PLaMo has no piece of (<|plamo:x|>)
+        is in PLaMo's own tokenizer, and so is a <|plamo:begin_"""
+        return self.encode_plamo(text, self.literal_pieces)
+
+    def plamo_search(self, text, pieces):
+        n, points, reach = len(text), self.points, self.reach
         cost, taken = [0] * (n + 1), [None] * n  # the least cost from a place to the end, and (length, token) there
         for i in range(n - 1, -1, -1):
             best, take = None, None
@@ -839,6 +858,9 @@ class Kind(NamedTuple):
     prefixes: bool  # sentencepiece's dummy prefix may stand before a stretch of text (prefixed and spaced say where)
     spaces: bool  # U+2581 is a space, in the text and in a special's spelling: the pieces spell it " " (T216)
     made: Optional[Callable]  # (tokenizer) makes the kind's own index of the pieces, once
+    # T665: (tokenizer, a stretch) -> its tokens with no control piece matched (encode()'s literal), or None: the kind
+    # has no such reading (a PLaMo format's literal text is the only one asked for)
+    literally: Optional[Callable] = None
 
 
 # the kinds a tokenizer.bin is read as (the converter's tokenizer_kind): a kind that is added is a row here and the
@@ -848,4 +870,5 @@ TOKENIZER_KINDS = {
     "unigram": Kind(Tokenizer.encode_unigram, Tokenizer.decode_pieces, True, True, Tokenizer.unigram_pieces),
     "bytebpe": Kind(Tokenizer.encode_bytebpe, Tokenizer.decode_bytes, False, False, Tokenizer.text_pieces),
     # T649.1: PLaMo's tokenizer.jsonl (the converter's plamo()): no dummy prefix, a space is a space
-    "plamo": Kind(Tokenizer.encode_plamo, Tokenizer.decode_pieces, False, False, Tokenizer.plamo_pieces)}
+    "plamo": Kind(Tokenizer.encode_plamo, Tokenizer.decode_pieces, False, False, Tokenizer.plamo_pieces,
+                  Tokenizer.encode_plamo_literally)}
