@@ -115,7 +115,6 @@
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
-- T679 [運用][遠隔試験] `ci.ts deploy` の again の run の選び方を、main の先頭が動いた場合と後から呼んだ場合にも — 反映済み
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1107,10 +1106,3 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T672 [描画][モデル] PFN が公表した品質の数を見せる — 状態: 候補（2026-11-13、T664 から。規模 小。持ち主の判断）
 - 向こうは量子化ごとに PFTB（日英）と FLORES+ chrF++（多言語）を量子化なしとの差で出す（`engine::models::QUALITY`、出どころは PFN の公表）。ここでは項目の note か About に 1 行。数の出どころ（PFN のブログかカード）を項目のコメントに書く。T671 で量子化を選ばせるなら要る。
-
-### T679 [運用][遠隔試験] `ci.ts deploy` の again の run の選び方を、main の先頭が動いた場合と後から呼んだ場合にも — 状態: 反映済み（2026-11-21）。前の状態: 未着手（2026-11-21、T677 のレビューから。規模 小）
-- `againRun()`（`tests/ci.ts`）は同じ SHA の dispatch の run だけを探す。`again` の `gh workflow run deploy.yml --ref main` はその時点の main の先頭を走らせるので、落ちた run の後に別の push が入ると見つからず、期限まで探して終わり方 1（公開は済んでいる）。直し案: `event=workflow_dispatch&branch=main`、`created_at` ≥ again の始まり − 60 秒、ID の大きいもので選び、SHA が違えば 1 行言う。見つからなければ `newerDeploy()` に落とす。
-- `deployOf()` は `head_sha` の run の先頭（いちばん新しい）を取るので、`again` が済んだ後に `ci.ts deploy --sha …` を呼ぶと dispatch の run だけを待ち、終わり方 0（push の run の落ちが見えない）。push の run を優先して選ぶ。
-- 試験が無い（`ci.ts` の checks は無い）: 選び方を純な関数にして、run の一覧の作り物で試す形を足す。
-- **実装（2026-11-21、Opus medium）**: 選び方を純な関数にして `tests/ci-runs.ts` に（`deployOfCommit()`・`againOf()`・`againMayAppear()`・`againWindow()`・`newerOf()`）。(1) `deployOf()` は commit の run のうち push の run を先に取る（無ければ先頭）。(2) `againRun()` は `event=workflow_dispatch&branch=main&created=<窓>` を聞き、`again` のジョブの始まり − 60 秒から終わり + 60 秒までに作られた dispatch のいちばん新しいものを取る（SHA が落ちた run と違えば 1 行言う）。**取りまとめ役の決め（訳）**: 案の「始まり − 60 秒以後で ID の大きいもの」だけだと、後から呼んだとき（`--sha` の古い commit）に後の別の dispatch（例: 44839922931）を取るので、窓の終わりも `again` の終わり + 60 秒で閉じた。`again` の終わり + 60 秒を過ぎて見つからなければ待たずに、`newerOf()`（main の新しいデプロイ、どの event でも）に落とす（前の run は表に残す）。`newerDeploy()` も `newerOf()` を読む。検査 `tests/ci-check.ts`（11、回線なし、1 秒未満）を軽い組の `page_modules` に入れた。壊し方 6 つ（push を先に取らない・窓の終わりを外す・古いほうを取る・同じ SHA だけ（T677 の形）・event を見ない・60 秒の余裕を 0）はどれも落ちた。
-- **確かめ**: `node --check tests/ci.ts`、`bash -n tests/suite.sh`、`node tests/ci-check.ts`。実際の run: `node tests/ci.ts deploy --sha 4c1ee646ad12… --minutes 5 --grep none` が push の run 44812611003 を取り（前は同じ SHA の dispatch 44814177192 を先頭として取った）、`again` の起こした 44814177192 を見つけ、表 2 行・終わり方 5。main が動いた場合は実際の run が無いので作り物の検査だけ。CI を省いた。訳: 道具だけの変更で、本物の run に向けて手元で回せた。
