@@ -38,10 +38,17 @@ const shapes = [
 // T261: a Gemma 3 (the norms behind, a GELU in the gate, local layers with a window of 8 positions: tests/plans.ts),
 // asked apart: a tree before T261 has no such architecture and says nothing of it, which the net reads as new here
 const gemma3 = of("gemma3", [256, 512, 6, 4, 1, 2000, 300], { arch: "gemma3", head_dim: 64 }, ["int8", "int6", "float32", "float16"]);
+// T675: and a Gemma 4 whose last two layers read the keys and values of others and keep none (heads twice as wide in its
+// full-attention layers, an FFN twice as wide in the sharing ones: tests/memory-check.ts's), asked apart as Gemma 3 is.
+// Its prompt's tokens that need no logits stop at the last layer that keeps keys and values (T673, forward/engine.ts's
+// promptLayers), which no check of correctness sees: every one is bit for bit, through all the layers or not
+const gemma4 = of("gemma4, sharing keys and values", [256, 512, 6, 4, 1, 2000, 300], { arch: "gemma4", head_dim: 64,
+  wide: { layers: [2, 5], head_dim: 128 }, double: [4, 5], kv_shared: { layers: [4, 5], from: [3, 2] } }, ["int8", "float32"]);
 const sha = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
 const found = {};
 const asked = (list) => plansOf(list.map(({ name, ...shape }) => shape));
-const later = (() => { try { return asked(gemma3); } catch { return []; } })();
+const apart = (list) => { try { return asked(list); } catch { return []; } };
+const later = [...apart(gemma3), ...apart(gemma4)];
 for (const p of [...asked(shapes), ...later]) {
   const quantized = ["int8", "int6", "ternary"].includes(p.dtype);
   // (what was hashed before T375.2: where the tensors are. The plan the engine is handed, p.plan, is Python's own from

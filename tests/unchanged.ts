@@ -14,7 +14,7 @@
 //            reaches it), so a maker may be formatted, moved or given a parameter and this still says "the same"
 //   models   every export of src/models.ts: the data as JSON, and what every exported function answers for every
 //            entry of the list (a builder moved to another file leaves both as they were)
-//   calls    tests/unchanged-calls.ts: the plan Python hands forward.js and every call of a kernel, 150 hashes
+//   calls    tests/unchanged-calls.ts: the plan Python hands forward.js and every call of a kernel, 180 hashes
 //   layouts  (T357) tests/unchanged_layouts.py: what a tree says of a checkpoint's file over a grid of made-up headers, forms
 //            and dtypes (18 families of the four layouts, five dtypes): tensor_rows(), Writer's places and checkpoint_size(),
 //            checkpoint_dtype(), the plan Llama(external=) hands forward.js (the engine's own order of the tensors),
