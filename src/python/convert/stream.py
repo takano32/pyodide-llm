@@ -103,11 +103,12 @@ class Stream:
     to have one made (self.out). sink and quantize_rows: see Writer. readers: the readers of the stored types on
     the SIMD kernels, by the type's name (convert/readers.py's kernel_readers(): bfloat16, T123; GGUF's Q8_0, T136; the
     two ternary types, T273), the same float32 as SOURCES' own, which read whatever type has none here. piece: the
-    bytes held before a tensor's rows are converted, unless it ends first (PIECE).
+    bytes held before a tensor's rows are converted, unless it ends first (PIECE). stops (T681): the tokens the
+    answers stop at, where the conversion knows them (convert/beginning.py's): the sink gets them with the form.
     """
 
     def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0, sink=None, quantize_rows=None,
-                 readers=None, piece=PIECE):
+                 readers=None, piece=PIECE, stops=None):
         config = normalize(config)
         self.readers = readers or {}
         self.piece = piece
@@ -133,8 +134,10 @@ class Stream:
         self.out = out  # None when the checkpoint goes to sink
         # (T334.3's review: the sink gets the family's own options too, convert/beginning.py's options_of() has them
         # last: what the worker asks before a byte comes and the form does not say, a Gemma 2's cap of its scores)
-        self.writer = Writer(self.out, self.header, dtype, self.form, sink=sink, quantize_rows=quantize_rows,
-                             said=family_of(config).options(config))
+        # (T681: and where the answers stop: the worker keeps a model of more stop tokens than the GPU's sampling holds
+        # off the GPU alone, before its weights go there)
+        said = {**family_of(config).options(config), **({"stop_tokens": list(stops)} if stops is not None else {})}
+        self.writer = Writer(self.out, self.header, dtype, self.form, sink=sink, quantize_rows=quantize_rows, said=said)
         plan, shapes = model_plan(config, self, self.header, self.form)
         self.total, self.done = sum(math.prod(shape) for shape in shapes), 0
         wanted, self.factors = {}, {}

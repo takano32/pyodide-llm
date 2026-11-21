@@ -15,6 +15,7 @@ import vm from "node:vm";
 import { workers as workersStandIn } from "./fakes/worker.ts";
 import { python, runtimeUrl } from "./tree.ts";
 const forward = await import(runtimeUrl("forward.js"));
+const { STOPS_MOST } = await import(runtimeUrl("shaders.js"));  // (T681: the GPU sampling's, SAMPLE's)
 import { runWorker } from "./worker-source.ts";
 import { strictly } from "./worker-harness.ts";
 import { contract, differing } from "./contracts.ts";
@@ -460,6 +461,23 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
     assert.deepEqual(typesPosted(worker), ["open", "stop"], "a second sink.open() kept the first GPU's worker");
     into.release();
+    await vm.runInContext(strictly("gpuOnlyEnding"), gpuContext);
+  }
+  // T681: the converter's stop tokens come with the form (convert/stream.py's said): more than the GPU's sampling holds
+  // keep the model off the GPU alone before a byte goes there, and the entry's own stop tokens win over them, as they do
+  // where the engine is made
+  {
+    const many = { ...FORM, stop_tokens: Array.from({ length: STOPS_MOST + 1 }, (_, i) => i) };
+    const into = vm.runInContext(strictly("checkpointSink()"), gpuContext);
+    into.sink.open(size, proxy(LLAMA3B), "int8", proxy(many));
+    assert.ok(!into.weights.direct, "T681: a model of more stop tokens than the GPU's sampling holds went on the GPU alone");
+    into.release();
+    gpuContext.own = { options: { stop_tokens: [1, 2] } };
+    const own = vm.runInContext(strictly("checkpointSink(undefined, own)"), gpuContext);
+    own.sink.open(size, proxy(LLAMA3B), "int8", proxy(many));
+    assert.ok(own.weights.direct, "T681: the entry's own stop tokens did not win over the converter's");
+    own.release();
+    await vm.runInContext(strictly("loadBegan({ id: 'the next load' })"), gpuContext);
     await vm.runInContext(strictly("gpuOnlyEnding"), gpuContext);
   }
   // (3) built, its GPU ready: kept (destroy() lets nothing go); then its GPU fails: let go before the load on the CPU

@@ -97,7 +97,7 @@ class Conversion:
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = (Kept if blocks else Stream)(header, int(base), self.config, dtype, int(max_seq_len),
                                                    start=int(start), sink=sink, quantize_rows=quantize_rows,
-                                                   readers=readers, piece=piece)
+                                                   readers=readers, piece=piece, stops=beginning.stop_tokens)
         self.options = options_of(self.stream.form, self.stream.dtype, self.config, vocabulary, beginning)
         self.checkpoint = self.stream.out
 

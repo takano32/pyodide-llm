@@ -253,12 +253,22 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
   };
 }
 
+// T681: the options a converted model's weights are placed by, with the stop tokens its entry says where it says them:
+// those win over the converter's as the engine is made ({ ...converted, ...model.options }), and a model of more than
+// the GPU's sampling holds is kept off the GPU alone (forward.ts's gpuOnlyUnfit)
+type OwnStops = { options?: Options };
+export function ownStops(options: Options, model: OwnStops): Options {
+  const own = model.options?.stop_tokens;
+  return Array.isArray(own) ? { ...options, stop_tokens: own } : options;
+}
+
 // T93: where the converter writes the checkpoint, piece by piece, straight into where the engine will read it (a
 // Python buffer on the way would stay: Pyodide's memory never shrinks). sink is what the converter calls
 // (llama2_convert.Writer), weights what sink.open() made (weightsBuffer), bytes its size; release() lets go of it once
 // (T145: a conversion that failed after sink.open() left a Python buffer of the model's size behind with
 // ?without=kernels). Out of convert() so that tests/worker-sink-check.ts can follow sink.open() to footprint().
-export function checkpointSink(keep?: Keeper) {
+// (T681: model, the entry converted, whose own stop tokens win over the converter's: ownStops())
+export function checkpointSink(keep?: Keeper, model: OwnStops = {}) {
   const into = {
     weights: undefined, bytes: 0,
     release() {
@@ -270,7 +280,7 @@ export function checkpointSink(keep?: Keeper) {
     // form: what lays out the checkpoint and sizes the forward pass besides the header (llama2_numpy.FORM, T115, T144)
     open(bytes, header, dtype, form) {
       into.release();  // an earlier try (another tokenizer) that got this far
-      into.weights = weightsBuffer(bytes, header.toJs(), { dtype, ...form.toJs({ dict_converter: Object.fromEntries }) }, keep);
+      into.weights = weightsBuffer(bytes, header.toJs(), ownStops({ dtype, ...form.toJs({ dict_converter: Object.fromEntries }) }, model), keep);
       header.destroy();
       form.destroy();
       into.bytes = bytes;

@@ -8,7 +8,7 @@ import { pyodide, llama2_numpy, pythonKernels, blockKernels } from "./runtime.ts
 import { switchesNow } from "./request.ts";
 import { adopted } from "./loaded.ts";
 import { since, took } from "./clock.ts";
-import { pythonBuffer, automaticBits, weightsBuffer, checkpointSink, runsPacked, tableInMemoryFromNow, blocksWidenedNow } from "./weights.ts";
+import { pythonBuffer, automaticBits, weightsBuffer, checkpointSink, ownStops, runsPacked, tableInMemoryFromNow, blocksWidenedNow } from "./weights.ts";
 import { gpuOnlyPossible, weightsRoom, weightsDrained } from "./alone.ts";
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.ts";
 import { HEADER_BYTES, headerInts } from "./sources.ts";
@@ -68,7 +68,7 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
   if (part.done || part.value.length < HEADER_BYTES) {
     return { miss: "what is kept is empty" };
   }
-  const weights = weightsBuffer(manifest.bytes, headerInts(part.value), manifest.options, undefined, kept.where === "opfs");
+  const weights = weightsBuffer(manifest.bytes, headerInts(part.value), ownStops(manifest.options, model), undefined, kept.where === "opfs");
   if (weights.hole) skipping.range = weights.hole;
   let tokenizer;
   try {
@@ -182,7 +182,7 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     console.warn(`kept: no file to keep this model in as it comes (${told(error)}): it is not kept, and a model's table of every layer's inputs is held in the memory`);
     return undefined;
   }) : undefined;
-  const into = checkpointSink(keep), { sink } = into;
+  const into = checkpointSink(keep, model), { sink } = into;
   let keptAsItCame = false;  // keep went to keepConverted, which keeps it or lets it go
   let steps: Conduct | undefined, conversion: Conversion | undefined, quantizeRows: Proxy | undefined, readers: Proxy | undefined, failed;
   // T403: whatever ends the conversion (its end, a file that is not there, the line, a refusal of the converter's, a

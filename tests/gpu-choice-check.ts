@@ -9,7 +9,7 @@ const { aloneHolds, aloneVerdict, footprint, gpuBytes, gpuOnlyPlan, gpuOnlyUnfit
 const { gpuLine, PROMPTS_CPU, PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes } = await import(runtimeUrl("forward/choice.js"));
 const { BOTH_ON_8, cpuReadBytes, cpuOf } = await import(runtimeUrl("forward/alone.js"));
 const { deviceKey, floatOfHalf, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData,
-  tokenAttentionOff } = await import(runtimeUrl("shaders.js"));
+  tokenAttentionOff, STOPS_MOST } = await import(runtimeUrl("shaders.js"));
 import { usedAfter } from "../src/bench.ts";
 import { python as sources, runtimeUrl } from "./tree.ts";
 
@@ -354,6 +354,13 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.match(gpuOnlyUnfit(oneB, "int8", {}, undefined), /no GPU adapter/);
   assert.match(gpuOnlyUnfit(oneB, "int8", {}, { ...adapter, fallback: true }), /fallback/);
   assert.equal(gpuOnlyUnfit(oneB, "int8", {}, { ...adapter, fallback: true }, { fallback: true }), null, "the tests' leave");
+  // T681: more stop tokens than the GPU's sampling holds (SAMPLE's uniform: the shader's STOPS_MOST, not the engine's
+  // copy), whose steps would be the CPU's: not on the GPU alone. As many may be, and a token said twice is one
+  const stops = (count: number) => Array.from({ length: count }, (_, i) => 100 + i);
+  assert.equal(gpuOnlyUnfit(oneB, "int8", { stop_tokens: stops(STOPS_MOST) }, adapter), null, "T681: as many stop tokens as SAMPLE holds");
+  assert.equal(gpuOnlyUnfit(oneB, "int8", { stop_tokens: [...stops(STOPS_MOST), 100] }, adapter), null, "T681: a stop token said twice is one");
+  assert.equal(gpuOnlyUnfit(oneB, "int8", { stop_tokens: stops(STOPS_MOST + 1) }, adapter), `more than ${STOPS_MOST} stop tokens`,
+    "T681: more stop tokens than SAMPLE holds keep a model off the GPU alone");
   // T226: Qwen2 (biases) and Qwen3 (norms of the heads, heads of another size) as well: Qwen2.5 3B's and Qwen3 4B's
   // shapes (the owner's NVIDIA PC: "Qwen3 4B ですら GPU 使われないんだが？"); not GPT-2 or GPT-NeoX
   assert.equal(gpuOnlyUnfit(oneB, "int8", { bias: true }, adapter), null);

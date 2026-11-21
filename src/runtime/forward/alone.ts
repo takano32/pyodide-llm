@@ -4,7 +4,7 @@
 // A module of src/runtime/forward.ts, which exports its names as before.
 
 import { BLOCK, PACKED, packingOf, weightBytes } from "../jobs.ts";
-import { BETTER } from "./choice.ts";
+import { BETTER, STOPS_MOST } from "./choice.ts";
 import { architectureOf } from "./architectures.ts";
 import type { Architecture } from "./architectures.ts";
 import { LAYER_KINDS } from "./kinds.ts";
@@ -302,7 +302,8 @@ export const rotatedBlockUnfit = (block: number) => Boolean(block) && ((block & 
  * ownOf() says so of its plan, the worker of its form) */
 export const kindsOfForm = (form: { kinds?: Record<string, unknown> | null }) => Object.values(form.kinds ?? {}).flat() as string[];
 export const blocksForm = (form: { kinds?: Record<string, unknown> | null }) => kindsOfForm(form).some((kind) => packingOf(kind)?.tabled !== undefined);
-export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rotated?: Rotated | null; kinds?: Record<string, unknown> | null } = {},
+export function gpuOnlyUnfit(header: Header, dtype: Dtype,
+  form: GpuForm & { rotated?: Rotated | null; kinds?: Record<string, unknown> | null; stop_tokens?: readonly number[] } = {},
   adapter: Adapter | null | undefined, force: Force = {}) {
   const [dim, hidden] = header;
   if (!adapter) return REASONS.noAdapter;
@@ -319,6 +320,11 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // since T334.3), which no shader has: refused here, before its bytes go to the GPU's worker, and not by the engine
   // once built (gpufit.ts's scoresCapped), which would load it again on the CPU
   if (form.score_softcap) return REASONS.scoresCapped;
+  // T681: nor a model of more stop tokens than the GPU's sampling holds (SAMPLE's uniform, shaders/run.ts's STOPS_MOST),
+  // whose steps generateMany() leaves to the CPU: on the GPU alone there is none, and the model was loaded again on the
+  // CPU at its first answer. Distinct ones, as generate() hands them on (Python's set). Where the form says none (a
+  // file of the visitor's with no settings), nothing is refused here: generateMany() says it then, as before
+  if (new Set(form.stop_tokens ?? []).size > STOPS_MOST) return REASONS.stops(STOPS_MOST);
   // T334.3: a model with a table of every layer's inputs (a Gemma 4's) where a test asks for the GPU alone (?gpuTest=only)
   // and nowhere else yet: on a device that says 8 GB its E2B is as much too large to hold twice as its E4B, and where the
   // E2B goes is the owner's choice (TASKS.md's T334.3: this line goes then)

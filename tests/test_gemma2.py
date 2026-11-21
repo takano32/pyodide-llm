@@ -107,8 +107,10 @@ def test_the_sink_is_told_the_familys_options_before_the_weights(model):
 
     sink = Sink()
     made = safetensors_conversion(tensors, config, unigram(config["vocab_size"]), "int8", sink=sink)
-    for key in ("score_softcap", "softcap", "local"):
+    # (T681: and the stop tokens, which keep a model of more than the GPU's sampling holds off the GPU alone)
+    for key in ("score_softcap", "softcap", "local", "stop_tokens"):
         assert sink.form.get(key) == made.options.get(key), key
+    assert sink.form["stop_tokens"]
     assert ("score_softcap" in sink.form) == (model == "small")
 
 
