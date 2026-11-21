@@ -61,6 +61,8 @@ UNNORMALIZED = re.compile("([" + "".join(
 
 def normalized_as_read(text, form):
     """The text in the normalization form ("NFC", "NFKC") as the tokenizers library makes it (T663: UNNORMALIZED)."""
+    if unicodedata.is_normalized(form, text):  # (so is each stretch between the characters: nearly every text, quickly)
+        return text
     parts = UNNORMALIZED.split(text)
     return "".join(part if i % 2 else unicodedata.normalize(form, part) for i, part in enumerate(parts))
 
