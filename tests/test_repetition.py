@@ -162,3 +162,27 @@ def test_the_work_of_a_token_does_not_grow_with_the_text():
         counts.append(len(lines))
     early, late = (counts[1] - counts[0]) / 1200, (counts[2] - counts[1]) / 1500
     assert abs(late - early) < 1 and late < 4 * MAX_PERIOD + 80
+
+
+class Pieces:
+    """a tokenizer's stand-in whose tokens are not a character each (T667 review): token 5 is no text, 6 is 3 characters,
+    7 and 8 the two halves of a character of 3 bytes (7 is no text, 8 is the character), any other a character"""
+    replaced = ()
+
+    def encode(self, text, specials=(), after=None):
+        return [ord(character) for character in text]
+
+    def decode(self, previous, token, bos=1):
+        return {5: b"", 6: b"abc", 7: b"\xe3\x81", 8: b"\x82"}.get(token, chr(token).encode())
+
+
+def test_the_characters_kept_are_those_of_the_tokens_written_not_a_token_a_character():
+    """where tokens are not a character each (no text, several, half of one), the characters kept are the text of the
+    drawn tokens to the end of the cycle's first time: the prompt's tokens (their text is not written) do not count,
+    and half a character is no character until it is whole"""
+    cycle = [6, 5, 7, 8, 40, 5, 6]  # (3 + 0 + 0 + 1 + 1 + 0 + 3 = 8 characters)
+    for prompt in ([], [30, 31, 6, 5, 32], [6] * 9):
+        model = stand_in_model([], [3, 4] + cycle * 40 + [0], seq_len=4000, tokenizer=Pieces())
+        text = "".join(generation.generate(model, prompt, steps=0, echo=False, loops=True))
+        assert model.stats["loop"] == 2 + 8 and len(text) >= model.stats["loop"], (prompt, model.stats["loop"])
+        assert text[:model.stats["loop"]] == "\x03\x04abcあ(abc"
