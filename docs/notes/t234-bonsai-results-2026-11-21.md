@@ -49,7 +49,7 @@ Ternary Bonsai（1.7B・4B・8B・2 27B）と 1-bit の Bonsai（1.7B・4B・8B�
 
 足す節の案（英語、gist の言葉に合わせて直してよい）:
 
-> **Ternary and 1-bit Bonsai (Prism ML).** The page runs Ternary Bonsai 1.7B, 4B, 8B and 2 27B and the 1-bit Bonsai
+> **Ternary and 1-bit Bonsai (Prism ML).** The page runs Ternary Bonsai 1.7B, 4B and 8B, Ternary Bonsai 2 27B and the 1-bit Bonsai
 > 1.7B, 4B, 8B and 27B without widening their weights: 2 bits (ternary) or 1 bit a weight, with a float16 scale for
 > every 128, multiplied by WebAssembly SIMD kernels written for them. The 27B models take 7.24 GB (ternary) and 3.88 GB
 > (1-bit), on a 64-bit memory (Chrome and Firefox). On the deployed page in Chromium on CI's runners with 4 threads,
