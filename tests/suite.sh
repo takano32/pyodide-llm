@@ -72,6 +72,9 @@ page_modules() {
   # another try may mend it, not where the server refused) on a server of this machine; and through it and Python's
   # (tests/fetching.py) the text of Wikipedia and the files gguf.yml compares (a second or so; nothing leaves the machine)
   node tests/fetching-check.ts
+  # T679: which run of deploy.yml `node tests/ci.ts deploy` waits for (tests/ci-runs.ts: the push's before a dispatch's,
+  # the run the job "again" started when main moved on or the call came late), on made-up lists of runs (under a second)
+  node tests/ci-check.ts
   # T368.1: the type check of what a browser runs (tsc --noEmit on three programs: the pages' scripts, the runtime's
   # TypeScript, the Service Worker as the JavaScript it is), that a type's import is said as one, and the count of the
   # anys that are written (T473: no more than there are now); T368.8: and that a name a file of the runtime uses without

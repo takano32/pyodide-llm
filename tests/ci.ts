@@ -11,7 +11,10 @@
 //   node tests/ci.ts deploy [--sha <commit>]      the deploy of a commit (HEAD); if a newer push cancelled it while
 //                                                  it waited for its turn, the newer deploy (which has the commit too);
 //                                                  T677: if Pages' step failed and the job "again" started a new run,
-//                                                  that run too (exit 5 when it published the site)
+//                                                  that run too (exit 5 when it published the site). T679: of a commit,
+//                                                  the push's run before a dispatch's; the run "again" started is the
+//                                                  newest dispatch of main in the minutes of that job, of whatever
+//                                                  commit main's head was (tests/ci-runs.ts, tests/ci-check.ts)
 //   options: [--minutes 60 (deploy: 20)] [--grep <regex> | --grep none] [--ref main]
 //   (written once, anywhere: --ref is every run's of the call, the ones after a + too. T425: a second --ref, a flag this
 //   tool does not know, or an input that is not key=value is refused before any run is started)
@@ -30,6 +33,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { againMayAppear, againOf, againWindow, deployOfCommit, newerOf } from "./ci-runs.ts";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clock = () => new Date().toISOString().slice(11, 19);
@@ -146,9 +150,11 @@ async function deployOf(commit) {
   const full = execFileSync("git", ["rev-parse", commit ?? "HEAD"], { encoding: "utf8" }).trim();
   for (;;) {
     const { workflow_runs: runs } = await api(`repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?head_sha=${full}&per_page=5`);
-    if (runs.length) {
-      say(`the deploy of ${full.slice(0, 7)}: run ${runs[0].id} ${runs[0].html_url}`);
-      return runs[0].id;
+    // T679: the push's run, not a newer dispatch of the same commit (the job "again" of a run that failed)
+    const run = deployOfCommit(runs);
+    if (run) {
+      say(`the deploy of ${full.slice(0, 7)}: run ${run.id} (${run.event}) ${run.html_url}`);
+      return run.id;
     }
     if (Date.now() > deadline) return null;
     await sleep(10000);
@@ -180,7 +186,7 @@ async function look(target) {
 // a deploy cancelled while it waited for its turn: a newer push made a newer deploy, which has the commit too
 async function newerDeploy(target) {
   const { workflow_runs: runs } = await api(`repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?branch=main&per_page=10`);
-  const newer = runs.filter((r) => r.id > target.id).sort((a, b) => a.id - b.id).at(-1);
+  const newer = newerOf(runs, target.id);
   if (!newer) return false;
   say(`superseded by the deploy of ${newer.head_sha.slice(0, 7)}: run ${newer.id}`);
   release(target.id);
@@ -189,30 +195,42 @@ async function newerDeploy(target) {
   return true;
 }
 
-// T677: a push's deploy that failed and whose job "again" succeeded started a new run of the same commit by dispatch:
-// the wait goes on with that run, and the first is kept for the table
+// T677: a push's deploy that failed and whose job "again" succeeded started a new run by dispatch: the wait goes on
+// with that run, and the first is kept for the table. T679: the dispatch runs main's head, which is another commit
+// when a push came in after the failed run; and when the call comes long after, the list is read once. If no dispatch
+// of those minutes is found, a newer deploy of main (as after a cancelled one)
 async function againRun(target) {
   const again = target.jobList?.find((job) => job.name === "again");
   if (target.run.conclusion !== "failure" || again?.conclusion !== "success") return false;
   for (;;) {
-    const { workflow_runs: runs } = await api(`repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?event=workflow_dispatch&head_sha=${target.run.head_sha}&per_page=10`);
-    const started = runs.filter((r) => r.id > target.id && Date.parse(r.created_at) >= Date.parse(again.started_at) - 60000)
-      .sort((a, b) => a.id - b.id)[0];
+    const { workflow_runs: runs } = await api(`repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?event=workflow_dispatch&branch=main&created=${againWindow(again)}&per_page=20`);
+    const started = againOf(runs, again);
     if (started) {
       say(`the job "again" of run ${target.id} started run ${started.id} ${started.html_url}`);
-      await report(target).catch((error) => out(`== ${target.id}: no logs (${error.message})`));
-      release(target.id);
-      target.before = { id: target.id, title: target.title, url: target.url, run: target.run, again: again.conclusion };
-      Object.assign(target, { id: started.id, state: "", run: null, jobs: new Map(), jobList: null });
-      claim(started.id);
-      return true;
+      return follow(target, started, again);
     }
-    if (Date.now() > deadline) {
-      say(`the job "again" of run ${target.id} succeeded, but no run it started appeared by the deadline`);
-      return false;
-    }
+    if (!againMayAppear(again, Date.now()) || Date.now() > deadline) break;
     await sleep(15000);
   }
+  const { workflow_runs: runs } = await api(`repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?branch=main&per_page=10`);
+  const newer = newerOf(runs, target.id);
+  if (!newer) {
+    say(`the job "again" of run ${target.id} succeeded, but no run it started appeared, nor a newer deploy of main`);
+    return false;
+  }
+  say(`the job "again" of run ${target.id} succeeded, but no dispatch of its minutes appeared: the newer deploy of main, run ${newer.id} (${newer.event}) ${newer.html_url}`);
+  return follow(target, newer, again);
+}
+
+// the wait goes on with run `next`, the run that failed kept for the table
+async function follow(target, next, again) {
+  if (next.head_sha !== target.run.head_sha) say(`(run ${next.id} is of ${next.head_sha.slice(0, 7)}, not of ${target.run.head_sha.slice(0, 7)}: main moved on, and its head has the commit too)`);
+  await report(target).catch((error) => out(`== ${target.id}: no logs (${error.message})`));
+  release(target.id);
+  target.before = { id: target.id, title: target.title, url: target.url, run: target.run, again: again.conclusion };
+  Object.assign(target, { id: next.id, state: "", run: null, jobs: new Map(), jobList: null });
+  claim(next.id);
+  return true;
 }
 
 // what to read of a run that ended: the lines asked for (or the workflow's), and a failed job's lines up to its
