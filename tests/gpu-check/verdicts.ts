@@ -121,13 +121,15 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
     // 44664946635)
     const { right: r, pieces: p } = alone, alike = rows(r.keys) === rows(alone.keys) && rows(r.values) === rows(alone.values);
     const same = alike && JSON.stringify(r.first) === JSON.stringify(alone.first);
+    // (T680: a token forced after the steps, a block of one on the GPU, and a step after it: an id of the vocabulary)
+    const fo = r.forced, forcedRight = !fo || (fo.blocks === 1 && fo.ids?.length === 1 && fo.ids[0] >= 0 && fo.ids[0] < Math.abs(found.reference.header[5]));  // (a classifier of its own: a negative vocabulary)
     const good = !r.lost && r.gpuTokens === n && same && /^prompts and answers on WebGPU/.test(r.status ?? "") && /on it alone/.test(r.threw ?? "")
-      && Boolean(p.lost) && /on it alone/.test(p.threw ?? "");
+      && Boolean(p.lost) && /on it alone/.test(p.threw ?? "") && forcedRight;
     // (the made-up model: a CPU far faster than the GPU is taken, and what the page keeps has the device's key)
     const f = alone.cpuFaster, cpuRight = !f || (/the CPU as \/benchmark\/ measured it/.test(f.lost ?? "") && f.verdict?.key === alone.key && /on it alone/.test(f.threw ?? ""));
     console.log(`  on the GPU alone (${(r.stored / 1e6).toFixed(2)} MB here): ${r.lost ? `lost (${r.lost})` : `${r.gpuTokens} tokens of the prompt, keys and values ` +
       `${alike ? "the same to the bit" : "NOT the same"} as with the weights here${heldFrom?.some(Boolean) ? " (the positions the CPU's ring holds)" : ""}, steps ${JSON.stringify(r.first)} ` +
-      `(${JSON.stringify(alone.first)}), "${r.status}", a step on the CPU ${r.threw ? "threw" : "ran"}`}; a GPU that fails as it opens: ${p.lost ? `lost (${p.lost})` : "not lost"}, ` +
+      `(${JSON.stringify(alone.first)}), "${r.status}", ${fo ? `a token forced after them ${fo.threw ? `threw (${fo.threw})` : `${fo.blocks} on the GPU, a step after it ${JSON.stringify(fo.ids)}`}, ` : ""}a step on the CPU ${r.threw ? "threw" : "ran"}`}; a GPU that fails as it opens: ${p.lost ? `lost (${p.lost})` : "not lost"}, ` +
       `a step on the CPU ${p.threw ? "threw" : "ran"}${f ? `; a CPU far faster: ${f.lost ? `lost (${f.lost})` : "not lost"}, the verdict ${f.verdict?.key === alone.key ? "with the device's key" : "WITHOUT the device's key"}` : ""}` +
       `${good && cpuRight ? "" : " — FAILED"}`);
     failed ||= !good || !cpuRight;

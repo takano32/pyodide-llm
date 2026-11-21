@@ -93,6 +93,36 @@ def test_steps_on_the_gpu_stop_at_the_budget():
     assert ("forward", X, 8, False) in log and (model.stats["thought"], model.stats["thought_cut"]) == (6, True)
 
 
+@pytest.mark.parametrize("prompt", ["a<think>", "<think>"])
+def test_a_model_on_the_gpu_alone_closes_its_thought_on_the_gpu(prompt):
+    """T680: a model on the GPU alone runs nothing on the CPU (forward.ts's forward() throws notHere()): the token
+    before the closing mark goes to the GPU as a prompt's block of one (forward_many), and so does the prompt's
+    forced token where the prompt is one token long (here the opened thought alone, after the BOS)."""
+    log = []
+
+    def forward(token, pos, need_logits=True):
+        raise AssertionError(f"the CPU's forward pass, at {pos}: a model on the GPU alone has none")
+
+    def many(tokens, pos):
+        log.append(("many", list(tokens), pos))
+
+    def gpu_steps(sampling, rng):
+        def steps(token, pos, history, count, stops):
+            log.append(("steps", pos, count))
+            return [X] * count if history[-1] != 201 else [Y, 0]
+
+        return steps
+
+    model = thinker(log, [], forward=forward, forward_many=many, prompt_block=lambda: 64, gpu_steps=gpu_steps,
+                    token_block=lambda: 4)
+    text = "".join(generation.generate(model, prompt, steps=40, echo=False, temperature=0.9, seed=1, thinking=6))
+    assert text == "xxxxxx</think>y" and (model.stats["thought"], model.stats["thought_cut"]) == (6, True)
+    at = len(prompt) - len("<think>") + 1  # (where the steps begin: after the BOS and the prompt)
+    assert [entry for entry in log if entry[0] != "drawing"] == [
+        ("many", [1] + [ord(c) for c in prompt[:-len("<think>")]], 0), ("steps", at, 4), ("steps", at + 4, 2),
+        ("many", [X], at + 6), ("steps", at + 7, 4)]
+
+
 def test_the_marks_are_the_vocabularys_not_only_the_specials():
     """A DeepSeek-R1 distill's entry names other specials, and the model writes <think> and </think> as the tokens
     they are: the thought is followed all the same. A vocabulary without them as one piece has no marks."""

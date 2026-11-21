@@ -76,11 +76,18 @@ const tokens = (count) => Array.from({ length: count }, (_, i) => i % 100);
   assert.deepEqual(blocks.map(({ count, pos, tokens: handed }) => [count, pos, handed.length]), [[64, 0, 64], [36, 64, 36]], "a prompt's blocks go to the GPU, the tokens themselves");
   assert.deepEqual(engine.generateMany(5, 100, [1, 2], 2, 4, 0, 0.9, 1, [], []), [10, 11, 12, 13], "and a generation's steps");
   assert.deepEqual([engine.gpuTokens, engine.gpuSampled, beside.kernels], [100, 4, 0], "nothing of them runs on the CPU's kernels");
+  // T680: a token forced after the steps (generate()'s closing mark of a thought at its budget) is a block of one, which
+  // goes to the GPU from where its steps left off; and the steps go on after it
+  engine.forwardMany([13], 104);
+  const one = beside.posted.filter((data) => data.type === "prompt").at(-1);
+  assert.deepEqual([one.count, one.pos, one.tokens], [1, 104, [13]], "a forced token after the steps goes to the GPU as a block of one");
+  assert.deepEqual(engine.generateMany(13, 105, [1, 2], 2, 4, 0, 0.9, 1, [], []), [10, 11, 12, 13], "and the steps go on after it");
+  assert.deepEqual([engine.gpuTokens, engine.gpuSampled, beside.kernels, beside.lost], [101, 8, 0, []], "nothing of it runs on the CPU's kernels");
   engine.stopThreads();
   assert.deepEqual([Atomics.load(beside.ctl, QUIT), beside.ended], [0, 0], "stopThreads() has no thread to stop and writes nothing");
   // a token on the CPU: there is nothing to run it with
-  assert.throws(() => engine.forward(5, 104), /this model's weights were on it alone/);
-  assert.throws(() => engine.forwardMany(tokens(16), 104), /this model's weights were on it alone/);
+  assert.throws(() => engine.forward(5, 109), /this model's weights were on it alone/);
+  assert.throws(() => engine.forwardMany(tokens(16), 109), /this model's weights were on it alone/);
   assert.deepEqual([beside.lost, beside.kernels, engine.gpuWhyNot], [["the GPU did not take a block or a step"], 0, "the GPU did not take a block or a step"], "the worker is told once that the GPU is lost");
   assert.equal(await engine.release(), true);
   assert.deepEqual([beside.spawned, Atomics.load(beside.ctl, QUIT)], [0, 0]);

@@ -633,6 +633,17 @@ try {
             Math.min(engine.tokenBlock || 4, 4 - first.length), 0, 0.9, 1, [], []);
         }
         Object.assign(out, { keys: b64(keys), values: b64(values), gpuTokens: engine.gpuTokens, status: engine.gpuStatus, first: first.length ? first : undefined });
+        // T680: a token forced after the steps (generate()'s closing mark of a thought at its budget) goes to the GPU as a
+        // block of one, from the keys and values (and the state) its steps left; and a step goes on after it
+        if (first.length === 4) {
+          try {
+            engine.forwardMany([first[3]], n + 4);
+            const ids = engine.generateMany(first[3], n + 5, tokens.slice(-64), tokens.length + 5, 1, 0, 0.9, 1, [], []);
+            out.forced = { blocks: engine.gpuTokens - n, ids };
+          } catch (error) {
+            out.forced = { threw: String(error?.message ?? error) };
+          }
+        }
       }
       out.lost = lostWhy;  // (before the step on the CPU below, which loses the GPU: the worker would load it again)
       out.verdict = told.verdict;

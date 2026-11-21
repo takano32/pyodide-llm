@@ -141,7 +141,8 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, loop
         # T108: the tokens of the prompt that make no logits (all but the last) go through the layers prompt_block()
         # at a time (T147: as many as the engine takes now), where the engine takes several; the text comes out as it
         # would one by one, only a block at once
-        fed = [model.bos] + prompt_tokens[:-1] if model.forward_many is not None and len(prompt_tokens) > 1 else []
+        # (T680: a prompt of one token too: a model on the GPU alone has no CPU to run its forced token on)
+        fed = [model.bos] + prompt_tokens[:-1] if model.forward_many is not None and prompt_tokens else []
         blocks = len(fed)  # (the position after the blocks, where the steps begin)
         pos = 0
         while pos < steps:
@@ -168,8 +169,13 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, loop
                 chosen = [prompt_tokens[pos]]
                 sampling_start = time.perf_counter()
             elif thinking and inside and thought >= thinking:
-                # T520: the thought is as long as the budget: its closing mark in place of a draw
-                model.forward(token, pos, need_logits=False)
+                # T520: the thought is as long as the budget: its closing mark in place of a draw. T680: the token
+                # before it fed as a prompt's is, a block of one where the engine takes blocks: a model on the GPU
+                # alone runs nothing on the CPU (its forward() throws, and the worker loads it again on the CPU)
+                if model.forward_many is not None:
+                    model.forward_many([token], pos)
+                else:
+                    model.forward(token, pos, need_logits=False)
                 chosen, cut = [closes], True
             else:
                 chosen = None
