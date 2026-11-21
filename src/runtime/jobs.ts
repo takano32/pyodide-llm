@@ -60,7 +60,7 @@ export const ADDRESSES = {
   attention_capped: [0, 1, 2, 3, 4], attention_f16_capped: [0, 1, 2, 3, 4],
   to_f16: [0, 1], from_f16: [0, 1], finite_f16: [0], layernorm: [0, 1, 2, 3], gelu: [0, 1, 2], swiglu: [0, 1, 2], geglu: [0, 1, 2], geglu_erf: [0, 1, 2], reglu2: [0, 1, 2], add_columns: [0, 1, 2], add_inplace: [0, 1],
   gate: [0, 1, 2], convolve: [0, 1, 2], short_conv: [0, 1, 2, 3], delta_rule: [0, 1, 2, 3, 4], rotate: [0, 1, 2], unrotate: [0, 1, 2],
-  argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
+  argmax: [0], penalize: [0, 1], dry: [0, 1, 3, 8, 9], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
   matmul_q8r_tile: [0, 1, 2, 3, 4, 5], matmul_t2r_tile: [0, 1, 2, 3, 4],
   // T363.4: the kernels of llama.cpp's blocks (kernels/blocks.ts and blocks_relaxed.ts: modules of their own,
   // blockkernel_*.wasm, which addressed() takes as it takes the others, and an engine has beside the two modules
@@ -115,6 +115,7 @@ type Arguments = {
   ternary_x: [out: number, xs: number, x: number, n: number];
   argmax: [x: number, n: number];
   penalize: [logits: number, tokens: number, count: number, penalty: number, presence: number];
+  dry: [logits: number, tokens: number, count: number, breaking: number, multiplier: number, base: number, allowed: number, most: number, repeats: number, longest: number];
   sample: [logits: number, n: number, temperature: number, topp: number, random: number, probs: number, index: number, topk: number, minp: number];
   gate: [out: number, x: number, g: number, n: number];
   convolve: [out: number, taps: number, rows: number, n: number, count: number];

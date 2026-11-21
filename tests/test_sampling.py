@@ -14,7 +14,10 @@ from test_parts import VOCAB, Numbers, kernels_in_numpy, some_logits
 
 # the page's names (src/page/settings.ts sends them, the URL has them) and what each is when nobody says: a second
 # copy, on purpose. They are generate()'s keywords
-DEFAULTS = dict(temperature=0.0, topp=0.9, repetition_penalty=1.0, top_k=0, min_p=0.0, presence_penalty=0.0)
+DEFAULTS = dict(temperature=0.0, topp=0.9, repetition_penalty=1.0, top_k=0, min_p=0.0, presence_penalty=0.0,
+                # T668: DRY's (off: a multiplier of 0; the rest llama.cpp's defaults. No URL's yet: TASKS.md's T669)
+                dry_multiplier=0.0, dry_base=1.75, dry_allowed_length=2, dry_penalty_last_n=64,
+                dry_sequence_breakers=("\n", ":", '"', "*"))
 REFUSAL = ("temperature, top_k and presence_penalty are 0 or more, repetition_penalty is more than 0, "
            "and topp and min_p are from 0 to 1.")
 
@@ -24,7 +27,7 @@ def test_the_settings_are_the_pages_names_with_generates_defaults():
     assert dataclasses.asdict(Sampling()) == DEFAULTS
     assert list(DEFAULTS) == [field.name for field in dataclasses.fields(Sampling)]
     said = dict(temperature=0.7, topp=0.8, repetition_penalty=1.3, top_k=20, min_p=0.05, presence_penalty=1.5)
-    assert dataclasses.asdict(Sampling(**said)) == said
+    assert dataclasses.asdict(Sampling(**said)) == {**DEFAULTS, **said}
 
 
 def test_a_value_cannot_be_changed_and_two_of_the_same_settings_are_one():
@@ -138,12 +141,14 @@ def test_a_sampler_reads_the_settings_once_a_generation(which):
         pytest.skip("NumpySampler.drawing is wrapped, and the wrapper reads two settings itself (the recorder of tests/unchanged.ts)")
     sampling = Counted(temperature=0.8, topp=0.9, repetition_penalty=1.2, top_k=20, min_p=0.05, presence_penalty=0.5)
     draw = samplers()[which].drawing(sampling, np.random.default_rng(3))
-    assert sorted(sampling.reads) == sorted(DEFAULTS)  # each once
+    # each once (T668: but DRY's breakers, which generate() makes tokens of and hands over)
+    read = sorted(name for name in DEFAULTS if name != "dry_sequence_breakers")
+    assert sorted(sampling.reads) == read
     history, written = [1, 5], []
     for step in range(REPETITION_WINDOW + 3):
         written.append(draw(some_logits(step), history, written))
         history.append(written[-1])
-    assert len(sampling.reads) == len(DEFAULTS) and len(set(written)) > 3
+    assert len(sampling.reads) == len(read) and len(set(written)) > 3
 
 
 def recording_kernels():

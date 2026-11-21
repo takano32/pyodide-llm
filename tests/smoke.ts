@@ -473,6 +473,42 @@ plain = logits.copy()
 kernel_penalize(plain, history, 1.3)
 window = history[-llama2_numpy.REPETITION_WINDOW:]
 assert np.allclose(ours, theirs, rtol=1e-6) and np.allclose(ours[window], plain[window] - 1.5, rtol=1e-6), "the presence penalty of the kernels is off"
+# T668: DRY's penalty on the kernels (kernel/sample.ts's dry()) is NumPy's (engine/sampler.py's dry_penalties()), bit
+# for bit: written tokens of few kinds (runs, and boxes inside boxes for the Z-algorithm), breakers among them or none,
+# llama.cpp's settings and ones that take every branch (the window of the latest 40, allowed 0, a base the exponent is
+# capped for, a base of 1), over a run of steps the written tokens grow by one each (the kernels' buffer of them written
+# one number a step, and grown past 256 and 512), then lists read anew
+dried = 0
+for case in range(24):
+    sorts = 2 + case % 6
+    breakers = frozenset(generator.choice(8, size=case % 3, replace=False).tolist())
+    for settings in (llama2_numpy.Sampling(dry_multiplier=0.8, dry_penalty_last_n=-1),
+                     llama2_numpy.Sampling(dry_multiplier=1.5, dry_base=2.0, dry_allowed_length=0, dry_penalty_last_n=40),
+                     llama2_numpy.Sampling(dry_multiplier=0.7, dry_base=1e30, dry_allowed_length=1),
+                     llama2_numpy.Sampling(dry_multiplier=0.3, dry_base=1.0, dry_allowed_length=3, dry_penalty_last_n=-1)):
+        kernels_draw, numpy_draw = on_kernels.drawing(settings, None, breakers), in_numpy.drawing(settings, None, breakers)
+        written = []
+        for step in range(600 if case == 0 else 30):
+            written.append(int(generator.integers(0, sorts)))
+            ours, theirs = logits.copy(), logits.copy()
+            assert kernels_draw(ours, [1], written) == numpy_draw(theirs, [1], written)
+            assert np.array_equal(ours, theirs), f"T668: DRY on the kernels is not NumPy's ({settings}, {breakers}, {written[-40:]})"
+            dried += int(not np.array_equal(ours, logits))
+        fresh = generator.integers(0, sorts, size=int(generator.integers(0, 90))).tolist()
+        ours, theirs = logits.copy(), logits.copy()
+        kernels_draw(ours, [1], fresh)
+        numpy_draw(theirs, [1], fresh)
+        assert np.array_equal(ours, theirs), "T668: DRY on the kernels is not NumPy's for a list read anew"
+assert dried > 1000, f"T668: DRY penalized only {dried} of the steps"
+# ... and a whole generation: the same text with DRY on the kernels and with NumPy's sampler, by the breakers of the
+# model's tokenizer, and another than without DRY
+without_sampler = kernel_llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8", tokenizer_kind="unigram",
+                               stop_tokens=(1, 2), disable=("sampler",))
+dry_settings = dict(steps=120, dry_multiplier=0.8, dry_penalty_last_n=-1)
+dry_text = "".join(fast.generate("これからの流行りは", **dry_settings))
+assert dry_text == "".join(without_sampler.generate("これからの流行りは", **dry_settings)), "T668: DRY on the kernels writes another text than NumPy's"
+assert dry_text != "".join(fast.generate("これからの流行りは", steps=120)), "T668: DRY changed nothing in 120 greedy tokens"
+del without_sampler
 settings = dict(steps=40, temperature=1.0, topp=0.95, top_k=20, min_p=0.05, presence_penalty=1.5, seed=1)
 assert "".join(fast.generate("これからの流行りは", **settings)) == "".join(fast.generate("これからの流行りは", **settings)), "a seed must reproduce with a top-k"
 settings = dict(steps=40, temperature=0.7, repetition_penalty=1.3, seed=1)
@@ -948,6 +984,12 @@ llama2_convert.checkpoint_size([64, 96, 2, 4, 2, 320, 24], "int8", {"qk_norm": T
 {
   const { penalizeLikeCpu, sampleLikeCpu } = await import(runtimeUrl("shaders.js"));
   pyodide.runPython(`
+def kernel_dried(buffer, written, breakers, multiplier, base, allowed, last):
+    """T668: the logits after DRY on the kernels"""
+    logits = np.frombuffer(buffer.to_bytes(), dtype=np.float32).copy()
+    settings = llama2_numpy.Sampling(dry_multiplier=multiplier, dry_base=base, dry_allowed_length=allowed, dry_penalty_last_n=last)
+    on_kernels.drawing(settings, None, frozenset(int(token) for token in breakers))(logits, [1], [int(token) for token in written])
+    return logits.tobytes()
 def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min_p=0.0, presence=0.0, written=None):
     logits = np.frombuffer(buffer.to_bytes(), dtype=np.float32).copy()
     if penalty != 1.0 or presence != 0.0:
@@ -1022,6 +1064,28 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
     }
   }
   if (narrowedSame < 0.95 * narrowedCases) throw new Error(`T274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases only`);
+  // T668: DRY's penalty in JavaScript (shaders/likecpu.ts's dryLikeCpu(), no shader's) is the kernel's, bit for bit
+  {
+    const { dryLikeCpu } = await import(runtimeUrl("shaders/likecpu.ts"));
+    const dried = pyodide.globals.get("kernel_dried");
+    let changed = 0;
+    for (let round = 0; round < 60; round++) {
+      const sorts = 2 + (round % 6), length = Math.floor(Math.random() * 200);
+      const written = Array.from({ length }, () => Math.floor(Math.random() * sorts)), breakers = round % 3 ? [round % 5] : [];
+      for (const [multiplier, base, allowed, last] of [[0.8, 1.75, 2, -1], [1.5, 2, 0, 40], [0.7, 1e30, 1, 64], [0.3, 1, 3, -1]]) {
+        const logits = new Float32Array(vocab).map(() => 4 * (Math.random() - 0.5));
+        const theirs = dried(new Uint8Array(logits.buffer), written, breakers, multiplier, base, allowed, last).toJs();
+        const ours = Float32Array.from(logits);
+        dryLikeCpu(ours, written, new Set(breakers), multiplier, base, allowed, last);
+        const kernel = new Float32Array(theirs.buffer, theirs.byteOffset, vocab);
+        if (!ours.every((v, i) => v === kernel[i])) throw new Error(`T668: dryLikeCpu is not the kernel's dry() (${[multiplier, base, allowed, last]}, ${written.slice(-30)})`);
+        changed += ours.some((v, i) => v !== logits[i]) ? 1 : 0;
+      }
+    }
+    dried.destroy();
+    if (changed < 100) throw new Error(`T668: DRY penalized ${changed} of 240 cases only`);
+    console.log(`T668: dryLikeCpu is the kernel's dry() in 240 cases (${changed} penalized)`);
+  }
   console.log(`T274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases with a top-k, a min-p and a presence penalty`);
   // T178: the few tokens above the floor under a low top-p, as the kernel's check above: the most probable one alone
   for (const above of [2, 3, 5]) {

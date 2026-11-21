@@ -91,8 +91,9 @@ def pytest_collection_finish(session):
     # penalties of a draw that has any (once for each penalty the draw has)
     drawing = llama2_numpy.NumpySampler.drawing
 
-    def drawing_told(self, sampling, rng):
-        draw = drawing(self, sampling, rng)
+    # (T668: and DRY's breakers where there are, handed on: a tree of before has no DRY, and nobody hands them there)
+    def drawing_told(self, sampling, rng, *breaking):
+        draw = drawing(self, sampling, rng, *breaking)
         repeated, present = sampling.repetition_penalty != 1.0, sampling.presence_penalty != 0.0
 
         def told(logits, history, written):

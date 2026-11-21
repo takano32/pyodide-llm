@@ -52,6 +52,7 @@ def load_kernels(path):
                           reglu2=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float, ctypes.c_float],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p, i32, ctypes.c_float],
+                          dry=[p, p, i32, p, ctypes.c_float, ctypes.c_float, i32, i32, p, p],
                           affine_q8=[p, p, p, i32, i32, p, i32, ctypes.c_float, p, ctypes.c_float, p])
         kernels = {}
         for name, argtypes in signatures.items():

@@ -756,6 +756,42 @@ async function inPage({ plain, relaxed }) {
     });
   }
 
+  // ---- dry (T668: DRY's penalty, engine/sampler.py's dry_penalties()): three windows with the penalties counted by
+  // hand (tests/test_dry.py's), each after the logits are set again: "5 6 7" three times, carried on by 8 and 9 (base
+  // 2, allowed 2: 2 each; 8 a breaker in the second, which is not penalized); "1 2 3" twice with allowed 0 and a base of
+  // 1e30, whose exponent is capped at 1 (the caller's dry_cap(); the others by the multiplier alone); 300 of period 3
+  // (a box of the Z-algorithm for every shift), the run of 297 before 1 capped at 158 (base 1.75): 0.8 times 1.75 to
+  // the 158th multiplied out in float64. The longest runs left 0 after each
+  {
+    const at = extra + 3145728 + 65536, vocab = 64, logits = at, tokens = at + 1024, breaking = at + 4096, repeats = at + 5120, longest = at + 8192;
+    let power = 1;
+    for (let e = 0; e < 158; e++) power *= f(1.75);
+    const cases = [
+      { written: [5, 6, 7, 8, 5, 6, 7, 9, 5, 6, 7], breakers: [], multiplier: 1, base: 2, allowed: 2, most: 128, penalties: { 8: 2, 9: 2 } },
+      { written: [5, 6, 7, 8, 5, 6, 7, 9, 5, 6, 7], breakers: [8], multiplier: 1, base: 2, allowed: 2, most: 128, penalties: { 9: 2 } },
+      { written: [1, 2, 3, 1, 2, 3], breakers: [], multiplier: 1, base: 1e30, allowed: 0, most: 1, penalties: { 1: f(1e30), 2: 1, 3: 1 } },
+      { written: Array.from({ length: 300 }, (_, i) => 1 + (i % 3)), breakers: [], multiplier: 0.8, base: 1.75, allowed: 2, most: 158, penalties: { 1: f(f(0.8) * power) } },
+    ];
+    const plainLogits = Float32Array.from({ length: vocab }, (_, j) => f((j % 7) - 3.25));
+    const run = (one) => {
+      F.set(plainLogits, logits / 4);
+      N.set(one.written, tokens / 4);
+      U.fill(0, breaking, breaking + vocab);
+      for (const token of one.breakers) U[breaking + token] = 1;
+      k.dry(logits, tokens, one.written.length, breaking, one.multiplier, one.base, one.allowed, one.most, repeats, longest);
+    };
+    N.fill(0, longest / 4, longest / 4 + vocab);
+    await check("dry (runs counted by hand)", () => run(cases[3]), () => {
+      let bad = 0;
+      for (const one of cases) {
+        run(one);
+        for (let j = 0; j < vocab; j++) if (F[logits / 4 + j] !== f(plainLogits[j] - (one.penalties[j] ?? 0))) bad++;
+        for (let j = 0; j < vocab; j++) if (N[longest / 4 + j] !== 0) bad++;
+      }
+      return bad ? `${bad} logits or longest runs not the ones counted by hand` : null;
+    });
+  }
+
   // ---- what every model runs, as a control: quantize_x (8 bits and 7 with a bias), matmul_q8 and matmul_q8r against float64 sums
   {
     const x = extra + 262144, q = x + n * 4 + 64, s = q + n + 64;

@@ -30,6 +30,86 @@ export function penalize(logits: usize, tokens: usize, count: i32, penalty: f32,
   }
 }
 
+// T668: DRY's penalty, engine/sampler.py's dry_penalties() (its steps (1) to (4) are said there), written into the
+// logits: tokens the latest count written (the oldest first), breaking one byte for each token of the vocabulary (1:
+// a sequence breaker), most the largest exponent (0: none; dry_cap()'s: no logarithm here, which would be static
+// data), repeats scratch of count, longest one i32 for each token of the vocabulary, all 0 when called and left so (a
+// token's longest run + 1 while it is counted). The form is llama.cpp's llama_sampler_dry_apply()
+// (src/llama-sampler.cpp, https://github.com/ggml-org/llama.cpp, commit b1b770d9, 2026-11-21), under the MIT License:
+/*! Copyright (c) 2023-2026 The ggml authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+ * persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+ * WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+// the j-th latest of the count tokens before newest + 4 (the address of the latest)
+// @ts-ignore: decorator
+@inline function latest(newest: usize, j: i32): i32 {
+  return load<i32>(newest - (<usize>j << 2));
+}
+export function dry(logits: usize, tokens: usize, count: i32, breaking: usize, multiplier: f32, base: f32, allowed: i32, most: i32, repeats: usize, longest: usize): void {
+  if (count <= allowed) return;
+  const newest = tokens + (<usize>(count - 1) << 2);
+  // (1) the latest breaker limits a run
+  let limit = count;
+  for (let j = 0; j < count; j++) {
+    if (load<u8>(breaking + <usize>latest(newest, j)) != 0) { limit = j; break; }
+  }
+  if (limit < allowed) return;
+  // (2) repeats[k]: how long a run up to the k-th latest is also the end of the tokens (at most limit), by the
+  // Z-algorithm backwards: left and right bound the latest box found
+  let left = 0, right = 0;
+  for (let k = 1; k < count; k++) {
+    let n = 0;
+    if (k > right) {
+      while (n + k < count && latest(newest, n) == latest(newest, n + k)) n++;
+      if (n > 0) { left = k; right = k + n - 1; }
+    } else {
+      const known = load<i32>(repeats + (<usize>(k - left) << 2));
+      if (known < right - k + 1) n = known;
+      else {
+        let i = right + 1;
+        while (i < count && latest(newest, i) == latest(newest, i - k)) i++;
+        n = i - k;
+        left = k;
+        right = i - 1;
+      }
+    }
+    store<i32>(repeats + (<usize>k << 2), min(n, limit));
+  }
+  // (3) the longest run each token would carry on
+  for (let k = 1; k < count; k++) {
+    const run = load<i32>(repeats + (<usize>k << 2));
+    if (run < allowed) continue;
+    const at = longest + (<usize>latest(newest, k - 1) << 2);
+    if (load<i32>(at) < run + 1) store<i32>(at, run + 1);
+  }
+  // (4) the penalties, each token's once (its count set back to 0 there)
+  for (let k = 1; k < count; k++) {
+    const token = latest(newest, k - 1);
+    const at = longest + (<usize>token << 2);
+    const run = load<i32>(at) - 1;
+    if (run < 0) continue;
+    store<i32>(at, 0);
+    if (load<u8>(breaking + <usize>token) != 0) continue;
+    let exponent = run - allowed;
+    if (most > 0 && exponent > most) exponent = most;
+    let power: f64 = 1;
+    for (let e = 0; e < exponent; e++) power *= <f64>base;
+    const address = logits + (<usize>token << 2);
+    store<f32>(address, load<f32>(address) - <f32>(<f64>multiplier * power));
+  }
+}
+
 // The state of sortNucleus(): globals are no static data
 let nucleusMass: f64 = 0;
 let nucleusLimit: f64 = 0;

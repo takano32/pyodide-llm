@@ -24,6 +24,74 @@ export function penalizeLikeCpu(logits: Float32Array, history: History, penalty:
     logits[token] = f((penalty === 1 ? value : value > 0 ? f(value / p) : f(value * p)) - (sampled.has(token) ? less : 0));
   }
 }
+// T668: DRY's penalty as the kernel's dry() writes it into the logits (engine/sampler.py's dry_penalties(): its steps
+// are said there; no shader has it, so that a generation with it takes its steps on the CPU). The form is llama.cpp's
+// llama_sampler_dry_apply() (src/llama-sampler.cpp, https://github.com/ggml-org/llama.cpp, commit b1b770d9,
+// 2026-11-21), under the MIT License:
+/*! Copyright (c) 2023-2026 The ggml authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+ * persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+ * WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+// written: the tokens written (the sampled ones, the oldest first), of which the latest lastN are looked at (-1: all,
+// 0: none); breaking: the sequence breakers; multiplier and base as the kernel takes them, float32.
+export function dryLikeCpu(logits: Float32Array, written: ArrayLike<number>, breaking: ReadonlySet<number>, multiplier: number, base: number, allowed: number, lastN: number) {
+  const f = Math.fround, m = f(multiplier), b = f(base), count = lastN < 0 ? written.length : Math.min(written.length, lastN);
+  if (m === 0 || count <= allowed) return;
+  const back = (j: number) => written[written.length - 1 - j];
+  // (1) the latest breaker limits a run
+  let limit = count;
+  for (let j = 0; j < count; j++) {
+    if (breaking.has(back(j))) {
+      limit = j;
+      break;
+    }
+  }
+  if (limit < allowed) return;
+  // (2) repeats[k]: how long a run up to the k-th latest is also the end of the window (at most limit)
+  const repeats = new Array<number>(count).fill(0);
+  let left = 0, right = 0;
+  for (let k = 1; k < count; k++) {
+    let n = 0;
+    if (k > right) {
+      while (n + k < count && back(n) === back(n + k)) n++;
+      if (n > 0) [left, right] = [k, k + n - 1];
+    } else if (repeats[k - left] < right - k + 1) {
+      n = repeats[k - left];
+    } else {
+      let i = right + 1;
+      while (i < count && back(i) === back(i - k)) i++;
+      n = i - k;
+      [left, right] = [k, i - 1];
+    }
+    repeats[k] = Math.min(n, limit);
+  }
+  // (3) the longest run each token would carry on
+  const longest = new Map<number, number>();
+  for (let k = 1; k < count; k++) {
+    if (repeats[k] >= allowed && (longest.get(back(k - 1)) ?? -1) < repeats[k]) longest.set(back(k - 1), repeats[k]);
+  }
+  // (4) the penalties
+  const most = b > f(1.000001) ? Math.trunc(f(f(88.7228391) / f(Math.log(b)))) : 0;
+  for (const [token, run] of longest) {
+    if (breaking.has(token)) continue;
+    let exponent = run - allowed;
+    if (most > 0 && exponent > most) exponent = most;
+    let power = 1;
+    for (let e = 0; e < exponent; e++) power *= b;
+    logits[token] = f(logits[token] - f(m * power));
+  }
+}
 /** The token kernel.ts's sample() draws for random (in [0, 1)): float32 probabilities, float64 sums; the nucleus
  * sorted from the most probable, equal ones in the order of their index (T561: as the kernel's sort and NumPy's). temperature 0: the first index of the largest logit (NumPy's argmax). */
 export function sampleLikeCpu(logits: ArrayLike<number>, temperature: number, topp: number, random: number, topk = 0, minp = 0) {

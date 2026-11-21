@@ -169,7 +169,7 @@ def test_the_chunks_are_translated_in_order_with_the_latest_as_their_history(mad
     model = Translator(tokenizer, [(["A", "A "], True), ([" B"], True), (["C"], False), (["D"], True)])
     told = []
     pieces = list(translate_document(model, text, "ja", source="en", chunk_tokens=4, history_tokens=history_tokens,
-                                     told=lambda *said: told.append(said), temperature=0.0))
+                                     told=lambda *said: told.append(said), penalized=None, temperature=0.0))
     assert applied(pieces, "[CUT]") == "  AA \n\n B\n\nC[CUT]\n\nD\n"
     assert [repr(piece) for piece in pieces if not isinstance(piece, str)] == [repr(Cut(2, LONG, "cccc"))]
     assert told == [(0, 4, "aaaa"), (1, 4, "bbbb"), (2, 4, "cccc"), (3, 4, "dddd")]
@@ -214,7 +214,8 @@ def test_a_translation_that_runs_away_is_translated_again_finer_and_cut_last(mad
         (["zz", "zz"], 1),  # that piece's first sentence: a loop, of which a character is kept
         (["B"], True),  # its second sentence
         (["CD"], True)])  # the chunk's second piece
-    pieces = list(translate_document(model, text, "ja", source="en", chunk_tokens=1000))
+    # (T668: penalized=None, the cut without DRY's try before it, which test_the_penalized_settings_… has)
+    pieces = list(translate_document(model, text, "ja", source="en", chunk_tokens=1000, penalized=None))
     assert [repr(piece) for piece in pieces] == [repr(piece) for piece in [
         "xxx", "xxx", Withdrawn(6), "yyyy", Withdrawn(4), "zz", "zz", Withdrawn(3), Cut(0, LOOP, "Aa."), " ", "B",
         "\n\n", "CD"]]
@@ -232,7 +233,7 @@ def test_a_way_that_cuts_nothing_is_passed_over(made):
     the same), and a sentence that ran out of room is cut as far as it ran"""
     tokenizer, _ = made
     model = Translator(tokenizer, [(["xx"], False), (["A"], True), (["bbb"], False)])
-    pieces = list(translate_document(model, "Aa. Bb.", "ja"))
+    pieces = list(translate_document(model, "Aa. Bb.", "ja", penalized=None))
     assert applied(pieces, "|") == "A bbb|"
     assert repr(pieces[-1]) == repr(Cut(0, LONG, "Bb."))
     assert len(model.asked) == 3
@@ -248,7 +249,7 @@ def test_a_translation_far_too_short_runs_away(made, monkeypatch):
     assert count(source) >= 8
     short = "x" * ((count(source) - 1) // 4)
     model = Translator(tokenizer, [([short], True), ([short + "x"], True)])
-    pieces = list(translate_document(model, source, "ja"))
+    pieces = list(translate_document(model, source, "ja", penalized=None))
     assert repr(pieces[-1]) == repr(Cut(0, SHORT, source)) and model.stats["cut"] == 1
     # as long as a quarter is not too short (and a text of fewer tokens is never)
     while count(source) % 4:

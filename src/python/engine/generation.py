@@ -79,8 +79,8 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, loop
     """Yield the text piece by piece, as it is generated. prompt: a text, or (T666) the ids of a request after the
     BOS (engine/pfml.py's), which go to the model as they are. echo=False leaves the prompt out of it (an instruction
     wrapped in a template, which nobody wants to read back). settings: how the tokens are drawn, Sampling's by their
-    names (temperature, topp, repetition_penalty, top_k, min_p, presence_penalty), which says what each is and
-    refuses what it cannot be. None of them is read here: the samplers have them.
+    names (temperature, topp, repetition_penalty, top_k, min_p, presence_penalty, and T668's DRY: dry_multiplier and
+    the rest), which says what each is and refuses what it cannot be. None of them is read here: the samplers have them.
 
     thinking (T520): the budget of a thought, in tokens (0: none). A model that has the marks of a thought in its
     vocabulary (mark_of()) is followed in and out of it (the format may open it: a prompt that ends in <think>, or in
@@ -152,7 +152,9 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, loop
                 # once (token_block()), where the GPU's sampler has all these settings; a step on the CPU is the
                 # forward pass and the sampler's draw here. Both are made once, by the settings, after the prompt's
                 # blocks: no step reads one. (Once: every step takes a token or more, so pos is here once.)
-                draw = model.sampler.drawing(sampling, rng)
+                # (T668: DRY's sequence breakers are tokens of the model's vocabulary: told to the sampler where it is on)
+                draw = (model.sampler.drawing(sampling, rng, model.tokenizer.containing(sampling.dry_sequence_breakers))
+                        if sampling.dry else model.sampler.drawing(sampling, rng))
                 on_gpu = model.gpu_steps(sampling, rng) if model.gpu_steps is not None else None
                 stops = sorted(model.stop_tokens)
             if pos < blocks:

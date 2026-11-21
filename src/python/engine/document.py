@@ -36,8 +36,8 @@ of tokens are this page's (a context of 4096 at most, where theirs is 32768: CHU
 T667: a translation that runs away (falls into a loop: engine/repetition.py; runs out of room; or stops far too
 short) is taken back (Withdrawn) and its text is translated again in smaller pieces: a chunk in pieces of RETRY_TOKENS,
 such a piece a sentence at a time, and a sentence that still runs away is cut (Cut, a mark where the page writes its
-words) after the first time of its loop. Theirs translates that sentence once more with DRY's penalty first (T668: not
-here yet, PENALIZED). A translation that ran away is never history. Where theirs stops the document at a full context,
+words) after the first time of its loop, once it was translated once more with DRY's penalty (T668: PENALIZED), as
+theirs. A translation that ran away is never history. Where theirs stops the document at a full context,
 this one takes the run as one that ran out of room (its pieces' prompts are shorter).
 
 A chunk is translated by the model's generate() from a fresh start (a new cache of keys and values): generate()
@@ -78,9 +78,12 @@ LONGER, MORE = 3, 128
 # a text of SHORT_SOURCE tokens or more is where it stopped far too short (less than a SHORTER-th of them)
 RETRY_TOKENS = 256
 SHORT_SOURCE, SHORTER = 200, 4
-# T667: the sampling settings a sentence that still runs away is translated again with before it is cut (T668's DRY;
-# none: it is cut as it ran)
-PENALIZED = None
+# T667: the sampling settings a sentence that still runs away is translated again with before it is cut (None: it is
+# cut as it ran). T668: tanakh's, llama.cpp's DRY (engine/sampler.py's Sampling) with a multiplier of 0.8, a base of
+# 1.75 and runs of 2 tokens allowed, llama.cpp's breakers, over all the tokens the run wrote (theirs looks at the
+# generated tokens alone, as many as the context holds)
+PENALIZED = dict(dry_multiplier=0.8, dry_base=1.75, dry_allowed_length=2, dry_penalty_last_n=-1,
+                 dry_sequence_breakers=("\n", ":", "\"", "*"))
 # why a translation ran away: it fell into a loop, it ran out of room, it stopped far too short
 LOOP, LONG, SHORT = "loop", "long", "short"
 

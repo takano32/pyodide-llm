@@ -540,6 +540,7 @@ class Tokenizer:
         # (T649.3: a dict of the page's options, a JsProxy in Pyodide: unwrapped as every other one, engine/proxy.py)
         self.breaks = plamo_breaks(plain(breaks) or {})
         self.cuts = {}  # cut()'s, of the specials it was asked for (a few)
+        self.contained = {}  # containing()'s (T668), of the characters it was asked for
         # T617: strings the model reads in place of others, written in every text encode() is given before anything
         # else, and turned back in what it writes (Unreplaced, which generate() makes where there are any): rinna's
         # japanese-gpt-neox instruction models read "<NL>" for a newline, which their vocabulary has not
@@ -635,6 +636,19 @@ class Tokenizer:
             self.cuts[specials] = (re.compile("(" + longest_written(specials) + ")"),
                                    {special: spelled(special).encode("utf-8") for special in specials})
         return self.cuts[specials]
+
+    def containing(self, characters):
+        """T668: the tokens whose text holds one of these characters (a tuple of them; DRY's sequence breakers), as
+        llama.cpp reads them: each token decoded alone, a special as its text, a byte token as its byte. Once for a
+        tuple: the whole vocabulary is walked."""
+        if characters not in self.contained:
+            if len(self.contained) >= 16:
+                self.contained.clear()
+            wanted = [character.encode("utf-8") for character in characters]
+            self.contained[characters] = frozenset(
+                token for token in range(len(self.vocab))
+                if any(character in self.decode(None, token) for character in wanted)) if wanted else frozenset()
+        return self.contained[characters]
 
     def normalized(self, text):
         """The text as the model's normalizer makes it: a sentencepiece model's own map (charsmap, T216: nmt_nfkc makes

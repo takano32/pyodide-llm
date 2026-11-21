@@ -33,7 +33,7 @@ export { add_columns } from "./kernel/matmul";
 export { add_inplace } from "./kernel/activations";
 export { argmax } from "./kernel/sample";
 export { gate, convolve, short_conv, delta_rule } from "./kernel/stateful";
-export { penalize, sample } from "./kernel/sample";
+export { penalize, dry, sample } from "./kernel/sample";
 export { rotate, unrotate } from "./kernel/activations";
 export { geglu } from "./kernel/activations";
 export { geglu_erf } from "./kernel/activations";
