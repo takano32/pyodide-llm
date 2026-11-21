@@ -8,6 +8,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 
 - **サイトの頭**: `https://takano32.github.io/pyodide-llm/`（下では「頭」と書く）。モデルは `頭?model=<ID>` で開く。計測のページは `頭benchmark/`。
 - **順の考え方**: (1) サイトのデータを消してから見るもの → (2) `/benchmark/` → (3) 小さいモデル → (4) 中くらい → (5) GB 級のモデル → (6) タブが落ちうるもの（`/benchmark/` の Page memory）の順。**GB 級の取得は Wi-Fi で、充電しながら**。PC は保存の空き（ディスク）を先に見る: 27B は 1 つで約 7〜8 GB を保存する。
+- **各節の見出しの所要の時間は推測**（未計測。取得の回線と端末の速さで大きく変わる）。
 - **★の付いた手順**は、止まっているタスクの決めに要るもの。時間が足りなければ★だけ見て、残りは次の機会でよい。
 - **「CPU だけ」で比べたいとき**は `&threads=1` を足す（1 本だと GPU を使わない: 理由「one thread was asked for」）。速さは 1 本のぶん遅いので、比べるのは文の質だけ。GPU を切る旗は無い。効いたかは [状] が「prompts on the CPU (one thread was asked for)」と言うかで分かる（コンソールにも `gpu:` で始まる同じ訳の行が出るはず）。GPU だけに置かれるモデルにはこの旗は効かない（`&threads=1` を付けても [状] が「prompts and answers on WebGPU」のままで、「N threads」は付かない）。
 - `?gpuTest=on`・`?gpuTest=only` は試験の旗（ソフトウェアの GPU も GPU と見なし、速さを比べずに GPU を使う）。本物の GPU のある端末でだけ使う。ステータス行に「(gpuTest)」と出るのは `on` のときだけで、`only` では何も付かない。
@@ -52,7 +53,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 - Chrome の設定 → サイトの設定 → すべてのサイト → `takano32.github.io` → データを消す。
 - 開く: `頭`（モデルを名指さない: 既定の Shisa V2.1c LFM2 350M、379 MB の取得が始まる）。
 - 取得の途中で、(i) 別のアプリに 1 分切り替えて戻る。取得の MB を切り替える前と戻った後にメモ。「got nothing from the network for 30 seconds」が出たかを見る。(ii) 続けて画面を消して 1 分待ってから点ける。MB の前と後、ページが読み直されたかを見る。
-- 取得が速くて (ii) の前に終わったら、(ii) は A-8 の大きいモデルの取得の途中でやる。
+- (i) は、ページを開いて取得が始まったらすぐ（Pyodide の読み込みの間に）やる。379 MB は Wi-Fi なら 1 分たたずに終わりうるので、(i) か (ii) の間に取得が終わってしまったら、その分は A-8 の 1（Gemma 4 E2B、約 5 GB）の取得の途中でやる。
 - 写す: [目]（MB の前と後 × 2 回、出た文、読み直されたか）。
 
 **A-2 ★ 既定のモデルのまま（T545・T240・T367.5・T379.2）**
@@ -99,8 +100,8 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 4. Qwen3.5 4B `頭?model=hf-qwen3.5-4b` と Agents-A1 4B `頭?model=hf-agents-a1-4b`: 同じ短い問い J を送り、最初のトークンまでの秒の差（T337）。Qwen3.5 4B が GPU だけ（[状] が「prompts and answers on WebGPU」で「N threads」が付かない）で準備完了まで行くか（T571）。余裕があれば Qwen3.5 9B `頭?model=hf-qwen3.5-9b` も（T571）。
 5. Spark-X2.5 4B `頭?model=hf-spark-x2.5-4b`: 1 つ。[状]・[答]（GPU だけに替わって tok/s が前より落ちていないか: T344）。
 6. Qwen2.5 3B `頭?model=hf-qwen2.5-3b-instruct`: 長い答えの問いを送り、答えの下の位置が 2048 を越えるまで書かせる（途中で止まったら「続けて」と送る）。メモリ不足にならないか、[コ] に `memory: the browser gave a shared memory of …` が出たか（T130・T226）。
-7. Llama 3.2 3B `頭?model=hf-llama-3.2-3b-instruct`: 1 つ。[状]（GPU だけか）・[答]（T210）。
-8. Llama 3.2 Shisa V2.1 3B `頭?model=hf-shisa-v2.1-llama3.2-3b`（GPU だけの見込み: T249 (b)）、Granite 4.2 3B `頭?model=hf-granite-4.2-3b`（開くか: T253 (b)）、SmolLM3 3B `頭?model=hf-smollm3-3b`（英語の問いを 2 つ。同じ問いを `&threads=1` でも答えさせ、GPU の側だけ文が崩れないか: T255）。どれも [状]・[答]。
+7. Llama 3.2 3B `頭?model=hf-llama-3.2-3b-instruct`: 1 つ。[状]（GPU だけか）・[答]（T210）。8B `頭?model=hf-llama-3.1-8b-instruct` が入るかも（T210: 開けるか・タブが落ちないか。入らなければ CPU に読み直すまでの秒）。
+8. Llama 3.2 Shisa V2.1 3B `頭?model=hf-shisa-v2.1-llama3.2-3b`（GPU だけの見込み: T249 (b)）、Granite 4.2 3B `頭?model=hf-granite-4.2-3b`（開くか: T253 (b)）、SmolLM3 3B `頭?model=hf-smollm3-3b`（英語の問いを 2 つ。8 と言う端末では GPU だけになる見込みで、そのときは `&threads=1` を付けても CPU にならず比べられない: [状] が「prompts and answers on WebGPU」で「N threads」が付かなければ、GPU のまま読める文かだけ見る。GPU と CPU の両方に置く端末では同じ問いを `&threads=1` でも答えさせ、GPU の側だけ文が崩れないか: T255）。どれも [状]・[答]。
 9. （任意、最後）Phi-3 mini `頭?model=hf-phi-3-mini-4k-instruct`・Phi-4 mini `頭?model=hf-phi-4-mini-instruct`（取得 7.6・7.7 GB。答えが `<|end|>` で止まるか: T258）、Ternary Bonsai 2 27B `頭?model=hf-ternary-bonsai-2-27b`（開けるか・メモリの警告が出るかだけ: T233・T237。警告が出ずに 5.95 GB の取得が始まったら止めてよい）。
 
 **A-9 ★ `/benchmark/` をもう 2 回（T555）と Page memory（T173）**
@@ -190,7 +191,7 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 
 **D-1 サイトのデータを消して、初めての訪問（T557）**
 - 設定 → Safari → 詳細 → Web サイトデータ → `takano32.github.io` を削除。
-- `頭` を開き、取得の途中で画面を消して 1 分待ってから点ける。MB の前と後、読み直されたか。[目]。
+- `頭` を開き、取得が始まったらすぐ別のアプリに 1 分切り替えて戻り（T129 (a)）、続けて画面を消して 1 分待ってから点ける。MB の前と後 × 2 回、読み直されたか、「got nothing from the network for 30 seconds」が出たか。取得が先に終わってしまったら、A-1 と同じく大きいモデルの取得の途中でやる。[目]。
 
 **D-2 ★ GPU の答え（T548）と既定のモデル**
 - 既定のモデル（D-1 のまま）で 1 つ聞く: [状]（「prompts and answers on WebGPU」か）、[目]（タブが落ちないか）。
