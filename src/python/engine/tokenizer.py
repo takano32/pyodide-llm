@@ -42,6 +42,10 @@ BOS = 1  # beginning-of-sequence token, also what the model emits when a story i
 # which nothing composes with, so a text is normalized in the stretches between them and they are kept. Found by
 # holding every code point against the real normalizers (tests/test_tokenizer.py's T663 test, EVERY_CODE_POINT=1): a
 # Python of a newer Unicode than 16.0 has more, which that test names.
+# T678: the Unicode of the Python the table was made against. Pyodide follows the latest Python (the second rule of
+# AGENTS.md), so a Pyodide on a newer Unicode reads the characters it adds otherwise than the library, and CI's full test
+# above runs on a Python 3.14 that does not name them (T630): the full suite says it (tests/pyodide-unicode.ts).
+UNNORMALIZED_UNICODE = "16.0.0"
 UNNORMALIZED = re.compile("([" + "".join(
     re.escape(chr(first)) + ("-" + re.escape(chr(last)) if last != first else "") for first, last in (
         (0x7FD, 0x7FD), (0x897, 0x89F), (0x8CA, 0x8D3), (0x9FE, 0x9FE), (0xC3C, 0xC3C), (0xD3B, 0xD3C), (0xEBA, 0xEBA),

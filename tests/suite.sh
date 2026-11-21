@@ -392,6 +392,9 @@ if [ "$suite" = full ]; then
   part "the workflows' time limits" node tests/workflows-check.ts
   # T346: the files past the size a file should have, said every night (never a failure)
   part "the sizes of the files" node tests/unchanged.ts sizes
+  # T678: the latest Pyodide's Unicode against the one engine.tokenizer's UNNORMALIZED was made against (T663), said on a
+  # line that starts with "suite: warning:" (what tests/ci.ts shows of tests.yml), never failed (a few seconds)
+  part "the latest Pyodide's Unicode" node tests/pyodide-unicode.ts
   # T438: a built script that changes is named again by every file that names it, to the page's scripts (what T367.4's
   # "the site was updated" rests on): the site built once, and once with each named script touched (about 3 minutes)
   part "a changed file's namers named again" node tests/names-follow-check.ts

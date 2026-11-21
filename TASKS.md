@@ -115,7 +115,7 @@
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
-- T678 [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 未着手
+- T678 [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 反映済み
 - T679 [運用][遠隔試験] `ci.ts deploy` の again の run の選び方を、main の先頭が動いた場合と後から呼んだ場合にも — 未着手
 <!-- 目次ここまで -->
 
@@ -1109,9 +1109,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T672 [描画][モデル] PFN が公表した品質の数を見せる — 状態: 候補（2026-11-13、T664 から。規模 小。持ち主の判断）
 - 向こうは量子化ごとに PFTB（日英）と FLORES+ chrF++（多言語）を量子化なしとの差で出す（`engine::models::QUALITY`、出どころは PFN の公表）。ここでは項目の note か About に 1 行。数の出どころ（PFN のブログかカード）を項目のコメントに書く。T671 で量子化を選ばせるなら要る。
 
-### T678 [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 状態: 未着手（2026-11-21、T663 のレビューから。規模 小）
+### T678 [試験][解析分割] Pyodide の Python の Unicode が 16.0.0 から動いたら毎晩で言う — 状態: 反映済み（2026-11-21。前の状態: 未着手、T663 のレビューから。規模 小）
 - T663 の表 `UNNORMALIZED`（`engine/tokenizer.py`）は Python の Unicode 16.0.0 と本物の tokenizers（Unicode 9.0 の表）の差。方針 2 で Pyodide が Python 3.15（Unicode 17）に上がると、Unicode 17 で足された字は黙って本物と違う読みになる。全符号位置の試験は CI の Python 3.14 で回るので名指さない（T630）。
 - 毎晩（全部の組）だけ、Pyodide の中の `unicodedata.unidata_version` が 16.0.0 でなければ警告する 1 行（smoke の assert でデプロイを止めるのは勧めない: 出る差は新しい字だけ）。上がったら表を作り直す手順を AGENTS.md の「トークナイザ」に。
+- **実装**（2026-11-21、Opus medium）: 表を作った版を表の隣の定数 `UNNORMALIZED_UNICODE = "16.0.0"`（`engine/tokenizer.py`）に。新しい道具 `tests/pyodide-unicode.ts`（最新の Pyodide に `engine` を置いて `unicodedata.unidata_version` と定数を比べる、約 3 秒）を `suite.sh full` の 1 行に（「the latest Pyodide's Unicode」、smoke の後の `pyodide@latest` を使う）。違えば `suite: warning: …` の 1 行（`ci.ts` の tests.yml の既定の grep `^suite: ` に当たるので `node tests/ci.ts nightly` の出力に出る）と Actions の `::warning` の注記（run のページの頭に出る）。落とさない。同じなら `pyodide-unicode: …` の 1 行だけ。全符号位置の試験（`EVERY_CODE_POINT=1`）も定数を読み、版が違えば落ちる文に「表を作った版と、足して定数を動かす」を足した。作り直す手順は AGENTS.md の「トークナイザ」の T663 の項に 1 文、道具の行は `docs/notes/tests-and-tools.md`。
+- **壊し方**: 定数を 15.1.0 にすると道具は終わり方 0 のまま `suite: warning: Pyodide 314.0.8, Python 3.14.2 is of Unicode 16.0.0, and engine.tokenizer's UNNORMALIZED was made against 15.1.0: …` と `::warning title=Pyodide's Unicode moved::…` を出し、前の行は `ci.ts` の tests.yml の grep に当たる。15.1.0 に加えて表から U+32FF を外すと、全符号位置の試験は U+32FF を名指して「The table was made against Unicode 15.1.0: put these into …」で落ちる。
+- **確かめ**: pytest 4,379 passed、`EVERY_CODE_POINT=1` の T663 の試験 2 passed、`tree-check`・`imports-check`・`workflows-check`・`python-archive-check`・`types`・`fakes-check`、`bash -n tests/suite.sh`。smoke は回していない（エンジンの変更は定数 1 つで、Pyodide の中で import するのは新しい道具が回した）。**CI を省いた**。訳: 道具は suite と同じ `pyodide@latest`（314.0.8）で手元で端から端まで回り、毎晩の組の 1 行なので今夜の毎晩で `--- the latest Pyodide's Unicode` の行を見る（`tests.yml full=true` の約 1 時間を 1 行のために回さない）。
 
 ### T679 [運用][遠隔試験] `ci.ts deploy` の again の run の選び方を、main の先頭が動いた場合と後から呼んだ場合にも — 状態: 未着手（2026-11-21、T677 のレビューから。規模 小）
 - `againRun()`（`tests/ci.ts`）は同じ SHA の dispatch の run だけを探す。`again` の `gh workflow run deploy.yml --ref main` はその時点の main の先頭を走らせるので、落ちた run の後に別の push が入ると見つからず、期限まで探して終わり方 1（公開は済んでいる）。直し案: `event=workflow_dispatch&branch=main`、`created_at` ≥ again の始まり − 60 秒、ID の大きいもので選び、SHA が違えば 1 行言う。見つからなければ `newerDeploy()` に落とす。

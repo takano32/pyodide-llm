@@ -71,7 +71,7 @@ def test_every_code_point_is_normalized_as_the_tokenizers_library_does(form):
     has that the library's Unicode has not go into engine.tokenizer's UNNORMALIZED (one named here for a composition is
     the composite: its decomposition's first code point goes in)."""
     normalizers = pytest.importorskip("tokenizers.normalizers", reason="pip install tokenizers to check against the real one")
-    from engine.tokenizer import normalized_as_read
+    from engine.tokenizer import UNNORMALIZED_UNICODE, normalized_as_read
     real = getattr(normalizers, form)()
 
     def placed(char):
@@ -86,8 +86,12 @@ def test_every_code_point_is_normalized_as_the_tokenizers_library_does(form):
         if real.normalize_str(chunk) != normalized_as_read(chunk, form):
             wrong += [code for code in codes[start:start + 4096]
                       if real.normalize_str(placed(chr(code))) != normalized_as_read(placed(chr(code)), form)] or [codes[start]]
+    # (T678: a Python of another Unicode than the table's is said with the cause and what to do)
+    moved = unicodedata.unidata_version != UNNORMALIZED_UNICODE
     assert not wrong, (f"{form}: {len(wrong)} code points normalized otherwise than by the tokenizers library (Python's "
-                       f"Unicode {unicodedata.unidata_version}): " + ", ".join(f"U+{code:04X}" for code in wrong[:40]))
+                       f"Unicode {unicodedata.unidata_version}): " + ", ".join(f"U+{code:04X}" for code in wrong[:40]) +
+                       (f". The table was made against Unicode {UNNORMALIZED_UNICODE}: put these into engine.tokenizer's "
+                        "UNNORMALIZED and its UNNORMALIZED_UNICODE moves to this Python's" if moved else ""))
 
 
 def test_byte_fallback_spells_out_unknown_characters():
