@@ -84,11 +84,14 @@ def paragraphs(text, start):
     return found
 
 
-def ends_sentence(line):
-    """whether a line ends a sentence: in a terminal (Latin or not) and what closes after it, or in a Japanese quote's
-    closing"""
-    core = line.rstrip(CLOSINGS)
-    return any(char in JAPANESE_QUOTES for char in line[len(core):]) or (core != "" and core[-1] in TERMINALS + LATIN_TERMINALS)
+def ends_sentence(text, start, end):
+    """whether the line text[start:end] ends a sentence: in a terminal (Latin or not) and what closes after it, or in a
+    Japanese quote's closing (read from its end back, not cut out: a paragraph of many lines none of which ends a
+    sentence would copy its growing front for each line)"""
+    core = end
+    while core > start and text[core - 1] in CLOSINGS:
+        core -= 1
+    return any(char in JAPANESE_QUOTES for char in text[core:end]) or (core > start and text[core - 1] in TERMINALS + LATIN_TERMINALS)
 
 
 def lines_after_sentences(text, start, end, separated):
@@ -100,7 +103,7 @@ def lines_after_sentences(text, start, end, separated):
         following = newline
         while following < end and blank(text[following]):
             following += 1
-        if line_end > part and following < end and ends_sentence(text[part:line_end]):
+        if line_end > part and following < end and ends_sentence(text, part, line_end):
             parts.append((part, line_end, following))
             part = following
         at = max(following, newline + 1)
