@@ -40,8 +40,10 @@ words) after the first time of its loop. Theirs translates that sentence once mo
 here yet, PENALIZED). A translation that ran away is never history. Where theirs stops the document at a full context,
 this one takes the run as one that ran out of room (its pieces' prompts are shorter).
 
-A chunk is translated by the model's generate() from a fresh start (a new cache of keys and values): the loop of
-generate() is not touched, it is called once for each chunk. The positions are of characters (Python's), the tokens
+A chunk is translated by the model's generate() from a fresh start (a new cache of keys and values): generate()
+is called once for each chunk (its loop only tells where a translation falls into a loop: loops=True). The positions
+(and a Withdrawn's characters) are of characters as Python counts them, code points (a JavaScript string counts UTF-16
+units: a character past U+FFFF is 2 there), the tokens
 the model's tokenizer's, read literally (a mark typed in the text is its characters, as pfml_tokens() reads it)."""
 from engine.pfml import pfml_tokens
 from engine.tokenizer import WHITE_SPACE
