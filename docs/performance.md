@@ -201,7 +201,7 @@ The first four rows were measured before the threads; the 3B to 8B rows with 4 t
 line; from Japan, huggingface.co delivered 7 to 9 MB/s, so a 1B model takes about 5 minutes to fetch, and the
 conversion about 5 seconds.
 
-Ternary Bonsai 2 27B (ternary, 7.66 GB on a 64-bit memory), in Chromium on CI's runners (the deployed page, 4
+Ternary Bonsai 2 27B (ternary, 7.66 GB when this was measured, 7.24 GB since its scales became float16, on a 64-bit memory), in Chromium on CI's runners (the deployed page, 4
 threads): ready in 291 s and 1.2 tok/s on x86-64, ready in 235 s and 2.2 tok/s on arm64, and a second visit opens
 the 7.66 GB it kept (OPFS) in 26 s. On a Windows runner Chromium was ready in 397 s (1.1 tok/s) and the second
 visit took 67 s (its disk reads the 7.66 GB at about 135 MB/s), and Firefox 156 (the installed one on Linux x86-64,

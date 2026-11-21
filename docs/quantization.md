@@ -265,7 +265,8 @@ Prism ML's 1-bit Bonsai 1.7B, 4B and 8B (Qwen3 models) and 27B (from Qwen3.6 27B
 Qwen3.5 and no rotated basis) come as Q1_0 GGUFs: every weight is plus or minus the scale of its 128, 18 bytes for
 the 128. Since 2026-11-04 the page keeps them that way, one bit a weight and the float16 scale; before, it held them
 as ternary weights. The kernels multiply them as the ternary ones do, so the logits are the same to the bit (in CI:
-64 positions of the 1.7B, 16 of the 27B). Measured in CI (2026-11-03 and 2026-11-04):
+64 positions of the 1.7B, 16 of the 27B; the 4B and the 8B were not compared). Measured in CI (2026-11-03 and
+2026-11-04):
 
 | | 1.7B | 4B | 8B | 27B |
 |---|---:|---:|---:|---:|
@@ -274,14 +275,15 @@ as ternary weights. The kernels multiply them as the ternary ones do, so the log
 | furthest tensor from the float16 original (relative) | 3.5e-5 | 4.8e-5 | 1.7e-8 | 1.4e-7 |
 | perplexity, first 1,500 tokens, English / Japanese | 27.507 / 73.399 | 20.095 / 49.702 | 17.891 / 38.251 | not measured this way |
 
-\* The list's estimate; the other sizes were measured.
+\* The list's estimate; the other sizes were measured. The 8B's 1.2 GB is rounded: the 1.7B's ratio of 1-bit to
+ternary bytes (0.53) gives about 1.15 GB.
 
 The 27B does not fit in a 32-bit memory even in one bit (4.18 GiB with what comes after the weights), so it still
 needs Chrome or Firefox. The 1.7B answers in English but breaks in Japanese (it repeats itself), so the list has it
 as an English model; the 4B, the 8B and the 27B answered the Japanese questions in Japanese. Against the ternary
-kernel on the same weights, the one-bit kernel was as fast on one thread and 1.02 times (x86-64, AMD EPYC 7763) and
-1.06 times (arm64, Neoverse-N2) as fast on four: what it saves is memory. On the deployed page, in Chromium on CI's
-runners with 4 threads, the 1.7B was ready in 20.3 s and wrote 16.9 tok/s (3.9 s to open what it kept on a second
+kernel on the same weights (a kernel benchmark, the geometric mean of six shapes), the one-bit kernel was as fast on
+one thread and 1.02 times (x86-64, AMD EPYC 7763) and 1.06 times (arm64, Neoverse-N2) as fast on four: what it saves
+is memory. On the deployed page, in Chromium on CI's runners with 4 threads, the 1.7B was ready in 20.3 s and wrote 16.9 tok/s (3.9 s to open what it kept on a second
 visit), and the 8B 60.3 s and 4.5 tok/s (5.8 s); held as ternary, the 4B wrote 7.6 tok/s and the 27B 1.3 tok/s
 (ready in 205 s). On the GPU the signs are spread to ternary codes as they are uploaded, and the ternary shaders
 multiply them: checked on CI's software adapters only. Not measured on any device.
