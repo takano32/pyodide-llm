@@ -26,8 +26,8 @@ class Writer:
         form (llama2_numpy.FORM, see checkpoint_form()): what the file does not say, which lays out its tensors and
         sizes the forward pass besides the header; the sink gets it whole, and with it said: the options of the
         model's family that the converter gives the engine besides (convert/beginning.py's options_of(): T334.3's
-        review, a Gemma 2's cap of its scores keeps it off the GPU alone before its weights come), none of which
-        lays out a row."""
+        review, a Gemma 2's cap of its scores keeps it off the GPU alone before its weights come) and the stop
+        tokens (T681: more than the GPU samples keep it off the GPU alone too), none of which lays out a row."""
         # quantize_rows: the dtypes' packing on the SIMD kernels (llama2_numpy.kernel_quantizer), the same bytes
         # several times faster, for rows of whole groups of 32; NumPy's (the dtype's pack) for anything else, and
         # where there are no kernels

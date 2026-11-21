@@ -111,7 +111,6 @@
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
-- T681 [バグ][WebGPU] GPU だけのモデルで止まりのトークンが 8 つを越えると、ステップを CPU に頼む — 反映済み
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1086,10 +1085,3 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T672 [描画][モデル] PFN が公表した品質の数を見せる — 状態: 候補（2026-11-13、T664 から。規模 小。持ち主の判断）
 - 向こうは量子化ごとに PFTB（日英）と FLORES+ chrF++（多言語）を量子化なしとの差で出す（`engine::models::QUALITY`、出どころは PFN の公表）。ここでは項目の note か About に 1 行。数の出どころ（PFN のブログかカード）を項目のコメントに書く。T671 で量子化を選ばせるなら要る。
-
-### T681 [バグ][WebGPU] GPU だけのモデルで止まりのトークンが 8 つを越えると、ステップを CPU に頼む — 状態: 反映済み（2026-11-21、T680 の調べから。規模 小）
-- `generateMany()`（`forward/gpuside.ts`）は止まりのトークンが `STOPS_MOST`（8、SAMPLE の一様バッファの欄）を越えると `undefined` を返し、`generate()` は CPU の forward でステップを読む。GPU だけのモデルでは `notHere()` で GPU が止まり、worker が CPU で読み直す。一覧に 8 つを越える止まりを持つ項目があるかは未確認（`conversions_compare.py` の出す options の `stop_tokens` で数える）。無ければ GPU だけに置く門（`gpuOnlyUnfit()` か `weightsPlace()` の `eligible`）で断るのが勧め、あれば SAMPLE の欄を広げる（端末の鍵が動く）。
-- **数えた（2026-11-21）**: 一覧の 228 項目のうち、options に `stop_tokens` を書く 123 項目は違うものの数で最多 5（`sarashina`・`harmony`: どちらも GPU だけに置かれうる大きさかに関わらず 8 以下）。残りの 105 項目（変換器が決める）は止まりが「言われた BOS（2 まで）+ config.json の `eos_token_id` + トークナイザの `eos_token` + 書式の答えの後の印」なので、config.json の `eos_token_id` を全部取って数えた: 最多 3（Llama 3.1 Swallow 8B・EZO Llama 3.2 3B の `[128001, 128008, 128009]`）、2 が MiniCPM5 の 4 項目と PLaMo 3 610M、ほかは 1。上限の見積もりで 7 以下、**8 を越える項目は無い**（`conversions_compare.py --dump` は全項目で 80 分ほどかかる見込みだったので、18 項目で止めて config.json だけを数えた）。だから SAMPLE の欄は広げず（端末の鍵を動かさない）、`?hf=` のリポジトリのために門で断る形にした（取りまとめ役の頼みの勧めのとおり）。
-- **直し**: `gpuOnlyUnfit()` が form の `stop_tokens` の違うものの数が `STOPS_MOST` を越えると `REASONS.stops`（前からある文。`gpuOnlyUnfit()` の答えは「置けるか」としか読まれず、訪問者に見えない）で断る。読み込みの前に止まりを知るため: (1) 変換する訪問は、変換器が sink の `open()` に渡す form に `stop_tokens` を足す（`convert/stream.py` の `Stream(…, stops=)`、`Conversion.start()` が `beginning.stop_tokens` を渡す: Gemma 2 の `score_softcap` と同じ `said` の口）。(2) 保存を読む訪問は保存の options（もとから `stop_tokens` を持つ）。(3) どちらも、項目の options の `stop_tokens` があればそれが勝つ（`worker/weights.ts` の `ownStops()`: エンジンを作るときの `{ ...変換の options, ...model.options }` と同じ）。(4) サイトのモデルは項目の options のまま。変換器の出すもの（チェックポイントと options）は変わらないので `CONVERTER` は上げない。シェーダの文は変えていないので端末の鍵は動かない。訪問者のファイル（設定の JSON の無いもの）は form に止まりが無く、前と同じく `generateMany()` が言う。
-- **試験と壊し方**: `gpu-choice-check` に「8 つは置ける・同じものを 2 回は 1 つ・9 つは断る」（`STOPS_MOST` はシェーダの側の値を読む）、`worker-sink-check` に「変換器の form に 9 つ → GPU だけにしない、項目の 2 つが勝つ → GPU だけ」、`test_gemma2.py` の sink の試験に「sink の form の `stop_tokens` が options と同じ」。壊し方 3 つ: 門の行を消す → `gpu-choice-check` と `worker-sink-check` が落ちる、`checkpointSink()` の `ownStops()` を外す → `worker-sink-check` の「項目が勝つ」が落ちる、`Conversion.start()` の `stops=` を外す → `test_gemma2.py` の 2 つが落ちる。手元で pytest（4577 通過）・`npm run types`・上の検査。
-- **CI を省いた**。訳: WebGPU のシェーダと GPU の Worker は変えていない（読み込みの前の門と worker の options だけ）で、触った所は手元の検査が全部踏む。
