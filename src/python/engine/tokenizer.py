@@ -34,6 +34,36 @@ from engine.proxy import plain
 
 BOS = 1  # beginning-of-sequence token, also what the model emits when a story is over
 
+# T663: the characters a tokenizer.json's NFC and NFKC (the tokenizers library's, of Unicode 9.0's tables) leave as
+# they are where Python's (Unicode 16.0's) changes them or what is around them: marks given a combining class after 9.0
+# (U+089B, U+1AC3: Python puts them in their canonical order, the library keeps them where they are written), their
+# compatibility decompositions (U+32FF ㋿: Python's NFKC makes it 令和) and the first halves of their canonical
+# compositions (U+11935 U+11930: Python's NFC makes U+11938). To the library each is a starter with no decomposition,
+# which nothing composes with, so a text is normalized in the stretches between them and they are kept. Found by
+# holding every code point against the real normalizers (tests/test_tokenizer.py's T663 test, EVERY_CODE_POINT=1): a
+# Python of a newer Unicode than 16.0 has more, which that test names.
+UNNORMALIZED = re.compile("([" + "".join(
+    re.escape(chr(first)) + ("-" + re.escape(chr(last)) if last != first else "") for first, last in (
+        (0x7FD, 0x7FD), (0x897, 0x89F), (0x8CA, 0x8D3), (0x9FE, 0x9FE), (0xC3C, 0xC3C), (0xD3B, 0xD3C), (0xEBA, 0xEBA),
+        (0x1715, 0x1715), (0x1ABF, 0x1ACE), (0x1DF6, 0x1DFA), (0x32FF, 0x32FF), (0xA7F2, 0xA7F4), (0xA82C, 0xA82C),
+        (0xAB69, 0xAB69), (0x105C9, 0x105C9), (0x105D2, 0x105D2), (0x105DA, 0x105DA), (0x105E4, 0x105E4),
+        (0x10781, 0x10785), (0x10787, 0x107B0), (0x107B2, 0x107BA), (0x10D24, 0x10D27), (0x10D69, 0x10D6D),
+        (0x10EAB, 0x10EAC), (0x10EFD, 0x10EFF), (0x10F46, 0x10F50), (0x10F82, 0x10F85), (0x11070, 0x11070),
+        (0x1133B, 0x1133B), (0x11382, 0x11385), (0x1138B, 0x1138B), (0x1138E, 0x1138E), (0x11390, 0x11391),
+        (0x113C2, 0x113C2), (0x113C5, 0x113C5), (0x113C7, 0x113C8), (0x113CE, 0x113D0), (0x1145E, 0x1145E),
+        (0x11839, 0x1183A), (0x11935, 0x11935), (0x11938, 0x11938), (0x1193D, 0x1193E), (0x11943, 0x11943),
+        (0x119E0, 0x119E0), (0x11A34, 0x11A34), (0x11A47, 0x11A47), (0x11A99, 0x11A99), (0x11D42, 0x11D42),
+        (0x11D44, 0x11D45), (0x11D97, 0x11D97), (0x11F41, 0x11F42), (0x1611E, 0x1611E), (0x16121, 0x16129),
+        (0x1612F, 0x1612F), (0x16D63, 0x16D63), (0x16D67, 0x16D6A), (0x16FF0, 0x16FF1), (0x1CCD6, 0x1CCF9),
+        (0x1E030, 0x1E06D), (0x1E08F, 0x1E08F), (0x1E130, 0x1E136), (0x1E2AE, 0x1E2AE), (0x1E2EC, 0x1E2EF),
+        (0x1E4EC, 0x1E4EF), (0x1E5EE, 0x1E5EF), (0x1F16C, 0x1F16C), (0x1FBF0, 0x1FBF9))) + "])")
+
+
+def normalized_as_read(text, form):
+    """The text in the normalization form ("NFC", "NFKC") as the tokenizers library makes it (T663: UNNORMALIZED)."""
+    parts = UNNORMALIZED.split(text)
+    return "".join(part if i % 2 else unicodedata.normalize(form, part) for i, part in enumerate(parts))
+
 
 def longest_written(words):
     """A regular expression that matches the longest of the words written at a place: the words as a trie, each
@@ -603,9 +633,9 @@ class Tokenizer:
         if self.charsmap:
             text = self.charsmap.replaced(text)
         if self.nfkc:
-            text = unicodedata.normalize("NFKC", text)
+            text = normalized_as_read(text, "NFKC")
         if self.nfc:
-            text = unicodedata.normalize("NFC", text)
+            text = normalized_as_read(text, "NFC")
         if self.collapse:
             text = re.sub(" {2,}", " ", text).strip(" ")
         if self.spaces:

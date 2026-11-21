@@ -1,5 +1,6 @@
 # Encode -> decode round trips, on a synthetic vocabulary and on the real ones `make models` fetches.
 import math
+import os
 import re
 import random
 import struct
@@ -38,6 +39,52 @@ def test_synthetic_roundtrip(kind, text):
 def test_nfkc_normalizes(kind):
     tokenizer = tiny_tokenizer(kind=kind, nfkc=True)
     assert roundtrip(tokenizer, "Ａ") == unicodedata.normalize("NFKC", "Ａ") == "A"
+
+
+# T663: what the tokenizers library (0.23.3) makes of these, where Python's NFC and NFKC of Unicode 16 make another
+UNNORMALIZED_TEXTS = {"\u089b\u17d2": ("NFC", "\u089b\u17d2"),  # (Python: U+17D2's class 9 before U+089B's 230)
+                      "\u0344\u1ac3": ("NFC", "\u0308\u0301\u1ac3"),  # U+0344 is decomposed all the same
+                      "x\u0e49\u1715y": ("NFC", "x\u0e49\u1715y"),
+                      "\U00011935\U00011930": ("NFC", "\U00011935\U00011930"),  # (Python: U+11938)
+                      "q\u0301\u0316\u1ac3\u0301\u0316": ("NFC", "q\u0316\u0301\u1ac3\u0316\u0301"),
+                      "\u32ff": ("NFKC", "\u32ff"),  # ㋿ (Python: 令和)
+                      "\uff21\u32ff\u337b": ("NFKC", "A\u32ff\u5e73\u6210")}  # Ａ㋿㍻
+
+
+@pytest.mark.parametrize("text", UNNORMALIZED_TEXTS)
+def test_the_normalizers_are_the_tokenizers_librarys(text):
+    from engine.tokenizer import normalized_as_read
+    form, want = UNNORMALIZED_TEXTS[text]
+    assert normalized_as_read(text, form) == want
+    assert unicodedata.normalize(form, text) != want  # (Python's own)
+    tokenizer = tiny_tokenizer(kind="unigram", nfkc=form == "NFKC")
+    tokenizer.nfc = form == "NFC"
+    assert tokenizer.normalized(text) == want
+
+
+# 1,112,064 code points, three texts each, for NFC and NFKC: the full suite's (tests/suite.sh full, EVERY_CODE_POINT=1)
+@pytest.mark.skipif(not os.environ.get("EVERY_CODE_POINT"), reason="EVERY_CODE_POINT=1: tests/suite.sh full runs it")
+@pytest.mark.parametrize("form", ["NFC", "NFKC"])
+def test_every_code_point_is_normalized_as_the_tokenizers_library_does(form):
+    """T663: each code point alone, between marks of the classes 230 and 220 after a letter, and before two marks of
+    the classes 1 and 230: as the real normalizer makes them. The code points a newer Python's Unicode has that the
+    library's Unicode has not go into engine.tokenizer's UNNORMALIZED."""
+    normalizers = pytest.importorskip("tokenizers.normalizers", reason="pip install tokenizers to check against the real one")
+    from engine.tokenizer import normalized_as_read
+    real = getattr(normalizers, form)()
+
+    def placed(char):
+        return f"{char}|q́{char}̖|{char}̴̀|"
+
+    codes = [code for code in range(0x110000) if not 0xD800 <= code < 0xE000]
+    wrong = []
+    for start in range(0, len(codes), 4096):
+        chunk = "".join(placed(chr(code)) for code in codes[start:start + 4096])
+        if real.normalize_str(chunk) != normalized_as_read(chunk, form):
+            wrong += [code for code in codes[start:start + 4096]
+                      if real.normalize_str(placed(chr(code))) != normalized_as_read(placed(chr(code)), form)] or [codes[start]]
+    assert not wrong, (f"{form}: {len(wrong)} code points normalized otherwise than by the tokenizers library (Python's "
+                       f"Unicode {unicodedata.unidata_version}): " + ", ".join(f"U+{code:04X}" for code in wrong[:40]))
 
 
 def test_byte_fallback_spells_out_unknown_characters():
