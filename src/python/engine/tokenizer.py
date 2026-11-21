@@ -645,9 +645,13 @@ class Tokenizer:
             if len(self.contained) >= 16:
                 self.contained.clear()
             wanted = [character.encode("utf-8") for character in characters]
-            self.contained[characters] = frozenset(
-                token for token in range(len(self.vocab))
-                if any(character in self.decode(None, token) for character in wanted)) if wanted else frozenset()
+            held = frozenset()
+            if wanted:
+                # (each token decoded once, not once for a character: with the four of the default that was four
+                # times the 0.4 s of a 107,520-piece vocabulary, native)
+                spelled = (self.decode(None, token) for token in range(len(self.vocab)))
+                held = frozenset(token for token, text in enumerate(spelled) if any(character in text for character in wanted))
+            self.contained[characters] = held
         return self.contained[characters]
 
     def normalized(self, text):
