@@ -1,3 +1,26 @@
+# This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and its cutting
+# of a text into chunks (split() and the ways it cuts: the chunks are the same as those of the Rust function it was
+# read from, on 14,000 random texts) is derived from tanakh/plamo-translate-desktop's engine::document
+# (https://github.com/tanakh/plamo-translate-desktop at 3d69a116c45a8116159f1a405311a59039ec4b95), which is under the
+# MIT License (it is under Apache-2.0 too; this is the MIT License's notice), Copyright (c) 2026 Hideyuki Tanaka.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 """engine/document.py (T666): a long text translated by PLaMo 3 Translate a piece at a time, each piece with the pieces
 before it and their translations as its history (engine/pfml.py's). The text is cut into paragraphs at its empty
 lines, and as many whole paragraphs as fit go into one piece (a chunk); a paragraph too long for one is cut at the
@@ -5,8 +28,8 @@ first of these that makes its parts fit: a line that ends a sentence, a sentence
 at a space), and last a number of characters. What lies between the chunks (the empty lines) and the whitespace the
 text begins with are written out as they are, so that the chunks and what lies between them are the text again.
 
-The form is tanakh/plamo-translate-desktop's engine::document (3d69a116c45a8116159f1a405311a59039ec4b95: none of its
-lines). Where it differs: a text of only whitespace is written out as it is (theirs writes nothing), and the numbers
+The form is tanakh/plamo-translate-desktop's engine::document (3d69a116c45a8116159f1a405311a59039ec4b95; the notice
+above). Where it differs: a text of only whitespace is written out as it is (theirs writes nothing), and the numbers
 of tokens are this page's (a context of 4096 at most, where theirs is 32768: CHUNK_TOKENS, HISTORY_TOKENS). What
 theirs does with a chunk that runs away (repeats itself, or stops far too short) is T667's: here such a chunk is
 written as the model wrote it and is not put in the history.
