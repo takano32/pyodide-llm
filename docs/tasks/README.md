@@ -450,3 +450,4 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T674](T674.md) [試験][WebGPU] gpu-check の層ごとの線の土台を、1 つの標本でなく揺れを含む値に — 2026-11-20
 - [T675](T675.md) [試験][Gemma4] 網の `calls` に、鍵と値を共有する層のある Gemma 4 を足す — 2026-11-21
 - [T676](T676.md) [試験][Gemma4] `forward-check --varied` の作り物の Gemma 4（shared）の線を、作り物のゆれ込みで — 2026-11-20
+- [T677](T677.md) [運用][遠隔試験] デプロイの Pages の段の「Fetching artifact metadata failed」 — 2026-11-21
