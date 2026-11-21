@@ -1081,6 +1081,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **組み手と今の書式の道**: 繋がない（上の訳）。繋いでも ID が同じことは示した: `tests/pfml_check.py` が一覧の書式（`plamoTranslate` と同じ文、converter の specials で）と `pfml_tokens(…, source=)` を 13 の文 × 2 つの向きで比べて 26 が同じ。
 - **公式との一致**: `tests/pfml_check.py`（手で。0.8B の `cc8e8816` の `chat_template.jinja`・`tokenizer.jsonl`・`tokenization_plamo.py`、numba 0.68.1）が transformers の `apply_chat_template(tokenize=True)` と 640 の依頼（4 つの文 × 6 つの言語の組 × 文体 3 × 文脈 4（なし・空・文・空白 1 つ）× 用語集 2 × 履歴 2、文体は `ja` のときだけ）で ID がすべて同じ。打った印 4 つは CONTROL の ID を含まず字のまま書き戻る。壊し方: (1) 空白だけの文脈を外す（tanakh の形）→ 160 が違う、(2) 文を `literal` なしで読む → 打った印の 3 つが印に読まれる。pytest は `tests/test_pfml.py`（作り物の語彙: カードの例の文・文まるごとの ID と同じ・打った印・断り 17 通り・言語の表）。
 - **確かめ**: pytest（4436 通る）・smoke・軽い組（手元 1303 秒）・`tests/conversions_compare.py` を 6 項目で（6 of 6 same: 送る ID・options・tokenizer.bin が前後で同じ）。**CI を省いた。訳**: 変換器・書式・一覧・ページに触らず、トークナイザの既定の道（`literal` なし）は変わらない。触ったのはエンジンの Python だけで、pytest・smoke・手元の公式との突き合わせが踏む（検証手順 7 の `reference_qwen35.sh` は変換器と書式の変更のためのもので、当たらない）。
+- **本線**: `b0201bbf`、デプロイ run 44864422316、本番の `models.yml` で 0.8B English → Japanese が答えた（run 44865625470: 準備完了 21.6 秒、35 トークン、22.0 tok/s）。
 
 ### T666 [追加][CPU] 長文を段落の切れ端に分けて、履歴つきで順に訳す — 状態: 未着手（2026-11-13、T664 から。T665 の後。規模 中）
 - 向こうの `engine::document` の形（docs/notes/t664-… の 3）: 空行で段落に分け、収まるだけ詰め、大きすぎる段落は文末の改行 → 文末 → 改行 → 読点と空白 → 字数の順で切る。前の原文と訳文を新しいものから履歴に入れる。区切りと先頭の空白は原文のまま写す。
