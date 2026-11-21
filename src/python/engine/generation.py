@@ -1,9 +1,11 @@
 # generate(): the prompt through the model, then a token at a time until a stop token, as pieces of text.
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
-# derived from two works under the MIT License, whose notice follows: tairov/llama2.py
-# (https://github.com/tairov/llama2.py; its LICENSE names no copyright holder) and karpathy/llama2.c
-# (https://github.com/karpathy/llama2.c), Copyright (c) 2023 Andrej.
+# derived from three works under the MIT License, whose notice follows: tairov/llama2.py
+# (https://github.com/tairov/llama2.py; its LICENSE names no copyright holder), karpathy/llama2.c
+# (https://github.com/karpathy/llama2.c), Copyright (c) 2023 Andrej, and (T667: the runs of each period that tell a
+# loop) tanakh/plamo-translate-desktop's engine::repetition (https://github.com/tanakh/plamo-translate-desktop at
+# 3d69a116c45a8116159f1a405311a59039ec4b95; under Apache-2.0 too), Copyright (c) 2026 Hideyuki Tanaka.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +29,7 @@ import time
 
 import numpy as np
 
+from engine.repetition import MAX_PERIOD, MIN_REPEATS, kept, least_span
 from engine.sampler import Sampling
 from engine.tokenizer import Unreplaced
 
@@ -72,7 +75,7 @@ def thought_marks(model, prompt):
     return None, None, False
 
 
-def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **settings):
+def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, loops=False, **settings):
     """Yield the text piece by piece, as it is generated. prompt: a text, or (T666) the ids of a request after the
     BOS (engine/pfml.py's), which go to the model as they are. echo=False leaves the prompt out of it (an instruction
     wrapped in a template, which nobody wants to read back). settings: how the tokens are drawn, Sampling's by their
@@ -84,6 +87,11 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     harmony's analysis channel: thought_marks()); once a thought has this many tokens and is still open, the closing
     mark is written in place of the next draws, as llama.cpp's reasoning budget does, and the model goes on to its answer. The stats say how long the thought was (thought: None
     where there was none) and whether the budget closed it (thought_cut).
+
+    loops (T667): end the run where what it wrote falls into a loop (engine/repetition.py: a translation of a long
+    text asks for it, engine/document.py; an answer does not, and nothing of it is kept for one). The stats then say
+    where (loop: how many characters of the text written are worth keeping, where it ended in a loop; None where it
+    did not).
 
     model: who writes, a Llama (whose generate() this is). Its parts are read off it as a run needs them and not
     handed over once, since a test or a tool may have put another in a part's place after the model was made: the
@@ -115,6 +123,12 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     utf8 = codecs.getincrementaldecoder("utf-8")(errors="replace")
     # T617: the replacements of the model's tokenizer turned back in what is written (none: nothing is called for it)
     unreplaced = Unreplaced(model.tokenizer.replaced) if model.tokenizer.replaced else None
+    # T667: where loops are told: the shortest loop, the run of each period (runs[period - 1]: how many tokens at the
+    # end of what was drawn are each the one a period before), the characters of text written after each drawn token,
+    # and the loop found (its period and where it begins) and the characters of it worth keeping
+    if loops:
+        least, runs, ends, said = least_span(prompt_tokens), [0] * MAX_PERIOD, [], 0
+    found = loop = None
 
     model._run += 1
     run = model._run
@@ -198,8 +212,25 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 if text and (echo or drawn):
                     yield text
                 pos += 1
+                if loops and drawn:
+                    # T667: each period's run a step on (a step for each period: the token is the one a period before
+                    # it or the run is over), and a loop where a run and its period are least tokens and MIN_REPEATS
+                    # periods (the shortest period first)
+                    said += len(text)
+                    ends.append(said)
+                    last = len(written) - 1
+                    for period in range(1, min(MAX_PERIOD, last) + 1):
+                        same = runs[period - 1] + 1 if written[last - period] == token else 0
+                        runs[period - 1] = same
+                        if found is None and same + period >= least and same >= (MIN_REPEATS - 1) * period:
+                            found = period, last + 1 - same - period
+                    if found is not None:
+                        ended = True
+                        break
             if ended:
                 break
+        if found is not None:
+            loop = ends[kept(prompt_tokens, written, *found) - 1]
         text = utf8.decode(b"", final=True)
         if unreplaced is not None:
             text = unreplaced(text, final=True)
@@ -225,4 +256,6 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 # thought), and whether the budget closed it
                 "thought": thought,
                 "thought_cut": cut,
+                # T667: where the run ended in a loop (only where loops were told)
+                **({"loop": loop} if loops else {}),
             }

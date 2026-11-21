@@ -1,6 +1,7 @@
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and its cutting
 # of a text into chunks (split() and the ways it cuts: the chunks are the same as those of the Rust function it was
-# read from, on 14,000 random texts) is derived from tanakh/plamo-translate-desktop's engine::document
+# read from, on 14,000 random texts) and (T667) its translating again of a chunk that ran away in smaller pieces
+# (Document) are derived from tanakh/plamo-translate-desktop's engine::document
 # (https://github.com/tanakh/plamo-translate-desktop at 3d69a116c45a8116159f1a405311a59039ec4b95), which is under the
 # MIT License (it is under Apache-2.0 too; this is the MIT License's notice), Copyright (c) 2026 Hideyuki Tanaka.
 #
@@ -30,9 +31,14 @@ text begins with are written out as they are, so that the chunks and what lies b
 
 The form is tanakh/plamo-translate-desktop's engine::document (3d69a116c45a8116159f1a405311a59039ec4b95; the notice
 above). Where it differs: a text of only whitespace is written out as it is (theirs writes nothing), and the numbers
-of tokens are this page's (a context of 4096 at most, where theirs is 32768: CHUNK_TOKENS, HISTORY_TOKENS). What
-theirs does with a chunk that runs away (repeats itself, or stops far too short) is T667's: here such a chunk is
-written as the model wrote it and is not put in the history.
+of tokens are this page's (a context of 4096 at most, where theirs is 32768: CHUNK_TOKENS, HISTORY_TOKENS).
+
+T667: a translation that runs away (falls into a loop: engine/repetition.py; runs out of room; or stops far too
+short) is taken back (Withdrawn) and its text is translated again in smaller pieces: a chunk in pieces of RETRY_TOKENS,
+such a piece a sentence at a time, and a sentence that still runs away is cut (Cut, a mark where the page writes its
+words) after the first time of its loop. Theirs translates that sentence once more with DRY's penalty first (T668: not
+here yet, PENALIZED). A translation that ran away is never history. Where theirs stops the document at a full context,
+this one takes the run as one that ran out of room (its pieces' prompts are shorter).
 
 A chunk is translated by the model's generate() from a fresh start (a new cache of keys and values): the loop of
 generate() is not touched, it is called once for each chunk. The positions are of characters (Python's), the tokens
@@ -66,6 +72,15 @@ ASCII_SPACE = " \t\n\x0c\r"
 # a chunk's translation is no longer than this many times its tokens and MORE (tanakh's: a runaway translation stops
 # there; T667 tells it from one that is only long)
 LONGER, MORE = 3, 128
+# T667 (tanakh's): the tokens of a piece a chunk that ran away is translated again in, and how short a translation of
+# a text of SHORT_SOURCE tokens or more is where it stopped far too short (less than a SHORTER-th of them)
+RETRY_TOKENS = 256
+SHORT_SOURCE, SHORTER = 200, 4
+# T667: the sampling settings a sentence that still runs away is translated again with before it is cut (T668's DRY;
+# none: it is cut as it ran)
+PENALIZED = None
+# why a translation ran away: it fell into a loop, it ran out of room, it stopped far too short
+LOOP, LONG, SHORT = "loop", "long", "short"
 
 
 def blank(char):
@@ -259,8 +274,152 @@ def recent(pairs, costs, most):
     return pairs[first:]
 
 
+def sentences_of(text):
+    """T667: text cut at its sentences (in its paragraphs: a newline in one is whitespace), as split() returns its
+    chunks (theirs, for a piece that ran away again)"""
+    body = 0
+    while body < len(text) and blank(text[body]):
+        body += 1
+    return text[:body], [(text[start:end], text[end:separated]) for paragraph in paragraphs(text, body)
+                         for start, end, separated in sentences(text, *paragraph)]
+
+
+class Withdrawn:
+    """T667: what translate_document() yields where it takes back the last characters it wrote (of a translation that
+    ran away, to be translated again)"""
+    __slots__ = ("characters",)
+
+    def __init__(self, characters):
+        self.characters = characters
+
+    def __repr__(self):
+        return f"Withdrawn({self.characters})"
+
+
+class Cut:
+    """T667: what translate_document() yields where it cut a translation that still ran away (after its loop's first
+    time, or as far as it ran): the page writes a mark there, in its own words. index: the chunk's; reason: LOOP,
+    LONG or SHORT; source: the text whose translation was cut"""
+    __slots__ = ("index", "reason", "source")
+
+    def __init__(self, index, reason, source):
+        self.index, self.reason, self.source = index, reason, source
+
+    def __repr__(self):
+        return f"Cut({self.index}, {self.reason!r}, {self.source!r})"
+
+
+def applied(pieces, mark=""):
+    """T667: the text translate_document()'s pieces write: each text added, each Withdrawn's characters taken back from
+    the end of the text (never a mark), each Cut written as mark"""
+    text = ""
+    for piece in pieces:
+        if isinstance(piece, Withdrawn):
+            text = text[:len(text) - piece.characters]
+        else:
+            text += mark if isinstance(piece, Cut) else piece
+    return text
+
+
+class Document:
+    """T667: a document's translation as it goes (translate_document()'s): the history, the sums of the stats, how many
+    were taken back and cut, and how many characters of text it wrote (where a run began, for its Withdrawn). Its
+    generators yield what translate_document() yields and return what they say."""
+
+    def __init__(self, model, count, history_most, request, settings, penalized):
+        self.model, self.count, self.history_most = model, count, history_most
+        self.request, self.settings, self.penalized = request, settings, penalized
+        self.pairs, self.costs = [], []
+        self.sums = {"tokens": 0, "sampled": 0, "prompt_tokens": 0, "seconds": 0.0}
+        self.retries = self.cut = self.written = 0
+
+    def out(self, text):
+        if text:
+            self.written += len(text)
+            yield text
+
+    def withdraw(self, start):
+        """take back what was written after start"""
+        if self.written > start:
+            yield Withdrawn(self.written - start)
+            self.written = start
+
+    def run(self, source, penalized=None):
+        """source translated once with the latest history, written as it comes. Returns its translation, why it ran
+        away (LOOP, LONG, SHORT; None: it did not), and the characters of it worth keeping where it fell into a loop"""
+        request = pfml_tokens(self.model.tokenizer, source, **self.request,
+                              history=recent(self.pairs, self.costs, self.history_most))
+        source_tokens = self.count(source)
+        written = []
+        for piece in self.model.generate(request, steps=len(request) + 1 + LONGER * source_tokens + MORE, echo=False,
+                                         loops=True, **{**self.settings, **(penalized or {})}):
+            written.append(piece)
+            yield from self.out(piece)
+        stats = self.model.stats
+        for key in self.sums:
+            self.sums[key] += stats[key]
+        tokens = stats["tokens"] - stats["prompt_tokens"]
+        if stats["loop"] is not None:
+            reason = LOOP
+        elif stats["sampled"] <= tokens:  # (a stop token ends a run with one more draw than there are tokens after the prompt)
+            reason = LONG
+        elif source_tokens >= SHORT_SOURCE and tokens * SHORTER < source_tokens:
+            reason = SHORT
+        else:
+            reason = None
+        return "".join(written), reason, stats["loop"]
+
+    def remember(self, source, translation):
+        translation = translation.strip()
+        if translation:
+            self.pairs.append((source, translation))
+            self.costs.append(self.count(source) + self.count(translation) + HISTORY_PAIR)
+
+    def piece(self, index, text, level=0):
+        """text translated (of the chunk index); where it runs away, taken back and translated again in the pieces of
+        the first finer way from level (FINER) that cuts it in more than one, or, where none does, cut (last())"""
+        start = self.written
+        translation, reason, keep = yield from self.run(text)
+        if reason is None:
+            self.remember(text, translation)
+            return
+        self.retries += 1
+        for finer in range(level, len(FINER)):
+            leading, pieces = FINER[finer](text, self.count)
+            if len(pieces) > 1:
+                break
+        else:
+            yield from self.last(index, text, start, reason, keep)
+            return
+        yield from self.withdraw(start)
+        yield from self.out(leading)
+        for piece, separator in pieces:
+            yield from self.piece(index, piece, finer + 1)
+            yield from self.out(separator)
+
+    def last(self, index, text, start, reason, keep):
+        """text that no finer way cuts, whose translation from start ran away for reason: translated once more with the
+        penalized settings where there are, and what still ran away cut after its loop's first time (or kept as far as
+        it ran) and marked"""
+        if self.penalized is not None:
+            yield from self.withdraw(start)
+            translation, reason, keep = yield from self.run(text, self.penalized)
+            if reason is None:
+                self.remember(text, translation)
+                return
+        if reason == LOOP:
+            yield from self.withdraw(start + keep)
+        self.cut += 1
+        yield Cut(index, reason, text)
+
+
+# T667: the finer ways a text that ran away is cut, the first first (each returns what split() returns)
+FINER = (lambda text, count: split(text, RETRY_TOKENS, count), lambda text, count: sentences_of(text))
+
+
 def translate_document(model, text, target, source=None, form=None, context=None, glossary=(),
-                       chunk_tokens=CHUNK_TOKENS, history_tokens=HISTORY_TOKENS, told=None, **settings):
+                       chunk_tokens=CHUNK_TOKENS, history_tokens=HISTORY_TOKENS, told=None, penalized=PENALIZED,
+                       **settings):
     """Yield the translation of text, piece by piece as it is written: the whitespace it begins with, then each
     chunk's translation (split()'s) and the separator after the chunk as it is. model: a PLaMo 3 Translate (its
     tokenizer and generate()); target, source, form, context, glossary: pfml_pieces()'s; settings: generate()'s
@@ -269,9 +428,13 @@ def translate_document(model, text, target, source=None, form=None, context=None
 
     Each chunk is a new request (pfml_tokens()), its history the latest chunks and their translations that fit in
     the history's budget (budgets(), recent()), and generate() runs it from the start, its translation at most
-    LONGER times the chunk's tokens and MORE. A chunk whose translation did not end in a stop token (it ran out of
-    room) is not put in the history. model.stats is left with the sums over the chunks (tokens, sampled,
-    prompt_tokens, seconds) and their number (chunks), how many ran out of room (unfinished)."""
+    LONGER times the chunk's tokens and MORE, ended where it falls into a loop (loops=True). T667: a translation that
+    runs away is taken back (a Withdrawn is yielded: the last so many characters written are not the translation) and
+    its text translated again in smaller pieces (Document.piece()); one that no finer way cuts is cut where it ran
+    away and a Cut is yielded, where the page writes its mark (penalized: the sampling settings of one more try before
+    that, T668's). applied() puts the pieces together. A translation that ran away is not put in the history.
+    model.stats is left with the sums over the runs (tokens, sampled, prompt_tokens, seconds) and the numbers of chunks
+    (chunks), of translations taken back (retries) and of pieces cut (cut)."""
     tokenizer = model.tokenizer
 
     def count(said):
@@ -279,32 +442,13 @@ def translate_document(model, text, target, source=None, form=None, context=None
 
     chunk_most, history_most = budgets(count, model.seq_len, context, glossary, chunk_tokens, history_tokens)
     leading, chunks = split(text, chunk_most, count)
-    if leading:
-        yield leading
-    pairs, costs = [], []
-    sums = {"tokens": 0, "sampled": 0, "prompt_tokens": 0, "seconds": 0.0}
-    unfinished = 0
+    document = Document(model, count, history_most,
+                        {"target": target, "source": source, "form": form, "context": context, "glossary": glossary},
+                        settings, penalized)
+    yield from document.out(leading)
     for index, (chunk, separator) in enumerate(chunks):
         if told is not None:
             told(index, len(chunks), chunk)
-        request = pfml_tokens(tokenizer, chunk, target, source=source, form=form, context=context, glossary=glossary,
-                              history=recent(pairs, costs, history_most))
-        chunk_count = count(chunk)
-        written = []
-        for piece in model.generate(request, steps=len(request) + 1 + LONGER * chunk_count + MORE, echo=False, **settings):
-            written.append(piece)
-            yield piece
-        stats = model.stats
-        for key in sums:
-            sums[key] += stats[key]
-        # (a stop token ends the run with one more sampling step than there are tokens after the prompt)
-        if stats["sampled"] > stats["tokens"] - stats["prompt_tokens"]:
-            translation = "".join(written).strip()
-            if translation:
-                pairs.append((chunk, translation))
-                costs.append(chunk_count + count(translation) + HISTORY_PAIR)
-        else:
-            unfinished += 1
-        if separator:
-            yield separator
-    model.stats = {**sums, "chunks": len(chunks), "unfinished": unfinished}
+        yield from document.piece(index, chunk)
+        yield from document.out(separator)
+    model.stats = {**document.sums, "chunks": len(chunks), "retries": document.retries, "cut": document.cut}

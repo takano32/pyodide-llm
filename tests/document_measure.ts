@@ -1,7 +1,8 @@
 // document_measure.ts (T666): the head of an English book translated by PLaMo 3 Translate a chunk at a time
 // (src/python/engine/document.py's translate_document()), at each size of chunk and of history asked, on the page's
-// engine in Node; per chunk its tokens, its translation's, and whether it repeats itself, stopped far too short, ran
-// out of room or lost paragraphs (tests/document_measure.py, run in Pyodide, counts them). The measure that
+// engine in Node; per chunk its tokens, its translation's, and whether it repeats itself, stopped far too short or
+// lost paragraphs, and (T667) how many runs were taken back and pieces cut (tests/document_measure.py, run in Pyodide,
+// counts them). The measure that
 // tanakh/plamo-translate-desktop chose its sizes by: the chunks that repeat and the paragraphs dropped.
 //
 //   python3 tests/hf_fetch.py hf-plamo-3-translate-0.8b-en-ja <downloads>   (prints <folder>)
@@ -50,10 +51,11 @@ for (const [chunk, history] of asked) {
   const result = JSON.parse(pyodide.runPython("import json; json.dumps(measure(llama, TEXT, TARGET, CHUNK, HISTORY), ensure_ascii=False)"));
   for (const row of result.chunks) {
     console.log(`document ${chunk}/${history}: chunk ${row.index + 1}/${row.of}, ${row.source_tokens} -> ${row.tokens} tokens` +
-      `${row.repeats ? ", REPEATS" : ""}${row.short ? ", SHORT" : ""}${row.lost ? `, ${row.lost} paragraphs LOST` : ""}: ${JSON.stringify(row.translation.slice(0, 120))}`);
+      `${row.repeats ? ", REPEATS" : ""}${row.short ? ", SHORT" : ""}${row.lost ? `, ${row.lost} paragraphs LOST` : ""}` +
+      `${row.withdrawn ? `, ${row.withdrawn} taken back` : ""}${row.cut ? `, ${row.cut} CUT` : ""}: ${JSON.stringify(row.translation.slice(0, 120))}`);
   }
   const sum = (key) => result.chunks.reduce((total, row) => total + Number(row[key]), 0);
-  const summary = `${result.chunks.length} chunks, ${sum("repeats")} repeat, ${sum("short")} short, ${result.unfinished} ran out of room, ` +
+  const summary = `${result.chunks.length} chunks, ${sum("repeats")} repeat, ${sum("short")} short, ${result.retries} taken back, ${result.cut} cut, ` +
     `${sum("lost")} paragraphs lost, ${result.prompt_tokens} tokens of prompts, ${result.sampled} drawn, ${result.seconds.toFixed(0)} s`;
   rows.push(`document ${chunk}/${history}: ${summary}`);
   console.log(`document ${chunk}/${history}: ${summary}`);
