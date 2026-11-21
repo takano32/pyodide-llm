@@ -73,6 +73,29 @@ def test_then_at_lines_then_at_clauses_then_at_characters():
     assert cut == ("", [("x" * 7, "")] * 4 + [("xx", "")])
 
 
+def test_the_pieces_put_together_are_counted_again_near_the_limit():
+    """a count is not the sum of its pieces' (a token may join two, or cross the empty line): near the limit the whole
+    is counted, and what fits as a whole is one chunk, where the sum would have cut it"""
+    words = lambda said: len(said.split(" "))  # noqa: E731 (the empty line joins the word before it to the one after)
+    assert words("aa bb") + words("\n\n") + words("cc dd") == 5 > words("aa bb\n\ncc dd") == 3
+    assert split("aa bb\n\ncc dd", 4, words) == ("", [("aa bb\n\ncc dd", "")])
+    # and the whole counted over the limit is cut where the sum would have let it through
+    over = lambda said: len(said) + (4 if said[0] != "\n" and said[-1] != "\n" and "\n" in said else 0)  # noqa: E731
+    one, two = "x" * 7, "y" * 7
+    assert over(one) + over("\n\n") + over(two) == 16 < over(one + "\n\n" + two) == 20
+    assert split(one + "\n\n" + two, 16, over) == ("", [(one, "\n\n"), (two, "")])
+
+
+def test_a_line_that_ends_in_a_japanese_quote_ends_a_sentence_without_a_terminal():
+    assert split("「はい」\n「いいえ」\n「たぶん」", 11, len) == \
+        ("", [("「はい」\n「いいえ」", "\n"), ("「たぶん」", "")])
+    # a line that ends in the quote's closing ends a sentence (lines after sentences are cut before sentences are):
+    # else the cut would be after "あ", where the line ends none
+    assert split("「はい」\nあ\ne", 6, len) == ("", [("「はい」", "\n"), ("あ\ne", "")])
+    # (a line that ends in neither: the lines are not cut as lines that end sentences)
+    assert split("あ、い\nう、え\nお、か", 5, len) == ("", [("あ、い", "\n"), ("う、え", "\n"), ("お、か", "")])
+
+
 @pytest.mark.parametrize("seed", range(40))
 def test_the_chunks_are_the_text_again_and_fit(seed):
     """any text of words, sentences, lines and paragraphs, Japanese and English, with whitespace of every kind: the
