@@ -122,14 +122,26 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
     const { right: r, pieces: p } = alone, alike = rows(r.keys) === rows(alone.keys) && rows(r.values) === rows(alone.values);
     const same = alike && JSON.stringify(r.first) === JSON.stringify(alone.first);
     // (T680: a token forced after the steps, a block of one on the GPU, and a step after it: an id of the vocabulary)
-    const fo = r.forced, forcedRight = !fo || (fo.blocks === 1 && fo.ids?.length === 1 && fo.ids[0] >= 0 && fo.ids[0] < Math.abs(found.reference.header[5]));  // (a classifier of its own: a negative vocabulary)
+    // (T680's review: and the steps after it are NumPy's greedy[5 ..] but at a near tie, where the steps before it were NumPy's greedy[0 .. 3]: the block of one
+    // wrote the keys and values (and the state) of its position as the steps would, to the line of an id)
+    const fo = r.forced, ref = found.reference, greedy = ref.greedy;
+    const vocabOf = floats(ref.logits).length, greedyRows = floats(ref.greedyLogits);
+    const nearTo = (i, id) => {
+      const rowLogits = greedyRows.subarray(i * vocabOf, (i + 1) * vocabOf);
+      return id === greedy[i] || logSoftmax(rowLogits)[id] >= logSoftmax(rowLogits)[greedy[i]] - TIE;
+    };
+    const numpyBefore = r.first?.length === 4 && r.first.every((id, i) => id === greedy[i]);
+    let forcedSame = 0;
+    for (; fo?.ids && forcedSame < fo.ids.length && fo.ids[forcedSame] === greedy[5 + forcedSame]; forcedSame++);
+    const forcedRight = !fo || (fo.blocks === 1 && fo.ids?.length === 3 && fo.ids.every((id) => id >= 0 && id < Math.abs(ref.header[5]))  // (a classifier of its own: a negative vocabulary)
+      && (!numpyBefore || forcedSame === 3 || nearTo(5 + forcedSame, fo.ids[forcedSame])));
     const good = !r.lost && r.gpuTokens === n && same && /^prompts and answers on WebGPU/.test(r.status ?? "") && /on it alone/.test(r.threw ?? "")
       && Boolean(p.lost) && /on it alone/.test(p.threw ?? "") && forcedRight;
     // (the made-up model: a CPU far faster than the GPU is taken, and what the page keeps has the device's key)
     const f = alone.cpuFaster, cpuRight = !f || (/the CPU as \/benchmark\/ measured it/.test(f.lost ?? "") && f.verdict?.key === alone.key && /on it alone/.test(f.threw ?? ""));
     console.log(`  on the GPU alone (${(r.stored / 1e6).toFixed(2)} MB here): ${r.lost ? `lost (${r.lost})` : `${r.gpuTokens} tokens of the prompt, keys and values ` +
       `${alike ? "the same to the bit" : "NOT the same"} as with the weights here${heldFrom?.some(Boolean) ? " (the positions the CPU's ring holds)" : ""}, steps ${JSON.stringify(r.first)} ` +
-      `(${JSON.stringify(alone.first)}), "${r.status}", ${fo ? `a token forced after them ${fo.threw ? `threw (${fo.threw})` : `${fo.blocks} on the GPU, a step after it ${JSON.stringify(fo.ids)}`}, ` : ""}a step on the CPU ${r.threw ? "threw" : "ran"}`}; a GPU that fails as it opens: ${p.lost ? `lost (${p.lost})` : "not lost"}, ` +
+      `(${JSON.stringify(alone.first)}), "${r.status}", ${fo ? `a token forced after them ${fo.threw ? `threw (${fo.threw})` : `${fo.blocks} on the GPU, steps after it ${JSON.stringify(fo.ids)} (NumPy's ${JSON.stringify(greedy.slice(5, 8))}${numpyBefore ? "" : ", not held to them: the steps before it were not NumPy's"})`}, ` : ""}a step on the CPU ${r.threw ? "threw" : "ran"}`}; a GPU that fails as it opens: ${p.lost ? `lost (${p.lost})` : "not lost"}, ` +
       `a step on the CPU ${p.threw ? "threw" : "ran"}${f ? `; a CPU far faster: ${f.lost ? `lost (${f.lost})` : "not lost"}, the verdict ${f.verdict?.key === alone.key ? "with the device's key" : "WITHOUT the device's key"}` : ""}` +
       `${good && cpuRight ? "" : " — FAILED"}`);
     failed ||= !good || !cpuRight;

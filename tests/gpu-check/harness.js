@@ -638,7 +638,13 @@ try {
         if (first.length === 4) {
           try {
             engine.forwardMany([first[3]], n + 4);
-            const ids = engine.generateMany(first[3], n + 5, tokens.slice(-64), tokens.length + 5, 1, 0, 0.9, 1, [], []);
+            // (T680's review: the 3 steps after it are fed what NumPy's continuation has there, greedy[4] at n + 5, so that
+            // verdicts.ts holds their ids to NumPy's greedy[5 ..], as the steps' second request is)
+            const ids = [];
+            for (let got = []; got && ids.length < 3; ids.push(...(got ?? []))) {
+              got = engine.generateMany(ids.length ? ids[ids.length - 1] : c.reference.greedy[4], n + 5 + ids.length, tokens.slice(-64),
+                tokens.length + 5 + ids.length, Math.min(engine.tokenBlock || 4, 3 - ids.length), 0, 0.9, 1, [], []);
+            }
             out.forced = { blocks: engine.gpuTokens - n, ids };
           } catch (error) {
             out.forced = { threw: String(error?.message ?? error) };

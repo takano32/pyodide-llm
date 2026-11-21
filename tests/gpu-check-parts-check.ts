@@ -452,6 +452,16 @@ check("the model on the GPU alone", () => {
     assert.match(got.line, / — FAILED$/);
     if (pattern) assert.match(got.line, pattern);
   };
+  // T680: a token forced after the steps (a block of one) and 3 steps after it, held to NumPy's greedy[5 ..] (5, 2, 4 here)
+  const forced = (ids, blocks = 1) => (a) => { a.right.forced = { blocks, ids }; return a; };
+  const withForced = line(forced([5, 2, 4])(structuredClone(alone)));
+  assert.equal(withForced.value, false, withForced.line);
+  assert.match(withForced.line, /a token forced after them 1 on the GPU, steps after it \[5,2,4\] \(NumPy's \[5,2,4\]\), a step on the CPU threw;/);
+  wrong(forced([5, 2, 0]), /steps after it \[5,2,0\]/);  // (row 7 of NumPy's gives 4 by 8 in log-probability: not a near tie)
+  wrong(forced([5, 2]));  // (3 steps are asked)
+  wrong(forced([5, 2, 4], 0));  // (the block did not go to the GPU)
+  wrong((a) => { a.right.forced = { threw: "this model's weights were on it alone" }; return a; }, /a token forced after them threw \(this model's/);
+  wrong((a) => { forced([5, 2, 7])(a); return a; });  // (an id outside the vocabulary of 6)
   wrong((a) => { a.right.keys = REFERENCE.values; return a; }, /keys and values NOT the same as with the weights here/);
   wrong((a) => { a.right.first = [2, 4, 1, 0]; return a; });
   wrong((a) => { a.right.gpuTokens = 2; return a; });
