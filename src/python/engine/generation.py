@@ -60,7 +60,11 @@ def thought_marks(model, prompt):
     THOUGHT_MARKS that the prompt ends in the opening mark of (and the model has the closing one of), else the first
     the model may open and close itself."""
     for opening, closing in THOUGHT_MARKS:
-        if prompt.rstrip().endswith(opening) and (closes := mark_of(model, closing)) is not None:
+        if isinstance(prompt, str):
+            opened = prompt.rstrip().endswith(opening)
+        else:  # (T666: the ids of a request, which open a thought where they end in its mark's token)
+            opened = bool(prompt) and prompt[-1] == mark_of(model, opening)
+        if opened and (closes := mark_of(model, closing)) is not None:
             return mark_of(model, opening), closes, True
     for opening, closing in THOUGHT_MARKS:
         if (closes := mark_of(model, closing)) is not None and (opens := mark_of(model, opening)) is not None:
@@ -69,7 +73,8 @@ def thought_marks(model, prompt):
 
 
 def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **settings):
-    """Yield the text piece by piece, as it is generated. echo=False leaves the prompt out of it (an instruction
+    """Yield the text piece by piece, as it is generated. prompt: a text, or (T666) the ids of a request after the
+    BOS (engine/pfml.py's), which go to the model as they are. echo=False leaves the prompt out of it (an instruction
     wrapped in a template, which nobody wants to read back). settings: how the tokens are drawn, Sampling's by their
     names (temperature, topp, repetition_penalty, top_k, min_p, presence_penalty), which says what each is and
     refuses what it cannot be. None of them is read here: the samplers have them.
@@ -86,8 +91,11 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     prompt_block() for a prompt's blocks, gpu_steps() and token_block() for steps on the GPU, where there are)
     and the sampler (its drawing()). What the run took is left in its stats."""
     sampling = Sampling(**settings)
-    # (T258: after the BOS, which may take in the whitespace the prompt begins with)
-    prompt_tokens = model.tokenizer.encode(prompt, model.specials, model.bos) if prompt else []
+    if isinstance(prompt, str):
+        # (T258: after the BOS, which may take in the whitespace the prompt begins with)
+        prompt_tokens = model.tokenizer.encode(prompt, model.specials, model.bos) if prompt else []
+    else:  # T666: the ids of a request put together already (engine/pfml.py's pfml_tokens()), after the BOS
+        prompt_tokens = [int(token) for token in prompt]
     # Right now we cannot run for more than seq_len steps
     if steps <= 0 or steps > model.seq_len:
         steps = model.seq_len
