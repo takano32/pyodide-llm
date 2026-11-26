@@ -88,6 +88,16 @@ jobs:
           npm ci
           make models kernels
 
+      # T266: the full suite's tests/format_check.py reads the real apply_chat_template (tests/requirements-reference.txt's
+      # transformers and protobuf; tokenizers stays the one above, which the every-code-point tests are held to), and
+      # PLaMo's tokenizer of its own imports numba, which goes into .tmp/numba-site (no deps: numba's own pins would move
+      # NumPy) as on the development machine (tests/plamo_tokenizer_check.py)
+      - name: The reference tools (full)
+        if: ${{ (github.event_name == 'schedule' || inputs.full == true || inputs.full == 'true') && !(inputs.only_extra == true || inputs.only_extra == 'true') }}
+        run: |
+          pip install transformers==5.16.1 protobuf
+          pip install --target .tmp/numba-site --no-deps numba llvmlite
+
       - name: Tests (tests/suite.sh)
         if: ${{ !(inputs.only_extra == true || inputs.only_extra == 'true') }}
         env:

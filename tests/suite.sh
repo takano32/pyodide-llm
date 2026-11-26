@@ -31,6 +31,22 @@ declare -A BUN_LEAVES=(
   [tests/memory-check.ts]="its WebAssembly memory grows by a copy, about a second a time for a 1.8 GB model: past the limit"
   [tests/blocks-forward-check.ts]="its 64-bit WebAssembly memory is off (BUN_JSC_useWasmMemory64), and on a shared one posted to a worker arrives 32-bit: oven-sh/bun#45739"
 )
+# T266: a Python script with a limit, as node() has (tests/limited.ts runs Node alone): at the limit faulthandler prints
+# where every thread stood and exits 1. FORMATS_LIMIT seconds, 30 minutes (the job's limit is 90)
+python_limited() {
+  local seconds=$1
+  shift
+  python -c 'import faulthandler, os, runpy, sys
+faulthandler.dump_traceback_later(int(sys.argv[1]), exit=True)
+sys.argv = sys.argv[2:]
+sys.path.insert(0, os.path.dirname(os.path.abspath(sys.argv[0])))
+runpy.run_path(sys.argv[0], run_name="__main__")' "$seconds" "$@"
+}
+formats() {
+  # (the downloads in .tmp, transformers' own files too: nothing under $HOME)
+  HF_HOME="$PWD/.tmp/hf" PYTHONPATH="$PWD/.tmp/numba-site${PYTHONPATH:+:$PYTHONPATH}" \
+    python_limited "${FORMATS_LIMIT:-1800}" tests/format_check.py .tmp/format-check
+}
 # each part's name and seconds, for the log (tests/ci.ts reads the lines that start with "suite:" and "--- ")
 part() {
   local name=$1 began=$SECONDS
@@ -593,5 +609,10 @@ if [ "$suite" = full ]; then
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character
   # T663: the NFC and NFKC at every code point, against the tokenizers library's (about 10 s)
   part "the normalizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_tokenizer.py -q -k every_code_point
+  # T266: the ids the page sends for every Hugging Face entry of the list against the real apply_chat_template
+  # (tests/format_check.py: config.json, the tokenizers and the heads of the weights by Range, no weights; DIFF and STALE
+  # fail, KNOWN, LENIENT and UNMEASURED say theirs). Needs the reference tools (tests.yml installs them for the full
+  # suite: transformers, protobuf, and numba for PLaMo's tokenizer in .tmp/numba-site)
+  part "the formats against the real ones" formats
 fi
 echo "suite: $suite passed in $SECONDS s"
