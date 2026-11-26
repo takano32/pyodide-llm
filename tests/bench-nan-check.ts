@@ -7,8 +7,8 @@
 // kind would make of each case of shaders.ts's NAN_CASES (a model of each case in JavaScript below, by its name). The
 // kinds: one that carries a NaN and an infinity as IEEE 754 has it; one that makes every NaN 0 (as it loads one and as
 // it makes one); one whose max() and min() drop a NaN for the other operand (and clamp() for its bound); one whose
-// pack2x16float() clamps to float16's largest and makes a NaN 0; one that folds x != x (lavapipe's: T219); and one
-// without shader-f16. Each is a process of its own (the worker's device is made once a process). The reading must
+// exp() makes a NaN +Inf (SwiftShader's); one whose pack2x16float() clamps to float16's largest and makes a NaN 0;
+// one that folds x != x (lavapipe's: T219); and one without shader-f16. Each is a process of its own (the worker's device is made once a process). The reading must
 // list as broken the marks of the engine each device breaks, and those alone, and say no warning for what no mark
 // stands on (the max() of a device that drops a NaN). Simpler than a GPU: no WGSL runs, so that a case's WGSL that
 // does not do what its name says is CI's to see (bench.yml, gpu-prompt.yml's Dawn); the names of the cases, the
@@ -18,7 +18,7 @@ import { spawnSync } from "node:child_process";
 import { runtimeUrl } from "./tree.ts";
 import { standIn } from "./fakes/webgpu.ts";
 
-const DEVICES = ["ieee", "nan to zero", "max drops NaN", "pack clamps", "folds x != x", "no f16"];
+const DEVICES = ["ieee", "nan to zero", "max drops NaN", "exp of NaN is +Inf", "pack clamps", "folds x != x", "no f16"];
 if (process.argv[2] !== "device") {
   for (const one of DEVICES) {
     const ran = spawnSync(process.execPath, [import.meta.filename, "device", one], { encoding: "utf8", timeout: 120000 });
@@ -43,11 +43,13 @@ const dropMax = (x, y) => (Number.isNaN(x) ? y : Number.isNaN(y) ? x : Math.max(
 const dropMin = (x, y) => (Number.isNaN(x) ? y : Number.isNaN(y) ? x : Math.min(x, y));
 const half = (x) => { const out = new Uint16Array(1); halvesOf([x], out); return out[0]; };
 const clampedHalf = (x) => (Number.isNaN(x) ? 0 : half(Math.max(-65504, Math.min(65504, x))));
-const IEEE = { load: same, made: same, max: ieeeMax, min: ieeeMin, clamp: (x, lo, hi) => ieeeMin(ieeeMax(x, lo), hi), pack: half, toHalf: half, differs: (x, y) => x !== y, f16: true };
+const IEEE = { load: same, made: same, max: ieeeMax, min: ieeeMin, clamp: (x, lo, hi) => ieeeMin(ieeeMax(x, lo), hi), pack: half, toHalf: half, differs: (x, y) => x !== y, exp: Math.exp, f16: true };
 const BEHAVIOURS = {
   ieee: IEEE,
   "nan to zero": { ...IEEE, load: zero, made: zero, pack: (x) => half(zero(x)), toHalf: (x) => half(zero(x)) },
   "max drops NaN": { ...IEEE, max: dropMax, min: dropMin, clamp: (x, lo, hi) => dropMin(dropMax(x, lo), hi) },
+  // (SwiftShader's, bench.yml's run 45879339792)
+  "exp of NaN is +Inf": { ...IEEE, exp: (x) => (Number.isNaN(x) ? Infinity : Math.exp(x)) },
   "pack clamps": { ...IEEE, pack: clampedHalf },
   "folds x != x": { ...IEEE, differs: () => false },
   "no f16": { ...IEEE, f16: false },
@@ -59,7 +61,7 @@ const device = BEHAVIOURS[kind];
 const f = Math.fround;
 const mag = (x) => new Uint32Array(new Float32Array([x]).buffer)[0] & 0x7fffffff;
 const softmax2 = (o, s0, s1) => {
-  const m = o.max(s0, s1), p0 = o.made(f(Math.exp(f(s0 - m)))), p1 = o.made(f(Math.exp(f(s1 - m))));
+  const m = o.max(s0, s1), p0 = o.made(f(o.exp(f(s0 - m)))), p1 = o.made(f(o.exp(f(s1 - m))));
   return f(f(p0 * 2 + p1 * 3) / f(p0 + p1));
 };
 const halfIn = (o, ua) => o.load(floatOfHalf(ua & 0xffff));
@@ -71,16 +73,16 @@ const MODELS = {
   "NaN × 0": (o, a, b) => f(a * b),
   "+Inf × 0": (o, a, b) => f(a * b),
   "+Inf − +Inf": (o, a, b) => f(a - b),
-  "exp(NaN)": (o, a) => f(Math.exp(a)),
-  "exp(+Inf)": (o, a) => f(Math.exp(a)),
-  "exp(−Inf)": (o, a) => f(Math.exp(a)),
+  "exp(NaN)": (o, a) => f(o.exp(a)),
+  "exp(+Inf)": (o, a) => f(o.exp(a)),
+  "exp(−Inf)": (o, a) => f(o.exp(a)),
   "max(NaN, 1)": (o, a, b) => o.max(a, b),
   "max(1, NaN)": (o, a, b) => o.max(a, b),
   "min(NaN, 1)": (o, a, b) => o.min(a, b),
   "clamp(NaN, −9, 9)": (o, a) => o.clamp(a, -9, 9),
   "tanh(NaN)": (o, a) => f(Math.tanh(a)),
-  "SiLU of a NaN gate": (o, a, b) => f(f(a / f(1 + f(Math.exp(-a)))) * b),
-  "SiLU of a −Inf gate": (o, a, b) => f(f(a / f(1 + f(Math.exp(-a)))) * b),
+  "SiLU of a NaN gate": (o, a, b) => f(f(a / f(1 + f(o.exp(-a)))) * b),
+  "SiLU of a −Inf gate": (o, a, b) => f(f(a / f(1 + f(o.exp(-a)))) * b),
   "GEGLU of a NaN gate": (o, a, b) => f(0.5 * a * (1 + Math.tanh(o.clamp(0.7978845608028654 * (a + 0.044715 * a * a * a), -9.010913, 9.010913))) * b),
   "softmax of the scores 1 and NaN": (o, a, b) => softmax2(o, a, b),
   "softmax of the scores NaN and 1": (o, a, b) => softmax2(o, a, b),
@@ -146,6 +148,8 @@ const WANTS = {
   "nan to zero": reliedOn((name) => /NaN/.test(name) && !/^\+Inf/.test(name)).concat("softmax of the scores 1 and +Inf", "SiLU of a −Inf gate"),
   // the engine stands on no max() of a NaN: exp() carries it through the softmax
   "max drops NaN": [],
+  // nor on exp() of a NaN alone: the softmax and SiLU carry it (+Inf against +Inf, a NaN over +Inf)
+  "exp of NaN is +Inf": [],
   "pack clamps": ["pack2x16float(NaN)", "pack2x16float(+Inf)", "pack2x16float(−Inf)"],
   "folds x != x": [],
   "no f16": [],
@@ -169,6 +173,7 @@ if (kind === "no f16") for (const name of f16Rows) assert.equal(rowOf(name)[2], 
 // what each device makes of a case no mark stands on, as the row says it
 if (kind === "max drops NaN") assert.deepEqual(["max(NaN, 1)", "max(1, NaN)", "min(NaN, 1)", "clamp(NaN, −9, 9)"].map((name) => rowOf(name).slice(2)),
   [["1", "nothing"], ["1", "nothing"], ["1", "nothing"], ["−9", "nothing"]]);
+if (kind === "exp of NaN is +Inf") assert.deepEqual(rowOf("exp(NaN)").slice(2), ["+Inf", "nothing"]);
 if (kind === "folds x != x") assert.deepEqual(rowOf("NaN × 2 found by x != x").slice(2), ["no", "nothing"]);
 if (kind === "ieee") {
   assert.deepEqual(rowOf("pack2x16float(1e6), past float16's largest").slice(1), ["+Inf", "+Inf", "nothing: as IEEE 754 has it"]);

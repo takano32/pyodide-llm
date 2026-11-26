@@ -14,7 +14,6 @@ const STREAM = "a NaN or an infinity of a layer reaches the logits, which T219's
 const ALL_LOW = "T219's sampler refuses logits that are all −Inf";
 const SCALE = "T241: a group's NaN scale times its integer sum (0 where its values are) stays NaN";
 const SOFTMAX = "the attention carries a NaN or an infinite score through its softmax";
-const EXP = "the attention's softmax and SiLU carry a NaN through exp()";
 const FFN = "the FFN carries a gate that is no finite number";
 const BITS = "T219's sampler and T241's quantizing see what is no finite number by its bits";
 const KV = "the CPU refuses keys and values the GPU wrote where a float16 of them is no finite number (its exponent all ones)";
@@ -34,7 +33,9 @@ export const NAN_READINGS: Record<string, { wants: string[]; relied?: string }> 
   "NaN × 0": { wants: ["NaN"], relied: SCALE },
   "+Inf × 0": { wants: ["NaN"] },
   "+Inf − +Inf": { wants: ["NaN"] },
-  "exp(NaN)": { wants: ["NaN"], relied: EXP },
+  // (exp() of a NaN alone is no mark's: SwiftShader makes it +Inf, and its softmax and SiLU carry the NaN all the same,
+  // +Inf against +Inf or a NaN over +Inf: the rows of those are the marks', bench.yml's run 45879339792)
+  "exp(NaN)": { wants: ["NaN"] },
   "exp(+Inf)": { wants: ["+Inf"] },
   "exp(−Inf)": { wants: ["0"] },
   "max(NaN, 1)": { wants: ["NaN"] },
