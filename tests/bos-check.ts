@@ -58,10 +58,8 @@ const FIRST: Row[] = [
   { bos: null, text: "<|im_start|>", repos: ["bartowski/SmolLM2-135M-Instruct-GGUF"] },
   // the entry's own BOS in front of the template's mark (QWEN3_OWN_BOS, eurollm, harmony, spark)
   { bos: 151643, text: "<|endoftext|>", repos: ["Qwen/Qwen2.5-Coder-1.5B-Instruct", "Qwen/Qwen2.5-Coder-3B-Instruct",
-    "Qwen/Qwen2.5-Coder-7B-Instruct", "Qwen/Qwen3-0.6B", "Qwen/Qwen3-1.7B", "Qwen/Qwen3-4B", "Qwen/Qwen3-4B-Instruct-2507",
-    "Qwen/Qwen3-4B-Thinking-2507", "SakanaAI/TinySwallow-1.5B-Instruct-GGUF", "bartowski/Qwen2.5-0.5B-Instruct-GGUF",
-    "bartowski/Qwen2.5-1.5B-Instruct-GGUF", "bartowski/Qwen2.5-3B-Instruct-GGUF", "bartowski/Qwen2.5-7B-Instruct-GGUF",
-    "bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF", "cyberagent/CAT-Thinking-8B", "elyza/ELYZA-Shortcut-1.0-Qwen-7B",
+    "Qwen/Qwen2.5-Coder-7B-Instruct", "Qwen/Qwen3-0.6B", "Qwen/Qwen3-4B-Thinking-2507", "SakanaAI/TinySwallow-1.5B-Instruct-GGUF",
+    "bartowski/Qwen2.5-0.5B-Instruct-GGUF", "bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF", "elyza/ELYZA-Shortcut-1.0-Qwen-7B",
     "prism-ml/Bonsai-1.7B-unpacked", "prism-ml/Bonsai-4B-unpacked", "prism-ml/Ternary-Bonsai-1.7B-unpacked",
     "prism-ml/Ternary-Bonsai-4B-unpacked", "tokyotech-llm/Medical-Qwen3-Swallow-8B", "tokyotech-llm/Qwen3-Swallow-8B-CPT-v0.2",
     "tokyotech-llm/Qwen3-Swallow-8B-RL-v0.2", "tokyotech-llm/Qwen3-Swallow-8B-SFT-v0.2"] },
@@ -71,7 +69,7 @@ const FIRST: Row[] = [
     "XHToken/Spark-X2.5-4B", "XHToken/Spark-X2.6-1.7B", "XHToken/Spark-X2.6-4B"] },
   // the entry's BOS is the template's first mark, and the format begins after it (T264's form)
   { bos: 151644, text: "<|im_start|>", repos: ["AXCXEPT/Qwen3-EZO-8B-beta", "Aratako/Qwen3-8B-RP-v0.1", "Qwen/Qwen3-14B",
-    "Qwen/Qwen3-8B", "abeja/ABEJA-Qwen3-14B-Agentic-256k-v0.1", "prism-ml/Bonsai-8B-unpacked",
+    "Qwen/Qwen3-1.7B", "Qwen/Qwen3-4B", "Qwen/Qwen3-8B", "abeja/ABEJA-Qwen3-14B-Agentic-256k-v0.1", "prism-ml/Bonsai-8B-unpacked",
     "prism-ml/Ternary-Bonsai-8B-unpacked", "shisa-ai/shisa-v2.1-qwen3-8b"] },
   { bos: 248045, text: "<|im_start|>", repos: ["InternScience/Agents-A1-4B", "Qwen/Qwen3.5-0.8B", "Qwen/Qwen3.5-2B", "Qwen/Qwen3.5-4B",
     "Qwen/Qwen3.5-9B", "Qwen/Qwen3.8-27B", "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5", "TokenRhythm/NeoHorse-1-4B",

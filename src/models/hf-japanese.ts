@@ -155,7 +155,7 @@ export const HF_JAPANESE: Entry[] = [
   { group: "hf", id: "hf-qwen2.5-3b-instruct", name: "Alibaba Qwen2.5 3B Instruct", note: "answers instructions · 日本語 / English · fetches 3.3 GB (GGUF) → int8 3.5 GB", japanese: true, converted: 3.5e9,
     original: "Qwen/Qwen2.5-3B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-3B-Instruct-GGUF", revision: "f302c64a2269a69fb27b2f9473b362f5bb8e78d8", weights: "Qwen2.5-3B-Instruct-Q8_0.gguf" }, download: 3285476512,
-    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: JAPANESE_SAMPLING,
+    conversion: {}, options: {}, generation: JAPANESE_SAMPLING,
     ...ASKED_JAPANESE },
   { group: "hf", id: "hf-sarashina2.2-3b-instruct", name: "SB Intuitions sarashina2.2 3B Instruct", note: "answers instructions · 日本語 · fetches 3.6 GB (GGUF) → int8 3.8 GB", japanese: true, converted: 3.8e9,
     ...ggufOf("mmnga/sarashina2.2-3b-instruct-v0.1-gguf", "31d771319b04032f33e0d9d860f3984ea4812154", "sarashina2.2-3b-instruct-v0.1-Q8_0.gguf",

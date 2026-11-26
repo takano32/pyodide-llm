@@ -141,7 +141,9 @@ export type Revisions = { gguf: string; original: string };
 export function thinkingAndNot(id: string, name: string, source: Source, download: number, sizes: string, { languages = "日本語 / English", ...chat }: { languages?: string } & Partial<Remote> = {},
   formats: { thinking?: string; atOnce?: string } = {}, sampling: { thinking?: Generation; atOnce?: Generation } = {}): Entry[] {
   // T369: where nothing else is said, a Qwen3 as the list has had it: <|endoftext|> in front of ChatML (QWEN3_OWN_BOS and
-  // the whole format, formats.ts's note on QWEN25). The converter alone would begin with the template's <|im_start|> now
+  // the whole format, formats.ts's note on QWEN25). The converter alone would begin with the template's <|im_start|> now.
+  // T399: an entry that begins as the real template does gives QWEN3_FROM_IM_START and the formats that begin after
+  // it (QWEN3_THINKING_AFTER_START, QWEN3_AT_ONCE_AFTER_START), as the 8B's
   const common: Common = { group: "hf", ...source, download, conversion: {}, options: QWEN3_OWN_BOS, shares: [`${id}-thinking`, id],
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, japanese: true, ...chat };
   return [

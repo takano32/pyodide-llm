@@ -1,7 +1,7 @@
 // From Hugging Face, converted in the browser: the English classics and the well-known instruct models.
 import {
-  ASKED_ENGLISH, ASKED_JAPANESE, ASKS_CODE, CHATML_AFTER_START, MISTRAL, MISTRAL_V3, QWEN25, QWEN3_OWN_BOS,
-  SMOLLM3_AT_ONCE, SMOLLM3_THINKING, STORY_ENGLISH, ZEPHYR, chatml, smollm3,
+  ASKED_ENGLISH, ASKED_JAPANESE, ASKS_CODE, CHATML_AFTER_START, MISTRAL, MISTRAL_V3, QWEN25, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START,
+  QWEN3_OWN_BOS, QWEN3_THINKING_AFTER_START, SMOLLM3_AT_ONCE, SMOLLM3_THINKING, STORY_ENGLISH, ZEPHYR, chatml, smollm3,
 } from "./formats.ts";
 import { JAPANESE_SAMPLING, thinking } from "./sampling.ts";
 import { ggufOf, thinkingAndNot } from "./builders.ts";
@@ -79,7 +79,7 @@ export const HF_CLASSICS: Entry[] = [
   { group: "hf", id: "hf-qwen2.5-1.5b-instruct", name: "Alibaba Qwen2.5 1.5B Instruct", note: "answers instructions · 日本語 / English · fetches 1.6 GB (GGUF) → int8 1.7 GB", japanese: true, converted: 1.7e9,
     original: "Qwen/Qwen2.5-1.5B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-1.5B-Instruct-GGUF", revision: "9eadc66189c7641e1ddd226b8267a9119b2ce2d4", weights: "Qwen2.5-1.5B-Instruct-Q8_0.gguf" }, download: 1646573312,
-    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: JAPANESE_SAMPLING,
+    conversion: {}, options: {}, generation: JAPANESE_SAMPLING,
     ...ASKED_JAPANESE },
   { group: "hf", id: "hf-smollm2-1.7b-instruct", name: "Hugging Face SmolLM2 1.7B Instruct", note: "answers instructions · English · fetches 1.8 GB (GGUF) → int8 1.9 GB", japanese: false, converted: 1.9e9,
     original: "HuggingFaceTB/SmolLM2-1.7B-Instruct",
@@ -171,9 +171,10 @@ export const HF_CLASSICS: Entry[] = [
       "HuggingFaceTB/SmolLM2-360M", "f8027fd0eaeea54caa13c31d31b9fdc459c38b49"), download: 386404864,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, ...STORY_ENGLISH },
   // Qwen2.5 Coder above the 0.5B one. The real tokenizer puts nothing in front of a text and the format begins with
-  // <|im_start|>; the page begins with the converter's BOS, <|endoftext|>, as the Qwen2.5 of the list do: with it the
+  // <|im_start|>; the page begins with <|endoftext|> in front, as the Qwen2.5 0.5B Instruct does: with it the
   // 1.5B's, the 3B's and the 7B's own answers to five questions are 0.5, 0.4 and 0.2% higher in perplexity, the
-  // likeliest next token the same at 97.6, 98.4 and 99.6% of the positions (a Qwen2.5 is no Qwen3 8B), so it stays.
+  // likeliest next token the same at 97.6, 98.4 and 99.6% of the positions (a Qwen2.5 is no Qwen3 8B), so it stays
+  // (T399: +0.04, +0.08 and -0.52% on handwritten answers, within the standard error; the owner's choice).
   // The 3B's license is Qwen2.5-3B's, for research
   { group: "hf", id: "hf-qwen2.5-coder-1.5b-instruct", name: "Alibaba Qwen2.5 Coder 1.5B Instruct", note: "writes code · English · fetches 1.6 GB (GGUF) → int8 1.7 GB", japanese: false, converted: 1.7e9,
     ...ggufOf("bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF", "1af47f78b1f9b0c242fabe43f7a365d5a67f3207", "Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
@@ -198,14 +199,15 @@ export const HF_CLASSICS: Entry[] = [
   // with this engine alike; tests/chat_nll.py, tests/chat_fluency.ts), and the model's own answers move (KL 0.05 nats a
   // token, the likeliest token the same at 94%), where plain text is 5% better with it. So the BOS is the format's own first
   // token, <|im_start|> (128040), and the format begins after it: the ids are the real template's (a Qwen3 8B's
-  // QWEN3_FROM_IM_START, T250's review). It stops at <|im_end|> (config.json's EOS), at <|begin_of_text|> and at the mark
-  // of a new turn. T369: the BOS and the format are what the converter says of it now (T264: a model whose template it read
-  // begins with the template's own first token), so the entry says neither. The stop tokens it says: the converter's
-  // are the BOS and the EOS the model's files name, and not the mark of a new turn (the review of T369)
+  // QWEN3_FROM_IM_START, T250's review). T369: the BOS and the format are what the converter says of it now (T264: a
+  // model whose template it read begins with the template's own first token), so the entry says neither. T399 (the
+  // owner's choice, 2026-11-26): its stops are the converter's too, <|im_end|> (config.json's EOS) and <|begin_of_text|>,
+  // and no longer the mark of a new turn (<|im_start|>, 128040): none of 36 answers of tests/answers.ts wrote it. Where
+  // an answer goes on to write the next turn, give it back: options: { stop_tokens: [128000, 128039, 128040] }
   { group: "hf", id: "hf-hermes-3-llama-3.2-3b", name: "Nous Research Hermes 3 Llama 3.2 3B", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB", japanese: false, converted: 3.6e9,
     ...ggufOf("NousResearch/Hermes-3-Llama-3.2-3B-GGUF", "3cd927095d8cbab12c743f932aa63b6f7bbfa141", "Hermes-3-Llama-3.2-3B.Q8_0.gguf",
       "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
-    conversion: {}, options: { stop_tokens: [128000, 128039, 128040] }, generation: JAPANESE_SAMPLING,
+    conversion: {}, options: {}, generation: JAPANESE_SAMPLING,
     ...ASKED_ENGLISH },
   // T255: Hugging Face's SmolLM3 3B, a Llama every fourth layer of which RoPE leaves alone (the conversion's options
   // name the layers: unturned). ggml-org's Q8_0 GGUF, which tests/gguf_check.py tensors held to the original
@@ -243,7 +245,8 @@ export const HF_CLASSICS: Entry[] = [
     ...ASKED_ENGLISH },
   // T124: Qwen3, each twice (thinking and not), and Qwen3's 2507 4B, one of each form. T203: from Q8_0 GGUFs (Qwen's
   // own 0.6B and 1.7B are not the original's weights: tests/gguf_check.py tensors found every matrix 0.9 to 2.2% off
-  // its Q8_0, so unsloth's)
+  // its Q8_0, so unsloth's). T399: the 1.7B begins as the real template does (formats.ts's note on QWEN25); the 0.6B
+  // keeps <|endoftext|> in front (+3.41% on handwritten answers with it, the owner's choice)
   ...thinkingAndNot("hf-qwen3-0.6b", "Alibaba Qwen3 0.6B",
     ggufOf("unsloth/Qwen3-0.6B-GGUF", "50968a4468ef4233ed78cd7c3de230dd1d61a56b", "Qwen3-0.6B-Q8_0.gguf",
       "Qwen/Qwen3-0.6B", "c1899de289a04d12100db370d81485cdf75e47ca"), 639447744,
@@ -251,5 +254,6 @@ export const HF_CLASSICS: Entry[] = [
   ...thinkingAndNot("hf-qwen3-1.7b", "Alibaba Qwen3 1.7B",
     ggufOf("unsloth/Qwen3-1.7B-GGUF", "d7f544eead698dbd1f15126ef60b45a1e1933222", "Qwen3-1.7B-Q8_0.gguf",
       "Qwen/Qwen3-1.7B", "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"), 1834426944,
-    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { converted: 1.9e9 }),
+    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { converted: 1.9e9, options: QWEN3_FROM_IM_START },
+    { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
 ];

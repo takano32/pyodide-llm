@@ -15,7 +15,7 @@ export const HF_JAPANESE_LARGE: Entry[] = [
   { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Alibaba Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 8.1 GB (GGUF) → int8 8.6 GB", japanese: true, converted: 8.6e9,
     original: "Qwen/Qwen2.5-7B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-7B-Instruct-GGUF", revision: "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031", weights: "Qwen2.5-7B-Instruct-Q8_0.gguf" }, download: 8098525888,
-    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: JAPANESE_SAMPLING,
+    conversion: {}, options: {}, generation: JAPANESE_SAMPLING,
     ...ASKED_JAPANESE },
   // T593: ELYZA's Qwen2.5 7B Instruct taught to answer without its steps of reasoning: the same template as the
   // Qwen2.5's (its system message and all), so the same BOS and format. The sampling of its card's example (0.6, 0.95)
@@ -332,7 +332,10 @@ export const HF_JAPANESE_LARGE: Entry[] = [
   { group: "hf", id: "hf-cat-thinking-8b", name: "CyberAgent CAT-Thinking 8B", note: "thinks in Japanese before it answers · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB", japanese: true, thinks: true, converted: 9.2e9,
     ...ggufOf("mmnga-o/CAT-Thinking-8B-gguf", "d1747e658749aa7a67858914f0a60a2364172c2b", "CAT-Thinking-8B-Q8_0.gguf",
       "cyberagent/CAT-Thinking-8B", "0337f7bcf8d5e6dc08610e205bfe01d566e17669"), download: 8709518944,
-    conversion: {}, options: QWEN3_OWN_BOS, template: CHATML,
+    // T399 (the owner's choice, 2026-11-26): its BOS and format the converter's, <|im_start|> and the template after it
+    // (the real IDs). Its files name no <|endoftext|>, so the converter stops at <|im_end|> alone: the stops are said,
+    // as every Qwen3 of the list stops
+    conversion: {}, options: { stop_tokens: [151643, 151645] },
     generation: { steps: 0, temperature: 0.8, topp: 0.95, repetition_penalty: 1.05 },
     ...ASKED_JAPANESE },
   // T649.3: PFN's PLaMo 3 Translate (PFN and NICT's PLaMo 3 trained to translate), three sizes, each both ways (T649.4:

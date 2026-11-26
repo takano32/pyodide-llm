@@ -17,7 +17,8 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-qwen3-4b", "Alibaba Qwen3 4B",
     ggufOf("Qwen/Qwen3-4B-GGUF", "bc640142c66e1fdd12af0bd68f40445458f3869b", "Qwen3-4B-Q8_0.gguf",
       "Qwen/Qwen3-4B", "1cfa9a7208912126459214e8b04321603b3df60c"), 4280404704,
-    "fetches 4.3 GB (GGUF) → int8 4.5 GB", { converted: 4.5e9 }),
+    "fetches 4.3 GB (GGUF) → int8 4.5 GB", { converted: 4.5e9, options: QWEN3_FROM_IM_START },
+    { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
   ...thinkingAndNot("hf-qwen3-8b", "Alibaba Qwen3 8B",
     ggufOf("Qwen/Qwen3-8B-GGUF", "7c41481f57cb95916b40956ab2f0b139b296d974", "Qwen3-8B-Q8_0.gguf",
       "Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218"), 8709518112,
@@ -54,7 +55,7 @@ export const HF_FAMILIES: Entry[] = [
   { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Alibaba Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB", japanese: true, converted: 4.5e9,
     ...ggufOf("unsloth/Qwen3-4B-Instruct-2507-GGUF", "a06e946bb6b655725eafa393f4a9745d460374c9", "Qwen3-4B-Instruct-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Instruct-2507", "cdbee75f17c01a7cc42f958dc650907174af0554"), download: 4280405600,
-    conversion: {}, options: QWEN3_OWN_BOS, template: CHATML, generation: atOnce, ...ASKED_JAPANESE },
+    conversion: {}, options: {}, generation: atOnce, ...ASKED_JAPANESE },
   // its chat_template begins the answer with <think> itself
   { group: "hf", id: "hf-qwen3-4b-thinking-2507", name: "Alibaba Qwen3 4B Thinking 2507", note: "thinks before it answers · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB", japanese: true, thinks: true, converted: 4.5e9,
     ...ggufOf("unsloth/Qwen3-4B-Thinking-2507-GGUF", "f40adb104d4d44aee52f398b60597c5866a973a3", "Qwen3-4B-Thinking-2507-Q8_0.gguf",

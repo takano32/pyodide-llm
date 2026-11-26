@@ -25,7 +25,7 @@
 - T171 [設計][WebGPU] forward の単位で backend を分ける（CPU の WASM と GPU を並べる） — 未着手
 - T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 反映済み
 - T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 未着手
-- T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 未着手
+- T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 反映済み
 - T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 未着手
 - T408 [計測][変換] arm64 のランナーで、段取りを通す道具の変換が 1〜2% 遅く出る run がある訳 — 未着手
 - T410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 未着手
@@ -386,7 +386,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **T396.1 先に測る**: 2 回目の訪問の準備完了のうち、Pyodide の秒と読み出しの秒（記録: llm-jp-3 440M は全部で 4.4 秒、27B は 26〜67 秒）。重ねて縮むのは短いほうの分まで。効きは未計測。**T396.2** 効くなら実装。
 - **持ち主の決め（2026-11-26、選択肢で）**: 先に測る（Pyodide の秒と読み出しの秒）。はっきり縮むなら実装、縮まなければ閉じる（順の 5）。
 
-### T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 状態: 未着手（2026-11-26、持ち主の決め: 勧めの項目を本物の ID に寄せる）。前の状態: 測った: 持ち主の決め待ち（2026-11-13: 残りの 19 項目と Hermes 3 の止まり・CAT-Thinking・Ternary Bonsai 1.7B と 4B の表と勧めは下。前の状態: 未着手、2026-10-10、T369 から。規模 中）
+### T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 状態: 反映済み（2026-11-26: 持ち主の決めの 10 項目を本物の ID に寄せた。下の「寄せた」）。前の状態: 未着手（2026-11-26、持ち主の決め: 勧めの項目を本物の ID に寄せる）。その前: 測った: 持ち主の決め待ち（2026-11-13: 残りの 19 項目と Hermes 3 の止まり・CAT-Thinking・Ternary Bonsai 1.7B と 4B の表と勧めは下。前の状態: 未着手、2026-10-10、T369 から。規模 中）
 - T369 は、頭のトークンか書式を変換器に任せていた一覧の 21 項目（Qwen2.5 の 8 つ・TinySwallow・Qwen3 の 4B 以下の 8 つ・Qwen3 Swallow 8B の 2 つ・EuroLLM・llm-jp-4）と Hermes 3 の止まりを、前の値に手で固定した（送る ID を動かさないため）。手書きの `bos` を持つ項目は 32 → 52、書式は 63 → 80 に増えた。固定を外せば変換器の答え（本物の `apply_chat_template` と同じ ID）になり、手書きが減る。**外す前に測る**: 項目ごとに、素の文・手書きの答え・モデル自身の答えの 3 つ（AGENTS.md の「頭のトークンの効きは…」）。Qwen3 の 4B 以下は `<|im_start|>` のほうが 8〜10% 悪かった記録がある（T250）。外した項目は固定値（`fixed-outputs.json`）を書き直す。`CONVERTER` は上げなくてよい（項目の options を消すだけ）。CAT-Thinking と Bonsai 1.7B・4B も同じ表で。
 - **T312 から**: `format_check.py` の `UNMEASURED` の 5 項目（EuroLLM 1.7B instruct・llm-jp-4 8B instruct・RakutenAI 7B chat・TinyLlama 1.1B chat・zephyr 7B beta）は、前に 1 つ多い BOS の効きをまだ測っていない。同じ表で測り、小さければ `LENIENT` に訳と数を書いて移し、大きければ項目を本物の ID に替える。
 - **T312 の 5 項目を測った（2026-11-04、Opus medium、ブランチ `t.399-five-starts`）**: どの項目も変えていない。A は本物の書式（前に BOS なし）、B はページが送る形（前に BOS が 1 つ多い）。素の文は `start_check.ts`（ページのエンジン、int8、1500 トークン、窓 512。日本語は Wikipedia の 3 記事、英語のモデルは英語の 3 記事）。手書きの答えは `chat_nll.py`（transformers の float32、24 の手書きの答え）。モデル自身の答えは `answer_check.ts`（ページのエンジン、greedy 60 トークン、5 問）と、1.7B 以下は `chat_nll.py` の fidelity も（transformers、40 トークン、24 問）。手書きの答えの B − A は perplexity の差、SE は 1 組の差の標準誤差。
@@ -451,6 +451,21 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **持ち主の決め（2026-11-26、選択肢で）**: Qwen2.5 Instruct の 1.5B・3B・7B を本物の ID に寄せる（頭の 151643 を外す）。0.5B・Coder の 4 つ・TinySwallow は今のまま。
 - **持ち主の決め（2026-11-26、選択肢で）**: Qwen3 の 1.7B・4B（すぐ答える形と考える形）と 4B Instruct 2507 を寄せる。0.6B・4B Thinking 2507・Swallow 8B は今のまま。
 - **持ち主の決め（2026-11-26、選択肢で）**: CAT-Thinking 8B を寄せる。Hermes 3 の止まりの固定を外す（本番で次のターンを書き始めたら戻す）。順の 3 の頭。
+- **寄せた（2026-11-26、Opus medium、ブランチ `worktree-agent-ab098757c1b1077dd`）**: 持ち主の決めの 10 項目を本物の ID に。`CONVERTER` は上げていない（項目の options と書式だけ: 保存した変換は使い回される）。項目ごとの前後（送る ID の頭は `format_check.py` の 1 つ目の問い、止まりは `conversions_compare.py` の list の止まり）:
+
+  | 項目 | 前（options / 書式） | 後 | 送る ID の頭 | 止まり |
+  |---|---|---|---|---|
+  | Qwen2.5 1.5B・3B・7B Instruct | `QWEN3_OWN_BOS` / `QWEN25` | `options: {}`、書式なし（変換器の読み） | `[151643, 151644, 8948, 198, …]` → `[151644, 8948, 198, …]` | [151643, 151645] のまま |
+  | Qwen3 1.7B・4B（すぐ答える形と考える形） | `QWEN3_OWN_BOS` / `QWEN3_AT_ONCE`・`CHATML` | `QWEN3_FROM_IM_START` / `QWEN3_AT_ONCE_AFTER_START`・`QWEN3_THINKING_AFTER_START`（8B と同じ形） | `[151643, 151644, 872, 198, …]` → `[151644, 872, 198, …]` | [151643, 151645] → [151643, 151644, 151645]（8B と同じく新しいターンの印でも止まる） |
+  | Qwen3 4B Instruct 2507 | `QWEN3_OWN_BOS` / `CHATML` | `options: {}`、書式なし | 同上 | [151643, 151645] のまま |
+  | CAT-Thinking 8B | `QWEN3_OWN_BOS` / `CHATML` | `options: { stop_tokens: [151643, 151645] }`、書式なし | 同上 | [151643, 151645] のまま（下の (b)） |
+  | Hermes 3 Llama 3.2 3B | `{ stop_tokens: [128000, 128039, 128040] }` | `options: {}` | 変わらない | [128000, 128039, 128040] → [128000, 128039] |
+
+  - `tests/format_check.py`（手元の `.venv`、`.tmp/fetch`）: 10 項目とも 9/9、前に 1 つ多い BOS の行は無い。`--hf` も 10 項目とも「9 of them the real ids exactly」。`LENIENT` から Qwen2.5 の家族の鍵 `"hf-qwen2.5-"`・Qwen3 の 1.7B と 4B・4B Instruct 2507・CAT-Thinking を外し、残す項目（Qwen2.5 0.5B・Coder の家族の鍵 `"hf-qwen2.5-coder-"`・TinySwallow・Qwen3 0.6B・4B Thinking 2507・Swallow）の訳にこの回の手書きの答えの数を足した。`tests/test_format_check.py` の例を残す項目に替え、寄せた項目は「完全に同じでないと通らない」側に足した。`UNMEASURED`・`KNOWN` に当たる項目は無かった。
+  - `tests/conversions_compare.py .tmp/fetch`（一覧の全部、本線 09102929 と）: 「206 of 216 entries the same in everything」、違うのはこの 10 項目だけで、どれも options（変換器の出すもの）と tokenizer.bin は同じ、list の送る ID・書式・止まりだけが動いた（上の表）。寄せた項目は Qwen3 の 1.7B・4B のすぐ答える形を除いて `?hf=` と同じ ID を送る（すぐ答える形は手書きの空の考えを持つ）。
+  - `tests/bos-check.ts` の `FIRST`: 151643 の行から寄せた 7 つのリポジトリを外し、Qwen/Qwen3-1.7B と Qwen/Qwen3-4B を 151644 の行に。網 `node tests/unchanged.ts models` は「differ: MODELS」で、両方の木の `src/models.ts` を import して比べると違う項目はこの 10 だけ（218 は同じ）。固定値（`fixed_outputs.py` の `MODELS`）にこの 10 項目は無く、書き直す物は無かった。
+  - 手元: types・models-check・bos-check・pytest の `test_format_check.py`、`npm run build && node tests/dist-check.ts`、軽い組（2171 秒）が通った。
+  - 取りまとめ役の決め（訳）: (a) Qwen3 の 1.7B・4B は 2 つの形が書式を手で持つ（すぐ答える形の空の考え）ので、`bos-check` の決まり（`bos` と書式は組）どおり 8B と同じ `QWEN3_FROM_IM_START` に。止まりに 151644（新しいターンの印）が 1 つ増えるが、測った B（止まり [151643, 151645]）と送る ID は同じで、増えた止まりは次のターンを書き始めた所で止めるだけ。(b) CAT-Thinking は変換器に任せると止まりが `<|im_end|>` だけになる（ファイルが `<|endoftext|>` を名指さない）ので、止まりだけを書いて測った B と同じにした。(c) 変換器を変えていないので検証手順 7 の CI の参照（`reference_qwen35.sh --only=real`）は省いた。CI を省いた。訳: 項目の options と書式だけの変更で、送る ID は手元の `format_check.py` が本物の `apply_chat_template` と、`conversions_compare.py` が前後を全項目で見た。本番の確かめはデプロイの後の `models.yml`。
 
 ### T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 状態: 未着手（2026-11-26、持ち主の決め: 文面は (a)）。前の状態: 未着手（2026-10-10、T369 から。文面は持ち主に見せる。規模 小）
 - いまの文:「What `?hf=Qwen/Qwen3.5-0.8B` still loses is plain text, where there is no chat format and the converter's BOS comes first.」T369 から変換器が書式を読むので合わない。案:「Opened with `?hf=`, a Qwen3.5 gets the same beginning since the converter reads its template (2026-10).」

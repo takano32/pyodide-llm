@@ -38,22 +38,25 @@ def test_nothing_may_stand_in_front_but_where_it_was_measured():
     real, old_design = [IM_START, USER, NEWLINE], [ENDOFTEXT, IM_START, USER, NEWLINE]
     for model_id in ("hf-qwen3.5-0.8b", "hf-qwen3.5-9b-thinking", "hf-granite-4.2-3b", "hf-minicpm5-1b-thinking", "hf-ternary-bonsai-2-27b",
                      "hf-hermes-3-llama-3.2-3b", "hf-neohorse-1-4b", "hf-agents-a1-4b", "hf-smollm3-3b", "hf-qwen3-8b",
-                     "hf-shisa-v2.1-qwen3-8b", "hf-ternary-bonsai-8b", "hf-a-new-entry"):
+                     "hf-shisa-v2.1-qwen3-8b", "hf-ternary-bonsai-8b", "hf-a-new-entry",
+                     # T399: begin as the real template does since the owner's choice
+                     "hf-qwen3-4b", "hf-qwen3-1.7b-thinking", "hf-qwen3-4b-instruct-2507", "hf-qwen2.5-1.5b-instruct",
+                     "hf-qwen2.5-7b-instruct", "hf-cat-thinking-8b"):
         assert format_check.ids_match(model_id, real, real)
         assert not format_check.ids_match(model_id, old_design, real)
         assert format_check.lenient(model_id) is None
     # where it was measured to cost little, the page's BOS in front is let by (T131), and the doubled one is not
-    for model_id in ("hf-qwen3-4b", "hf-qwen3-4b-thinking-2507", "hf-qwen2.5-coder-7b-instruct", "hf-eurollm-1.7b-instruct"):
+    for model_id in ("hf-qwen3-0.6b", "hf-qwen3-4b-thinking-2507", "hf-qwen2.5-coder-7b-instruct", "hf-eurollm-1.7b-instruct"):
         assert format_check.ids_match(model_id, old_design, real)
         assert format_check.lenient(model_id)
     # a key that is an id is that entry only (the review: "hf-qwen3-4b" let the 2507s by too, as a prefix); one that
     # ends with "-" is a family
-    assert format_check.lenient("hf-qwen3-4b") != format_check.lenient("hf-qwen3-4b-instruct-2507")
-    assert format_check.lenient("hf-qwen3-4b-new") is None and format_check.lenient("hf-zephyr-7b-beta-2") is None
-    assert format_check.lenient("hf-qwen2.5-14b-instruct")
+    assert format_check.lenient("hf-qwen3-4b-thinking-2507") and format_check.lenient("hf-qwen3-4b-thinking-2507-new") is None
+    assert format_check.lenient("hf-qwen3-0.6b-new") is None and format_check.lenient("hf-zephyr-7b-beta-2") is None
+    assert format_check.lenient("hf-qwen2.5-coder-14b-instruct") and format_check.lenient("hf-qwen2.5-14b-instruct") is None
     # no entry is in both
     assert not set(format_check.LENIENT) & set(format_check.UNMEASURED)
-    assert not format_check.ids_match("hf-qwen3-4b", [IM_START, IM_START, USER, NEWLINE], real)
+    assert not format_check.ids_match("hf-qwen3-0.6b", [IM_START, IM_START, USER, NEWLINE], real)
     # --hf (T269): the converter's BOS in front is what ?hf= sends for these families too
     assert format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real, alone=True)
     assert not format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real)

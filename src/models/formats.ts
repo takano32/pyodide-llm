@@ -50,8 +50,11 @@ export const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [
 // until then (<|endoftext|> in front of the template's <|im_start|>: Qwen2.5, TinySwallow, a Qwen3 of 4B or less and
 // those made from one) keep sending what they sent: a Qwen2.5 is within 3% either way and a Qwen3 of 4B or less 8 to 10%
 // worse on plain text with <|im_start|> first (T131, T250's review), and what they write was read with that BOS. So
-// they say it now: the BOS (QWEN3_OWN_BOS, below) and the whole format, as the converter read it before. Whether they
-// should begin as the real template does is a measurement to make (TASKS.md's T369, its findings)
+// they say it now: the BOS (QWEN3_OWN_BOS, below) and the whole format, as the converter read it before. T399
+// measured them (plain text, handwritten answers, the model's own answers both ways): where the handwritten answers
+// were worse with <|endoftext|> in front by more than twice the standard error, the entry begins as the real template
+// does since (the owner's choice, 2026-11-26: Qwen2.5 1.5B, 3B and 7B Instruct, Qwen3 1.7B and 4B, Qwen3 4B Instruct
+// 2507, CAT-Thinking 8B). The rest keep it: Qwen2.5 0.5B, the Coders, TinySwallow, Qwen3 0.6B, 4B Thinking 2507, Swallow
 export const QWEN25 = `<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n${CHATML}`;
 export const TINYSWALLOW = "<|im_start|>system\nあなたは、Sakana AI株式会社が開発したTinySwallowです。小型ながら、誠実で優秀なアシスタントです。" +
   `<|im_end|>\n${CHATML}`;

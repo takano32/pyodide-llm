@@ -112,33 +112,36 @@ KNOWN = {
 # it passed everywhere but in a list of families found to lose by it after they were in the list (T236's Qwen3.5,
 # Granite 4.2, MiniCPM5, Ternary Bonsai 2, Hermes 3, the 8B Qwen3s: up to +144% on plain text). A new entry that sends
 # one more token in front now fails until it is measured and put here. A key is an entry's id, or, ending with "-", a
-# family measured on some of its sizes (only Qwen2.5's: every hf-qwen2.5- entry the list gets is let by, measured or not)
+# family measured on some of its sizes (only Qwen2.5 Coder's: every hf-qwen2.5-coder- entry the list gets is let by,
+# measured or not). T399 (the owner's choice, 2026-11-26): the entries whose handwritten answers were worse with the BOS
+# in front by more than twice the standard error begin as the real template does, and are not here (Qwen2.5 1.5B, 3B
+# and 7B Instruct, Qwen3 1.7B and 4B, 4B Instruct 2507, CAT-Thinking 8B)
 LENIENT = {
     # T131: Qwen2.5 0.5B Instruct 23.30 with <|endoftext|>, 23.43 without (Japanese), 19.25 and 19.29 (English).
-    # T252: Qwen2.5 Coder 1.5B, 3B, 7B, the answers +0.5%, +0.4%, +0.2% (KL 0.0025, 0.0009, 0.0012)
-    "hf-qwen2.5-": "Qwen2.5 and Qwen2.5 Coder: within 3% on plain text, +0.5% at most on answers (T131, T252)",
+    # T252: Qwen2.5 Coder 1.5B, 3B, 7B, the answers +0.5%, +0.4%, +0.2% (KL 0.0025, 0.0009, 0.0012). T399: on
+    # handwritten answers the 0.5B -1.35%, the Coder 0.5B +0.41%, 1.5B +0.04%, 3B +0.08%, 7B -0.52%
+    "hf-qwen2.5-0.5b-instruct": "-1.35% on handwritten answers (T131, T399)",
+    "hf-qwen2.5-coder-": "Qwen2.5 Coder: +0.41% at most on handwritten answers (T252, T399)",
     # T593: ELYZA-Shortcut 1.0 Qwen 7B (a Qwen2.5 7B) +0.88% on plain text
     "hf-elyza-shortcut-1.0-qwen-7b": "+0.88% on plain text (T593)",
     # T602: TinySwallow 1.5B (the base) -1.43% on plain text; the instruct is the same model's distillation
-    "hf-tinyswallow-1.5b-instruct": "the base -1.43% on plain text (T602)",
-    # T250's review: the Qwen3s of 4B and below +5.4% at most on plain text (<|im_start|> in front is 5.5 to 10.2%
-    # worse), 0.6B +4.0% and 1.7B +1.5% on their own answers. Not the 8B ones (+144%: they begin at <|im_start|>)
-    **{f"hf-qwen3-{size}{form}": "the Qwen3s of 4B and below: +5.4% at most on plain text (T250's review)"
-       for size in ("0.6b", "1.7b", "4b") for form in ("", "-thinking")},
-    # (T250's review: the 2507s were measured on their own, Instruct -1.2%, Thinking +0.3% on plain text)
-    "hf-qwen3-4b-instruct-2507": "-1.2% on plain text (T250's review)",
-    "hf-qwen3-4b-thinking-2507": "+0.3% on plain text (T250's review)",
+    # T399: the instruct -2.97% on plain text and -1.92% on handwritten answers (the BOS better on 23 of 24)
+    "hf-tinyswallow-1.5b-instruct": "-1.92% on handwritten answers (T602, T399)",
+    # T250's review: Qwen3 0.6B +2.5% on plain text, +4.0% on its own answers; T399: +3.41% on handwritten answers
+    # (twice the standard error: kept, the owner's choice). The 1.7B and the 4B begin at <|im_start|> since T399
+    **{f"hf-qwen3-0.6b{form}": "+3.41% on handwritten answers (T250's review, T399)" for form in ("", "-thinking")},
+    # T250's review: 4B Thinking 2507 +0.3% on plain text; T399: -4.29% on handwritten answers
+    "hf-qwen3-4b-thinking-2507": "+0.3% on plain text, -4.29% on handwritten answers (T250's review, T399)",
     # T250's review (and T236: the 1.7B's answers KL 0.008): Ternary Bonsai 1.7B -1.5%, 4B -1.5% on plain text
     "hf-ternary-bonsai-1.7b": "-1.5% on plain text (T250's review, T236)",
     "hf-ternary-bonsai-4b": "-1.5% on plain text (T250's review)",
     # T286.2, T286.3: the 1-bit Bonsai 1.7B +0.29%, 4B +0.50% on plain text
     "hf-bonsai-1.7b": "+0.29% on plain text (T286.2)", "hf-bonsai-4b": "+0.50% on plain text (T286.3)",
-    # T250's review: Qwen3 Swallow 8B RL +3.3% on plain text; T606: the SFT +0.98%, the CPT +1.13%, the medical +0.33%
+    # T250's review: Qwen3 Swallow 8B RL +3.3% on plain text (T399: -0.32% on handwritten answers); T606: the SFT
+    # +0.98%, the CPT +1.13%, the medical +0.33%
     **{f"hf-qwen3-swallow-8b{kind}{form}": "+3.3% at most on plain text (T250's review, T606)"
        for kind in ("", "-sft", "-cpt") for form in ("", "-thinking")},
     **{f"hf-medical-qwen3-swallow-8b{form}": "+0.33% on plain text (T606)" for form in ("", "-thinking")},
-    # T250's review: CAT-Thinking 8B +3.5% on plain text, +0.4% on its own answers (KL 0.0045)
-    "hf-cat-thinking-8b": "+0.4% on its answers (T250's review)",
     # T517: LINE's instruction-sft, 1.7B </s> better than none on plain text and -5.76% on the answers, 3.6B <s> chosen
     **{f"hf-japanese-large-lm-{size}-instruction-sft": "the BOS measured and chosen per size (T517)"
        for size in ("1.7b", "3.6b")},
