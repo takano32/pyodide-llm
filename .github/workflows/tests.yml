@@ -95,7 +95,9 @@ jobs:
       - name: The reference tools (full)
         if: ${{ (github.event_name == 'schedule' || inputs.full == true || inputs.full == 'true') && !(inputs.only_extra == true || inputs.only_extra == 'true') }}
         run: |
-          pip install transformers==5.16.1 protobuf
+          # (T266's review: the tokenizers just installed is named, so that transformers' own range cannot move it
+          # under the every-code-point tests: if it does not take that one, this step fails, not those tests)
+          pip install transformers==5.16.1 protobuf "tokenizers==$(python -c 'import tokenizers; print(tokenizers.__version__)')"
           pip install --target .tmp/numba-site --no-deps numba llvmlite
 
       - name: Tests (tests/suite.sh)
