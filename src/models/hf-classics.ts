@@ -91,8 +91,11 @@ export const HF_CLASSICS: Entry[] = [
     download: 1894532384,
     // the BOS is the tokenizer's <｜begin▁of▁sentence｜> (151646): config.json says 151643, the end of a sentence, and
     // with it perplexity was 2.5 to 2.7 times higher and four answers of five fell apart; the real format opens the
-    // thought with <think> (T138's review). The list's options go over what the kept conversion says: no new CONVERTER
-    conversion: {}, options: { bos: 151646, specials: ["<｜begin▁of▁sentence｜>", "<｜User｜>", "<｜Assistant｜>", "<think>"], stop_tokens: [151643] },
+    // thought with <think> (T138's review). The converter reads all of it from the format (T303, the owner's choice of
+    // 2026-11-26: the handwritten options are gone): the same BOS and the same ids for format_check.py's prompts, and
+    // the added tokens a visitor types (</think>, <tool_call>, <|fim_prefix|>, <|EOT|>) one token each as the real
+    // tokenizer reads them; the stops gain the BOS
+    conversion: {}, options: {},
     // its model card's sampling: temperature 0.6 and top-p 0.95, and no penalty (it names none): Qwen3's thinking (T144)
     generation: thinking, template: "<｜User｜>{prompt}<｜Assistant｜><think>\n",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },

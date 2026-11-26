@@ -52,9 +52,11 @@ const FIRST: Row[] = [
   { bos: null, text: "<s>", repos: ["openbmb/MiniCPM5-1B", "openbmb/MiniCPM5-2B", "HuggingFaceH4/zephyr-7b-beta",
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0"] },
   { bos: null, text: "<|begin_of_text|>", repos: ["elyza/Llama-3-ELYZA-JP-8B"] },
+  // T303: DeepSeek-R1 Distill Qwen 1.5B's template begins with {{ bos_token }}, <｜begin▁of▁sentence｜>
+  { bos: null, text: "<｜begin▁of▁sentence｜>", repos: ["deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"] },
   // SmolLM2's BOS is <|im_start|> itself (bos_token_id 1), which its template begins with
   { bos: null, text: "<|im_start|>", repos: ["bartowski/SmolLM2-135M-Instruct-GGUF"] },
-  // the entry's own BOS in front of the template's mark (QWEN3_OWN_BOS, eurollm, harmony, spark, DeepSeek's)
+  // the entry's own BOS in front of the template's mark (QWEN3_OWN_BOS, eurollm, harmony, spark)
   { bos: 151643, text: "<|endoftext|>", repos: ["Qwen/Qwen2.5-Coder-1.5B-Instruct", "Qwen/Qwen2.5-Coder-3B-Instruct",
     "Qwen/Qwen2.5-Coder-7B-Instruct", "Qwen/Qwen3-0.6B", "Qwen/Qwen3-1.7B", "Qwen/Qwen3-4B", "Qwen/Qwen3-4B-Instruct-2507",
     "Qwen/Qwen3-4B-Thinking-2507", "SakanaAI/TinySwallow-1.5B-Instruct-GGUF", "bartowski/Qwen2.5-0.5B-Instruct-GGUF",
@@ -67,7 +69,6 @@ const FIRST: Row[] = [
   { bos: 1, text: "<|startoftext|>", repos: ["llm-jp/llm-jp-4.1-8b-thinking"] },
   { bos: 0, text: "<｜start▁of▁sentence｜>", repos: ["Takenoko12345678/Spark-X2.5-4B-Japanese", "XHToken/Spark-X2.5-1.7B",
     "XHToken/Spark-X2.5-4B", "XHToken/Spark-X2.6-1.7B", "XHToken/Spark-X2.6-4B"] },
-  { bos: 151646, text: "<｜begin▁of▁sentence｜>", repos: ["deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"] },
   // the entry's BOS is the template's first mark, and the format begins after it (T264's form)
   { bos: 151644, text: "<|im_start|>", repos: ["AXCXEPT/Qwen3-EZO-8B-beta", "Aratako/Qwen3-8B-RP-v0.1", "Qwen/Qwen3-14B",
     "Qwen/Qwen3-8B", "abeja/ABEJA-Qwen3-14B-Agentic-256k-v0.1", "prism-ml/Bonsai-8B-unpacked",
