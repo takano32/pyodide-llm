@@ -10,7 +10,8 @@
 // token ids "5,7": those are never drawn: how the answers look without the unknown piece.)
 // For each prompt (PROMPTS: a JSON list, else the entry's own and two more openings) and seed it writes up to TOKENS
 // tokens with the entry's sampling (until a stop token, as the page does) and counts what a reader sees come apart:
-//   unk     the answer has <unk> in it (the model wrote the piece that stands for what its vocabulary lacks)
+//   unk     the model drew its unknown piece (the piece that stands for what its vocabulary lacks). Counted as the tokens are
+//           decoded, not found in the text: the engine writes that piece as nothing (T267), so the text no longer shows it
 //   loop    more than half of its 5-character windows are ones it wrote before (it repeats itself)
 //   other   less than half of its letters are in the prompt's script: Japanese (kana, kanji, full-width) where the prompt has any,
 //           else Latin (T251's review: it was Japanese whatever the prompt, so every answer of an English model came out "other")
@@ -69,23 +70,37 @@ JAPANESE =re.compile(r"[\\u3040-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef]")
 LATIN = re.compile(r"[A-Za-z]")
 LETTERS = re.compile(r"[^\\W\\d_]", re.UNICODE)
 
-def judge(answer, japanese):
+# T267: decode() writes the unknown piece as nothing, so the pieces drawn are counted as they are decoded (a call with no
+# token before it is containing()'s walk of the vocabulary, not a token of the answer)
+unknown = llama.tokenizer.unknown
+unknowns = [0]
+if unknown is not None:
+    decoded = llama.tokenizer.decode
+    def counted(previous, token, bos=1):
+        unknowns[0] += previous is not None and token == unknown
+        return decoded(previous, token, bos)
+    llama.tokenizer.decode = counted
+
+def judge(answer, japanese, unks):
     letters = LETTERS.findall(answer)
     windows = [answer[i:i + 5] for i in range(max(0, len(answer) - 4))]
     repeated = 1 - len(set(windows)) / len(windows) if windows else 0.0
     script = JAPANESE if japanese else LATIN  # the script of the prompt (T251's review: the check was Japanese whatever the prompt)
-    return {"unk": "<unk>" in answer,
+    return {"unk": unks > 0,
             "loop": len(windows) >= 20 and repeated > 0.5,
             "other": len(letters) >= 10 and sum(1 for c in letters if script.match(c)) / len(letters) < 0.5,
-            "repeated": repeated, "chars": len(answer), "unks": answer.count("<unk>")}
+            "repeated": repeated, "chars": len(answer), "unks": unks}
 
 rows = []
 began = time.perf_counter()
 for p, text in enumerate(TEXTS):
     ids = llama.tokenizer.encode(text, llama.specials)
+    in_prompt = ids.count(unknown) if unknown is not None else 0  # (the prompt's own are decoded too)
     for seed in SEEDS:
+        before = unknowns[0]
         answer = "".join(llama.generate(text, steps=len(ids) + COUNT, seed=seed, echo=False, **SAMPLING))
-        rows.append({"prompt": p, "seed": seed, "answer": answer, "tokens": llama.stats.get("sampled", 0), **judge(answer, bool(JAPANESE.search(text)))})
+        drawn = max(0, unknowns[0] - before - in_prompt)
+        rows.append({"prompt": p, "seed": seed, "answer": answer, "tokens": llama.stats.get("sampled", 0), **judge(answer, bool(JAPANESE.search(text)), drawn)})
 json.dumps({"rows": rows, "seconds": time.perf_counter() - began, "bos": llama.bos, "stops": sorted(llama.stop_tokens)})
 `));
 const id = page.id;
