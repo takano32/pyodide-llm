@@ -63,7 +63,7 @@ part "the ledger's tables of contents" python tests/ledger.py --check
 # declarations (and the built simdkernel.so's export types): an argument's type, their number, a kernel that is not there
 part "the kernels' ctypes signatures" python tests/kernel_signatures.py
 # T401 (1): an entry's bos and its format go together (no fetch: the entries' text and a second copy of the token in
-# front of each format; the real apply_chat_template is tests/format_check.py's, by hand)
+# front of each format; the real apply_chat_template is tests/format_check.py's, the full suite's: T266)
 part "the entries' bos and formats" node tests/bos-check.ts
 
 # Node alone: the benchmark's tables (T45), the table CI writes (T82), the list, the kept models, the service worker...

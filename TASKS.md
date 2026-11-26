@@ -24,7 +24,7 @@
 - T170 [整理][CPU] `external=` を `backend=` に、`llama2_numpy.py` を中身に合う名前に — 未着手
 - T171 [設計][WebGPU] forward の単位で backend を分ける（CPU の WASM と GPU を並べる） — 未着手
 - T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 反映済み
-- T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 未着手
+- T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 反映済み
 - T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 未着手
 - T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 未着手
 - T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 未着手
@@ -355,8 +355,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **反映（2026-11-26、Opus medium）**: `README.md` の 3 か所を note の案のとおりに（「one ternary 27B」→「a ternary and a 1-bit 27B」、GGUF の型に「and for the 1-bit Bonsai models Q1_0」、「(Ternary Bonsai stays in its 2 bits, the 1-bit Bonsai in 1 bit)」）。`docs/quantization.md` の 3 値の 4B・8B の「held as 1.1 GB and 2.3 GB」→「1.07 GB and 2.18 GB」（T286 のチェックポイント 1,069,018,852・2,176,234,140 バイト、1-bit の節の表と同じ）。`docs/architecture.md` の変換器の行に「the 1-bit Q1_0」（T508 の文面 12 の案 (a) と同じ言い方にした: T508 がその文を書き替えるときは Q1_0 がもう入っている）。README の「GGUF だけのリポジトリは開かない」（T508 の文面 11）には触っていない。gist は更新していない（T83 と一緒に、端末の計測の後に文面を見せてから）。CI を省いた。訳: 記録と文書だけ（デプロイも走らない）。
 - レビュー（Sonnet high、2026-11-26）: must-fix なし。README の 3 か所・quantization.md の 1.07・2.18 GB・architecture.md の Q1_0 は、一覧（`hf-families.ts`・`builders.ts`）と T286 のチェックポイント 1,069,018,852・2,176,234,140 B に合い、文面 12 とも食い違わない。直した: quantization.md の同じ数の繰り返しを、ファイル 1.075・2.182 GB、持つ大きさ 1.069・2.176 GB と 3 桁に（GGUF のファイルと持つ大きさは Bonsai で 0.5〜0.6% 違う: 2 つを並べるときは桁を分ける）。残す（T309・T508 に積んだ）: README 86〜88 行の長い鎖の文、README の「108 entries / 97」と architecture.md の「103 / 93」の古い数、architecture.md の dtype の一覧に binary が無い（13・33・125 行目）。gist は T83 と一緒に（状態は反映済みのまま）。
 
-### T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 状態: 未着手（2026-11-26、持ち主の決め: 毎晩の全部の組に入れる）。前の状態: 候補（2026-10-01、T249・T250 のレビューから。79 項目で 4.7 分。持ち主の判断）
+### T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 状態: 反映済み（2026-11-26）。前の状態: 候補（2026-10-01、T249・T250 のレビューから。79 項目で 4.7 分。持ち主の判断）
 - **持ち主の決め（2026-11-26、選択肢で）**: `format_check.py` を毎晩の全部の組に入れる（順の 2）。
+- **した事（2026-11-26）**: `tests/suite.sh` の全部の組の最後に part「the formats against the real ones」（`formats()`: `python tests/format_check.py .tmp/format-check`、`HF_HOME` も `.tmp/hf`）。期限は `python_limited()`（`tests/limited.ts` は Node だけを走らせるので、faulthandler の `dump_traceback_later` で止まった所の全スレッドを出して 1 で終わる。`FORMATS_LIMIT` 秒、既定 1800: ジョブの 90 分より短い）。道具は `tests.yml` の新しい手順「The reference tools (full)」（全部の組のときだけ）: `transformers==5.16.1`・protobuf と、PLaMo の `tokenization_plamo.py` のための numba・llvmlite を `.tmp/numba-site` に依存なしで（numba の版の縛りで NumPy を動かさない。tokenizers は前の手順の 0.23.3 のまま: 全符号位置の試験がそれに合わせてある）。取得は `conducting.py` → `tests/fetching.py` の 1 か所（取り直し 3 回）のまま。`format_check.py` は `AutoTokenizer.from_pretrained(…, trust_remote_code=False)` にした（Spark の config.json の `auto_map` で transformers が「[y/N]」と聞き、項目ごとに 15 秒待っていた。閉じた stdin では断りになりうる。答えは前と同じ: 聞かれて空で答えたのと同じ False）。
+- **飛ばす項目は無い**: 一覧の 216 項目の全部が取れた（ゲート付きの原本は一覧が写しを名指している）。DIFF と STALE は落ち、`KNOWN`・`LENIENT`・`UNMEASURED` は今の決まりのまま行で言う。取れない項目が出たら、そのとき落ちるので訳を読んで決める（取得の失敗は 3 回の取り直しの後）。
+- **`--hf` は入れない**（取りまとめ役の決め）: `--hf` は一覧の書式を外すので、一覧が書式を手書きする訳の項目が DIFF で落ちる（手元で ELYZA が 0/9、exit 1。T249 の記録では EuroLLM・llm-jp も）。回帰の見張りにならないので、変換器を変えたときに手で（AGENTS.md の検証手順 7）。
+- **確かめ**: 手元（a1-free）で全項目 2326 秒（9 つの Spark の 15 秒の問いを含む）、CI の全部の組 run 45897385638（成功、ジョブ 49.0 分、組 2832 秒のうちこの part 795 秒）。どちらも ok 173・書式なし 35・known 8・DIFF 0・STALE 0（`NOT MEASURED` 1）。`trust_remote_code=False` の直しは CI を省いた。訳: Spark の 2 項目を手元で回して 9/9（9 秒）、ほかの項目は transformers の道が変わらない。**毎晩の run で見る**（次の毎晩でこの part の秒と、Spark の行に「[y/N]」が出ないこと）。
 
 ### リファクタリングの組（T346〜T357、2026-10-09 に採番。持ち主「デザインパターンを活用して抽象化と責務の分割でファイルが扱いやすいサイズになることを重視したい」）
 - **ねらい**: 大きいファイルを責務ごとに分け、1 つを読めば 1 つのことが分かる形にする。いまの大きさ（2026-10-09）: `public/shaders.js` 233 KB・4379 行、`public/benchmark/gpu.js` 196 KB、`public/llama2_convert.py` 168 KB、`public/forward.js` 137 KB、`public/gpu.js` 134 KB、`tests/gpu-check.mjs` 127 KB、`src/models.js` 125 KB、`public/llama2_numpy.py` 124 KB、`public/worker.js` 111 KB、`src/pages/index.astro` 75 KB、`kernels/kernel.ts` 68 KB。

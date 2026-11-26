@@ -304,7 +304,10 @@ def reference_of(folder):
     from transformers import AutoTokenizer
     module = own_code(folder)
     if not module:
-        return AutoTokenizer.from_pretrained(folder)
+        # (T266: no remote code, said, so that transformers asks nothing: Spark's config.json names a config class of its
+        # own (auto_map), which a tokenizer needs not, and the question "[y/N]" waited 15 s for each Spark entry, and
+        # would be a refusal where the stdin is closed)
+        return AutoTokenizer.from_pretrained(folder, trust_remote_code=False)
     import importlib.util
     named = json.loads((folder / "tokenizer_config.json").read_text())["auto_map"]["AutoTokenizer"][0]
     spec = importlib.util.spec_from_file_location(module, folder / f"{module}.py")
