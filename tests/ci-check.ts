@@ -1,9 +1,9 @@
 // tests/ci-check.ts (T679): which run of deploy.yml `node tests/ci.ts deploy` waits for (tests/ci-runs.ts), on made-up
-// lists of runs shaped as the API gives them (newest first). Nothing leaves this machine (under a second).
+// lists of runs shaped as the API gives them (newest first); T690: what a 404 of a run's page means, on made-up answers. Nothing leaves this machine (under a second).
 //
 //   node tests/ci-check.ts
 import assert from "node:assert/strict";
-import { againMayAppear, againOf, againWindow, deployOfCommit, newerOf } from "./ci-runs.ts";
+import { againMayAppear, againOf, againWindow, deployOfCommit, newerOf, NOT_FOUND_EVERY, NOT_FOUND_GRACE, notFound } from "./ci-runs.ts";
 
 let passed = 0;
 const ok = (name) => { passed++; console.log(`ok: ${name}`); };
@@ -71,6 +71,36 @@ const again = { started_at: at(10), completed_at: at(11) };
   assert.equal(newerOf(runs, 100).id, 130);
   assert.equal(newerOf([run(90, "push", A, 0)], 100), undefined);
   ok("the newest deploy after a run, and none when there is none");
+}
+
+// ---- T690: a 404 of a run's page
+{
+  // the wait of tests/ci.ts on made-up answers of gh: each look is 404 (null) or the run; a 404 looked at again after
+  // NOT_FOUND_EVERY, as ci.ts does. What the wait ends with, and the looks it made
+  const waited = (target, answers) => {
+    let now = target.since ?? 0;
+    for (let look = 1; look <= answers.length; look++) {
+      if (answers[look - 1]) return { end: "found", look };
+      if (notFound(target, now) === "missing") return { end: "missing", look };
+      now += NOT_FOUND_EVERY;
+    }
+    return { end: "still 404", look: answers.length };
+  };
+  // the dispatch gave the ID, and its page was 404 twice before it was there (45801328142 on 2026-11-26)
+  assert.deepEqual(waited({ id: 1, since: 0 }, [null, null, { status: "queued" }]), { end: "found", look: 3 });
+  ok("a dispatched run that is 404 twice and then there is waited for");
+  // ci.ts wait <ID> of an ID that is not a run: no run at the first 404, as before
+  assert.deepEqual(waited({ id: 2 }, [null, null, { status: "queued" }]), { end: "missing", look: 1 });
+  ok("an ID this call did not learn from GitHub is no run at its first 404");
+  // a dispatched run whose page stays 404: no run once the grace is over, not before
+  const looks = NOT_FOUND_GRACE / NOT_FOUND_EVERY;
+  assert.deepEqual(waited({ id: 3, since: 0 }, Array(looks + 5).fill(null)), { end: "missing", look: looks + 1 });
+  assert.equal(notFound({ since: 0 }, NOT_FOUND_GRACE - 1), "again");
+  assert.equal(notFound({ since: 0 }, NOT_FOUND_GRACE), "missing");
+  ok(`a dispatched run 404 for ${NOT_FOUND_GRACE / 1000} s is no run`);
+  // a run seen once and then 404 is not looked at as one that may yet appear
+  assert.equal(notFound({ since: 0, state: "queued" }, 1000), "missing");
+  ok("a run seen once is not given the grace");
 }
 
 console.log(`ci-check: ${passed} passed`);

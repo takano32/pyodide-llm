@@ -39,3 +39,19 @@ export function againWindow(again) {
   const from = day(Date.parse(again.started_at) - AGAIN_SLACK);
   return again.completed_at ? `${from}..${day(Date.parse(again.completed_at) + AGAIN_SLACK)}` : `>=${from}`;
 }
+
+// T690: a run's own page (actions/runs/<ID>) can answer 404 for a moment after GitHub gave the run's ID: the two runs
+// of preview.yml dispatched on 2026-11-26 (45801328142, 45801328531) had the ID in the dispatch's answer, were 404 in
+// the same second, and succeeded. So a 404 means "no such run" at once only for an ID this call did not learn from
+// GitHub (ci.ts wait <ID>: a mistyped ID); a run already seen once gets no grace (ci.ts says it could not look and
+// waits on, as before); for a run this call dispatched or found in
+// a list, after NOT_FOUND_GRACE since it learnt the ID. Until then the run is looked at again every NOT_FOUND_EVERY.
+export const NOT_FOUND_GRACE = 120000;
+export const NOT_FOUND_EVERY = 5000;
+
+// what a 404 of run `target` means at `now`: "missing" (its wait ends, exit 3) or "again" (look again). A target is
+// { since?: when (ms) this call learnt its ID from GitHub, state?: the state last seen ("" or none before the first) }
+export function notFound(target, now) {
+  if (target.state || target.since === undefined) return "missing";
+  return now - target.since < NOT_FOUND_GRACE ? "again" : "missing";
+}

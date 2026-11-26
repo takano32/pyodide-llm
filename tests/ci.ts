@@ -27,13 +27,14 @@
 // lines up to its first error. Everything printed also goes to .tmp/ci/<time>-<pid>.log, and a run already waited for
 // by another ci.ts is not waited for twice: that one's log is named instead.
 // Exit: 0 every run succeeded, 1 one ended otherwise (failure, cancelled...), 2 the deadline passed with one still
-// going, 3 there was no run to wait for (a dispatch failed, no deploy of that commit appeared, no run of that ID), 4
+// going, 3 there was no run to wait for (a dispatch failed, no deploy of that commit appeared, no run of that ID: T690,
+// for a run this call dispatched or found, 404 for two minutes after its ID came; for ci.ts wait <ID>, the first 404), 4
 // all were waited for by another ci.ts already, 5 (deploy) the push's deploy failed at Pages' step and the run its job
 // "again" started published the site (the table has a line for each of the two).
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { againMayAppear, againOf, againWindow, deployOfCommit, newerOf } from "./ci-runs.ts";
+import { againMayAppear, againOf, againWindow, deployOfCommit, newerOf, NOT_FOUND_EVERY, notFound } from "./ci-runs.ts";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clock = () => new Date().toISOString().slice(11, 19);
@@ -190,7 +191,7 @@ async function newerDeploy(target) {
   if (!newer) return false;
   say(`superseded by the deploy of ${newer.head_sha.slice(0, 7)}: run ${newer.id}`);
   release(target.id);
-  Object.assign(target, { id: newer.id, state: "", run: null, jobs: new Map() });
+  Object.assign(target, { id: newer.id, state: "", run: null, jobs: new Map(), since: Date.now(), notFound: 0 });
   claim(newer.id);
   return true;
 }
@@ -228,7 +229,7 @@ async function follow(target, next, again) {
   await report(target).catch((error) => out(`== ${target.id}: no logs (${error.message})`));
   release(target.id);
   target.before = { id: target.id, title: target.title, url: target.url, run: target.run, again: again.conclusion };
-  Object.assign(target, { id: next.id, state: "", run: null, jobs: new Map(), jobList: null });
+  Object.assign(target, { id: next.id, state: "", run: null, jobs: new Map(), jobList: null, since: Date.now(), notFound: 0 });
   claim(next.id);
   return true;
 }
@@ -279,7 +280,7 @@ try {
     const odd = specs.filter((spec) => spec.length).flatMap(([workflow, ...pairs]) => [
       ...(/^[\w.-]+\.ya?ml$/.test(workflow) ? [] : [workflow]), ...pairs.filter((pair) => pair.startsWith("--") || pair.indexOf("=") < 1)]);
     if (odd.length) throw new Error(`nothing was started: ${odd.join(", ")} ${odd.length > 1 ? "are" : "is"} no key=value input (a second --ref, or a flag this tool does not know: it takes --minutes, --grep, --ref and --sha once each)`);
-    for (const spec of specs.filter((s) => s.length)) targets.push({ id: await start(spec) });
+    for (const spec of specs.filter((s) => s.length)) targets.push({ id: await start(spec), since: Date.now() });
   } else if (command === "wait" && rest.length && rest.every((word) => /^\d+$/.test(word))) {
     targets.push(...rest.map((word) => ({ id: Number(word) })));
   } else if (command === "nightly") {
@@ -299,7 +300,7 @@ try {
       say(`no deploy of ${sha ?? "HEAD"} appeared in ${minutes} min`);
       process.exit(3);
     }
-    targets.push({ id, deploy: true });
+    targets.push({ id, deploy: true, since: Date.now() });
   } else {
     console.error("usage: node tests/ci.ts run <workflow> [input=value ...] [+ ...] | wait <run id> ... | nightly | deploy [--sha <commit>]" +
       "  [--minutes N] [--grep <regex> | none] [--ref main]");
@@ -329,17 +330,23 @@ for (;;) {
       if (target.deploy && !target.before && target.run && (await againRun(target))) await look(target);
     } catch (error) {
       // a run that is not there (a mistyped ID) is not a run that failed: its wait ends with exit 3. What gh could not
-      // get past after its tries is said, and the wait goes on to the deadline (a crash here read as a failed run)
-      if (!target.state && /HTTP 404/.test(error.message)) {
+      // get past after its tries is said, and the wait goes on to the deadline (a crash here read as a failed run).
+      // T690: a run this call dispatched or found in a list can be 404 for a moment: looked at again (tests/ci-runs.ts)
+      if (/HTTP 404/.test(error.message) && notFound(target, Date.now()) === "again") {
+        target.notFound = (target.notFound ?? 0) + 1;
+        say(`(run ${target.id} is not there yet, ${((Date.now() - target.since) / 1000).toFixed(0)} s after its ID came: 404 ${target.notFound} time${target.notFound > 1 ? "s" : ""}, looking again)`);
+      } else if (!target.state && /HTTP 404/.test(error.message)) {
         target.missing = true;
-        say(`no run ${target.id}: ${error.message}`);
+        say(`no run ${target.id}${target.notFound ? ` (404 ${target.notFound + 1} times in ${((Date.now() - target.since) / 1000).toFixed(0)} s)` : ""}: ${error.message}`);
       } else {
         say(`(could not look at run ${target.id}: ${error.message})`);
       }
     }
   }
   if (mine.every((t) => t.run || t.missing) || Date.now() > deadline) break;
-  await sleep(Date.now() - began < 600000 ? 15000 : 30000);
+  // (T690: a few seconds while a run this call started is still 404)
+  const early = mine.some((t) => !t.run && !t.missing && !t.state && t.notFound);
+  await sleep(early ? NOT_FOUND_EVERY : Date.now() - began < 600000 ? 15000 : 30000);
 }
 for (const target of mine) {
   if (target.run) await report(target).catch((error) => out(`== ${target.id}: no logs (${error.message})`));
