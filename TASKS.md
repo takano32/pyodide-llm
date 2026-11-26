@@ -34,7 +34,7 @@
 - T416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
 - T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
-- T278 [描画][モデル] 「Built with Llama」の表示 — 未着手
+- T278 [描画][モデル] 「Built with Llama」の表示 — 反映済み
 - T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 端末の数字待ち
 - T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 端末の数字待ち
 - T281 [追加][Bonsai] 27B の文脈の長さ — 未着手
@@ -499,12 +499,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 - **文面と置き場（2026-10-09、持ち主「推奨でお願いします」。未実装）**: T278 の行の次に 1 行「Created using Bonsai by Prism ML.」（NOTICE の文のまま）。
 - **持ち主の決め（2026-11-26、選択肢で）**: About に、T278 の「Built with Llama」の次の行に「Created using Bonsai by Prism ML.」（順の 2）。
-### T278 [描画][モデル] 「Built with Llama」の表示 — 状態: 未着手（2026-11-26、持ち主の決め: About に 1 行）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。レビューの勧めは About に 1 行。規模 小）
+### T278 [描画][モデル] 「Built with Llama」の表示 — 状態: 反映済み（2026-11-26、Opus medium。レビュー前）。前の状態: 未着手（2026-11-26、持ち主の決め: About に 1 行）。その前: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。レビューの勧めは About に 1 行。規模 小）
 - Llama 3・3.1・3.2 のライセンスが求める。当たる項目: Llama 3.2 の 2 つ、Swallow 8B、ELYZA 8B、Shisa 3B、Llama 3.1 8B、DeepSeek-R1 Distill Llama 8B、Hermes 3。
 - **確かめた（T252 のレビュー、2026-10-02）**: この一覧は全部（一覧にほかの Llama の派生は無い）。Llama 3.1 の §1.b.i の原文: 「Llama の材料（その派生物、それを含む製品・サービス〔別の AI モデルも〕）を配るか使えるようにするなら、(A) 写しと (B) 「Built with Llama」を、関連のサイト・UI・ブログ・about・文書に目立つように」。ページは重みを配らず（HF から取った変換を訪問者のブラウザが作る）、「使えるようにする」に当たるかは読み方による。**勧めどおり About に 1 行が安全**。Qwen の research（Coder 3B・Qwen2.5 3B）は「Built with Qwen」を、出力で別のモデルを作るときだけ求める（§4b）ので、ページは要らない。
 
 - **文面と置き場（2026-10-09、持ち主「推奨でお願いします」。未実装）**: About（「このプロジェクトについて」）のモデルとライセンスの一覧のすぐ下に 1 行「Built with Llama: 」に続けて、当たる項目の名前を一覧から作って並べる（手書きの一覧にしない: Llama の派生を足したら自分で入る）。
 - **持ち主の決め（2026-11-26、選択肢で）**: 「Built with Llama」は About に 1 行（その次に T277 の「Created using Bonsai by Prism ML.」）（順の 2）。
+- **入れた形（2026-11-26、Opus medium）**: `src/pages/index.astro` の About の、モデルとライセンスの一覧（`ul.sources`）のすぐ下に段落 1 つ「Built with Llama」を常に出す。**取りまとめ役の決め（訳）**: 2026-10-09 の形（「Built with Llama: 」に当たる項目の名前を一覧から作って並べる）でなく、2026-11-26 の持ち主の決めの 1 行のまま。名前を一覧から作るには、ライセンス名の文から Llama の項目を選ぶ規則が要り（DeepSeek-R1 Distill Llama 8B は MIT の名の中に Llama を持つ、ArrowCanaria・Swallow は 2 つのライセンスの組）、ライセンス名は T302 が並べて直している。常に 1 行なら Llama の派生を足しても外しても文は正しく、ライセンスが求めるのは「Built with Llama」の文そのもの。名前を並べたくなったら `sources()` の Llama の項目から作る形で別のタスクに。CI を省いた。訳: ページの静的な文 1 行で、手元の build・`dist-check`・e2e（Chromium）が踏む。
 ### T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 状態: 端末の数字待ち（2026-11-26、持ち主の決めの順で）。前の状態: 未着手（2026-10-02 の洗い出しで採番。端末の数字が要る。規模 小）
 - 3 値にして 484 MB になったので大きさは入る見込み。変換の間のメモリの峰、警告の出方、note の「desktop only」を外せるか。
 - **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
