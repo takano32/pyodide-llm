@@ -320,8 +320,8 @@ const ELSEWHERE = { "mozilla/translations": "https://github.com/mozilla/translat
     .sheet { left: 0 !important; right: 0; top: auto !important; bottom: 0 !important; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding: 18px 20px calc(18px + env(safe-area-inset-bottom)); }
     .sheet::backdrop { background: rgb(0 0 0 / 0.3); }
   }
-  /* the seed under an answer is a button: it fixes that seed for the next run */
-  .meta .seed, .seed-beside .seed { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+  /* the seed beside an answer's line is a button: it fixes that seed for the next run */
+  .seed-beside .seed { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
   #composer:focus-within { border-color: var(--accent); }
   /* grows with its lines (the script sets the height) up to five of them, then scrolls: the page never does */
   #prompt { flex: 1; min-width: 0; font: inherit; line-height: 1.5; color: var(--text); background: transparent; border: 0; outline: 0; resize: none; padding: 6px 0; max-height: calc(7.5em + 12px); overflow-y: auto; }
