@@ -411,6 +411,11 @@ for (const entry of MODELS.filter((entry) => entry.hf?.weights?.endsWith(".gguf"
   assert.deepEqual(LICENSES[entry.hf.repo], LICENSES[entry.original], `${entry.id}: the GGUF's license is not its original's`);
   assert.ok(lineOf(entry.hf.repo).includes(`${entry.name} (GGUF)`), `${entry.id}: the GGUF's line does not say (GGUF)`);
 }
+// T302 (the owner's choice of 2026-11-26, AGENTS.md's policy 8): the two names that are not their cards'. Nothing else
+// holds them: models-check does not compare the list with the cards' words, so a name put back to the card's would pass
+assert.equal(LICENSES["openai-community/gpt2"], LICENSES["openai-community/gpt2-xl"], "GPT-2 124M is under OpenAI's one LICENSE, as XL is");
+assert.equal(LICENSES["openai-community/gpt2"], "Modified MIT License");
+assert.equal(LICENSES["NousResearch/Hermes-3-Llama-3.2-3B"], LICENSES["meta-llama/Llama-3.2-1B-Instruct"], "Hermes 3 is under the license of the Llama 3.2 it is made from");
 // T128: the list's order (the owner's): the groups as GROUPS has them, and within each the ones that write Japanese
 // from light to heavy, then the English-only ones from light to heavy. The first is tiny-lm, the lightest
 assert.equal(MODELS[0].id, "tiny-lm", "the lightest comes first");
