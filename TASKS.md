@@ -33,7 +33,7 @@
 - T410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 未着手
 - T416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
-- T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
+- T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 反映済み
 - T278 [描画][モデル] 「Built with Llama」の表示 — 反映済み
 - T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 端末の数字待ち
 - T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 端末の数字待ち
@@ -494,11 +494,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
 - **持ち主の決め（2026-11-26、選択肢で）**: 持ち主「追加実装して対応しない？抽象化してほしい」: 断る・無視するのでなく、float32 でも `rope_scaling` が効くように実装する。RoPE の表の出どころ（ファイルの表・options から作る表）を 1 つの部品に抽象化する（順の 5 の頭）。
 
-### T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-11-26、持ち主の決め: About に 1 行）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
+### T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 反映済み（2026-11-26、Opus medium。レビュー前）。前の状態: 未着手（2026-11-26、持ち主の決め: About に 1 行）。その前: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
 - モデルの NOTICE.txt が求めている。Bonsai の 5 項目（1.7B・4B・8B・27B の 2 つ）。
 
 - **文面と置き場（2026-10-09、持ち主「推奨でお願いします」。未実装）**: T278 の行の次に 1 行「Created using Bonsai by Prism ML.」（NOTICE の文のまま）。
 - **持ち主の決め（2026-11-26、選択肢で）**: About に、T278 の「Built with Llama」の次の行に「Created using Bonsai by Prism ML.」（順の 2）。
+- **入れた形（2026-11-26、Opus medium）**: `src/pages/index.astro` の About の、T278 の段落「Built with Llama」の次の段落に「Created using Bonsai by Prism ML.」（NOTICE の文のまま）。T278 と同じく常に出す（取りまとめ役の決め: About の 2 行を同じ出し方に）。CI を省いた。訳は T278 と同じ。
 ### T278 [描画][モデル] 「Built with Llama」の表示 — 状態: 反映済み（2026-11-26、Opus medium。レビュー前）。前の状態: 未着手（2026-11-26、持ち主の決め: About に 1 行）。その前: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。レビューの勧めは About に 1 行。規模 小）
 - Llama 3・3.1・3.2 のライセンスが求める。当たる項目: Llama 3.2 の 2 つ、Swallow 8B、ELYZA 8B、Shisa 3B、Llama 3.1 8B、DeepSeek-R1 Distill Llama 8B、Hermes 3。
 - **確かめた（T252 のレビュー、2026-10-02）**: この一覧は全部（一覧にほかの Llama の派生は無い）。Llama 3.1 の §1.b.i の原文: 「Llama の材料（その派生物、それを含む製品・サービス〔別の AI モデルも〕）を配るか使えるようにするなら、(A) 写しと (B) 「Built with Llama」を、関連のサイト・UI・ブログ・about・文書に目立つように」。ページは重みを配らず（HF から取った変換を訪問者のブラウザが作る）、「使えるようにする」に当たるかは読み方による。**勧めどおり About に 1 行が安全**。Qwen の research（Coder 3B・Qwen2.5 3B）は「Built with Qwen」を、出力で別のモデルを作るときだけ求める（§4b）ので、ページは要らない。
