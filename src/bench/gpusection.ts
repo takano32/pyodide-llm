@@ -9,6 +9,7 @@ import { layerStepsTable } from "./layersteps.ts";
 import { generateTable } from "./generate.ts";
 import { overheadMarkdown, ceilingsMarkdown, promptMarkdown } from "./prompt.ts";
 import { ternaryTable } from "./ternary.ts";
+import { nanTable } from "./nan.ts";
 import { REASONS } from "../runtime/forward/reasons.ts";
 import type { Step } from "./cells.ts";
 import type { Result } from "./sections.ts";
@@ -40,8 +41,11 @@ const PROMPT_COUNTS = [1, 16, 64];
  * real GPU, on the owner's devices. */
 export function gpuPlan({ packed, fallback }: Pick<GpuInfo, "packed" | "fallback">, models: GpuModel[]): GpuPlanned[] {
   const check: GpuPlanned = { name: "the shaders against JavaScript", message: { step: "check" } };
-  if (fallback) return [check];
-  return [check,
+  // T263: a NaN and infinities through this device's arithmetic, stores and conversions to float16 (a dispatch or two:
+  // on a fallback adapter too, which says what CI's software adapters do)
+  const nan: GpuPlanned = { name: "NaN and infinities", message: { step: "nan" } };
+  if (fallback) return [check, nan];
+  return [check, nan,
     // the GPU section of T94's stage 0, step by step as /gpu-test/ ran it
     ...BANDWIDTHS.map(([model, matrix]): GpuPlanned => ({ name: bandwidthName(model, matrix), message: { step: "bandwidth", shape: matrixOf(model, matrix) } })),
     ...models.flatMap((model): GpuPlanned[] => [{ name: `a token of ${model}`, message: { step: "token", model, kind: "widen" } },
@@ -104,6 +108,7 @@ export function gpuMarkdown(found: GpuFound, bridge: Bridge, lost: string | unde
   const verdicts = Object.entries(check?.result ?? {});
   if (check?.result) lines.push(`**Shaders against JavaScript**: ${verdicts.map(checkVerdict).join(", ")}`, "");
   said.push(...verdicts.filter(([, v]) => v.error || !v.ok).map(checkVerdict));
+  lines.push(...nanTable(found.nan), "");
   const ceilings = found.ceilings?.result;
   lines.push(...matVecTable(found.bandwidth, check?.result, ceilings, { lost }), "");
   const baseline = cpuBaseline(cpu);

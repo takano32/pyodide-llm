@@ -17,6 +17,8 @@ export const MAKERS_APART = {
   dp4a: EITHER.flatMap((subgroups) => ["int8", "ternary", ...BLOCK_PACKINGS].map((weights) => [{ subgroups, weights }])),
   fmaCeiling: EITHER.flatMap((half) => ["square", "affine"].map((shape) => [half, shape])),
   mulMatVec: EITHER.map((subgroups) => [{ subgroups }]),
+  // T263: the cases of NaN and infinities, the float32 ones and the f16 ones
+  nanShader: EITHER.map((half) => [half]),
 };
 /** the exports of a shaders module that make WGSL: the functions whose own text holds a shader's entry point */
 export const makersOfWgsl = (module) => Object.keys(module).filter((name) => typeof module[name] === "function" && String(module[name]).includes("@compute")).sort();

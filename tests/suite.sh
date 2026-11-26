@@ -193,6 +193,9 @@ page_modules() {
   # T642.17's review: which shaders /benchmark/'s GPU worker offers by what a device has (shader-f16, subgroups, WGSL's
   # subgroup_id and packed dot), its steps run on a WebGPU that computes nothing, each of 8 cases in a process of its own
   node tests/bench-features-check.ts
+  # T263: the GPU step "nan" and its reading on made-up devices (one that carries a NaN, one that makes it 0, one whose
+  # max() drops it, one whose pack2x16float() clamps, one that folds x != x, one without shader-f16), a process each
+  node tests/bench-nan-check.ts
   # T352, T378.4: what tsc does not hold of the model's GPU worker (src/runtime/gpu.ts) and its modules (src/runtime/gpu/):
   # its state's owners (model, stopping and lost are hidden nowhere and read where a function runs; every field of the
   # model's record is set in its owner's file and read somewhere), every message posted says its type, and messages as

@@ -229,3 +229,99 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(num_workgroups) group
 ${[...Array(16)].map((_, k) => `  s${k % 4} += data[id.x + ${k}u * apart];\n`).join("")}  let s = s0 + s1 + s2 + s3;
   out[id.x] = s.x ^ s.y ^ s.z ^ s.w ^ plan.seed;
 }`;
+
+// ---- T263: whether this device carries a NaN and an infinity where the engine stands on it. The engine sees what is
+// no finite number by its bits (T219's sampler, T241's quantizing, the float16 exponent of the keys and values the CPU
+// takes from the GPU), never by a float's comparison (WGSL lets an implementation assume there is none, §15.7, and
+// lavapipe folds 'x != x'): those marks hold only where a NaN or an infinity of a layer comes through the arithmetic, the
+// stores and the conversions to float16 as one. Software adapters (lavapipe, SwiftShader) say nothing of a real GPU's
+// (Mali, D3D12, Metal): the step "nan" of /benchmark/ runs each case below once, a thread a case, and reads back what
+// it made (src/bench/nan.ts reads it: what each should be and which mark stands on it). No public implementation has
+// such a probe; the form is this project's own. Not in the engine's catalogue (shaders/engine.ts): no device's key moves.
+//   name   what the case does, as the page shows it (src/bench/nan.ts's NAN_READINGS has a row of each name)
+//   kind   what the thread writes: float (an f32, stored as one and as its bits), half (a float16's bits in the low 16
+//          of a u32), flag (a u32, 1 for yes)
+//   half   the f16 shader's (enable f16: shader-f16), else the float32 one's
+//   a, b   the two inputs (an f32 each, read from a storage buffer as f32: nothing is a constant to the compiler);
+//   word   in place of a's bits in the buffer of words the thread reads as ua (a float16's bits), where given
+//   wgsl   the expression, of a and b (f32) and ua (u32); softmax2(s0, s1) is the attention's softmax over two scores,
+//          the values 2 and 3 weighed by it, the largest taken by max() as the engine's attention takes it
+export type NanCase = { name: string; kind: "float" | "half" | "flag"; half?: boolean; a: number; b: number; word?: number; wgsl: string };
+const GEGLU_OF = (gate: string) => `0.5 * ${gate} * (1.0 + tanh(clamp(0.7978845608028654 * (${gate} + 0.044715 * ${gate} * ${gate} * ${gate}), -9.010913, 9.010913))) * b`;
+export const NAN_CASES: NanCase[] = [
+  { name: "a NaN loaded and stored", kind: "float", a: NaN, b: 0, wgsl: "a" },
+  { name: "+Inf loaded and stored", kind: "float", a: Infinity, b: 0, wgsl: "a" },
+  { name: "−Inf loaded and stored", kind: "float", a: -Infinity, b: 0, wgsl: "a" },
+  { name: "1.5 + NaN", kind: "float", a: 1.5, b: NaN, wgsl: "a + b" },
+  { name: "NaN × 0", kind: "float", a: NaN, b: 0, wgsl: "a * b" },
+  { name: "+Inf × 0", kind: "float", a: Infinity, b: 0, wgsl: "a * b" },
+  { name: "+Inf − +Inf", kind: "float", a: Infinity, b: Infinity, wgsl: "a - b" },
+  { name: "exp(NaN)", kind: "float", a: NaN, b: 0, wgsl: "exp(a)" },
+  { name: "exp(+Inf)", kind: "float", a: Infinity, b: 0, wgsl: "exp(a)" },
+  { name: "exp(−Inf)", kind: "float", a: -Infinity, b: 0, wgsl: "exp(a)" },
+  { name: "max(NaN, 1)", kind: "float", a: NaN, b: 1, wgsl: "max(a, b)" },
+  { name: "max(1, NaN)", kind: "float", a: 1, b: NaN, wgsl: "max(a, b)" },
+  { name: "min(NaN, 1)", kind: "float", a: NaN, b: 1, wgsl: "min(a, b)" },
+  { name: "clamp(NaN, −9, 9)", kind: "float", a: NaN, b: 0, wgsl: "clamp(a, -9.0, 9.0)" },
+  { name: "tanh(NaN)", kind: "float", a: NaN, b: 0, wgsl: "tanh(a)" },
+  { name: "SiLU of a NaN gate", kind: "float", a: NaN, b: 1, wgsl: "a / (1.0 + exp(-a)) * b" },
+  { name: "SiLU of a −Inf gate", kind: "float", a: -Infinity, b: 1, wgsl: "a / (1.0 + exp(-a)) * b" },
+  { name: "GEGLU of a NaN gate", kind: "float", a: NaN, b: 1, wgsl: GEGLU_OF("a") },
+  { name: "softmax of the scores 1 and NaN", kind: "float", a: 1, b: NaN, wgsl: "softmax2(a, b)" },
+  { name: "softmax of the scores NaN and 1", kind: "float", a: NaN, b: 1, wgsl: "softmax2(a, b)" },
+  { name: "softmax of the scores 1 and +Inf", kind: "float", a: 1, b: Infinity, wgsl: "softmax2(a, b)" },
+  { name: "NaN × 2 found by its bits", kind: "flag", a: NaN, b: 2, wgsl: "select(0u, 1u, (bitcast<u32>(a * b) & 0x7fffffffu) > 0x7f800000u)" },
+  { name: "+Inf × 2 found by its bits", kind: "flag", a: Infinity, b: 2, wgsl: "select(0u, 1u, (bitcast<u32>(a * b) & 0x7fffffffu) == 0x7f800000u)" },
+  { name: "3e38 × 1 taken by its bits for a finite number", kind: "flag", a: 3e38, b: 1, wgsl: "select(0u, 1u, (bitcast<u32>(a * b) & 0x7fffffffu) < 0x7f800000u)" },
+  { name: "NaN × 2 found by x != x", kind: "flag", a: NaN, b: 2, wgsl: "select(0u, 1u, a * b != a * b)" },
+  { name: "pack2x16float(NaN)", kind: "half", a: NaN, b: 0, wgsl: "pack2x16float(vec2<f32>(a, b)) & 0xffffu" },
+  { name: "pack2x16float(+Inf)", kind: "half", a: Infinity, b: 0, wgsl: "pack2x16float(vec2<f32>(a, b)) & 0xffffu" },
+  { name: "pack2x16float(−Inf)", kind: "half", a: -Infinity, b: 0, wgsl: "pack2x16float(vec2<f32>(a, b)) & 0xffffu" },
+  { name: "pack2x16float(1e6), past float16's largest", kind: "half", a: 1e6, b: 0, wgsl: "pack2x16float(vec2<f32>(a, b)) & 0xffffu" },
+  { name: "unpack2x16float of a float16 NaN", kind: "float", a: 0, b: 0, word: 0x7e00, wgsl: "unpack2x16float(ua).x" },
+  { name: "unpack2x16float of a float16 +Inf", kind: "float", a: 0, b: 0, word: 0x7c00, wgsl: "unpack2x16float(ua).x" },
+  { name: "f16(NaN)", kind: "half", half: true, a: NaN, b: 0, wgsl: "bitcast<u32>(vec2<f16>(f16(a), f16(b))) & 0xffffu" },
+  { name: "f16(+Inf)", kind: "half", half: true, a: Infinity, b: 0, wgsl: "bitcast<u32>(vec2<f16>(f16(a), f16(b))) & 0xffffu" },
+  { name: "f16(70000), past float16's largest", kind: "half", half: true, a: 70000, b: 0, wgsl: "bitcast<u32>(vec2<f16>(f16(a), f16(b))) & 0xffffu" },
+  { name: "a float16 NaN × 1 in f16", kind: "half", half: true, a: 0, b: 1, word: 0x7e00, wgsl: "bitcast<u32>(vec2<f16>(bitcast<vec2<f16>>(ua).x * f16(b), f16(0.0))) & 0xffffu" },
+  { name: "a float16 NaN + 1 in f16", kind: "half", half: true, a: 0, b: 1, word: 0x7e00, wgsl: "bitcast<u32>(vec2<f16>(bitcast<vec2<f16>>(ua).x + f16(b), f16(0.0))) & 0xffffu" },
+  { name: "f32 of a float16 NaN", kind: "float", half: true, a: 0, b: 0, word: 0x7e00, wgsl: "f32(bitcast<vec2<f16>>(ua).x)" },
+];
+export const NAN_WORKGROUP = 64;
+// the shader of the cases of one kind (half: the f16 ones), in NAN_CASES' order: thread i runs the i-th of them
+// (words and floats: the inputs, two a case, as u32 and as f32; bits: what it made as a u32, its f32's bits where it
+// made one; stored: that f32 as an f32 store writes it, 0 for the others)
+export const nanShader = (half: boolean): string => {
+  const cases = NAN_CASES.filter((one) => Boolean(one.half) === half);
+  return /* wgsl */ `${half ? "enable f16;\n" : ""}@group(0) @binding(0) var<storage, read> words: array<u32>;
+@group(0) @binding(1) var<storage, read> floats: array<f32>;
+@group(0) @binding(2) var<storage, read_write> bits: array<u32>;
+@group(0) @binding(3) var<storage, read_write> stored: array<f32>;
+fn softmax2(s0: f32, s1: f32) -> f32 {
+  let m = max(s0, s1);
+  let p0 = exp(s0 - m);
+  let p1 = exp(s1 - m);
+  return (p0 * 2.0 + p1 * 3.0) / (p0 + p1);
+}
+@compute @workgroup_size(${NAN_WORKGROUP})
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let i = id.x;
+  if (i >= ${cases.length}u) { return; }
+  let a = floats[2u * i];
+  let b = floats[2u * i + 1u];
+  let ua = words[2u * i];
+  var r = 0.0;
+  var u = 0u;
+  var made_float = false;
+  switch i {
+${cases.map((one, i) => `    case ${i}u: { ${one.kind === "float" ? `r = ${one.wgsl}; made_float = true;` : `u = ${one.wgsl};`} }\n`).join("")}    default: {}
+  }
+  if (made_float) {
+    bits[i] = bitcast<u32>(r);
+    stored[i] = r;
+  } else {
+    bits[i] = u;
+    stored[i] = 0.0;
+  }
+}`;
+};

@@ -5,6 +5,7 @@ import { steadyCeiling, tokenReads, promptGMACsOf } from "./cpu.ts";
 import { tokenWrong, fastestMatVec } from "./gpu.ts";
 import { stepMs, less, layerSplit } from "./layersteps.ts";
 import { ternaryForms, TERNARY_OTHERS } from "./ternary.ts";
+import { nanSummary } from "./nan.ts";
 import type { GpuFound } from "./gpusection.ts";
 import type { Baseline, CpuMeasured } from "./cpu.ts";
 import type { DeviceFound, GpuAbout, LayerFound, LayerRow, LineFound, PromptFound, PromptRow, StorageRun, TokenFound } from "../runtime/contracts/benchmark.ts";
@@ -64,6 +65,9 @@ export function gpuSummary(found: GpuFound, baseline: { token?: Baseline["token"
     `shader-f16 ${yesNo(a.features?.includes("shader-f16"))}, subgroups ${yesNo(a.features?.includes("subgroups"))}${sizes}; ` +
     (check ? `the check ${verdicts.length - bad.length} of ${verdicts.length} ok${bad.length ? ` (${bad.join(", ")})` : ""}` : `not checked (${checkStep?.error ?? "not run"})`) +
     (gpu.lost ? `; the device was lost (${gpu.lost})` : "")];
+  // T263: whether the engine's marks of a NaN and an infinity hold on this device (on a fallback adapter too)
+  const nans = nanSummary(found.nan);
+  if (nans) lines.push(nans);
   // a token of each model, widened and its id read back (the table's first row of each): its tok/s and the CPU's
   // estimate beside it
   const cpu = baseline.token;

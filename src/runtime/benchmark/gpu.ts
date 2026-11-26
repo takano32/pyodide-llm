@@ -35,6 +35,9 @@
 //   { step: "ternary" }                   T270: ternary weights (T232) beside int8's: a token's matrix × vector in the
 //                                         engine's form and in the form that keeps the codes and takes the vector's sum
 //                                         off, a prompt's tile and a layer, ms each (gpu/ternary.ts)
+//   { step: "nan" }                       T263: whether this device carries a NaN and an infinity through the arithmetic,
+//                                         the stores and the conversions to float16 where the engine's marks stand on
+//                                         it: each case of shaders.ts's NAN_CASES once, what it made read back (gpu/nan.ts)
 //   { step: "bridge", memory, rounds }    the round trip of a worker that waits with Atomics.wait and this one, which
 //                                         answers with Atomics.waitAsync (stage 1's design), in microseconds
 //
@@ -45,7 +48,7 @@
 // bound and run, how a time is taken), halves.ts (the float16 of the cache), layerparts.ts, layercheck.ts and layer.ts
 // (one layer of a token: its forms, its check, its times), matvec.ts (a matrix times a vector, a token's work),
 // generate.ts and generatecheck.ts (generated tokens and the sampling, and their check), check.ts (the step "check"),
-// ceilings.ts and prompt.ts. Each is a static import: a bundler links them into this worker's file (T367.3), and
+// ceilings.ts and prompt.ts (T263: nan.ts, NaN and infinities). Each is a static import: a bundler links them into this worker's file (T367.3), and
 // nothing is awaited before the steps' receiver further down is set.
 import { load, info } from "./gpu/device.ts";
 import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./gpu/halves.ts";
@@ -57,6 +60,7 @@ import { check } from "./gpu/check.ts";
 import { overhead, ceilings } from "./gpu/ceilings.ts";
 import { prompt } from "./gpu/prompt.ts";
 import { ternary } from "./gpu/ternary.ts";
+import { nan } from "./gpu/nan.ts";
 // T368.7: what the page asks and what it is answered (contracts/benchmark.ts): a step's result by the step's name, or
 // what failed (T643.12: a step that is none of them is answered so)
 import type { Thrown } from "./gpu/device.ts";
@@ -106,6 +110,7 @@ const STEPS: { [Name in Step]: (message: Asked<Name>) => Promise<BenchGpuResults
   prompt: ({ counts }) => prompt(counts),
   ceilings: () => ceilings(),
   ternary: () => ternary(),
+  nan: () => nan(),
   bridge: ({ memory, rounds }) => bridge(memory, rounds),
 };
 function stepOf<Name extends Step>(message: Asked<Name>): Promise<BenchGpuResults[Name]> | undefined {

@@ -94,4 +94,8 @@ const attentions = (await asked({ step: "layer steps" })).lengths.rows.map((row)
 assert.deepEqual(attentions, ["the prompt's tiles (flash attention's tile)",
   ...(half || flash ? [`the prompt's tiles${half ? ", f16" : ""}${flash ? ", subgroups" : ""} (the engine's here)`] : []),
   ...(flash ? ["flash_attn_vec (subgroups)"] : []), "flash_attn_vec"], `${label}: the attention forms of a token`);
+// T263: the f16 cases of NaN and infinities run where shader-f16 is, and say why not elsewhere
+const nans = (await asked({ step: "nan" })).cases;
+const { NAN_CASES } = await import(runtimeUrl("shaders.js"));
+assert.deepEqual(nans.filter((one) => one.none).map((one) => one.name), half ? [] : NAN_CASES.filter((one) => one.half).map((one) => one.name), `${label}: the f16 cases of NaN`);
 console.log(`bench-features-check: ${label}: ok`);

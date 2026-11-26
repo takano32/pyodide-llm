@@ -78,7 +78,7 @@ export type Waited = { microseconds: number };
 export type GpuModel = "llm-jp-3 150M" | "Llama 3.2 1B" | "Llama 3.2 3B";
 export type ToBenchGpu = { step: "info" } | { step: "check" } | { step: "bandwidth"; shape: [rows: number, n: number] }
   | { step: "token"; model: GpuModel; kind?: "widen" | "packed"; sample?: boolean } | { step: "layer" } | { step: "layer steps" } | { step: "generate" }
-  | { step: "overhead" } | { step: "prompt"; counts?: number[] } | { step: "ceilings" } | { step: "ternary" } | { step: "bridge"; memory: SharedArrayBuffer; rounds: number };
+  | { step: "overhead" } | { step: "prompt"; counts?: number[] } | { step: "ceilings" } | { step: "ternary" } | { step: "nan" } | { step: "bridge"; memory: SharedArrayBuffer; rounds: number };
 // the adapter: whether a worker has WebGPU at all, and what the adapter says of itself
 export type GpuAbout = { adapter: string; fallback: boolean | null; maxStorageBufferBindingSize: number; maxBufferSize: number; maxComputeWorkgroupsPerDimension: number;
   maxComputeWorkgroupStorageSize: number; maxComputeInvocationsPerWorkgroup: number; subgroupSizes: [number, number] | null; features: string[]; wgsl: string[]; packed: boolean };
@@ -147,10 +147,15 @@ export type GenerateFound = { model: string; layer: string; layers: number; voca
 export type TernaryRow = { what: "matrix" | "tile" | "layer"; form: string; ternary: boolean; shape: string; tokens: number; weights?: number; bytes?: number;
   copies?: number; layerDispatches?: number; none?: string; wrong?: string; error?: string; ms?: number; dispatches?: number; ratio?: number; unsteady?: boolean };
 export type TernaryFound = { rows: TernaryRow[]; pos?: number; none?: string };
+// T263: what a case of NaN and infinities (shaders/bench.ts's NAN_CASES, by its name) made on this device: kind as the case
+// has it, got the u32 the thread wrote (an f32's bits, a float16's in the low 16, or a flag), stored the f32 as an f32
+// store wrote it (the float ones'), or none (why it did not run here) or error (what failed)
+export type NanGot = { name: string; kind: "float" | "half" | "flag"; got?: number; stored?: number; none?: string; error?: string };
+export type NanFound = { cases: NanGot[] };
 // the bridge: whether this worker has Atomics.waitAsync to answer the waiter with
 export type Bridged = { waitAsync: boolean };
 export type BenchGpuResults = { info: GpuInfo; check: Verdicts; bandwidth: Bandwidth; token: TokenFound; layer: LayerFound; "layer steps": LayerStepsFound;
-  generate: GenerateFound; overhead: Overhead; prompt: PromptFound; ceilings: GpuCeilings; ternary: TernaryFound; bridge: Bridged };
+  generate: GenerateFound; overhead: Overhead; prompt: PromptFound; ceilings: GpuCeilings; ternary: TernaryFound; nan: NanFound; bridge: Bridged };
 // what a worker's steps are asked and answer, by the worker: for the page's ask()
 export type Asked = { "benchmark/sections.js": { to: ToSections; results: SectionsResults }; "benchmark/storage.js": { to: ToStorage; results: StorageResults };
   "benchmark/memory.js": { to: ToMemory; results: MemoryResults }; "benchmark/gpu.js": { to: ToBenchGpu; results: BenchGpuResults } };

@@ -152,7 +152,7 @@ console.log(`bench-modules-check: ${WINDOW} links (${Object.keys(window_).length
 
 // ---- src/bench/: the tables' modules use what they declare or import
 const TABLES = new URL("../src/bench/", import.meta.url);
-const TABLE_GLOBALS = new Set("Boolean Map Math NaN Number Object Set String URLSearchParams encodeURIComponent globalThis undefined".split(" "));
+const TABLE_GLOBALS = new Set("Boolean Float32Array Map Math NaN Number Object Set String Uint32Array URLSearchParams encodeURIComponent globalThis undefined".split(" "));
 // (T368.7: either ending, a .ts file with its types blanked: a module made TypeScript is still read here)
 const tables = fs.readdirSync(TABLES).filter((name) => name.endsWith(".js") || typed(name));
 for (const name of tables) {
