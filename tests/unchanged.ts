@@ -52,6 +52,7 @@
 // The other tree is tests/other-tree.ts's: `git archive` of the commit under .tmp/unchanged/<its hash> (made once).
 // Exit 1 if anything differs.
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -293,8 +294,14 @@ function bench(other) {
     const ran = spawnSync("node", ["--import", path.join(root, "tests/unchanged-bench.ts"), tool], { cwd: tree, maxBuffer: 1 << 28,
       env: { ...process.env, UNCHANGED_RECORD: record } });
     if (ran.status !== 0 || !fs.existsSync(record)) throw new Error(`tests/bench.ts did not finish in ${tree}: ${ran.stderr.toString().slice(-2000)}`);
-    const flat = {};
-    JSON.parse(fs.readFileSync(record, "utf8")).forEach(([name, args, answer], index) => { flat[`${String(index).padStart(4, "0")} ${name}`] = `${args} => ${answer}`; });
+    // (T301's review: a call by its name and arguments, the n-th time they were made, not by its place in the run: a test
+    // that makes one call more would move every number after it, and every call would "differ")
+    const flat = {}, seen = {};
+    for (const [name, args, answer] of JSON.parse(fs.readFileSync(record, "utf8"))) {
+      const call = `${name} ${createHash("sha1").update(args).digest("hex").slice(0, 10)} ${args.slice(0, 40).replace(/\s+/g, " ")}`;
+      seen[call] = (seen[call] ?? 0) + 1;
+      flat[`${call} #${seen[call]}`] = answer;
+    }
     return flat;
   };
   const was = run(other), now = run(root);

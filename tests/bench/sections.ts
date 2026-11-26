@@ -143,6 +143,10 @@ const aModel = modelResult("tiny-lm 29M", "314.0.7", rows, real), aMeasured = aM
 assert.deepEqual(aMeasured, { name: "tiny-lm 29M", rows, pyodide: "314.0.7", paths: pathTable(real, "tiny-lm 29M"), said: pathWarnings(real) });
 assert.deepEqual(aModel.result, { status: "ok", data: { rows, paths: real },
   markdown: `tiny-lm 29M · Pyodide 314.0.7\n\n${[...roundsTable(rows), ...[drift(rows)].filter(Boolean).flatMap((line) => ["", line])].join("\n")}\n\n${aMeasured.paths}` });
+// (T301's review: the result above is the same functions again; its words and its order, written out: the model's name and
+// Pyodide's version, then the rounds' table, then the page's path under the name of the model it ran, last)
+assert.ok(aModel.result.markdown.startsWith("tiny-lm 29M · Pyodide 314.0.7\n\n| what ran | tok/s | ready | backend |\n|---|---|---|---|\n"), aModel.result.markdown.slice(0, 200));
+assert.ok(aModel.result.markdown.endsWith(`\n\n${aMeasured.paths}`) && aMeasured.paths!.startsWith("**The model page's path** (tiny-lm 29M)"), aMeasured.paths);
 const theReport = reportOf({ results: aResults, measured: aMeasured, environment: android, hidden: "" });
 assert.ok(theReport.markdown.startsWith(`${benchMarkdown(rows, android)}\n\n${aMeasured.paths}\n\n`), theReport.markdown.slice(0, 400));
 const wholeWarned = warnings([{ title: "Model", markdown: [benchMarkdown(rows, android), aMeasured.paths].join("\n\n"), said: aMeasured.said },
