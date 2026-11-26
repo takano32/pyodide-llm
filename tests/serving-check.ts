@@ -300,7 +300,7 @@ await leave(3);
     if (/\/pyodide-llm\/["`]/.test(text.replace(/https:\/\/takano32\.github\.io\/pyodide-llm\//g, ""))) wrong.push(`${name} writes the site's base itself: it is serving()'s (the address is its url)`);
     if (/os\.tmpdir\(\)/.test(text)) wrong.push(`${name} makes its folders in the system's temp folder: scratch() of tests/leave.ts puts them under .tmp/ and takes them away (T512)`);
     for (const [at, line] of text.split("\n").entries()) {
-      const closes = !line.trimStart().startsWith("//") && /\b(browser|context|driver)\.(close|quit)\(\)/.exec(line);
+      const closes = !line.trimStart().startsWith("//") && /(?:\w+\.)*\b(browser|context|driver)\.(close|quit)\(\)/.exec(line);
       if (closes && !line.includes(`closed(() => ${closes[0]})`)) wrong.push(`${name}:${at + 1} waits on ${closes[0]} itself: await closed(() => ${closes[0]}) of tests/leave.ts (T141)`);
     }
     if (!/^import \{ closed, leave(, scratch)? \} from "\.\/leave\.ts";$/m.test(text)) wrong.push(`${name} does not take closed and leave of tests/leave.ts: a tool ends with await leave(code)`);
