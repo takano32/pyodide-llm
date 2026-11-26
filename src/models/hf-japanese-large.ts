@@ -154,18 +154,18 @@ export const HF_JAPANESE_LARGE: Entry[] = [
       "SakanaAI/Llama-3-Karamaru-v1", "17411929aa0ef76daa51e7c0d0b986d65c877a58"), download: 8540772576,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.6, topp: 0.9, top_k: 50, repetition_penalty: 1.1 },
     ...ASKED_JAPANESE },
-  { group: "hf", id: "hf-evollm-jp-a-v1-7b", name: "Sakana AI EvoLLM-JP-A v1 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
+  { group: "hf", id: "hf-evollm-jp-a-v1-7b", name: "Sakana AI EvoLLM-JP-A v1 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: true, converted: 8.1e9,
     ...ggufOf("mradermacher/EvoLLM-JP-A-v1-7B-GGUF", "028368384460dd87549e789955894c369a93772d", "EvoLLM-JP-A-v1-7B.Q8_0.gguf",
       "SakanaAI/EvoLLM-JP-A-v1-7B", "a8b1356458c9883147c3aeffc1a2e51c99bfe70b", "tokenizer.model"), download: 7695858080,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, template: EVOLLM, ...ASKED_JAPANESE },
-  { group: "hf", id: "hf-evollm-jp-v1-7b", name: "Sakana AI EvoLLM-JP v1 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
+  { group: "hf", id: "hf-evollm-jp-v1-7b", name: "Sakana AI EvoLLM-JP v1 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: true, converted: 8.1e9,
     ...ggufOf("mradermacher/EvoLLM-JP-v1-7B-GGUF", "a498d0ca5ec60a8ca0e48cfd177df004884b9351", "EvoLLM-JP-v1-7B.Q8_0.gguf",
       "SakanaAI/EvoLLM-JP-v1-7B", "a7acd2604d3e9f0fca2987d2448ff5dc19778c21", "tokenizer.model"), download: 7695858048,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, template: EVOLLM, ...ASKED_JAPANESE },
   // T607.1: DataPilot's ArrowPro-7B-KUJIRA, from NTQAI's chatntq-ja-7b-v1.0 (Mistral 7B), made for chat and to hold
   // against prompt injection. No chat template: its card's turn (ARROWPRO) and its sampling (1.0, top-p 0.95). mmnga's
   // Q8_0 with the original's vocabulary
-  { group: "hf", id: "hf-arrowpro-7b-kujira", name: "DataPilot ArrowPro 7B KUJIRA", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
+  { group: "hf", id: "hf-arrowpro-7b-kujira", name: "DataPilot ArrowPro 7B KUJIRA", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: true, converted: 8.1e9,
     ...ggufOf("mmnga/DataPilot-ArrowPro-7B-KUJIRA-gguf", "257e00a4e425aa143494ae12c54b4f9429b713f8", "DataPilot-ArrowPro-7B-KUJIRA-Q8_0.gguf",
       "DataPilot/ArrowPro-7B-KUJIRA", "755e478ac9404cdd551126e20ea055dfa42ddd1d"), download: 7695857376,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 }, template: ARROWPRO,
@@ -173,7 +173,7 @@ export const HF_JAPANESE_LARGE: Entry[] = [
   // T607.2: LocalNovelLLM-project's Vecteus v1, a Mistral 7B made to write novels (merges and LoRA on Japanese and
   // English, NSFW too by its card). Its tokenizer's template (USER: … ASSISTANT:) by the converter, with the BOS; the
   // card samples as transformers' default (1.0, no top-p). mmnga's Q8_0 with the original's vocabulary
-  { group: "hf", id: "hf-vecteus-v1", name: "LocalNovelLLM-project Vecteus v1", note: "writes stories · 日本語 / English · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
+  { group: "hf", id: "hf-vecteus-v1", name: "LocalNovelLLM-project Vecteus v1", note: "writes stories · 日本語 / English · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: true, converted: 8.1e9,
     ...ggufOf("mmnga/Vecteus-v1-gguf", "59df491bb68ce3bc6879c3b292942e4c57274d9b", "Vecteus-v1-Q8_0.gguf",
       "Local-Novel-LLM-project/Vecteus-v1", "d3375ec5f7e149916e44cb0d47c8bda30b986f50", "tokenizer.model"), download: 7695857344,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 1.0, repetition_penalty: 1.0 },
@@ -181,7 +181,7 @@ export const HF_JAPANESE_LARGE: Entry[] = [
   // T607.3: nitky's Oumuamua 7B instruct v2, a merge of Mistral 7B models over Swallow-MS's Japanese vocabulary (42,800).
   // No chat template: its card's turn (OUMUAMUA) and its sampling (temperature 0.1). mradermacher's Q8_0 with the
   // original's vocabulary
-  { group: "hf", id: "hf-oumuamua-7b-instruct-v2", name: "nitky Oumuamua 7B instruct v2", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB", japanese: true, converted: 8.3e9,
+  { group: "hf", id: "hf-oumuamua-7b-instruct-v2", name: "nitky Oumuamua 7B instruct v2", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
     ...ggufOf("mradermacher/Oumuamua-7b-instruct-v2-GGUF", "b5ba02aa55bd31d2365354b492500229535bb592", "Oumuamua-7b-instruct-v2.Q8_0.gguf",
       "nitky/Oumuamua-7b-instruct-v2", "315cee7d10fd84a130ab0973942ff76bb1582c49"), download: 7790108960,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.1, topp: 1.0, repetition_penalty: 1.0 }, template: OUMUAMUA,
@@ -189,7 +189,7 @@ export const HF_JAPANESE_LARGE: Entry[] = [
   // T607.4: umiyuki's Umievo-itr012-Gleipnir-7B, an evolutionary merge of four Japanese Mistral 7B models (Vecteus v1
   // among them). No chat template: its card's turn (GLEIPNIR) and its sampling (1.0, top-p 0.95). mmnga's Q8_0 with the
   // original's vocabulary
-  { group: "hf", id: "hf-umievo-gleipnir-7b", name: "umiyuki Umievo itr012 Gleipnir 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
+  { group: "hf", id: "hf-umievo-gleipnir-7b", name: "umiyuki Umievo itr012 Gleipnir 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: true, converted: 8.1e9,
     ...ggufOf("mmnga/umiyuki-Umievo-itr012-Gleipnir-7B-gguf", "322aacfb4932771d2e7520a90c3b1558ffb5d7a6", "umiyuki-Umievo-itr012-Gleipnir-7B-Q8_0.gguf",
       "umiyuki/Umievo-itr012-Gleipnir-7B", "5187cc9e441f3d876eda345f52f53eda949c5aee"), download: 7695857408,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 }, template: GLEIPNIR,
@@ -209,17 +209,17 @@ export const HF_JAPANESE_LARGE: Entry[] = [
   // format (STABLELM_GAMMA) and sampling, and its base one; Q8_0 GGUFs with the originals' vocabularies (the instruct one's
   // of 2024-11: TheBloke's of 2023-10 holds the weights before Stability AI's update of 2024-01-24)
   { group: "hf", id: "hf-japanese-stablelm-instruct-gamma-7b", name: "Stability AI Japanese StableLM Instruct Gamma 7B",
-    note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
+    note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: true, converted: 8.1e9,
     ...ggufOf("featherless-ai-quants/stabilityai-japanese-stablelm-instruct-gamma-7b-GGUF", "91ce351b24bd0cf8cd4707d2b62bd20996364050",
       "stabilityai-japanese-stablelm-instruct-gamma-7b-Q8_0.gguf",
       "stabilityai/japanese-stablelm-instruct-gamma-7b", "bb4590d461327a6d63f52a5cdbaa64cfceabbb4a", "tokenizer.model"), download: 7695857856,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 }, template: STABLELM_GAMMA,
     ...ASKED_JAPANESE },
-  { group: "hf", id: "hf-japanese-stablelm-base-gamma-7b", name: "Stability AI Japanese StableLM Base Gamma 7B", note: "日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
+  { group: "hf", id: "hf-japanese-stablelm-base-gamma-7b", name: "Stability AI Japanese StableLM Base Gamma 7B", note: "日本語 · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: true, converted: 8.1e9,
     ...ggufOf("mmnga/japanese-stablelm-base-gamma-7b-gguf", "9d14a6b269fcb8190ec9c8b2a29803d24803f800", "japanese-stablelm-base-gamma-7b-q8_0.gguf",
       "stabilityai/japanese-stablelm-base-gamma-7b", "ffc474da0e4f5dbb9db54e96a94a22c081fc7fbf", "tokenizer.model"), download: 7695857280,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, ...CONTINUES_JAPANESE },
-  { group: "hf", id: "hf-swallow-ms-7b-instruct", name: "Science Tokyo Swallow-MS 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB", japanese: true, converted: 8.3e9,
+  { group: "hf", id: "hf-swallow-ms-7b-instruct", name: "Science Tokyo Swallow-MS 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.2 GB", japanese: true, converted: 8.2e9,
     ...ggufOf("mmnga/tokyotech-llm-Swallow-MS-7b-instruct-v0.1-gguf", "cb9ab1c831cfdb8f56371f0ba94806df0fabd518", "tokyotech-llm-Swallow-MS-7b-instruct-v0.1-Q8_0.gguf",
     "tokyotech-llm/Swallow-MS-7b-instruct-v0.1", "008d006f9065e37e39e31bf117ae8689390953e8", "tokenizer.model"), download: 7790109536,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, template: SWALLOW_MS,

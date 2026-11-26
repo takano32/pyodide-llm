@@ -135,7 +135,7 @@ export const HF_CLASSICS: Entry[] = [
       "EleutherAI/pythia-6.9b", "c0e3eee36dc47af0c49f361c74cfe459c09f7f23"), download: 7292706720,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, ...STORY_ENGLISH },
   // T125: Mistral 7B, and zephyr made from it
-  { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: false, converted: 8.2e9,
+  { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: false, converted: 8.1e9,
     ...ggufOf("TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "3a6fbf4a41a1d52e415a4958cde6856d34b2db93", "mistral-7b-instruct-v0.2.Q8_0.gguf",
     "mistralai/Mistral-7B-Instruct-v0.2", "63a8b081895390a26e140280378bc85ec8bce07a", "tokenizer.model"), download: 7695857952,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, template: MISTRAL,
@@ -145,7 +145,7 @@ export const HF_CLASSICS: Entry[] = [
     "mistralai/Mistral-7B-Instruct-v0.3", "c170c708c41dac9275d15a8fff4eca08d52bab71", "tokenizer.model"), download: 7702565088,
     conversion: {}, options: { specials: ["[/INST]", "[INST]"] }, generation: JAPANESE_SAMPLING, template: MISTRAL_V3,
     ...ASKED_ENGLISH },
-  { group: "hf", id: "hf-zephyr-7b-beta", name: "Hugging Face zephyr 7B beta", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.2 GB", japanese: false, converted: 8.2e9,
+  { group: "hf", id: "hf-zephyr-7b-beta", name: "Hugging Face zephyr 7B beta", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.1 GB", japanese: false, converted: 8.1e9,
     ...ggufOf("TheBloke/zephyr-7B-beta-GGUF", "e4714d14e9652aa9658fa937732cceadc63ac42e", "zephyr-7b-beta.Q8_0.gguf",
     "HuggingFaceH4/zephyr-7b-beta", "892b3d7a7b1cf10c7a701c60881cd93df615734c", "tokenizer.model"), download: 7695857344,
     conversion: {}, options: { specials: ["</s>"] }, generation: JAPANESE_SAMPLING, template: ZEPHYR,
