@@ -134,7 +134,7 @@ On three English and three Japanese articles (the first 1,500 tokens of each), t
 Since 2026-10-02 it runs on WebGPU too where the device measures that faster (see [webgpu.md](webgpu.md)); it has
 not been measured on a phone.
 
-Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, held as 1.1 GB and 2.3 GB of ternary
+Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, held as 1.07 GB and 2.18 GB of ternary
 weights; widened to int8 they were 4.5 GB and 9.2 GB, on a 64-bit memory). On the site in Chromium on a CI x86-64 machine with four
 threads the 4B wrote 6.4 tok/s and the 8B 4.2 tok/s, in readable Japanese (2026-10-02). The three computations of the table above
 are within 0.09% of one another on the 4B too (English 16.863 ternary, 16.852 int8 with 7-bit activations; Japanese 35.248 and

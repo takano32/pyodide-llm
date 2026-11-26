@@ -23,7 +23,7 @@
 
 - T170 [整理][CPU] `external=` を `backend=` に、`llama2_numpy.py` を中身に合う名前に — 未着手
 - T171 [設計][WebGPU] forward の単位で backend を分ける（CPU の WASM と GPU を並べる） — 未着手
-- T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 未着手
+- T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 反映済み
 - T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 未着手
 - T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 未着手
 - T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 未着手
@@ -351,7 +351,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 順（前にやるべきことは採番する、の決まり）: T228 → T229 → T230 → T231 → T232 → T233 → T234。T228 の調べで無理と分かれば、そこで持ち主に判断を仰ぐ。
 - **T228 の調べの勧め（2026-10-01、持ち主の判断待ち）: 小さいモデルから。** (1) Ternary-Bonsai-1.7B（PQ2_0 463 MB、形は今ある Qwen3）を、PQ2_0 を int8 に広げる読みと yarn の RoPE で一覧に。(2) T229 を Qwen3.5 0.8B（同じ hybrid attention、Q8_0 の GGUF 812 MB）で通す。(3) T230 の残りと T231 を Ternary-Bonsai の 1.7B〜8B で。(4) 回した基底（Hadamard）と 27B の参照、T233 で 27B。(5) T232 と T234。**前の仕事 4 つに番号を付けた（2026-10-01）**: T235「Ternary-Bonsai-1.7B を一覧に（PQ2_0 → int8 と yarn）」、T236「Qwen3.5 0.8B を一覧に」、T237「回した基底（符号と Walsh–Hadamard 変換）を forward に」、T238「27B の参照」。**勧める順: T235 → T229 → T236 → T230 の残りと T231 → T237 → T238 → T233 → T232 → T234**（27B まで進めるか、小さいモデルを一覧に入れるかは持ち主の判断）。
 
-### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 未着手（2026-11-26、持ち主の決め: README の 3 か所と古い 2 か所を直す。gist は T83 と一緒に 1 回で）。前の状態: 持ち主の判断待ち（docs の分は済み、2026-11-21、Opus medium。gist と README の文面が持ち主待ち。T233 の後。規模 小）
+### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 反映済み（gist は T83 と一緒に、端末の計測の後）（2026-11-26、Opus medium）。前の状態: 未着手（2026-11-26、持ち主の決め: README の 3 か所と古い 2 か所を直す。gist は T83 と一緒に 1 回で）。その前: 持ち主の判断待ち（docs の分は済み、2026-11-21、Opus medium。gist と README の文面が持ち主待ち。T233 の後。規模 小）
 - 速さ・メモリ・品質（perplexity か固定値）を記録のあるものだけで。
 - **したこと（docs の分）**: 3 値の 1.7B〜27B は前から `docs/quantization.md`・`docs/performance.md`・`kernels/README.md`・`docs/webgpu.md` にあったので足さず、無かった 1-bit の Bonsai を `docs/quantization.md` の節「1-bit Bonsai」に（表: 取得・持つ大きさ・前の 3 値の大きさ・原本との差・perplexity、段落: 32 ビットに入らない 27B・日本語・カーネルの速さ・本番の準備と tok/s・GPU）。出どころは T286.2〜.5 と T634.1〜.3 の run（数と run の ID の一覧は `docs/notes/t234-bonsai-results-2026-11-21.md`）。4B・8B の 1 ビットの大きさは測っておらず一覧の見積もりと書いた。古い文を 2 つ直した: 3 値の 1.7B の「CPU only for now (no GPU path)」（T232 から GPU にも乗る）、`docs/webgpu.md` の 3 値の GPU の段落に 1-bit の Bonsai（T634.3）。
 - **取りまとめ役の決め（訳）**: (1) `README.md` は変えない: 足したいのは 1-bit の Bonsai の Q1_0 と「1 bit」の語と「a ternary and a 1-bit 27B」で、表に数を足すのでなく言い回しが変わるので案に留めた（案は note）。(2) `docs/quantization.md` の節は、3 値の節と同じ形（表と段落）の事実の追加なので入れた（変えるなら節ごと戻せる）。(3) gist は更新しない（外向き）: 足す節の案を note に。
@@ -360,6 +360,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - CI を省いた。訳: 記録と文書だけ（デプロイも走らない）。
 - レビュー（Sonnet high、2026-11-21）: must-fix なし。数は T286.2〜.5・T634.1〜.3・T633・T233 の記録と run の ID に合う（推測の混入なし、4B・8B の 1 ビットの大きさだけ一覧の見積もりで注あり）。直した: webgpu.md で 1-bit は 3 値の形に広げて上げると書き替え、quantization.md の見積もりの根拠・カーネル比が 6 つの形の幾何平均であること・ビット一致を見たのは 1.7B と 27B だけであることを足し、performance.md の 27B の「7.66 GB」に測った時の数と今の 7.24 GB を併記、gist 案の 27B の名前。残す: quantization.md の 3 値の 4B・8B の「held as 1.1 GB and 2.3 GB」（尺度が float32 だった頃の数、今の表の 1.07・2.18 GB と食い違う）と architecture.md の GGUF の型の一覧に Q1_0 が無いこと（どちらも README の案と一緒に持ち主に見せる）。docs の分は完了、gist と README は持ち主の判断待ちのまま。
 - **持ち主の決め（2026-11-26、選択肢で）**: README の 3 か所と、古い 2 か所（quantization.md の 3 値 4B・8B の「1.1 GB and 2.3 GB」→ 1.07・2.18 GB、architecture.md の GGUF の型の一覧に Q1_0）を全部直す（順の 2）。gist は T83（計測の表と概要の書き直し）のときにまとめて 1 回で、端末の計測の後に（文面は更新の前に見せる）。
+- **反映（2026-11-26、Opus medium）**: `README.md` の 3 か所を note の案のとおりに（「one ternary 27B」→「a ternary and a 1-bit 27B」、GGUF の型に「and for the 1-bit Bonsai models Q1_0」、「(Ternary Bonsai stays in its 2 bits, the 1-bit Bonsai in 1 bit)」）。`docs/quantization.md` の 3 値の 4B・8B の「held as 1.1 GB and 2.3 GB」→「1.07 GB and 2.18 GB」（T286 のチェックポイント 1,069,018,852・2,176,234,140 バイト、1-bit の節の表と同じ）。`docs/architecture.md` の変換器の行に「the 1-bit Q1_0」（T508 の文面 12 の案 (a) と同じ言い方にした: T508 がその文を書き替えるときは Q1_0 がもう入っている）。README の「GGUF だけのリポジトリは開かない」（T508 の文面 11）には触っていない。gist は更新していない（T83 と一緒に、端末の計測の後に文面を見せてから）。CI を省いた。訳: 記録と文書だけ（デプロイも走らない）。
 
 ### T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 状態: 未着手（2026-11-26、持ち主の決め: 毎晩の全部の組に入れる）。前の状態: 候補（2026-10-01、T249・T250 のレビューから。79 項目で 4.7 分。持ち主の判断）
 - **持ち主の決め（2026-11-26、選択肢で）**: `format_check.py` を毎晩の全部の組に入れる（順の 2）。
