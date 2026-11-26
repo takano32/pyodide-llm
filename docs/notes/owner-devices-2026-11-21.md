@@ -75,7 +75,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 **A-5 ★ `/benchmark/` の Run all（T624.2・T241・T219 (2)・T224・T296・T313・T270・T555・T225 (a)・T379.2・T367.3.2・T156 (c)・T263）**
 - 開く: `頭benchmark/` → 「Run all」を押す（モデルは既定の llm-jp-3 150M のまま。ほかの箱は触らない）。終わるまで画面を前に出したまま（画面は自動では消えない）。所要は未計測（10〜30 分の見込み）。
 - 写す: [報]。読むのは主に、GPU の節の「An int8 matrix × vector」の「llama.cpp mul_mat_vec (engine)」「ORT DP4A small M (engine)」の行（T624.2）、`a layer, DP4A, …` が ok か（T241・T225 (a)）、「Quantizing the vector」の µs（T241）、「the sampling alone」の平らな logits の 1 ワークグループの ms が 6.71 以下か（T219 (2)）、「A token's attention alone, by the positions it reads」の 128・1024・4096 位置（T224・T296）、「Ternary weights」の表と「The codes made signed by a table against the engine's form」の 2 つの形の比（T313・T270）、CPU の節の「Kernels of ternary weights」（T270）、モデルの節の表の下の「The last round ran the first one's switches again at N%」（T555）。
-- T263: `/benchmark/` の Run all の報告に GPU の節の「NaN and infinities」の表が入る（新しい手順は要らない: GPU の節の 2 段目で、数秒もかからない見込み）。読むのは「failed」の行の有無（エンジンの印が頼る場合で、この端末が NaN か無限大を運ばなかったもの）と、要約の「GPU, NaN and infinities」の 1 行。
+- T263: `/benchmark/` の Run all の報告に GPU の節の「NaN and infinities」の表が入る（新しい手順は要らない: GPU の節の 2 段目で、数秒もかからない見込み）。読むのは「failed」の行の有無（エンジンの印が頼る場合で、この端末が NaN か無限大を運ばなかったもの）と、要約の「GPU, NaN and infinities」の 1 行（運ばなかった場合があるときだけ出る）。
 
 **A-6 小さいモデル（〜0.8 GB）（T509・T261.4.1・T260・T236・T229・T245 (c)・T226・T251 (b)・T253 (b)）**
 1. Gemma 3 270M `頭?model=hf-gemma-3-270m`: 短い問いを 1 つ送り最初のトークンまでの秒、続けて 2 つ目の問いの秒（T509）。長い問い L を 2 回（T261.4.1: CPU が勝ってよい）。[状]・[答]・[コ]（`gpu: a block of 64 tokens: … ms on the GPU, … ms on the CPU`）。

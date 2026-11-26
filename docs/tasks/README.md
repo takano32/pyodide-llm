@@ -124,6 +124,7 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T260](T260.md) [追加][CPU] LFM2.5（畳み込みの層と attention の層）を CPU で: 350M と 1.2B-JP を一覧に — 2026-10-02
 - [T261](T261.md) [追加][CPU][WebGPU] Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓・2 つの RoPE） — 2026-11-12
 - [T262](T262.md) [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 2026-10-02
+- [T263](T263.md) [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 2026-11-26
 - [T264](T264.md) [バグ][変換] 変換器が BOS を決める（`?hf=` で開いた Qwen3 の 8B 系も `<|im_start|>` から） — 2026-10-15
 - [T265](T265.md) [バグ][変換] rinna の japanese-gpt2 の `do_lower_case` を読む — 2026-10-11
 - [T268](T268.md) [バグ][遠隔試験] preview.yml の「Offline (T111)」が WebKit で落ちる（本線でも） — 2026-10-09
