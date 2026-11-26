@@ -257,7 +257,7 @@ def test_how_a_model_is_run_is_the_plans():
 def test_the_tables_python_computes_are_the_plans_bytes():
     header = [256, 768, 4, 8, 4, 2048, 320]
     dims = Dims(header)
-    cos, sin = rope_tables("llama", 320, 32, 32, 1.0, "int8", lambda width: rope_frequencies(width, 10000.0, None))
+    cos, sin = rope_tables("llama", 320, 32, 32, "int8")
     plan = forward_plan(dims, "int8", flat, int8=True, kv_start=256, tables=(cos, sin))
     assert set(plan["derived"]) == {"freq_cis_real", "freq_cis_imag"}
     assert plan["derived"]["freq_cis_real"] == cos.astype(np.float32).tobytes() and len(plan["derived"]["freq_cis_real"]) == 320 * 16 * 4
@@ -324,8 +324,7 @@ def test_a_llama_hands_on_the_plan_of_its_file(name, header, form, more, dtype, 
     with pytest.raises(Handed):
         Llama(None, b"", dtype=dtype, external=outside, disable=disable, **form, **more)
     rotary = more.get("rotary") or dims.head_size
-    tables = rope_tables(dims.arch, dims.seq_len, dims.head_size, rotary, 1.0, dtype,
-                         lambda width: rope_frequencies(width, 10000.0, None))
+    tables = rope_tables(dims.arch, dims.seq_len, dims.head_size, rotary, dtype)
     # (every width of these models is whole groups of 32: the int8 kernels take the matrices of a quantized file)
     int8 = dtype in QUANTIZED and "int8" not in disable
     # (T261: and the tables of its local layers, which Llama makes at every dtype, where it has such layers)

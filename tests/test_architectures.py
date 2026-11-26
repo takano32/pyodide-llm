@@ -180,7 +180,7 @@ ENTRANCES = {
         "size": 1 << 20, "read": staticmethod(lambda offset, length: struct.pack("<7i", *HEADER))})()),
     "stateful_form()": lambda arch: stateful_form(arch, form_of({"arch": arch}), 4),
     "unturned_layers()": lambda arch: unturned_layers(arch, 4, [1]),
-    "rope_tables()": lambda arch: rope_tables(arch, 48, 16, 16, 1.0, "int8", lambda width: rope_frequencies(width, 10000.0, None)),
+    "rope_tables()": lambda arch: rope_tables(arch, 48, 16, 16, "int8"),
 }
 
 
@@ -257,20 +257,22 @@ def test_the_layers_rope_leaves_alone_are_an_architectures_that_has_such(arch):
 
 @every
 def test_the_tables_the_engine_makes_are_what_the_facts_of_rope_say(arch):
-    frequencies = lambda width: rope_frequencies(width, 10000.0, None)
-    make = lambda dtype, magnitude=1.0, rotary=16: rope_tables(arch, 48, 16, rotary, magnitude, dtype, frequencies)
+    # (T454: a yarn whose attention_factor is the magnitude, 1.5, and whose angles are its own)
+    yarn = {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 12, "attention_factor": 1.5}
+    frequencies = lambda width: rope_frequencies(width, 10000.0, yarn)
+    make = lambda dtype, rotary=16: rope_tables(arch, 48, 16, rotary, dtype, 10000.0, yarn)
     angles = np.arange(48)[:, None] * frequencies(16)
     if FACTS[arch]["rope"] is None:
         # no turn: tables of zeros that nothing reads, whatever the file's dtype
         assert all(not table.any() and table.shape == (48, 8) for dtype in ("float32", "int8") for table in make(dtype))
         return
     assert make("float32") is None  # the file has them
-    cos, sin = make("int8", 1.5)
+    cos, sin = make("int8")
     magnitude = 1.5 if FACTS[arch]["yarn_magnitude"] else 1.0
     if FACTS[arch]["rope"] == PARTLY:
         # (T258: a Phi-3's tables carry the magnitude as a Llama's do, the others' none)
         part = np.arange(48)[:, None] * frequencies(4)
-        cos, sin = make("int8", 1.5, 4)
+        cos, sin = make("int8", 4)
         assert np.array_equal(cos[:, :2], (np.cos(part) * magnitude).astype(np.float32)) and not cos[:, 2:].any() and not sin[:, 2:].any()
         assert np.array_equal(sin[:, :2], (np.sin(part) * magnitude).astype(np.float32))
     else:

@@ -29,6 +29,7 @@ import numpy as np
 
 from engine.checkpoint import outside
 from engine.dtypes import KINDS, QUANTIZED
+from engine.layers import rope_frequencies, rope_magnitude
 from engine.layout import CODES, EMBEDDING, PARTLY, PROPORTIONAL, ROWS, TABLE, check_suited, layout_of, placed
 
 
@@ -78,11 +79,13 @@ def read_rows(checkpoint, rows, dtype, shared_weights, external):
     return held
 
 
-def rope_tables(arch, seq_len, head_size, rotary, magnitude, dtype, frequencies):
-    """The RoPE tables (cos, sin) of a file that has none of its own: half precision is too coarse for the rotation
-    angles, and a quantized file leaves the tables out. None where the file has them. frequencies(width): the angle
-    per position of each pair; rotary: how many values of a head are turned; magnitude: yarn's (rope_magnitude()).
-    arch: the architecture's name, whose facts (engine/layout.py's Layout) say which tables these are."""
+def rope_tables(arch, seq_len, head_size, rotary, dtype, theta=10000.0, scaling=None):
+    """The RoPE tables (cos, sin) of a model as its options say them, or None where they are the file's rows
+    (freq_cis_real, freq_cis_imag): the one place that says where a model's tables come from (T454). The options'
+    are made of theta (rope_theta) and scaling (rope_scaling: rope_frequencies() and rope_magnitude()); a float32 file
+    has rows of its own, and half precision is too coarse for the rotation angles, and a quantized file leaves the
+    tables out. rotary: how many values of a head are turned. arch: the architecture's name, whose facts
+    (engine/layout.py's Layout) say which tables these are."""
     layout = layout_of(arch)
     if layout.rope is None:
         # no rotation: the position is a row of a learned table, added to the embedding
@@ -90,12 +93,13 @@ def rope_tables(arch, seq_len, head_size, rotary, magnitude, dtype, frequencies)
         return zeros, zeros
     if dtype == "float32":
         return None
+    frequencies = lambda width: rope_frequencies(width, theta, scaling)
     if layout.rope == PROPORTIONAL:
         # T331: the first rotary values, by the first angles of the whole head (transformers' proportional RoPE: the
         # pairs past them turn by an angle of 0, which is none)
         return partial_tables(seq_len, head_size, rotary, lambda width: frequencies(head_size)[:width // 2])
     # (yarn's magnitude is in a Llama's tables alone, as it always was; T258: and a Phi-3's, which turns part of a head)
-    magnitude = magnitude if layout.yarn_magnitude else 1.0
+    magnitude = rope_magnitude(scaling) if layout.yarn_magnitude else 1.0
     if layout.rope == PARTLY:
         return partial_tables(seq_len, head_size, rotary, frequencies, magnitude)
     angles = np.arange(seq_len)[:, None] * frequencies(head_size)

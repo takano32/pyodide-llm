@@ -45,7 +45,6 @@ from convert.version import CONVERTER  # noqa: E402
 from convert.superblocks import SUPERBLOCKS  # noqa: E402
 from engine import dtypes as D  # noqa: E402
 from engine import layout as L  # noqa: E402
-from engine.layers import rope_frequencies, rope_magnitude  # noqa: E402
 from engine.model import KV_START, OWN  # noqa: E402
 from engine.plan import forward_plan  # noqa: E402
 from engine.tensors import rope_tables  # noqa: E402
@@ -89,8 +88,7 @@ def madeup():
     none)."""
     form = dict(L.FORM)
     dims = L.Dims(MADEUP, form)
-    tables = rope_tables(dims.arch, dims.seq_len, dims.head_size, dims.head_size, rope_magnitude(OWN["rope_scaling"]),
-                         "int8", lambda width: rope_frequencies(width, OWN["rope_theta"], OWN["rope_scaling"]))
+    tables = rope_tables(dims.arch, dims.seq_len, dims.head_size, dims.head_size, "int8", OWN["rope_theta"], OWN["rope_scaling"])
     ones = lambda offset, length: struct.pack(f"<{length // 4}f", *[1.0] * (length // 4))
     plan = forward_plan(dims, "int8", ones, int8=True, kv_start=KV_START, rotary=dims.head_size, tables=tables)
     plan["tensors"] = {name: tensor for name, tensor in plan["tensors"].items() if name != "wcls"}

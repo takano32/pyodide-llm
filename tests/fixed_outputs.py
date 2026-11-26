@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
-from llama2_numpy import Llama, rope_frequencies, rope_magnitude  # noqa: E402
+from llama2_numpy import Llama, rope_magnitude  # noqa: E402
 from engine.tensors import rope_tables  # noqa: E402
 from conducting import Fetched, Mapped, converted as conducted  # noqa: E402
 
@@ -120,8 +120,7 @@ def with_the_entrys_rope(llama, options):
     scaling = options["rope_scaling"]
     llama.rope_magnitude = rope_magnitude(scaling)
     llama.freq_cis_real, llama.freq_cis_imag = rope_tables(
-        llama.arch, llama.seq_len, llama.head_size, llama.rotary, llama.rope_magnitude, "the options'",
-        lambda width: rope_frequencies(width, options.get("rope_theta", 10000.0), scaling))
+        llama.arch, llama.seq_len, llama.head_size, llama.rotary, "the options'", options.get("rope_theta", 10000.0), scaling)
     return llama
 
 

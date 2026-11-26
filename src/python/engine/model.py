@@ -376,15 +376,14 @@ class Llama:
         self.w3 = None
         # a dict from Python, or a JavaScript object from the worker
         rope_scaling = plain(rope_scaling)
-        frequencies = lambda width: rope_frequencies(width, rope_theta, rope_scaling)
         self.rope_magnitude = rope_magnitude(rope_scaling)
         # each row as an attribute of its name: where it is, with the weights outside Python (src/runtime/forward.ts
         # reads them, and widens what has to be widened, itself), or an array
         self.file_tensors(checkpoint, self.rows, stored, shared_weights, external is not None)
         # (T331: the tables of the layers that attend over all the positions, whose heads are the wide ones where the
         # model has such)
-        tables = rope_tables(arch, self.seq_len, dims.wide_head or self.head_size, self.rotary, self.rope_magnitude,
-                             stored, frequencies)
+        tables = rope_tables(arch, self.seq_len, dims.wide_head or self.head_size, self.rotary, stored, rope_theta,
+                             rope_scaling)
         if tables is not None:
             self.freq_cis_real, self.freq_cis_imag = tables
         # T261: and those of the local layers, which no file has
