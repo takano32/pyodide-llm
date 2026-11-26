@@ -2,9 +2,9 @@
 
 このプロジェクトの作業台帳。背景・方針・落とし穴・検証手順は [AGENTS.md](AGENTS.md) にあるので、先にそちらを読むこと。
 
-**再開の所（2026-11-21、持ち主「リミットが近いから中断」）**: 持ち主の判断を待たないタスクは尽きた（この回に T334.2・T334.3・T673・T674・T344・T519・T259・T660〜T663・T234 の docs・T311・T665〜T668・T675・T677〜T681 を完了）。走っている担当・CI は無く、作業ツリーとブランチもきれい。次は持ち主の答え: E2B と E4B の置き場（T334.3、勧め (a) GPU だけ）、T669・T670 の画面と文面、GPU だけのモデルの DRY（T669、勧め (a) 飛ばして切る）、T665〜T667 の MIT の許諾文の扱い、T259 の一覧への追加、T234 の README と gist、T311 の Chromebook の 8B、ほか下の「持ち主の答えを待って止まっているもの」。端末の手順は docs/notes/owner-devices-2026-11-21.md。
+**再開の所（2026-11-26、持ち主が積んだ判断に選択肢で答えた）**: 2026-11-21 の区切りで持ち主の答えを待っていたものに、持ち主が選択肢で答えた。決めの全部（1 行 1 つ、T 番号つき）・取りまとめ役の読み・新しく採った番号・順は docs/notes/owner-decisions-2026-11-26.md、文面の 26 項目（全部 (a)）は docs/notes/owner-texts-2026-11-26.md。決めは各タスクの項の「持ち主の決め（2026-11-26、選択肢で）」の行に。新しく採った番号: T682〜T690。閉じたもの: T282・T291・T400・T513（記録だけの閉じ）。T302・T303 は残りの直しが済んだら閉じる。**進め方**: 直列のまま（AGENTS.md の「持ち主の指示」）。**取りかかる順**（持ち主「勧めの順」）: (1) 端末で見ていただく前に入れるもの: T682（Gemma 4 を GPU だけ）→ T263（NaN の検査）→ T372（種のボタンを本線に）→ T525（Gemma 4 の警告の数）→ T289（27B の note に 16 GB）→ T311 の手順の直し（Chromebook を Qwen3 4B に: 記録だけ、2026-11-26 に済み）。(2) 小さな直しと文面: T234（README の 3 か所と古い 2 か所）→ 文面の回（T489・T502.3・T502.4・T508・T410・T416・T510・T402・T685）→ T278・T277（About の 2 行）→ T300 → T302（ライセンス名 2 つ）→ T303（DeepSeek 1.5B の options）→ T267（`<unk>` を出さない）→ T688 → T309 → T301 → T266 → T690。(3) 送る ID と一覧: T399（寄せる）→ T689 → T684 → T657 → T683 → T136 の段 ③。(4) 翻訳の画面: T669 → T670 → T671 → T672。(5) エンジンの直し: T454 → T314 → T292 → T491 → T298 → T396（先に測る）→ T326 → T281。(6) 名前の変更: T170。(7) カーネルと塊: T505.4 → T686 → T687。(8) 新しいモデルと対応: T306 → T305 → T619 → T616 → T618 → T332 → T615 → T294 → T295 → T327 → T655 → T284 → T318〜T321 の共通の部品 → T336。(9) 調べもの: T121 → T122 → T585。**端末の数字を待つもの**: T137（線を満たせば聞き直さずに実装）・T83 と gist（端末の計測の後）・T293・T296・T578・T579・T566・T297・T279・T506・T280。端末の手順は docs/notes/owner-devices-2026-11-21.md。**候補のまま**: T551・T549・T550。**まだ進めない**: T316・T317・T322〜T325（Clef-Flash）。**残したブランチ 3 本**（ほかの古いブランチはリモート 15 本・ローカル 28 本を消した）: `t372-seed-beside-2`（T372）・`t129-review-model-bytes`（T298）・`t260-review-probe`（T314 の確かめの道具 `tests/t272_probe.py`。取りまとめ役の決めで残した）。本線に入れたら消す。
 
-**再開の所（2026-11-13、持ち主「今週も苦しくなるとイヤだから、区切りのいいところでいったん作業を完了させよう」）**: 2026-11-12〜13 に台帳の頭の順を消化した。**完了にしたもの**: T611・T612.2 の残り・T656（12B を 3 つ）・T256（`gpt4o` の前分割）・T275（relaxed でない 3 値のカーネル）・T283（BitNet b1.58）・T288（測って見送り）・T270（/benchmark/ の 3 値の行）・T285（27B のメモリ）・T296（1 トークンの attention の形の覚え）・T84（Pythia の梯子）・T258（Phi-3 mini・Phi-4 mini）・T509 の残り・T659（`?hf=` の Phi-3）・T401・T423・T449・T384・T511・T577・T654、台帳の見直しで T261・T389・T397・T545・T546・T584。**止めた所**: T510 の残りを本線に入れてレビューまで済ませた所（デプロイ run 43370533079。T510 は持ち主の文面待ちが残るので見出しは反映済みのまま）。走っている担当も CI の待ちも無い。**進め方**: 2026-11-12 の夜から直列（AGENTS.md の「持ち主の指示」）。**次に取りかかる順**（持ち主を待たないもの）: (1) T313（3 値の GPU の残り）、(2) T334（Gemma 4 を GPU に）、(3) T344（Spark-X2.5 を GPU に）、(4) T519（wllama との速さの比べ）、(5) T259（yarn の `attn_factor` の調べ）、(6) T660・T661・T662・T663（この回の気づき）、(7) T234 の docs の分、(8) T311（端末で見る手順を 1 枚に）。**後回し**（2026-11-13、持ち主「これは後回しでいいよ」）: T664 の組（plamo-translate-desktop: T665 → T666 → T667 → T668、T669・T670 は文面を見せてから、T671 は持ち主が選んでから）は上の (1)〜(8) の後。**持ち主の答えを待って止まっているもの**: T372（種のボタン: ブランチ `t372-seed-beside-2`、スマホ幅で種が自分の行に出る。画面は 2026-11-13 に送った。良ければ 軽い組 → 本線 → デプロイ）、T399（測った: 「寄せる」の勧めは Qwen2.5 1.5B・3B・7B、Qwen3 1.7B・4B・4B Instruct 2507、CAT-Thinking 8B と Hermes 3 の止まり。表は T399 の項）、T657（PLaMo 3 NICT base: Translate の config では開けない。(a) 項目が config の鍵を上書きできる形を足す（勧め）(b) 8B だけ第三者の写しの config で (c) 足さない）、T258 の Shisa V2.1 unphi4 14B の `stripped: {}` を外して本物の ID にするか、T454・T170（名前）・T316 の決め (1)(2)・T400 (4) を閉じるか・T505.4 の見送り・T491。**持ち主に見せるもの（この回に増えた分）**: T656 の 3 つの名前・note・標本抽出、T283 の名前と note・BitNet の 16 ビット版の断りの文を替える案、T270 のページの英語の文と CPU の節の説明に 3 値の 1 文を足すか、T288 の 2 つの案（x86-64 だけ int16 の和の形を端末で選ぶ・arm64 の Firefox のための表の形: 勧めはどちらも見送り）、T296 の覚えが悪い形を約 4 週間固めうる件（Android の `/benchmark/` の「A token's attention alone」の差で決める）、T84 の Pythia 70M・160M・410M の `converted` が実際より 17・30・49 MB 大きい件、T659 の断りの文に 1 句足す案と「次に `CONVERTER` を上げる回に T659 を乗せる」、T457.2 を分けない決め、T401 (5)・T449 (2)(3) の見送り、T275 は本物の Safari が relaxed SIMD を持つなら効かない（端末で見る一覧の T290 の行）、T234 の README の 3 か所と gist の節の案、`docs/quantization.md` に入れた「1-bit Bonsai」の節の英語（`docs/notes/t234-bonsai-results-2026-11-21.md`）。**消してよいか確かめるブランチ**: リモートの `t640.10-ci`・`t640.8-refactor`・`t642.12-ci`・`t643.15-ci` と古い probe・review の 10 本、`t259-probe`（T259 の調べの道具 `tests/t259_probe.sh`: 結果は note と台帳に run の ID つき。レビューの勧めは消す）、ローカルの 27 本（一覧は 2026-11-12 の台帳の見直しの報告: `t129-review-model-bytes` は T298 が指すので残す）。前の再開の所（2026-11-07）は git の履歴に。
+**再開の所（2026-11-13、持ち主「今週も苦しくなるとイヤだから、区切りのいいところでいったん作業を完了させよう」）**: 2026-11-12〜13 に台帳の頭の順を消化した。**完了にしたもの**: T611・T612.2 の残り・T656（12B を 3 つ）・T256（`gpt4o` の前分割）・T275（relaxed でない 3 値のカーネル）・T283（BitNet b1.58）・T288（測って見送り）・T270（/benchmark/ の 3 値の行）・T285（27B のメモリ）・T296（1 トークンの attention の形の覚え）・T84（Pythia の梯子）・T258（Phi-3 mini・Phi-4 mini）・T509 の残り・T659（`?hf=` の Phi-3）・T401・T423・T449・T384・T511・T577・T654、台帳の見直しで T261・T389・T397・T545・T546・T584。**止めた所**: T510 の残りを本線に入れてレビューまで済ませた所（デプロイ run 43370533079。T510 は持ち主の文面待ちが残るので見出しは反映済みのまま）。走っている担当も CI の待ちも無い。**進め方**: 2026-11-12 の夜から直列（AGENTS.md の「持ち主の指示」）。**次に取りかかる順**（持ち主を待たないもの）: (1) T313（3 値の GPU の残り）、(2) T334（Gemma 4 を GPU に）、(3) T344（Spark-X2.5 を GPU に）、(4) T519（wllama との速さの比べ）、(5) T259（yarn の `attn_factor` の調べ）、(6) T660・T661・T662・T663（この回の気づき）、(7) T234 の docs の分、(8) T311（端末で見る手順を 1 枚に）。**後回し**（2026-11-13、持ち主「これは後回しでいいよ」）: T664 の組（plamo-translate-desktop: T665 → T666 → T667 → T668、T669・T670 は文面を見せてから、T671 は持ち主が選んでから）は上の (1)〜(8) の後。**持ち主に見せるもの（この回に増えた分。2026-11-26 に決まったものは消した）**: T296 の覚えが悪い形を約 4 週間固めうる件（Android の `/benchmark/` の「A token's attention alone」の差で決める）、T275 は本物の Safari が relaxed SIMD を持つなら効かない（端末で見る一覧の T290 の行）、`docs/quantization.md` に入れた「1-bit Bonsai」の節の英語（`docs/notes/t234-bonsai-results-2026-11-21.md`）。前の再開の所（2026-11-07）は git の履歴に。
 
 **いまの状態と次にやること**は、下の「Opus の回とレビューの回」の節の「次の回」と、そのあとの「レビューの回」の記録にある。その節の「Opus の回（次）」と、下の「いまの勧める順番（2026-09-25）」は当時の記録（その頃の開発機ではブラウザを動かさなかった）。
 
@@ -23,12 +23,11 @@
 
 - T170 [整理][CPU] `external=` を `backend=` に、`llama2_numpy.py` を中身に合う名前に — 未着手
 - T171 [設計][WebGPU] forward の単位で backend を分ける（CPU の WASM と GPU を並べる） — 未着手
-- T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 持ち主の判断待ち
-- T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 候補
-- T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 候補
+- T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 未着手
+- T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 未着手
+- T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 未着手
 - T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 未着手
-- T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 測った
-- T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 未着手の残り
+- T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 未着手
 - T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 未着手
 - T408 [計測][変換] arm64 のランナーで、段取りを通す道具の変換が 1〜2% 遅く出る run がある訳 — 未着手
 - T410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 未着手
@@ -38,88 +37,94 @@
 - T457 [整理][WebGPU] `forward/gpuside.js` を分ける — 保留の残り
 - T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T278 [描画][モデル] 「Built with Llama」の表示 — 未着手
-- T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 未着手
-- T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 未着手
+- T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 端末の数字待ち
+- T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 端末の数字待ち
 - T281 [追加][Bonsai] 27B の文脈の長さ — 未着手
-- T282 [描画][Bonsai] Bonsai をページの入口（イントロ）に置くか — 候補
-- T284 [追加][Bonsai] 27B の画像の入力（mmproj） — 候補
+- T284 [追加][Bonsai] 27B の画像の入力（mmproj） — 未着手
 - T289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 未着手
-- T291 [追加][モデル] Qwen3.5 の考える形の項目をどうするか — 未着手
 - T292 [性能][CPU] Qwen3.5 の 7 ビットの活性値（日本語で +3%） — 未着手
-- T293 [性能][WebGPU] 2 重の線と置き場の見直し — 未着手
-- T294 [追加][WebGPU] GPT-2・NeoX を GPU だけにも置く — 候補
-- T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 候補
-- T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 未着手
+- T293 [性能][WebGPU] 2 重の線と置き場の見直し — 端末の数字待ち
+- T294 [追加][WebGPU] GPT-2・NeoX を GPU だけにも置く — 未着手
+- T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 未着手
+- T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 端末の数字待ち
 - T298 [運用][変換] 静けさの 30 秒に、モデルの部品の届いたバイトも数える — 未着手
 - T300 [運用][その他] Pyodide のファイルの取得の失敗: 取り直すか、と文面 — 未着手
 - T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 未着手
 - T302 [描画][モデル] 新しい項目の名前と note の文面をまとめて決める — 未着手
 - T303 [運用][モデル] 一覧の整理: 残すか外すか、と設定 — 未着手
-- T305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 候補
-- T306 [追加][変換] 古い並びの GPT-NeoX の GGUF を読む — 候補
+- T305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 未着手
+- T306 [追加][変換] 古い並びの GPT-NeoX の GGUF を読む — 未着手
 - T309 [文書][変換] ページの「開けるモデル」の文と README に、足した形を書く — 未着手
 - T314 [性能][CPU] 最初の位置（BOS）を丸めずに計算する（T272 から。LFM2.5 の活性値の量子化の損のほぼ全部） — 未着手
-- T316 [調査][MLX] Clef-Flash（Cloudflare、MLX の 4 ビット）を動かす: 全体と決めること — 未着手
-- T317 [追加][MLX][変換] MLX の 4 ビット（affine、グループ 64）の重みの読み手 — 未着手
+- T316 [調査][MLX] Clef-Flash（Cloudflare、MLX の 4 ビット）を動かす: 全体と決めること — まだ進めない
+- T317 [追加][MLX][変換] MLX の 4 ビット（affine、グループ 64）の重みの読み手 — まだ進めない
 - T318 [追加][MLX][CPU] 全位置の最後の隠れ状態を返す道 — 未着手
 - T319 [追加][MLX] Clef の頭（joint schema head） — 未着手
 - T320 [追加][MLX][解析分割] 入力の組み立てと選択肢の行 — 未着手
 - T321 [追加][MLX][変換] 頭の重みの取得と保存 — 未着手
-- T322 [描画][MLX] 状態と問いを入れて確率を見るページ — 未着手
-- T323 [試験][MLX][遠隔試験] 原本の実装と確率を比べる — 未着手
-- T324 [追加][MLX] 画像と動画の入力 — 保留
-- T325 [性能][MLX][WebGPU] Clef-Flash を WebGPU で — 未着手
-- T326 [追加][Bonsai] 27B の文脈を読み込みの時に決める（保存の名前から外す） — 候補
-- T327 [バグ][CPU] 古い arm64 の Chrome（V8 14.2 以前）の Liftoff が 4 GiB を越える番地の `load32_splat` を誤る — ページに備えがあるか — 候補
+- T322 [描画][MLX] 状態と問いを入れて確率を見るページ — まだ進めない
+- T323 [試験][MLX][遠隔試験] 原本の実装と確率を比べる — まだ進めない
+- T324 [追加][MLX] 画像と動画の入力 — まだ進めない
+- T325 [性能][MLX][WebGPU] Clef-Flash を WebGPU で — まだ進めない
+- T326 [追加][Bonsai] 27B の文脈を読み込みの時に決める（保存の名前から外す） — 未着手
+- T327 [バグ][CPU] 古い arm64 の Chrome（V8 14.2 以前）の Liftoff が 4 GiB を越える番地の `load32_splat` を誤る — ページに備えがあるか — 未着手
 - T328 [調査][Gemma4] Gemma 4 を動かす: 全体と順 — 未着手
-- T332 [追加][Gemma4] 12B（`gemma4_unified`） — 候補
-- T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 候補
+- T332 [追加][Gemma4] 12B（`gemma4_unified`） — 未着手
+- T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 未着手
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
-- T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 候補
+- T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 未着手
 - T136 [性能][変換] Hugging Face などからの取得を速くする — 段 ① は済
-- T137 [性能][変換] 変換のレジューム: 取得と変換が途中で止まっても、次は続きから — 第 0 段
-- T83 [文書][文書] gist に計測の表（`30-measurements.md`）を足し、`10-overview.md` を今の姿に直す — 未着手
-- T121 [追加][モデル] 画像を生成する: まず自己回帰型（画像のトークンを言語モデルで書く）が動くかの判定 — 候補
-- T122 [追加][モデル] 音声を合成する（TTS）: 言語モデル型が動くかの判定 — 候補
+- T137 [性能][変換] 変換のレジューム: 取得と変換が途中で止まっても、次は続きから — 端末の計測で線を満たせば聞き直さずに実装
+- T83 [文書][文書] gist に計測の表（`30-measurements.md`）を足し、`10-overview.md` を今の姿に直す — 端末の数字待ち
+- T121 [追加][モデル] 画像を生成する: まず自己回帰型（画像のトークンを言語モデルで書く）が動くかの判定 — 未着手
+- T122 [追加][モデル] 音声を合成する（TTS）: 言語モデル型が動くかの判定 — 未着手
 - T100 [性能][CPU] 投機的デコード（小さいモデルで下書きして、大きいモデルでまとめて確かめる） — 保留
 - T102 [運用][その他] JSPI で Python の同期ループから非同期の JS を待つ — 保留
 - T103 [性能][その他] WebNN でブラウザの NPU や GPU を使う — 保留
 - T104 [性能][CPU] WebAssembly の FP16（f16x8）で活性値を半精度にする — 保留
-- T489 [整理][その他] T380.1 の後の残り — 持ち主の文面待ち
-- T491 [整理][WebGPU] T380.3 の後の残り — 持ち主の判断待ち
-- T502 [整理][その他] T363（Saluki のエンジン）の後の残り — 持ち主の文面待ち
-- T505 [追加][変換] GGUF を URL とフォルダからそのまま開く — 持ち主の判断待ち
+- T489 [整理][その他] T380.1 の後の残り — 未着手
+- T491 [整理][WebGPU] T380.3 の後の残り — 未着手
+- T502 [整理][その他] T363（Saluki のエンジン）の後の残り — 未着手
+- T505 [追加][変換] GGUF を URL とフォルダからそのまま開く — 未着手
 - T506 [不具合][遠隔試験] WebKit 27.2 で 4 GB を越えるモデルが、断られずに黙って止まる — 調べは完了
-- T508 [整理][変換] T505.3 の残り — 持ち主の文面待ち
+- T508 [整理][変換] T505.3 の残り — 未着手
 - T510 [整理][Gemma4] T261.1・T261.2 の残り — 反映済み
-- T513 [性能][モデル] 量子化を組み合わせて、スマホ向けのモデルをもっと軽くする — 調べまで済み
-- T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 持ち主の判断待ち
+- T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
 - T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
 - T550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 候補
 - T551 [性能][WebGPU] 1 回の submit のステップの数とプロンプトのブロックの大きさを、端末で測って選ぶ — 候補
 - T557 [描画][その他] モデルのページの取得と変換の間も画面を消さない — 未着手
-- T578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 未着手
+- T578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 端末の数字待ち
 - T579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 端末の数字待ち
-- T566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
+- T566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 端末の数字待ち
 - T585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
-- T615 [追加][モデル] Mamba2 の層（PLaMo 2・Nemotron-Nano-9B-v2-Japanese） — 候補
-- T616 [追加][モデル] stablelm の家族（Japanese StableLM 3B） — 候補
-- T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
-- T619 [追加][モデル] LFM3（lfm3） — 候補
-- T655 [改善][モデル] モデルが自分で開く複数トークンの考えの印を追う（PLaMo 3 の考える形の上限） — 候補
+- T615 [追加][モデル] Mamba2 の層（PLaMo 2・Nemotron-Nano-9B-v2-Japanese） — 未着手
+- T616 [追加][モデル] stablelm の家族（Japanese StableLM 3B） — 未着手
+- T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 未着手
+- T619 [追加][モデル] LFM3（lfm3） — 未着手
+- T655 [改善][モデル] モデルが自分で開く複数トークンの考えの印を追う（PLaMo 3 の考える形の上限） — 未着手
 - T657 [追加][モデル] PLaMo 3 NICT 2B・8B base を原本と照らさずに一覧に — 未着手
 - T664 [調査][モデル] plamo-translate-desktop から取り込むものの洗い出しと順 — 調べは完了
 - T669 [描画][モデル] PLaMo 3 Translate を 1 つの翻訳の項目にまとめ、翻訳先の言語と文体を選ぶ — 未着手
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
-- T672 [描画][モデル] PFN が公表した品質の数を見せる — 候補
+- T672 [描画][モデル] PFN が公表した品質の数を見せる — 未着手
+- T682 [性能][Gemma4][WebGPU] Gemma 4 の E2B・E4B を GPU だけに置く — 未着手
+- T683 [追加][モデル] DeepSeek-R1-0528-Qwen3-8B を Q8_0 の GGUF から一覧に — 未着手
+- T684 [追加][変換] 一覧の項目が語彙のリポジトリの config.json の鍵を上書きできる形 — 未着手
+- T685 [整理][文書] 持ち主が決めた文面のうち、完了済みのタスクの分を入れる — 未着手
+- T686 [性能][CPU] x86-64 の 3 値のカーネルの int16 の和の形を、端末で測って選ぶ — 未着手
+- T687 [性能][CPU] arm64 の Firefox のための 3 値の表の形 — 未着手
+- T688 [整理][モデル] Pythia 70M・160M・410M の `converted` を実際の数に — 未着手
+- T689 [整理][解析分割] Shisa V2.1 unphi4 14B の `stripped: {}` を外して本物の ID に — 未着手
+- T690 [運用][遠隔試験] `ci.ts run` が dispatch の直後の 404 で「no such run」と終わる — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
 
 - **止めた所（2026-10-24 の再開で済んだ）**: T271.1 は 2 回目の CI（run 40062442351）が通り、本線に入れた。以下はそのときの記録。T271.1（回した基底を GPU に）の実装・レビュー（Sonnet high、must-fix なし）・レビューの直しが済み、ブランチ `t271.1-rotated-basis`（push 済み、本線には未）。CI の 1 回目（run 40061581668）は、シェーダが実機で正しいこと（回した基底の作り物でプロンプトの層は線の 0.37、答えのステップの「the norms apart」も通る）を示し、落ちたのは gpu-check が回した基底の取らない答えの形を名指したことだけ（`tests/gpu-check/harness.js` を直した）。**2 回目の CI**（`gpu-prompt.yml models="synthetic-ternary-rotated synthetic-ternary-rotated-untied synthetic-ternary-rotated-1024 synthetic-ternary synthetic" --ref t271.1-rotated-basis`）を 2026-10-24 に起動した: `gh run list --workflow gpu-prompt.yml --limit 3` で ID を見て、`node tests/ci.mjs wait <ID>` で読む。
 - **2026-10-24 の続き**: T271.1 → T572（番号を `T.番号.子` の形に）→ T271.5（状態を層の束に割る T565 と 27B の形の作り物、レビューの直しまで）が済み、T271 は完了。T547 は T547.1（詰め方を名前で）・T547.2.1〜T547.2.4（Q4_K をプロンプトと答えのステップで GPU に: 本物の 4-bit の Shisa が本番で「prompts and answers on WebGPU」）まで、どれもレビューの直しまで本線に。途中で T575（`plan-facts-check` の止まり）・T577（e2e の `steps=`）を直した。T547.3 は T547.3.1〜T547.3.7（層ごとの詰め方、行列を別々に掛ける答えのステップ、塊の型の表と Q2_K、符号表と IQ2 系、残りの IQ 系、塊の表、GPU だけ）がどれもレビューの直しまで本線に入り、T547 は完了（実物の Saluki と 4-bit の Shisa は持ち主の PC で）。途中で T580（道具の終わりの止まり）を直した。2026-10-25: T579.1（答えのステップは使う管だけを作る）と T576 が済んだ。T579.2 と T578 は持ち主の端末の数字を待つ（4-bit と int8 の Shisa の比べ）。T573・T581 も済んだ。T574・T567・T563 も済んだ。T566 は持ち主の端末の数字を待つ。そのあとは目次の古い未着手を順に（T559 から）。T581 も済んだ（レビュー待ちの記録はその項）。
-- **区切りのまとめで持ち主に見せる文（訪問者に見える）**: (1) `REASONS.packed("Q4_K")`「Q4_K weights need the packed int8 dot product of WGSL, which this browser lacks」（今ある文の形に名前を入れたもの）。(2) 分類器が Q4_K のモデルの答えのステップの訳が `REASONS.floatClassifier`（float weights と言う: 事実と合わない）のまま。 (3) T573 の `REASONS.aloneState`「a layer's state is past a buffer of this GPU」（`alonePast` と対の文。実在のモデルには出ない）。 (5) T525 の保存できない訪問の Gemma 4 の警告: 上の 3 つの案から（勧めは今ある文の使い回し）。(6) T502.3: 形の `kinds` に塊・int8・float32 でない型（int6・float16）を書いた設定を断るか、`footprint()` が広げた写しを数えるか（勧め: 断る。案「The form gives {行} the kind {型}: a row of a kind of its own is one of llama.cpp's blocks, int8 or float32.」）。T502.4: `kind_named` が型の名前の混ざった並びを断る文（勧め: T502.3 と同じ文に寄せる）。(a)(c) は届かない道なので文を作らない（勧め）。(4) T542 の 3 値の断り「Ternary weights need rows of whole groups of 128, an even number of them in each tensor, and this model has other rows.」（前の文に「偶数個」を足した。レビュー: 少し硬い）。
+- **区切りのまとめで持ち主に見せる文（訪問者に見える）**: 2026-11-26 に持ち主が決めた: 全部 (a)（置き場は docs/notes/owner-texts-2026-11-26.md、番号はそのファイルのもの）。入れる番号: (1) `REASONS.packed("Q4_K")` はこのまま・(2) `REASONS.floatClassifier` の分け・(4) T542 の 3 値の断り（`Ternary weights come in groups of 128 values, …`）・T573 の `REASONS.aloneState` はこのまま、の 4 つは T685（ファイルの 1〜4）。(5) T525 の保存できない訪問の Gemma 4 の警告は、今ある警告の文の数に表の大きさを足す（新しい文なし）: T525。(6) T502.3・T502.4 はどちらも断り、同じ文に寄せる: T502（ファイルの 5）。
 - **（前の版）次にすること**: 2 回目の CI で FAILED と wrong が 0 なら、T271.1 の状態を台帳に書いて本線に入れ（`. ~/.keychain/*-sh` を読んでから SSH で push）、デプロイを待つ（記録だけの直しはデプロイしない: AGENTS.md の落とし穴）。シェーダの目録に 2 行足したので端末の鍵が 1 回変わる（ternary の端末だけ）。その後 T271.5（27B そのもの、T565 は「状態を層の束に割る」で取りまとめ役が決める）→ T547。
 - 区切りのまとめで持ち主に出すもの（文面・選択・端末）は、各タスクの「持ち主の端末で見るもの」と「取りまとめ役の決め」に積んである。T571 の Android の確かめが端末の一覧にある。
 
@@ -331,10 +336,11 @@ T146 → T168 → T147 → T148 → T149 → T150 → T151 → T175 → T170 →
 ### ベンチの改善の順（2026-09-27）
 T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか（持ち主の iPhone と PC の数字を見て決める。例: llama.cpp の f16 のタイルは持ち主の Android で 1 トークン約 1 秒）→ 知人の独立した GPU の PC で測ってもらう。
 
-### T170 [整理][CPU] `external=` を `backend=` に、`llama2_numpy.py` を中身に合う名前に — 状態: 未着手（T152 の後。GPU のファイルと衝突するので）
+### T170 [整理][CPU] `external=` を `backend=` に、`llama2_numpy.py` を中身に合う名前に — 状態: 未着手（2026-11-26、持ち主の決め: 3 つの名前を 1 つのタスクでまとめて替える）。前の状態: 未着手（T152 の後。GPU のファイルと衝突するので）
 - 根拠: `Llama(external=)` の中身は「forward を外（`forward.js`）に任せる」ことで、`backend=` のほうが合う。`llama2_numpy.py` は GPT-2・NeoX・Qwen2・Qwen3 も読むので、名前が中身より狭い。
 - 作るもの: 引数とファイルの改名（候補 `llm.py`。名前は持ち主が決める）。Worker の読み込み、`?v=`、tests、AGENTS.md の表と記録の名前をそろえる。保存した変換（`kept.js`）と `CONVERTER` に触れないことを確かめる。**カーネルの名前を ggml（llama.cpp）の書き方に寄せる**（2026-09-27、持ち主「どっちかに寄せたほうがよくないか？改名にそんなコストかからんだろ」。調べた慣習: 短い名前の BLAS・ggml と、全部を名前に書く XNNPACK・KleidiAI。うちは ggml に近く、GPU の形も llama.cpp から取るので ggml に）: 演算は ggml の名前（行列 × ベクトルは `mul_mat_vec_<型>`、行列 × 行列は `mul_mat_<型>`、`rms_norm`・`norm`・`rope`・`gelu`・`swiglu`・`add`・`argmax`・`flash_attn` など）、型は `f32`・`f16`・`q8`・`q6`（ggml の `q8_0` はスケールが f16 の別の形なので、うちの int8（32 個ずつ、f32 のスケール）は `q8` とし、README で定める。GGUF の `q8_0` を広げる `widen_q8_0` はそのまま）。relaxed SIMD の区別は名前の `r` でなく、ggml の命令セットごとの置き場と同じくファイル（`simdkernel_relaxed_*`）でする（同じ名前を 2 つのファイルに置き、`forward.js` が読むファイルで選ぶ）。gemv と gemm を名前で分ける（T159 のタイルは `mul_mat_q8`）。対応表を README に。
 - 完了条件: pytest・smoke・forward-check・threads-check・gpu-check・e2e が通り、保存した変換がそのまま使われる。
+- **持ち主の決め（2026-11-26、選択肢で）**: `llama2_numpy.py` を `llm.py` に、`external=` を `backend=` に、カーネルの名前を ggml の書き方に。1 つのタスクでまとめて、前後の「同じ」（`dist-same.ts`・`same-syntax.ts`・`kernels-same.ts` など）を確かめてから（順の 6）。
 
 ### T171 [設計][WebGPU] forward の単位で backend を分ける（CPU の WASM と GPU を並べる） — 状態: 未着手（T152 の後）
 - 根拠: 今の GPU は `forward.js` の `forwardMany` の中から呼ばれる形で、生成も GPU に置く（T152）と、CPU と GPU が 1 つのファイルの中で混ざる。**境目は演算の単位（`matmul()`・`attention()`）ではなく、「1 トークン」と「プロンプトのブロック」の forward に置く**: 演算ごとに Python や Worker の境をまたぐ形は T93 で外した形（層のループを JS に移して 1.15〜1.26 倍）。
@@ -347,7 +353,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 順（前にやるべきことは採番する、の決まり）: T228 → T229 → T230 → T231 → T232 → T233 → T234。T228 の調べで無理と分かれば、そこで持ち主に判断を仰ぐ。
 - **T228 の調べの勧め（2026-10-01、持ち主の判断待ち）: 小さいモデルから。** (1) Ternary-Bonsai-1.7B（PQ2_0 463 MB、形は今ある Qwen3）を、PQ2_0 を int8 に広げる読みと yarn の RoPE で一覧に。(2) T229 を Qwen3.5 0.8B（同じ hybrid attention、Q8_0 の GGUF 812 MB）で通す。(3) T230 の残りと T231 を Ternary-Bonsai の 1.7B〜8B で。(4) 回した基底（Hadamard）と 27B の参照、T233 で 27B。(5) T232 と T234。**前の仕事 4 つに番号を付けた（2026-10-01）**: T235「Ternary-Bonsai-1.7B を一覧に（PQ2_0 → int8 と yarn）」、T236「Qwen3.5 0.8B を一覧に」、T237「回した基底（符号と Walsh–Hadamard 変換）を forward に」、T238「27B の参照」。**勧める順: T235 → T229 → T236 → T230 の残りと T231 → T237 → T238 → T233 → T232 → T234**（27B まで進めるか、小さいモデルを一覧に入れるかは持ち主の判断）。
 
-### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 持ち主の判断待ち（docs の分は済み、2026-11-21、Opus medium。gist と README の文面が持ち主待ち。T233 の後。規模 小）
+### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 未着手（2026-11-26、持ち主の決め: README の 3 か所と古い 2 か所を直す。gist は T83 と一緒に 1 回で）。前の状態: 持ち主の判断待ち（docs の分は済み、2026-11-21、Opus medium。gist と README の文面が持ち主待ち。T233 の後。規模 小）
 - 速さ・メモリ・品質（perplexity か固定値）を記録のあるものだけで。
 - **したこと（docs の分）**: 3 値の 1.7B〜27B は前から `docs/quantization.md`・`docs/performance.md`・`kernels/README.md`・`docs/webgpu.md` にあったので足さず、無かった 1-bit の Bonsai を `docs/quantization.md` の節「1-bit Bonsai」に（表: 取得・持つ大きさ・前の 3 値の大きさ・原本との差・perplexity、段落: 32 ビットに入らない 27B・日本語・カーネルの速さ・本番の準備と tok/s・GPU）。出どころは T286.2〜.5 と T634.1〜.3 の run（数と run の ID の一覧は `docs/notes/t234-bonsai-results-2026-11-21.md`）。4B・8B の 1 ビットの大きさは測っておらず一覧の見積もりと書いた。古い文を 2 つ直した: 3 値の 1.7B の「CPU only for now (no GPU path)」（T232 から GPU にも乗る）、`docs/webgpu.md` の 3 値の GPU の段落に 1-bit の Bonsai（T634.3）。
 - **取りまとめ役の決め（訳）**: (1) `README.md` は変えない: 足したいのは 1-bit の Bonsai の Q1_0 と「1 bit」の語と「a ternary and a 1-bit 27B」で、表に数を足すのでなく言い回しが変わるので案に留めた（案は note）。(2) `docs/quantization.md` の節は、3 値の節と同じ形（表と段落）の事実の追加なので入れた（変えるなら節ごと戻せる）。(3) gist は更新しない（外向き）: 足す節の案を note に。
@@ -355,11 +361,14 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 気づき（直していない）: `docs/performance.md` の 27B の「7.66 GB」は 2026-10-15 に尺度を float16 にする前の大きさ（いまは 7.24 GB）。測った時の数なのでそのまま。
 - CI を省いた。訳: 記録と文書だけ（デプロイも走らない）。
 - レビュー（Sonnet high、2026-11-21）: must-fix なし。数は T286.2〜.5・T634.1〜.3・T633・T233 の記録と run の ID に合う（推測の混入なし、4B・8B の 1 ビットの大きさだけ一覧の見積もりで注あり）。直した: webgpu.md で 1-bit は 3 値の形に広げて上げると書き替え、quantization.md の見積もりの根拠・カーネル比が 6 つの形の幾何平均であること・ビット一致を見たのは 1.7B と 27B だけであることを足し、performance.md の 27B の「7.66 GB」に測った時の数と今の 7.24 GB を併記、gist 案の 27B の名前。残す: quantization.md の 3 値の 4B・8B の「held as 1.1 GB and 2.3 GB」（尺度が float32 だった頃の数、今の表の 1.07・2.18 GB と食い違う）と architecture.md の GGUF の型の一覧に Q1_0 が無いこと（どちらも README の案と一緒に持ち主に見せる）。docs の分は完了、gist と README は持ち主の判断待ちのまま。
+- **持ち主の決め（2026-11-26、選択肢で）**: README の 3 か所と、古い 2 か所（quantization.md の 3 値 4B・8B の「1.1 GB and 2.3 GB」→ 1.07・2.18 GB、architecture.md の GGUF の型の一覧に Q1_0）を全部直す（順の 2）。gist は T83（計測の表と概要の書き直し）のときにまとめて 1 回で、端末の計測の後に（文面は更新の前に見せる）。
 
-### T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 状態: 候補（2026-10-01、T249・T250 のレビューから。79 項目で 4.7 分。持ち主の判断）
+### T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 状態: 未着手（2026-11-26、持ち主の決め: 毎晩の全部の組に入れる）。前の状態: 候補（2026-10-01、T249・T250 のレビューから。79 項目で 4.7 分。持ち主の判断）
+- **持ち主の決め（2026-11-26、選択肢で）**: `format_check.py` を毎晩の全部の組に入れる（順の 2）。
 
-### T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 状態: 候補（2026-10-01、T249 のレビューから。持ち主の判断）
+### T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 状態: 未着手（2026-11-26、持ち主の決め: `<unk>` を画面に出さない）。前の状態: 候補（2026-10-01、T249 のレビューから。持ち主の判断）
 - ページの既定のサンプリングで 192 の答えの 37（19%）に `<unk>`（small は 4、medium は 2、tiny-lm は 0）。引くときに `<unk>` を除くと 0。レビューの案 3 つは T249 の項。
+- **持ち主の決め（2026-11-26、選択肢で）**: `<unk>` は画面に出さない（本物の decode の既定と同じ。どのモデルにも）（順の 2）。
 
 ### リファクタリングの組（T346〜T357、2026-10-09 に採番。持ち主「デザインパターンを活用して抽象化と責務の分割でファイルが扱いやすいサイズになることを重視したい」）
 - **ねらい**: 大きいファイルを責務ごとに分け、1 つを読めば 1 つのことが分かる形にする。いまの大きさ（2026-10-09）: `public/shaders.js` 233 KB・4379 行、`public/benchmark/gpu.js` 196 KB、`public/llama2_convert.py` 168 KB、`public/forward.js` 137 KB、`public/gpu.js` 134 KB、`tests/gpu-check.mjs` 127 KB、`src/models.js` 125 KB、`public/llama2_numpy.py` 124 KB、`public/worker.js` 111 KB、`src/pages/index.astro` 75 KB、`kernels/kernel.ts` 68 KB。
@@ -389,12 +398,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **最終形**: ソースは `.ts`（**型を消せば JS になる書き方だけ**: enum・namespace を使わない。Node 24 がビルド無しで読めるので、試験はソースを直接 import する）。ブラウザ向けは Vite が worker を束ねてハッシュ付きで出す。GPU の端末の鍵は出来上がる WGSL の文から作る。自作の名前の検査 2 つは型検査に置き換えて消す。
 - **順（2026-10-09、持ち主が承認「推奨順にしよう」）**: (1) 残りの分割（T356・T355・T353・T351・T352・T357）→ (2) **抽象化のうち Python の分**（T359: アーキテクチャの Strategy、dtype の Registry、`Llama` の土台クラスの見直し。TypeScript が効かない所で、守りの網がいちばん効くうちに）→ (3) TypeScript の組（T365 → T366 → T367 → T368）→ (4) **抽象化のうち TypeScript の分**（その時点では `.ts` になっている `forward/engine` の層をアーキテクチャごとの表に: 1 トークンごとに回る所なので、型に守られて替える。Strategy の口は型（interface）として書く）。Saluki（T361〜T364）はその後。**（2026-10-09 の後の直し: T366 を T351 の前に、T369 を Python の抽象化の後に入れた。上の「いまのうちに」の回の順が新しい。）**
 
-### T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 状態: 未着手（2026-10-10、T370 の調べから。前からある。規模 小〜中。T374 の後、急がない。持ち主の判断待ち）
+### T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 状態: 未着手（2026-11-26、持ち主の決め: 先に測る。縮まなければ閉じる）。前の状態: 未着手（2026-10-10、T370 の調べから。前からある。規模 小〜中。T374 の後、急がない。持ち主の判断待ち）
 - `worker/load.js` は HF の項目で `await state.initialized`（Pyodide・NumPy・カーネル）の後に `convert()` → `loadConverted()` → `openKept()` を呼ぶ（53〜55 行）。サイトのモデルは取得を Pyodide の前に始める（T68）が、**保存した変換の読み出しは Pyodide を待ってから始まる**。T376 の設計は「重なっている」と書いていたが、コードはそうなっていない（コードの読み。走らせて秒を分けてはいない）。
 - 重ねるのに要るもの: 重みの置き場（`weightsBuffer()`）が Python に聞く 2 つ（`OUTLIER_CHANNELS` の定数と、GPU だけの候補のときの `external_tensors()`）と、`init()` の中で Pyodide の後に並んでいる forward.js とカーネルのコンパイル（Pyodide に依らない）。
 - **T396.1 先に測る**: 2 回目の訪問の準備完了のうち、Pyodide の秒と読み出しの秒（記録: llm-jp-3 440M は全部で 4.4 秒、27B は 26〜67 秒）。重ねて縮むのは短いほうの分まで。効きは未計測。**T396.2** 効くなら実装。
+- **持ち主の決め（2026-11-26、選択肢で）**: 先に測る（Pyodide の秒と読み出しの秒）。はっきり縮むなら実装、縮まなければ閉じる（順の 5）。
 
-### T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 状態: 測った: 持ち主の決め待ち（2026-11-13: 残りの 19 項目と Hermes 3 の止まり・CAT-Thinking・Ternary Bonsai 1.7B と 4B の表と勧めは下。前の状態: 未着手、2026-10-10、T369 から。規模 中）
+### T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 状態: 未着手（2026-11-26、持ち主の決め: 勧めの項目を本物の ID に寄せる）。前の状態: 測った: 持ち主の決め待ち（2026-11-13: 残りの 19 項目と Hermes 3 の止まり・CAT-Thinking・Ternary Bonsai 1.7B と 4B の表と勧めは下。前の状態: 未着手、2026-10-10、T369 から。規模 中）
 - T369 は、頭のトークンか書式を変換器に任せていた一覧の 21 項目（Qwen2.5 の 8 つ・TinySwallow・Qwen3 の 4B 以下の 8 つ・Qwen3 Swallow 8B の 2 つ・EuroLLM・llm-jp-4）と Hermes 3 の止まりを、前の値に手で固定した（送る ID を動かさないため）。手書きの `bos` を持つ項目は 32 → 52、書式は 63 → 80 に増えた。固定を外せば変換器の答え（本物の `apply_chat_template` と同じ ID）になり、手書きが減る。**外す前に測る**: 項目ごとに、素の文・手書きの答え・モデル自身の答えの 3 つ（AGENTS.md の「頭のトークンの効きは…」）。Qwen3 の 4B 以下は `<|im_start|>` のほうが 8〜10% 悪かった記録がある（T250）。外した項目は固定値（`fixed-outputs.json`）を書き直す。`CONVERTER` は上げなくてよい（項目の options を消すだけ）。CAT-Thinking と Bonsai 1.7B・4B も同じ表で。
 - **T312 から**: `format_check.py` の `UNMEASURED` の 5 項目（EuroLLM 1.7B instruct・llm-jp-4 8B instruct・RakutenAI 7B chat・TinyLlama 1.1B chat・zephyr 7B beta）は、前に 1 つ多い BOS の効きをまだ測っていない。同じ表で測り、小さければ `LENIENT` に訳と数を書いて移し、大きければ項目を本物の ID に替える。
 - **T312 の 5 項目を測った（2026-11-04、Opus medium、ブランチ `t.399-five-starts`）**: どの項目も変えていない。A は本物の書式（前に BOS なし）、B はページが送る形（前に BOS が 1 つ多い）。素の文は `start_check.ts`（ページのエンジン、int8、1500 トークン、窓 512。日本語は Wikipedia の 3 記事、英語のモデルは英語の 3 記事）。手書きの答えは `chat_nll.py`（transformers の float32、24 の手書きの答え）。モデル自身の答えは `answer_check.ts`（ページのエンジン、greedy 60 トークン、5 問）と、1.7B 以下は `chat_nll.py` の fidelity も（transformers、40 トークン、24 問）。手書きの答えの B − A は perplexity の差、SE は 1 組の差の標準誤差。
@@ -456,41 +466,25 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - runs（`tests.yml`、`extra=` に `bash tests/starts.sh …`）: 43292391127（Qwen2.5 0.5B・Coder 0.5B・Qwen3 0.6B・Qwen2.5 1.5B と `--by-layer` の突き合わせ）、43332811752（Coder 1.5B・TinySwallow・Qwen3 1.7B）、43332815663（Qwen2.5 3B・Coder 3B・Hermes 3 の止まり）、43332819359（Qwen3 4B・4B Instruct 2507）、43342510215（Ternary Bonsai 1.7B・Qwen3 4B Thinking 2507・Ternary Bonsai 4B）、43347262297（Qwen2.5 7B・Coder 7B）、43347427150（Swallow 8B RL・CAT-Thinking 8B）。7 本とも success、軽い組も通った。
   - CI を回した。訳: 0.5B〜8B の原本と transformers は手元で動かさない。手元で回したのは `answer_check.ts` の直しの確かめと壊し方（248 MB のモデル 1 つ）だけ。
   - 取りまとめ役の決め（訳）: (a) `format_check.py` の `UNMEASURED` に今ある rinna 3.6B（T617）はこのタスクの外なので動かしていない。`LENIENT` の訳の文もこの回は触らない（持ち主の決めのあと、寄せない項目に数を足す）。(b) 3B・4B の transformers の自身の答えは 8 問に絞った（`--stored` の生成は 1 トークン 1〜2 秒）。(c) 素の文は前の回に数のある項目では測り直さなかった。
+- **持ち主の決め（2026-11-26、選択肢で）**: Qwen2.5 Instruct の 1.5B・3B・7B を本物の ID に寄せる（頭の 151643 を外す）。0.5B・Coder の 4 つ・TinySwallow は今のまま。
+- **持ち主の決め（2026-11-26、選択肢で）**: Qwen3 の 1.7B・4B（すぐ答える形と考える形）と 4B Instruct 2507 を寄せる。0.6B・4B Thinking 2507・Swallow 8B は今のまま。
+- **持ち主の決め（2026-11-26、選択肢で）**: CAT-Thinking 8B を寄せる。Hermes 3 の止まりの固定を外す（本番で次のターンを書き始めたら戻す）。順の 3 の頭。
 
-### T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 状態: 未着手の残り: (4) `T5Tokenizer` の legacy の空白（比べる参照が無い。(1)・(2)・(3)・(5) は本線・レビュー済み、2026-11-12 に台帳を見直した）。前の見出し: 反映済み（(1)・(2)・(5)。(3) も反映済み・レビュー済み（2026-11-04、`CONVERTER` 12 の回、デプロイ run 41868180559）。(4) は残る。2026-10-16、T533 の `CONVERTER` 11 の回で本線に入れた。**レビュー（Sonnet low、2026-10-16）: OK、直しなし。** `conversions_compare`（134 のうち 124 が同じ）で変わったのは予定の 10 項目（Gemma 4 の 2 つの `?hf=` の止まり `[2,1]→[2,1,106]`、sarashina 5 つと CAT 3 つの `bos`・`prefixed: never`・書式）、tokenizer.bin は全部同じ、`format_check` は sarashina 1B instruct と CAT 0.8B で 9/9。覆す条件: 本番で sarashina instruct か CAT の答えが崩れたら `formats.js` の `sarashina` の `bos: 9` と `SARASHINA` を戻す）。前の見出し: レビュー前（(1)・(2)・(5)。2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T533 の回で上げる。(3)・(4) は未着手。2026-10-10、T369 から。規模 小〜中） **次の `CONVERTER` の回（T533）に (1)・(2)・(5) を乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」。(2) は持ち主が選択肢で「乗せて本物に合わせる」: 一覧の sarashina 2 つと CAT-Translate 0.8B の送る ID も本物に合わせる。入れる前に書かせて読む・頭のトークンの効きを測る）。 **持ち主（2026-10-16、選択肢）: 「6 つとも本物に合わせる」**（sarashina2.2 の instruct 3 つと CAT-Translate 3 つも、書式を共有しているので本物と同じ ID を送る。CAT の使い方の外の問いの崩れは止める理由にしない）。 **本番（models.yml run 38835683269、Chromium 156、`CONVERTER` 11）**: 既定の Shisa 13.5 秒・2 回目 3.5 秒、Ternary Bonsai 1.7B 15.3 秒・16.0 tok/s・3.8 秒、sarashina2.2 1B Instruct 29.5 秒・5.1 秒、CAT-Translate 0.8B 20.0 秒・4.3 秒。どれも答え、新しい版で OPFS に保存された。
-- (1) tokenizer.json の `Lowercase` の normalizer（T265 は sentencepiece の道の `do_lower_case` だけ）。(2) エンジンは「最初の文にダミーの空白を付けない」を言えない: sarashina と CAT-Translate は `?hf=` で頭の BOS が残る。(3) 最初の文が空白で始まっていてもダミーの空白を付ける（Metaspace は付けない）。(4) `T5Tokenizer` の legacy の空白（比べる参照が無い）。(5) `bos_token_id` の鍵が無く書式も読めないモデルは、当て推量の BOS 1 が止まりに残る。
-- **(1)・(2)・(5) の結果（2026-10-16、コミット `T400: read a tokenizer's Lowercase, a model without the dummy prefix, and no guessed BOS as a stop`）**: (1) `tokenizer_json_options()` が normalizer の `Lowercase`（`Sequence` の中のどこでも）を見て `lowercase: true`（unigram と byte-level。書き出した sentencepiece の形は `Lowercase` があると「書き出した形」でなくなるので当たらない）。(2) `sentencepiece_options()` が normalizer_spec の `add_dummy_prefix`（3 番、無ければ真）を読み、偽なら `prefixed: "never"`（T257 の形）。tokenizer_config.json の legacy の `"wanting"` より勝つ。`beginning()` は `"never"` でも頭のトークンを外す（どの文にも空白を付けないので、外しても残りの読みは同じ）。(5) 止まりは書式の頭があっても無くても「名指された BOS と EOS」だけ（当て推量の 1 を入れない）。
-  - **一覧の項目**: sarashina2.2 の instruct の 3 つと CAT-Translate の 3 つは `formats.js` の `sarashina` に `bos: 9`（`<|user|>`）、`SARASHINA` を `{prompt}</s><|assistant|>` に（`bos` と書式は組: 変換器が `<|user|>` を BOS と言うので、前の書式のままだと `<|user|><|user|>…` になる。`conversions_compare.py` の 1 回目がそれを見せた）。`format_check.py` の `STRICT` に `hf-sarashina2.2-`・`hf-cat-translate-` を足した。
-  - **`conversions_compare.py`（一覧の 134 項目、T524 のコミットと）**: 変わったのは 8 項目、(2) だけ（(1)・(5) は当たる項目が無い）。sarashina2.2 0.5B・1B（base）: options に `prefixed: "never"`、送る ID の頭 `[1, 271, 14537, …]` → `[1, 14537, …]`（271 は「▁」。一覧も `?hf=` も）。sarashina2.2 0.5B・1B・3B Instruct と CAT-Translate 0.8B・1.4B・3.3B: options に `bos: 1 → 9`・`prefixed: "never"`・書式 `<|user|>{prompt}</s><|assistant|>` → `{prompt}</s><|assistant|>`、送る ID の頭 `[1, 9, 14537, …]` → `[9, 14537, …]`（一覧も `?hf=` も）。tokenizer.bin はどれも同じ。
-  - **本物と**: `format_check.py`（手元の `.venv`）で 6 つの instruct は一覧が 9/9（`STRICT`: 完全に同じ ID）、`--hf` で 9/9・9 つとも本物と完全に同じ ID（前は「9/9、完全に同じは 0」: T369 の (d)）。base の 2 つと CAT-Translate 0.8B の素の文は、本物の sentencepiece と 12/12 同じ ID（前は頭の「▁」の分だけ違った）。
-  - **書かせて読む（CI、`tests/answers.mjs` の 12 の問い・greedy と種 2 つ・400 トークン、ブランチ run 38826137173 と本線 run 38826167953）**: sarashina2.2 0.5B Instruct は止まり 23/24 と 23/24、日本語の問いに日本語 12/12 と 10/12、崩れ 0 と 0、平均 149 と 172 トークン（ブランチと本線）。文は同じくらい（富士山の答えは本線が途中で英語に替わった）。CAT-Translate 0.8B は 12 の問いが使い方の外（翻訳器: 問いを訳す）で、ブランチは「次の文を英語に訳してください。「…」」で 3 つとも 400 トークンまで繰り返し（本線は 1 文で止まる）、ほかも訳す向きが変わる所がある。**カードの使い方（「Translate the following … text into …」の 8 つ、greedy、ブランチ run 38827964574・本線 run 38827993615）**では 0.8B・1.4B とも 8/8 まともな訳で、違いは言い回しだけ（0.8B「It's a nice day」と「It's a beautiful day」、1.4B「Since the weather is good today, I'll go for a walk.」と「Today the weather is good, so we are going for a walk.」など）。sarashina2.2 0.5B（base）は種 2 つとも読める日本語（greedy は前も今も繰り返す）。
-  - **頭のトークンの効き（`start_check.py`、日本語の Wikipedia の最初の 1500 トークン、原本の float32、同じ 2 つの run）**: sarashina2.2 0.5B（base、ページの BOS は `<s>` のまま）は 11.922 → 11.759（−1.4%、1 文字あたり 1.3968 → 1.3888 nats: 頭の「▁」が無くなった分）。0.5B Instruct は素の文で `<s>` 19.992・`<|user|>` 20.745・なし 19.924（ブランチ。本線の `<s>` は 21.251）。CAT-Translate 0.8B は `<s>` 23.251・`<|user|>` 25.253・なし 23.362（本線の `<s>` 24.099）。素の文では `<|user|>` が `<s>` より 3.8%・8.6% 高いが、一覧の 2 つはチャットの書式で使い、書式の頭は本物が `<|user|>`（apply_chat_template と同じ ID にした）。素の文の数字だけで BOS を替えない（AGENTS.md の「頭のトークンの効き」）。
-  - **参照の道具（T424 の決まり、run 38826198052）**: `reference_llama.sh hf-sarashina2.2-0.5b-instruct hf-cat-translate-0.8b` は logits 3.05e-05・4.12e-05、最尤 96/96、greedy の文が transformers と同じ。**道具は FAILED で終わる**: 文とチャットのプロンプトの ID を transformers 5 のトークナイザと比べる所で、そのトークナイザが sarashina の語を割り（「▁mo」「un」「tain」）、CAT-Translate を 1 字ずつにする（`format_check.py` の `SENTENCEPIECE` に書いてある既知のもの: 本物の sentencepiece とは上のとおり同じ）。本線でも同じ所で落ちる（ページの頭の `<s>` の分も違う）。`reference_qwen35.sh --only=real` は通った。
-  - **試験**: `tests/test_tokenizer_says.py`（新しい: `Lowercase` を `tokenizers` そのものと 3 つの normalizer の形で、`add_dummy_prefix` 偽の作り物を `sentencepiece` そのものと、書式の頭、当て推量の BOS）、`tests/made_up_tokenizers.py` の `sentencepiece(dummy=)`、`tests/test_beginning.py`（書式の無いモデルの止まり）、`tests/test_gguf_alone.py`（原本の config.json に BOS を書いた: Mistral のは書いてある）。pytest 3297 passed・14 skipped（本線 `af6dee52` の上）、smoke、軽い組（「suite: light passed」）、build と `dist-check`。**網**（本線 `af6dee52` と）: `models` が違う（`MODELS`: sarashina と CAT の 6 項目）、`python` が違う（新しい試験と、上の試験の直し。そのほかに作り物のモデルの options が 150 余り違う: 作り物の config.json は `bos_token_id` を持たないので (5) で当て推量の 1 が止まりから消える。(5) だけを戻した木で回すと、違いは T524 の 3 つに減る）。ほかの記録は同じ。
-  - CI を回した。訳: 書かせる文・transformers・GB 級は手元で見られない。
-  - **(3)・(4) を乗せなかった訳**: (3)「最初の文が空白で始まっていてもダミーの空白を付ける」は、本物が 2 つある（素の sentencepiece は付け、`tokenizers` の Metaspace は付けない）ので、どちらに合わせるかが決まらない。(4) `T5Tokenizer` の legacy は比べる参照が無い（持ち主の選択でも乗せない）。
-  - **取りまとめ役の決め**: 一覧の 6 つは `bos` と書式を組で直した（項目の options で前の送り方を固定しない: 持ち主の選択）。`"never"` は legacy の `"wanting"` より勝つ（モデルが空白を付けないなら、特殊トークンの後にも付けない）。base の 2 つは `<s>` から始めたまま（本物は何も置かないが、エンジンはトークンで始める）。`Lowercase` は `Sequence` のどこにあっても最初に小文字にする（`NFKC` との順で違う文字は数えていない）。CAT-Translate の一般の問いでの繰り返しは、カードの使い方で悪くならないので止める理由にしなかった。
-  - **(3) を乗せる持ち主の決め（2026-11-04、選択肢で 2 回）**: T634.2 の `CONVERTER` 12 の回に「版を上げ、直しも入れる」、そのうち「T400 (3) だけ」（(4) と T541 は乗せない。取りまとめ役の報告が完了済みの T264・T265・T308 を挙げていたのを訂正した）。合わせる先は「sentencepiece そのものは付け、Metaspace は付けない」。
-  - (3) の本番（2026-11-04）: T634.2 と同じデプロイ（run 41868180559）。一覧に当たる項目は無いので、本番では `CONVERTER` 12 の変換が通ることだけを見た（1-bit の Bonsai 2 つ: `models.yml` run 41871037505）。
-  - **(3) の結果（2026-11-04、コミット `T400: Put no dummy prefix before a first text with a space after a Metaspace`）**: 変換器の `metaspaced()` が tokenizer.json の Metaspace（`prepend_scheme` が always か first、古い `add_prefix_space`、`Sequence` の中も）を見て options に `spaced: true`（unigram の道だけ: 書き出した sentencepiece の BPE は Metaspace を持たない）。エンジンの `Tokenizer(spaced=)` は、最初の文が空白で始まるときダミーの空白を付けない（後の文は今までの `prefixed` のまま）。`tokenizer.model` の道は sentencepiece と同じく付けたまま（legacy の Llama も）。**試験**（`tests/test_prefixed.py`）: Metaspace の always・first・古い形・`Sequence` の中の 4 つで、最初の文が空白 1 つ・2 つ・無し、特殊トークンをまたぐ 6 つの文を本物の `tokenizers` と全部の ID で、Prepend の normalizer は付ける側で同じく、`tokenizer.model` は本物の `sentencepiece` と legacy の有無の 3 つで。壊し方（エンジンが `spaced` を読まない）で 4 つが落ちた。pytest 3376 passed、smoke。
-  - **`conversions_compare.py`（一覧の 199 項目、本線 `eacb4b0c` と）**: 「199 of 199 entries the same in everything」。一覧の unigram の項目は sentencepiece のモデル（rinna・LINE ほか）か llm-jp の Replace の normalizer（`every`）か `never`（sarashina・CAT）で、Metaspace の tokenizer.json は無い: options も tokenizer.bin も送る ID も変わらない。だから `format_check.py` は回していない（変わる項目が無い）。当たるのは `?hf=` で開く Metaspace の unigram のリポジトリの、空白で始まる最初の文だけ。
-  - **CI**: CI を回した。訳: transformers との比べは手元で回さない（検証手順 7）。`reference_qwen35.sh --only=real`（run 41864568958、軽い組も）: logits の最大の差 1.96e-04（一度に）・1.78e-04（1 つずつ）、最尤 96/96。sentencepiece 系の家族の参照は回していない（一覧に変わる項目が無い）。
-  - **気づき（T635 に採番）**: 「▁」をどこにも足さない tokenizer.json（Metaspace の `prepend_scheme: never`、空白を「▁」に替えるだけの normalizer）でも、エンジンは最初の文にダミーの空白を付ける（本物は付けない。`prefixed` が False になり `never` と言わないため）。一覧に当たる項目は無い。
-  - レビュー（Sonnet low、2026-11-04）: (3) は直す所なし。本物の Metaspace（空白を▁にしてから、▁で始まらなければ前に付ける）と always・first・never・旧 `add_prefix_space`・`Sequence` の中、`prefixed` との組み（always は特殊トークンの後が `wanting`、first は付けない、`Prepend` は every）、`tokenizer.model` の道は付けたまま、options に載るのは always と first のときだけで `FORM`・`footprint()` に触れないことを読み、`test_prefixed.py`・`test_tokenizer.py` の 80 件を回した。should 2 つ: Metaspace を持つ BPE は `spaced` を読まないことを AGENTS.md に書き足した、気づきを T635 に採番した。もう 1 つの「T634.2 のレビューの行は実装者の自己評価」は取りまとめ役の読みで当たらない（その行は別のレビュー担当の結果を取りまとめ役が頼んで写したもの）。
-  - **気づき（採番していない）**: `reference_llama.py` の ID の比べは、sarashina と CAT-Translate では transformers 5 のトークナイザが本物でないので落ちる（`format_check.py` のように `SENTENCEPIECE` の項目は本物の sentencepiece と比べるとよい）。
-
-### T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 状態: 未着手（2026-10-10、T369 から。文面は持ち主に見せる。規模 小）
+### T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 状態: 未着手（2026-11-26、持ち主の決め: 文面は (a)）。前の状態: 未着手（2026-10-10、T369 から。文面は持ち主に見せる。規模 小）
 - いまの文:「What `?hf=Qwen/Qwen3.5-0.8B` still loses is plain text, where there is no chat format and the converter's BOS comes first.」T369 から変換器が書式を読むので合わない。案:「Opened with `?hf=`, a Qwen3.5 gets the same beginning since the converter reads its template (2026-10).」
+- **持ち主の決め（2026-11-26、選択肢で）**: 文面は (a)（`docs/notes/owner-texts-2026-11-26.md` の 19）: `Opened with ?hf=, a Qwen3.5 gets the same beginning since the converter reads its template (2026-10).`（順の 2 の文面の回）。
 
 ### T408 [計測][変換] arm64 のランナーで、段取りを通す道具の変換が 1〜2% 遅く出る run がある訳 — 状態: 未着手（2026-10-10、T374.2.1 から。規模 中）
 - **2026-10-11、持ち主「分割するんだからほんの少しは遅くなるかもしれないけど許容しようよ」**: この 1〜2% は受け入れる。原因探しは急がない（ブラウザの変換の秒の道具 T401 ができたら、ついでに見る）。
 - 数字と、どこではないかは T374.2.1 の結果の「速さ」。部品の道でも変換器の中でもない。ブラウザでの変換の速さを測る道具が無い（T401 と一緒に作る）。覆す条件: ブラウザで測って worker の変換が前より雑音の外で遅いとき、T374.2.1 の形を見直す。
 
-### T410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 状態: 未着手（持ち主の判断待ち。2026-10-10、T374.2.2 から。規模 小）
+### T410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 状態: 未着手（2026-11-26、持ち主の決め: 門の文は変えず、`.gguf` を 1 つ選んだら開く）。前の状態: 未着手（持ち主の判断待ち。2026-10-10、T374.2.2 から。規模 小）
 - 段取りとフォルダの答え手はもう読める。止めているのはページの門（`src/page/folder.ts`）だけで、開くと門の文が変わる（訪問者に見える文）。フォルダの `missing` に自分の文を持たせるか（いまは輪の「The conversion needs <名前>, which is not there.」）も一緒に決める。
+- **持ち主の決め（2026-11-26、選択肢で）**: (a)（`docs/notes/owner-texts-2026-11-26.md` の 16）: 門の文は変えず、`.gguf` を 1 つだけ選んだら開く（ボタンの説明に「…, or one .gguf file」を足すのは T416）。順の 2 の文面の回。
 
-### T416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 状態: 未着手（訪問者に見える文。2026-10-10、T374.2.3 から。規模 小）
+### T416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 状態: 未着手（2026-11-26、持ち主の決め: 文面は (a)）。前の状態: 未着手（訪問者に見える文。2026-10-10、T374.2.3 から。規模 小）
 - 候補を足すときに直す場所は `conduct.py` の `TOKENIZERS` とフォルダの門（`src/page/folder.ts`、試験が見る）と、ここ（試験は見ない）。門の一覧から作る形にできるが、文が変わるなら持ち主に見せる。
+- **持ち主の決め（2026-11-26、選択肢で）**: (a)（`docs/notes/owner-texts-2026-11-26.md` の 17）: 文は同じで、トークナイザの 3 つの名前を門の一覧から作る。T410 の (a) なので `, or one .gguf file` を足す。順の 2 の文面の回。
 
 ### Saluki の組（T361〜T364、2026-10-09 に採番。持ち主「[Saluki] で対応を採番できないかな？」、https://pc.watch.impress.co.jp/docs/news/2147095.html）
 - **モデル**: Underdog Saluki 27B 1.0（`ConwayResearch/Underdog-Saluki-27B-1.0`、リビジョン `1336c0b5d74dfe6ad7f793577092f5effd9f97c6`、apache-2.0、ゲートなし）。Qwen3.8-27B を平均 約 2.3 ビットに量子化した ISTA DASLab の `Qwen3.8-27B-GSQ-RCO-GGUF` に Underdog が手を入れたもの。ファイルは `Underdog-Saluki-27B-1.0-IQ2-mix.gguf` 7,898,369,152 バイトの 1 つ（ほかの 2 つは画像の入力用の `mmproj` で、このページでは使わない）。Bonsai 2 27B と違い、素の llama.cpp で動く。
@@ -498,11 +492,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **難しい所（見立て）**: (1) **読み手が 10 種類要る。** K 量子化（Q2_K・Q4_K）は 16 個か 32 個の塊ごとの尺度つきの整数、i 量子化（IQ…）は符号表（256〜2048 語の表）を引く形で、llama.cpp の `ggml-quants.c`（MIT）の表を写すことになる（許諾文を残す。方針 10）。(2) **int8 に広げると載らない。** 27B の int8 は約 27 GB で、ブラウザの 1 ページの上限 16 GiB を越える。Bonsai 2 27B と同じく、**ファイルの詰め方のまま持って（約 7.9 GB）、掛けるときに読む新しい dtype とカーネル**が要る。型が 10 種類あるので、行ごとに int8 と尺度へ広げてから今のカーネルに渡す形にするか、型ごとのカーネルにするかを測って決める。(3) **原本との突き合わせができない。** 重みは原本の単純な量子化ではない（GSQ-RCO と Underdog の手入れ）ので、`gguf_check.py tensors` の線には入らない見込み（Bonsai と同じく `rebuilt: true`）。参照は素の llama.cpp の logits にする。(4) 速さは Bonsai 2 27B（本番で 1.1〜2.2 tok/s）より遅い見込み（符号表を引く分。未計測）。
 - **勧める順**: T361 → T362 → T363 → T364。**リファクタリングの組（T346〜T357・T359）が済んでから**（変換器とエンジンの形を替えている最中に dtype を足すと両方が難しくなる）。T361 の調べだけは先にやってもぶつからない。規模は全部で 大が 2 つぶんほど。**副産物**: K 量子化と i 量子化が読めれば、Q4_K_M などの広く配られている GGUF が `?hf=` で開ける道ができる（載る大きさのものに限る）。
 
-### T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 状態: 未着手（2026-10-09、T355 の手元の確かめから。本線も同じ。規模 小）
+### T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 状態: 未着手（2026-11-26、持ち主の決め: 撮った見た目のまま本線に入れる。ブランチ `t372-seed-beside-2`）。前の状態: 未着手（2026-10-09、T355 の手元の確かめから。本線も同じ。規模 小）
 - Chrome の Issues が「Interactive element inside of a <summary> element」と言う。押すと内訳が開閉するのと種を固定するのが重なる。見た目のタスクなので `preview.yml` で前後を撮る。
+- **持ち主の決め（2026-11-26、選択肢で）**: はじめの答えは「画面をもう一度見てから決める（`preview.yml` で前後を撮り直して送る）」。その後、持ち主「禁則は難しいので考えなくていい」: 行頭の点は気にせず、撮った見た目のまま本線に入れる（ブランチ `t372-seed-beside-2`。本線に入れたら消す）。順の 1。
 
-### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
+### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-11-26、持ち主の決め: float32 でも `rope_scaling` が効くように実装し、RoPE の表の出どころを抽象化する）。前の状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
+- **持ち主の決め（2026-11-26、選択肢で）**: 持ち主「追加実装して対応しない？抽象化してほしい」: 断る・無視するのでなく、float32 でも `rope_scaling` が効くように実装する。RoPE の表の出どころ（ファイルの表・options から作る表）を 1 つの部品に抽象化する（順の 5 の頭）。
 
 ### T457 [整理][WebGPU] `forward/gpuside.js` を分ける — 状態: 保留の残り（T457.2: 覆す条件つきで分けない、区切りのまとめで持ち主に見せる。T457.1 は完了・レビュー済み。`gpuside.ts` は 2026-11-12 に 631 行で目安の内。2026-11-12 に台帳を見直した）。前の見出し: 進行中（2026-10-11、T378.2 から。規模 中）
 - 606 行で、1 つの関数が 480 行。状態に持ち主ができたので、置けるかの判定・Worker の始まりと知らせ・プロンプト・ステップに分けられる。
@@ -517,87 +513,106 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 閉包の関数ごとに、どの状態の変数に触るかを数えた（`.tmp/` の捨ての道具）。プロンプトの道（`promptOnGpu`・`gpuKeysAndValues`・`prompt`）とステップの道（`generateMany`・`gpuSteps`）が、どちらも GPU の Worker・`gpuEnd`・`gpuSerial`・`written`・`gpuStateAt` を書く。`startGpu`・`stopGpu`・`release` はほぼ全部の状態に触る。
 - 分けると、何人もが書く状態を 1 つのオブジェクトにして渡すか、書くたびの出来事（「GPU が pos まで書いた」など）を 10 ほど足すことになる。前者は「設計の決まり」の「分け合うオブジェクトは無い・setter は無い」に反し、後者は 1 トークン・1 ブロックの道に関数の呼び出しを足す。T457.1 で `gpuside.ts` は 626 行になり、目安の 800 行の内。
 - 決め: 今は分けない。覆す条件: GPU の側にまた機能を足して 800 行を越えるとき、または状態の一部（例えばステップの時間と測り直しの数）を、ほかと書き合わない持ち主に出せると分かったとき。区切りのまとめで持ち主に見せる。
+- **持ち主の決め（2026-11-26、選択肢で）**: T457.2 は見送りでよい（分けない）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
+### T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-11-26、持ち主の決め: About に 1 行）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
 - モデルの NOTICE.txt が求めている。Bonsai の 5 項目（1.7B・4B・8B・27B の 2 つ）。
 
 - **文面と置き場（2026-10-09、持ち主「推奨でお願いします」。未実装）**: T278 の行の次に 1 行「Created using Bonsai by Prism ML.」（NOTICE の文のまま）。
-### T278 [描画][モデル] 「Built with Llama」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。レビューの勧めは About に 1 行。規模 小）
+- **持ち主の決め（2026-11-26、選択肢で）**: About に、T278 の「Built with Llama」の次の行に「Created using Bonsai by Prism ML.」（順の 2）。
+### T278 [描画][モデル] 「Built with Llama」の表示 — 状態: 未着手（2026-11-26、持ち主の決め: About に 1 行）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。レビューの勧めは About に 1 行。規模 小）
 - Llama 3・3.1・3.2 のライセンスが求める。当たる項目: Llama 3.2 の 2 つ、Swallow 8B、ELYZA 8B、Shisa 3B、Llama 3.1 8B、DeepSeek-R1 Distill Llama 8B、Hermes 3。
 - **確かめた（T252 のレビュー、2026-10-02）**: この一覧は全部（一覧にほかの Llama の派生は無い）。Llama 3.1 の §1.b.i の原文: 「Llama の材料（その派生物、それを含む製品・サービス〔別の AI モデルも〕）を配るか使えるようにするなら、(A) 写しと (B) 「Built with Llama」を、関連のサイト・UI・ブログ・about・文書に目立つように」。ページは重みを配らず（HF から取った変換を訪問者のブラウザが作る）、「使えるようにする」に当たるかは読み方による。**勧めどおり About に 1 行が安全**。Qwen の research（Coder 3B・Qwen2.5 3B）は「Built with Qwen」を、出力で別のモデルを作るときだけ求める（§4b）ので、ページは要らない。
 
 - **文面と置き場（2026-10-09、持ち主「推奨でお願いします」。未実装）**: About（「このプロジェクトについて」）のモデルとライセンスの一覧のすぐ下に 1 行「Built with Llama: 」に続けて、当たる項目の名前を一覧から作って並べる（手書きの一覧にしない: Llama の派生を足したら自分で入る）。
-### T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 状態: 未着手（2026-10-02 の洗い出しで採番。端末の数字が要る。規模 小）
+- **持ち主の決め（2026-11-26、選択肢で）**: 「Built with Llama」は About に 1 行（その次に T277 の「Created using Bonsai by Prism ML.」）（順の 2）。
+### T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 状態: 端末の数字待ち（2026-11-26、持ち主の決めの順で）。前の状態: 未着手（2026-10-02 の洗い出しで採番。端末の数字が要る。規模 小）
 - 3 値にして 484 MB になったので大きさは入る見込み。変換の間のメモリの峰、警告の出方、note の「desktop only」を外せるか。
+- **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 小）
+### T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 状態: 端末の数字待ち（2026-11-26、持ち主の決めの順で）。前の状態: 未着手（2026-10-02 の洗い出しで採番。規模 小）
 - CI の Chromium は保存できた（2 回目 25.9 秒）。断られる端末では毎回 5.95 GB の取り直しになる。保存できなかったときの文と、どのくらい断られるかの調べ。T137（レジューム）と一緒に。
+- **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T281 [追加][Bonsai] 27B の文脈の長さ — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
+### T281 [追加][Bonsai] 27B の文脈の長さ — 状態: 未着手（2026-11-26、持ち主の決め: 柔軟に替えられる形（T326）を先に作る）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
 - 今は 4096（全体 7.69 GiB）。8192 で 7.96、16384 で 8.48、32768 で 9.52、65536 で 11.60、131072 で 15.75 GiB。保存の名前に文脈が入るので、後で変えると 5.95 GB の取り直し。項目ごとか URL で選ぶ形も。**4096 より先は T233 のレビューが計算した**: 文脈 8192 で 5,987 位置まで、ページの forward は fork の logits と 4096 の前と同じ大きさで合う（4096 を越える 35 行は 0.085〜0.167 と 1 行の 0.79（確率 4e-8 の尾の token の差で、確率 1e-6 以上のトークンでは 0.104）、最尤トークン 35 / 35、greedy 16 / 16、メモリは 836 MiB を後ろに置いて `footprint()` の 845 MiB 以内）。速さは 3.60 → 2.69 tok/s に落ちる（0〜6000 位置）。 **保存の名前から文脈を外す案は T326**（見出しの 4 バイトだけが違うので、読み込みの時に決められる。レビューの道具は 4096 で作ったチェックポイントを 8192 で動かした）。**レビューの勧め: 今は 4096 のまま**（理由: 1.1〜2.4 tok/s で 4096 位置を埋めるのに約 28〜60 分かかり、実際の使い方は数百位置。8192 は +0.26 GiB で計算も確かめたので、T326 のあとなら取り直し無しで替えられる）。覆す条件: 長い文書を入れたい要望が出たとき。
+- **持ち主の決め（2026-11-26、選択肢で）**: 持ち主「柔軟に対応」: 27B の文脈は、取り直しなしで替えられる形（T326: 保存の名前から文脈を外し、読み込みの時に決める）を先に作って柔軟に替えられるようにする（取りまとめ役の読み）。順の 5 の最後（T326 → T281）。
 
-### T282 [描画][Bonsai] Bonsai をページの入口（イントロ）に置くか — 状態: 候補（2026-10-02 の洗い出しで採番。持ち主の判断。文面は実装の前に見せる）
-- いまイントロのボタンは llm-jp-3 150M。Ternary Bonsai 1.7B（484 MB、日本語と英語、CI で 16.9 tok/s）を並べる案。
-
-### T284 [追加][Bonsai] 27B の画像の入力（mmproj） — 状態: 候補（2026-10-02 の洗い出しで採番。規模 大）
+### T284 [追加][Bonsai] 27B の画像の入力（mmproj） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-02 の洗い出しで採番。規模 大）
 - いまは文字だけ。視覚の塔（0.46B）とページの画像の入口が要る。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 文面。規模 小）
+### T289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 状態: 未着手（2026-11-26、持ち主の決め: 27B の note の終わりの文）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 文面。規模 小）
 - 27B は 8 と言う端末に警告が出ないが実際は約 8.6 GB 要る（案: note に「16 GB」）。4 と言う端末の 4B は警告が出ない（footprint 2.66 GB、T230 のレビュー）。設定の「Automatic keeps int8 unless it does not fit」は 3 値のモデルでは合わない。
 - **T233 のレビューの数字**（`src/models.js` と `footprint()` を Node で出し直した）: ページが数える全体は文脈 4096 で 7.701 GiB = 8.269 GB（チェックポイント 7.662 GB + 後ろ 0.607 GB）、`PAGE_MEMORY` 0.3 GB を足して 8.57 GB。**警告の「needs about 8,000 MB」は note の 7.7 GB + 0.3 GB で、後ろの 0.6 GB を数えていない**。本番の Chromium（run 36962265758）の Worker の WebAssembly のメモリは合わせて 8,879 MB（Pyodide のヒープを含む。タブ全体は未計測）。`deviceMemory` が 4 以下の端末には警告が出る（1・2・4 で確かめた）。8 と言う端末には出ない（Chrome は 8 GB 以上をまとめて 8 と言うので、8 GB の機械と 32 GB の機械が見分けられない）。**文面の案**（持ち主が選ぶ。変えていない）: (a) note の終わりを「desktop only (needs 16 GB of memory) · Chrome and Firefox」にする（仕組みは変えない。勧め）。(b) 警告の数字を約 9,500 MB（チェックポイント 7.66 + 後ろ 0.61 + Pyodide 0.9 + ページ 0.3）に直す（8 と言う端末には出さない決まりのまま）。(c) 8 と言う端末にも「Ternary Bonsai 2 27B needs about 9.5 GB of memory; this browser reports 8 GB or more.」を出す（32 GB の PC にも出る）。`?bits=8` は取得の前に「needs about 35 GB … 16 GB at most」と断る（本番で確かめた）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 27B の項目の説明の終わりを「desktop only (needs 16 GB of memory) · Chrome and Firefox」に（順の 1）。
 
-### T291 [追加][モデル] Qwen3.5 の考える形の項目をどうするか — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
-- 0.8B は今の設定で 12 の問いのうち 2〜3 しか考えを終えない（T236 のレビュー）。案: 一覧から外す（勧め）、設定を替える（8/12 程度）、T274 の後に presence penalty で（11/12）。2B・4B・9B は T245・T247 のレビューが測る。27B の考える形は 3 問とも終えた。**T233 のレビューは T236 のレビューの 12 の問い（日本語 6・英語 6）で見た: 考える形は 12 とも考えが終わり（29〜334 トークン、中央値 約 200）、答えは読める。すぐ答える形も 12 とも自分で止まった（8〜649 トークン）。arm64 の 4 本で 2.3〜2.4 tok/s**（run 36967278093・36967359414・36969052985）。小さな誤りは出る（「光合成」の読みを「こうせいせつ」・「こうせつ」と書く、漱石の作品に実在しない『葉枕』、中国語の語「监测」「干预」）が、経路の誤りではなく 27B の 3 値の質。
-
-### T292 [性能][CPU] Qwen3.5 の 7 ビットの活性値（日本語で +3%） — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 残すか。規模 小〜中）
+### T292 [性能][CPU] Qwen3.5 の 7 ビットの活性値（日本語で +3%） — 状態: 未着手（2026-11-26、持ち主の決め: 丸め方の形をいくつか用意して選べるようにする）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 残すか。規模 小〜中）
 - 0.8B の日本語は 7 ビットで +2.6〜3.4%、8 ビットで約 0%。7 ビットは 1.31〜1.41 倍速い。レビュー（T229）の勧めは残す。中間の案: 出力行列だけ 8 ビット（誤差 −30〜35%、約 1.4% 遅い）、出力と down（−44〜53%、約 4.6%）。項目ごとに relaxed を外す仕組みは未実装。
 - **T245・T247 のレビューの訂正（2026-10-02）**: 「日本語で +3%」は測る道具が `<|endoftext|>` から始めていたための数字。ページの始まり（`<|im_start|>`）では、7 ビットが 8 ビットより大きい分は日本語 3 記事で 0.8B +0.69%（+0.07〜+1.12%）、2B +0.40%、4B +0.01%、9B +0.07%。ほかのモデルと同じ桁で、この項は急がなくなった。
+- **持ち主の決め（2026-11-26、選択肢で）**: 持ち主「ビット数とかいろんなパターンあればよくね？」: 活性値のビット数を 1 つに決めず、いくつかの形（7 ビット・8 ビット・出力の行列だけ 8 ビットなど）を選べるようにする方向。
+- **持ち主の決め（2026-11-26、選択肢で）**: 丸め方の形（7 ビット・8 ビット・中間）を、設定の画面と URL で選べて、一覧の項目も自分の既定の形を持てるようにする（順の 5）。
 
-### T293 [性能][WebGPU] 2 重の線と置き場の見直し — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
+### T293 [性能][WebGPU] 2 重の線と置き場の見直し — 状態: 端末の数字待ち（2026-11-26、持ち主の決め: 線は変えず、PC と Chromebook の数字を待つ）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
 - T226 のレビューの勧め: 6.5 GiB の線は変えない（強い GPU の PC は GPU だけが得）。足す案: Android 以外で 8 と言う端末は 2 重の線を 4 GiB に（8 GB の PC で 2 重が落ちるかは未計測）。4 と言う端末は Qwen 系の 5 項目が CPU だけから GPU だけに変わった（Chromebook は GPU ÷ CPU が 0.53 倍だった: 止めるなら 1 条件）。T130 のレビューが広げた規則（共有でないメモリで float32 が 16 GiB に入らなければ float16、1031cdd）を残すかもここで。
+- **持ち主の決め（2026-11-26、選択肢で）**: 線は変えず、持ち主の端末（PC・Chromebook）の数字を待つ。
 
-### T294 [追加][WebGPU] GPT-2・NeoX を GPU だけにも置く — 状態: 候補（2026-10-02 の洗い出しで採番。今は要るモデルが無い）
+### T294 [追加][WebGPU] GPT-2・NeoX を GPU だけにも置く — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-02 の洗い出しで採番。今は要るモデルが無い）
 - `external_tensors()` が Llama の並びしか置かない（T226）。一覧の最大（rinna 1B、Pythia 1.4B）は 2 重に入る見込み。Pythia 2.8B・6.9B が入ったので見直す。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 状態: 候補（2026-10-02 の洗い出しで採番。規模 小〜中）
+### T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-02 の洗い出しで採番。規模 小〜中）
 - 層の表は Llama の形だけを測る（T226）。足したディスパッチ（Qwen2 +2、Qwen3 +3、GPT-2・NeoX +8）の端末での費用が報告から読めない。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の PC の報告の後。規模 小）
+### T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 状態: 端末の数字待ち（2026-11-26、持ち主の決めの順で）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の PC の報告の後。規模 小）
 - 今は数えて出すだけ（T225 のレビュー）。PC の報告で 0 なら WRONG にする。
+- **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T298 [運用][変換] 静けさの 30 秒に、モデルの部品の届いたバイトも数える — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。案はブランチ `t129-review-model-bytes`。規模 小）
+### T298 [運用][変換] 静けさの 30 秒に、モデルの部品の届いたバイトも数える — 状態: 未着手（2026-11-26、持ち主の決め: 届いたバイトも数える）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。案はブランチ `t129-review-model-bytes`。規模 小）
 - モデルの部品が回線を埋めると jsDelivr の最初のバイトが 30 秒に間に合わずフォールバックする（CI の 0.15 Mbps で再現、T129 のレビュー）。代わりに jsDelivr が落ちているときの発見が遅れる。
+- **持ち主の決め（2026-11-26、選択肢で）**: 静けさの 30 秒に、モデルの部品の届いたバイトも数える（遅い回線で止まらないように）。案はブランチ `t129-review-model-bytes`（本線に入れたら消す）。順の 5。
 
-### T300 [運用][その他] Pyodide のファイルの取得の失敗: 取り直すか、と文面 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
+### T300 [運用][その他] Pyodide のファイルの取得の失敗: 取り直すか、と文面 — 状態: 未着手（2026-11-26、持ち主の決め: 取り直しは足さず、文を直す）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
 - 失敗は Windows の Playwright の WebKit で約 2%（T242）。レビューの勧め: 取り直しは足さない（方針 2）、文は「ended as it started」を「stopped as soon as it started」に。CPU の節の 1 GiB は外さない（外すと 120 回に 6 回落ちた）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 取り直しは足さず、失敗の文を「stopped as soon as it started」に直す（順の 2）。
 
-### T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 状態: 未着手（2026-10-02 の洗い出しで採番。T227 のレビューから。持ち主の判断: 文面。規模 小）
+### T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 状態: 未着手（2026-11-26、持ち主の決め: 文面は取りまとめ役に任せ、後で一覧にして見せる）。前の状態: 未着手（2026-10-02 の洗い出しで採番。T227 のレビューから。持ち主の判断: 文面。規模 小）
 - 文面 2 つ（「N warnings, all in the whole report below」、「<節>: WRONG」）。GPU の `info` の失敗が「not in this browser」と読まれる。CPU の行「the browser did not start that many software threads」が一覧に出ない。ページの中の Markdown の組み立て（約 150 行）を `src/bench.js` に寄せる。
+- **持ち主の決め（2026-11-26、選択肢で）**: /benchmark/ の Warnings の文面は取りまとめ役に任せ、入れた文を後で一覧にして見せる（順の 2）。
 
-### T302 [描画][モデル] 新しい項目の名前と note の文面をまとめて決める — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
+### T302 [描画][モデル] 新しい項目の名前と note の文面をまとめて決める — 状態: 未着手（2026-11-26、持ち主の決め: ライセンス名 2 つを直したら閉じる）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
 - 2026-10-01〜02 に入れた約 65 項目（Bonsai 5、Qwen3.5 8、Granite 4、MiniCPM5 4、LFM2 5、日本語 13、英語 16、ほか）。どれも隣の項目の形で仮に書いてある。言い足す案: Bonsai「事実を誤る」、MiniCPM5「日本語は弱い」、EuroLLM の「and 33 more languages」。**LFM2 の 5 つ（T260 のレビューから）**: ライセンス LFM Open License v1.0 の商用の制限（年間の収入が 1000 万ドル以上の法人の商用の利用は許諾の外）を About に一文で出すか（今はライセンス名と HF へのリンクだけ。条文の読みは T260 の「持ち主に決めてもらうこと」の (4)）。note は「answers instructions · 日本語 / English · …」で、350M は日本語が使える軽いほう（399 MB）なので、実測（本番 50〜57 tok/s、答えは読めて事実は外れる）を note に足すかは文面の判断。
 - **英語の 16 項目への材料（T251・T252 のレビュー、2026-10-02）**: (1) **ライセンスの名前が 2 つ**: GPT-2 は 124M だけ「MIT License」、medium・large・XL は「Modified MIT License」で、4 つとも OpenAI の同じ LICENSE（「Modified MIT License」）の下。勧め: 4 つとも「Modified MIT License」。**Hermes 3 は「Meta Llama 3 Community License」（カードのメタデータ `llama3`）だが、Llama 3.2 3B の派生なので掛かるのは「Llama 3.2 Community License」**。勧め: 後者に。(2) Pythia 14M と 70M の名前は deduped でも「Pythia 14M」「Pythia 70M」（160M 以上は deduped でない）: 勧め: そのまま（About の出どころの行に repo の名前が出る）。(3) Llama 3.1 8B の書式の日付は本物の既定の「26 Jul 2024」で、訪問者が日付を聞くと 2024 年と答える（Llama 3.2 は今日）。今日にするなら 1 行。
+- **持ち主の決め（2026-11-26、選択肢で）**: ライセンス名を 2 か所直す（GPT-2 の 4 つを「Modified MIT License」、Hermes 3 を「Llama 3.2 Community License」。カードと違う訳をコードに）。
+- **持ち主の決め（2026-11-26、選択肢で）**: LFM Open License の商用の制限は About に書かない（名前とリンクだけ）。Llama 3.1 8B の書式の日付は本物の既定「26 Jul 2024」のまま。約 65 項目の名前と note は今の文面で確定（言い足さない）。
+- **持ち主の決め（2026-11-26、選択肢で）**: ライセンス名 2 つを直したら閉じる（順の 2）。
 
-### T303 [運用][モデル] 一覧の整理: 残すか外すか、と設定 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
+### T303 [運用][モデル] 一覧の整理: 残すか外すか、と設定 — 状態: 未着手（2026-11-26、持ち主の決め: 全部残す。DeepSeek-R1 Distill 1.5B の options を外したら閉じる）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
 - 一覧は 118 項目。残すか決めるもの: japanese-gpt2 xsmall（`<unk>` を書く、T267）、Pythia 14M と DistilGPT2（意味が通らない）、MiniCPM5（日本語なし）、Granite 4.2 8B、llm-jp-3 1.8B instruct3（3.1 の隣）、LFM2 700M と 1.2B Instruct、LFM2.5 350M（T272: レビューの勧めは残す）、Hermes 3、SmolLM2 の base、Qwen3.5 9B、CAT-Translate 3.3B（取得 6.7 GB）。設定: Granite の温度（カードは 1.0 必須、レビューは 0.7）、Pythia 14M を deduped でよいか、DeepSeek 1.5B の手書きの options を外すか。方針 4 の「あとで減らす」の回。**LFM2 の材料（T260 のレビュー）**: 700M は 836 MB・本番 31.3 tok/s・停止 21 / 24・平均 134 トークン（温度 0.3）、1.2B Instruct は 1.3 GB・21.7 tok/s・24 / 24・94 トークンで 1.2B JP（1.3 GB・21.3 tok/s・23 / 24・117）と大きさも速さも同じ。perplexity（Q8_0 の値、英語 / 日本語）は 700M 18.6 / 18.3、1.2B Instruct 14.7 / 17.7、1.2B JP 18.2 / 16.8、350M 73.1 / 34.7（後訓練で平文から外れた数字）、230M 27.1 / 28.6。**700M は大きさ 0.84 GB で 1.2B JP（1.3 GB）に perplexity が近く、速さは 1.5 倍**: 古い世代でも外す理由は見えない。1.2B Instruct は英語が最良。勧め: 5 つとも残す（どれも 1 行の項目で、取得は選んだ人だけ）。外すなら、同じ大きさの隣と質が重なる 1.2B Instruct（JP と大きさも速さも同じ）が先。
 - **材料（T251・T252 のレビュー、2026-10-02）**: **Pythia 14M と DistilGPT2**: ページの標本抽出（0.7・0.9・罰 1.1）で 192 の答え（64 seed × 3 の書き出し × 200 トークン）のうちループ（5 文字の窓の半分以上が既出）は 14M が 14（7.3%）・DistilGPT2 が 2（1.0%）で、同じ系統の前からの項目（Pythia 70M 15 = 7.8%、GPT-2 124M 1 = 0.5%）と同じ。意味の通らなさは中身（14M は英語の形で意味が通らない）。14M は int8 の損が +8.8%（DistilGPT2 +1.3%、0.7B 以上は ±0.5%）。**勧め: 両方残す**（14M は 16 MB・9 秒で開く梯子の端）。外すなら 14M だけ。**Hermes 3**: 直した後の答えは整う（勧め: 残す）。**SmolLM2 の base**: 同じ英語の文の perplexity が 15.8 と 11.4 で、DistilGPT2 の 44.1 より良い（勧め: 残す）。**DeepSeek 1.5B の手書きの options**: 外してよい（変わるのは `</think>` などが打ったときに特殊トークンになることと、BOS が止まりに入ることだけ）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 一覧の整理は全部残す。DeepSeek-R1 Distill 1.5B の手書きの options を外す（前後の送る ID を比べる）。外したら閉じる（順の 2）。
 
-### T305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 状態: 候補（2026-10-02 の洗い出しで採番。T131 で却下した種類の変更）
+### T305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-02 の洗い出しで採番。T131 で却下した種類の変更）
 - 本物は BOS もダミーの空白も置かず、ページは両方置く（`format_check.py` は 0/9）。エンジンに 2 つの選びが要る。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T306 [追加][変換] 古い並びの GPT-NeoX の GGUF を読む — 状態: 候補（2026-10-02 の洗い出しで採番。規模 小）
+### T306 [追加][変換] 古い並びの GPT-NeoX の GGUF を読む — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-02 の洗い出しで採番。規模 小）
 - 2023 年の GGUF は q・k・v を HF の並びのまま持つ（stockmark の gpt-neox-japanese: 値は通るが変換すると壊れる）。`gguf_check.py` は今は不一致にする。読めれば取得が 2.9 → 1.6 GB。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）。持ち主「対応を広くする」（どれを指すかは次に聞く）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8 の頭。
 
-### T309 [文書][変換] ページの「開けるモデル」の文と README に、足した形を書く — 状態: 未着手（2026-10-02 の洗い出しで採番。文面は持ち主に見せる。T269 の後。規模 小）
+### T309 [文書][変換] ページの「開けるモデル」の文と README に、足した形を書く — 状態: 未着手（2026-11-26、持ち主の決め: 変換器の家族の表から自動で作る）。前の状態: 未着手（2026-10-02 の洗い出しで採番。文面は持ち主に見せる。T269 の後。規模 小）
 - `src/pages/index.astro` の 2 か所と README の `?hf=` の文は「Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX」のまま。Qwen3.5・Granite・MiniCPM5・LFM2 が開く。`?hf=` で開くと書式が付かないものがある（Qwen3.5、Granite は T269 の後）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 「開けるモデルの種類」の文は、変換器の家族の表から自動で作る（最初の文面は見せる）。順の 2。
 
-### T314 [性能][CPU] 最初の位置（BOS）を丸めずに計算する（T272 から。LFM2.5 の活性値の量子化の損のほぼ全部） — 状態: 未着手（2026-10-02、T260 のレビューから。持ち主の判断: 入れるか。規模 中）
+### T314 [性能][CPU] 最初の位置（BOS）を丸めずに計算する（T272 から。LFM2.5 の活性値の量子化の損のほぼ全部） — 状態: 未着手（2026-11-26、持ち主の決め: 入れる。効かなければ外す）。前の状態: 未着手（2026-10-02、T260 のレビューから。持ち主の判断: 入れるか。規模 中）
 - 根拠（T272 の項）: BOS の状態は全部の文で同じ定数で、後ろが全部読み、その丸めは perplexity を ±数 % 動かす。BOS の入力を丸めない NumPy の写しで（350M、英語、Q8_0 の値からの差）8 ビット +4.86% → +0.42%、7 ビット +0.24% → +0.39%（原本からは +8.70% → +4.10%、+3.91% → +4.06%。カーネルの実測は +8.58%・+2.77%）。1.2B JP の 7 ビットは +3.0 / +4.5%（英語 / 日本語）→ −0.7 / −0.9%（位置 1 以降だけ丸めたとき）。**見積もり**（未計測）: Safari の道の 350M の英語は原本から +8.6% → 約 +4.1%（線の中）、1.2B JP のページの道は +3.9% → 約 0。
 - 案 (A): int8 の重み × float32 の活性値のカーネル 1 つ（`matmul_q8` の広げ版: グループごとに int8 を f32 に広げて掛ける。AssemblyScript で約 25 行、Safari にも載る）を足し、`forward()` が位置 0 の 1 トークンを全層その道で通す（段の外、取りまとめ役が 1 本で）。プロンプトは 16 トークンのまとめ（`forwardMany`、位置 0 から）で通るので、最初のまとめは位置 0 だけを別に通してから、残りを位置 1 から（`matmul_q8r_tile` はそのままで足りる）。費用の見積もり（未計測）: プロンプトごとに 1 回、分類器は要らない（BOS の logits は使わない）ので、350M で層の重み 0.33 GB を 1 本で読んで掛ける約 40 ms（f32 の積和を約 8.8 G / 秒として: T163 の a1-free の値）、1.2B で約 140 ms。案 (B): その結果（層ごとの K・V の行と畳み込みの h の行）をモデルごとに取っておき、次からの文は位置 1 から始める: 費用は読み込みの後の 1 回だけ。`forward.js` の状態（`stateAt`・KV・`convRows`）に「最初の位置のぶんを書き込む」口が要り、`follow()`・`forwardMany`・スレッドの探索・GPU の道が位置 0 から始まる前提を見直す。最初のトークンが BOS でないとき（フォルダのモデルや `?hf=`）は取っておいた状態を使わず (A) に。まず (A) で品質を確かめ、速さが気になれば (B)。変換のバイトは変わらない（`CONVERTER` は上げない）。項目ごとの旗（`exactFirst`）にすれば、効きが BOS 以外にも広がる別のモデルでは外せる。
 - 確かめ: 捨てのブランチ `t260-review-probe` の `tests/t272_probe.py` の `all`・`positions`・`hybrid` を、実物のカーネルの perplexity（`tests/perplexity.mjs`）で。完了条件: 350M の英語の 8 ビットが原本から +4.5% 以内（今 +8.6%）、1.2B JP の 7 ビットが +1.5% 以内（今 +3.9%）、速さが 1 トークンの生成で変わらず、プロンプトの先頭の 1 回の費用が 200 ms 以下。**覆す条件**: 実物のカーネルで BOS を丸めなくても 350M の 8 ビットが +5% を越えるなら、BOS 以外にも効きがある（そのときは T272 の「層と行列」の走査を位置 1〜4 にも広げる）。
 - 他のモデルに効くか: **LFM2 の 5 つのうち引きがあるのは 350M と 1.2B JP だけ**（230M・700M・1.2B Instruct は位置 0 の効きが 0.5% 以下: T272 の項）。Qwen3.5 の「±3%」（T245・T247）も始まりのトークンの同じ型だったが、そちらはページの始まり（`<|im_start|>`）では 0.15% だった。350M の損が大きいのは、層 2 の 1 つの head が注意の半分を BOS に置き、その head の値の 1 つの方向に敏感なため（チェックポイントごとの性質で、旗は項目ごと）。**効くのは平文の perplexity の数字（/benchmark/ と、測る人の数字）で、チャットの答えには見えない**（350M の答えのトークンの log 確率は 8 ビットで +0.0000、7 ビットで −0.0050。T272 の項）ので、急がない。
+- **持ち主の決め（2026-11-26、選択肢で）**: 最初の位置（BOS）を丸めずに計算する形を入れる（案 A から。質と速さを測り、効かなければ外す）。順の 5。
 
-### T316 [調査][MLX] Clef-Flash（Cloudflare、MLX の 4 ビット）を動かす: 全体と決めること — 状態: 未着手（2026-10-02、持ち主「これ動かすのにはどんな実装が足りない？実装はまだしなくていい」「[MLX] として採番しておこう」。調べだけ済み）
+### T316 [調査][MLX] Clef-Flash（Cloudflare、MLX の 4 ビット）を動かす: 全体と決めること — 状態: まだ進めない（2026-11-26、持ち主）。前の状態: 未着手（2026-10-02、持ち主「これ動かすのにはどんな実装が足りない？実装はまだしなくていい」「[MLX] として採番しておこう」。調べだけ済み）
 - **何か**: `mlx-community/clef-flash-4bit`（リビジョン `d9ec324f7992383bdfb7a0b4eed8b4b9d10f81be`、Apache-2.0、取得 5.95 GB）。原本は `Cloudflare/clef-flash`（`17f0b0ad64efb65d273590632833508766b2aae6`、bf16、18.8 GB）。**チャットのモデルではない**: 状態（文や JSON、画像、動画）と、型のついた問い（`noul`・`choice`・`score`）の一覧を渡すと、各問いの選択肢ごとの確率を 1 回の forward で返す。文は書かない。
 - **中身**: (a) 背骨は Qwen3.5 9B を後訓練したもの（32 層、幅 4096、linear と full が 3 対 1、head 256、kv head 4、値の head 32 に鍵の head 16、語彙 248320、分類器は別）で、一覧の Qwen3.5 9B（T247）と同じ形。(b) 頭（`joint_head.safetensors`、243,538,016 バイト、bf16、テンソル 122 個、幅 1024・routing 2 層・decoder 4 層・head 16・FFN 4096）。(c) 画像の塔（ViT 27 層、0.91 GB、bf16 のまま）。
 - **MLX のファイルの形**（見出しを Range で読んだ）: 重みは uint32 に 4 ビットずつ（`weight` は (行, 列 ÷ 8)）、64 個ごとに `scales` と `biases`（bf16、(行, 列 ÷ 64)）。`mode: affine` で w = scale × q + bias。名前は `language_model.model.layers.N.…`。norm・`A_log`・`dt_bias`・畳み込みは bf16。文の側 5.04 GB、画像の側 0.91 GB。
@@ -605,33 +620,42 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **決めること（持ち主）**: (1) **重みの持ち方**: 案 A は読み込みのときに int8（グループ 32、対称）に直す（今のカーネルのまま。丸め直しの段は 4 ビットの段の約 6%: 16 段の幅 15 s に対して int8 の段は約 7.5 s ÷ 127。未計測）、案 B は 4 ビットのまま掛けるカーネル（メモリ約半分、規模 大）。勧めは A。(2) **取り込み元**: MLX 版（5.95 GB、T317 が要る）か原本（18.8 GB、今の変換器で読める見込み: 未確認）。(3) **文だけにするか**: 勧めは文だけ（T324 を外す。文だけなら 3 つの軸の位置が同じで、mrope は普通の RoPE と同じ: 式の読み、未確認）。(4) 一覧のどこに置くか（チャットのモデルと並べるか、別のページか: T322）。
 - **見込み**: int8 にすると 9B 級で 64 ビットのメモリ（Chrome と Firefox のデスクトップだけ）。linear の層は GPU に載らないので CPU だけ。出力のトークンは無く、費用は入力の長さぶんのプロンプトの処理（既定の上限 16384 トークン）。速さは未計測。
 - **取りかかる順**: 決めること (1)〜(3) → T318 → T320 → T319 → T323（Node でエンジンと頭を原本と比べる）→ T317 か原本の読み → T321 → T322。T324 は保留。
+- **持ち主の決め（2026-11-26、選択肢で）**: Clef-Flash（MLX）はまだ進めない（調べの記録のまま）。共通の部品 T318〜T321 は NeoHorse-Jev-4B（T336）のために先に作り、Clef-Flash はその後で改めて聞く（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T317 [追加][MLX][変換] MLX の 4 ビット（affine、グループ 64）の重みの読み手 — 状態: 未着手（2026-10-02。T316 の決め (1)(2) の後。規模 中）
+### T317 [追加][MLX][変換] MLX の 4 ビット（affine、グループ 64）の重みの読み手 — 状態: まだ進めない（2026-11-26、持ち主）。前の状態: 未着手（2026-10-02。T316 の決め (1)(2) の後。規模 中）
 - 変換器は safetensors の float と GGUF（F32・F16・BF16・Q8_0・PQ2_0・PTQ1_0）しか読まない。足すもの: uint32 の 4 ビットの詰めを解く、`scales`・`biases` で float32 に戻す（別の source として: T77 の決まり）、MLX の名前（`language_model.model.…`、`lm_head`、norm が 1 を足した後かどうかを原本と突き合わせて決める）、量子化されていない小さなテンソル。`gguf_check.py` の形で原本と比べる道（4 ビットなので線は別に決める）。
 - 分かっていないこと: 4 ビットの中の値の並び（語の下からか）、`A_log` と norm を MLX がどう持つか、畳み込みの軸（`[8192, 4, 1]`: HF は (チャネル, 1, タップ)）。
+- **持ち主の決め（2026-11-26、選択肢で）**: Clef-Flash（MLX）はまだ進めない（調べの記録のまま）。共通の部品 T318〜T321 は NeoHorse-Jev-4B（T336）のために先に作り、Clef-Flash はその後で改めて聞く（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T318 [追加][MLX][CPU] 全位置の最後の隠れ状態を返す道 — 状態: 未着手（2026-10-02。規模 小〜中）
+### T318 [追加][MLX][CPU] 全位置の最後の隠れ状態を返す道 — 状態: 未着手（2026-11-26、持ち主の決め: NeoHorse-Jev-4B（T336）と共通の部品として先に作る）。前の状態: 未着手（2026-10-02。規模 小〜中）
 - エンジンと forward.js が返すのは最後の位置の logits だけ。頭は全位置の最後の隠れ状態（final norm の後、位置 × 4096 の float32。16384 位置で 268 MB）を読む。`forward_many` のブロックごとに書き出す口と、置き場を `footprint()` に。分類器の行列積は要らない（その道を飛ばす）。
+- **持ち主の決め（2026-11-26、選択肢で）**: NeoHorse-Jev-4B（T336）は Clef-Flash と共通の部品（T318〜T321 の形）から作って先に動かす。この部品はその共通の部品として T336 の前に作る（順の 8）。Clef-Flash（T316・T317・T322〜T325）はまだ進めない。
 
-### T319 [追加][MLX] Clef の頭（joint schema head） — 状態: 未着手（2026-10-02。規模 中）
+### T319 [追加][MLX] Clef の頭（joint schema head） — 状態: 未着手（2026-11-26、持ち主の決め: NeoHorse-Jev-4B（T336）と共通の部品として先に作る）。前の状態: 未着手（2026-10-02。規模 中）
 - `clef_mlx.py` の `JointSchemaHead`（原本は `joint_schema_model.py`）: `hidden_norm`（LayerNorm）、射影 6 本（4096 → 1024）、状態への cross-attention の routing 2 層、decoder 4 層（問いどうしの self-attention と cross-attention、norm が先）、点を付ける式（語の行との cosine の prior、`residual_gate`、scorer）。**GELU は正確な形**（今のカーネルは tanh の近似）。大きさは小さい（memory は位置 × 1024）ので NumPy で書ける見込み（Pyodide の NumPy は BLAS なし: 位置 × 4096 × 1024 の射影が 500 位置で 2 G 積和。秒の桁の見込み、未計測）。
+- **持ち主の決め（2026-11-26、選択肢で）**: NeoHorse-Jev-4B（T336）は Clef-Flash と共通の部品（T318〜T321 の形）から作って先に動かす。この部品はその共通の部品として T336 の前に作る（順の 8）。Clef-Flash（T316・T317・T322〜T325）はまだ進めない。
 
-### T320 [追加][MLX][解析分割] 入力の組み立てと選択肢の行 — 状態: 未着手（2026-10-02。規模 小）
+### T320 [追加][MLX][解析分割] 入力の組み立てと選択肢の行 — 状態: 未着手（2026-11-26、持ち主の決め: NeoHorse-Jev-4B（T336）と共通の部品として先に作る）。前の状態: 未着手（2026-10-02。規模 小）
 - `encode_record` の移植: システム文、`STATE:`、`SCHEMA FIELDS:`、各問いと選択肢を片ごとに符号化してつなぎ、問いと選択肢のトークンの範囲を覚える。上限を越えたら状態を切る。前に BOS を置かない（`<|im_start|>` から: 一覧の Qwen3.5 と同じ）。選択肢の語の行は出力の埋め込み（`lm_head`）から引いて平均（T317 の読みで戻した float32 の行）。
+- **持ち主の決め（2026-11-26、選択肢で）**: NeoHorse-Jev-4B（T336）は Clef-Flash と共通の部品（T318〜T321 の形）から作って先に動かす。この部品はその共通の部品として T336 の前に作る（順の 8）。Clef-Flash（T316・T317・T322〜T325）はまだ進めない。
 
-### T321 [追加][MLX][変換] 頭の重みの取得と保存 — 状態: 未着手（2026-10-02。規模 小〜中）
+### T321 [追加][MLX][変換] 頭の重みの取得と保存 — 状態: 未着手（2026-11-26、持ち主の決め: NeoHorse-Jev-4B（T336）と共通の部品として先に作る）。前の状態: 未着手（2026-10-02。規模 小〜中）
 - 頭は legacy 形式に入らない別のファイル（243 MB の bf16）。Worker の取得、OPFS の保存（1 モデル 1 フォルダに 2 つ目のファイル、`kept.js` の manifest）、`serves()` の判定。
+- **持ち主の決め（2026-11-26、選択肢で）**: NeoHorse-Jev-4B（T336）は Clef-Flash と共通の部品（T318〜T321 の形）から作って先に動かす。この部品はその共通の部品として T336 の前に作る（順の 8）。Clef-Flash（T316・T317・T322〜T325）はまだ進めない。
 
-### T322 [描画][MLX] 状態と問いを入れて確率を見るページ — 状態: 未着手（2026-10-02。規模 中。文面は実装の前に持ち主に見せる）
+### T322 [描画][MLX] 状態と問いを入れて確率を見るページ — 状態: まだ進めない（2026-11-26、持ち主）。前の状態: 未着手（2026-10-02。規模 中。文面は実装の前に持ち主に見せる）
 - チャットでなく「状態（文か JSON）と問いの一覧を入れて、選択肢ごとの確率の表を見る」形。Worker に生成でない頼み。モデルのページの中の別の形にするか別のページにするかは持ち主（T316 の決め (4)）。
+- **持ち主の決め（2026-11-26、選択肢で）**: Clef-Flash（MLX）はまだ進めない（調べの記録のまま）。共通の部品 T318〜T321 は NeoHorse-Jev-4B（T336）のために先に作り、Clef-Flash はその後で改めて聞く（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T323 [試験][MLX][遠隔試験] 原本の実装と確率を比べる — 状態: 未着手（2026-10-02。規模 中）
+### T323 [試験][MLX][遠隔試験] 原本の実装と確率を比べる — 状態: まだ進めない（2026-11-26、持ち主）。前の状態: 未着手（2026-10-02。規模 中）
 - CI で原本（PyTorch の `joint_schema_model.py`、bf16 で 18.8 GB: ランナーに載るかは未確認。載らなければ 1 層ずつの道、T246 の形）とページのエンジン + 頭の確率を、カードの例の問いで比べる。カードの記録: MLX の 4 ビットと bf16 は最大 0.029（文）〜0.119（画像と動画）の差、いちばん上の答えは 10/10 と 9/9。
+- **持ち主の決め（2026-11-26、選択肢で）**: Clef-Flash（MLX）はまだ進めない（調べの記録のまま）。共通の部品 T318〜T321 は NeoHorse-Jev-4B（T336）のために先に作り、Clef-Flash はその後で改めて聞く（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T324 [追加][MLX] 画像と動画の入力 — 状態: 保留（2026-10-02。規模 大。T316 の決め (3) で外す勧め）
+### T324 [追加][MLX] 画像と動画の入力 — 状態: まだ進めない（2026-11-26、持ち主）。前の状態: 保留（2026-10-02。規模 大。T316 の決め (3) で外す勧め）
 - ViT 27 層（幅 1152、patch 16）、パッチの畳み込み、位置の表の補間、merger、3 次元の RoPE（mrope）、画像の前処理（リサイズと正規化）、動画のフレームの取り出し。
+- **持ち主の決め（2026-11-26、選択肢で）**: Clef-Flash（MLX）はまだ進めない（調べの記録のまま）。共通の部品 T318〜T321 は NeoHorse-Jev-4B（T336）のために先に作り、Clef-Flash はその後で改めて聞く（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T325 [性能][MLX][WebGPU] Clef-Flash を WebGPU で — 状態: 未着手（2026-10-02、持ち主「WebGPU で処理できるようにしておきたい気がする。実装はまだしなくていい」。規模 大。T271 の小段と重なる）
+### T325 [性能][MLX][WebGPU] Clef-Flash を WebGPU で — 状態: まだ進めない（2026-11-26、持ち主）。前の状態: 未着手（2026-10-02、持ち主「WebGPU で処理できるようにしておきたい気がする。実装はまだしなくていい」。規模 大。T271 の小段と重なる）
 - **なぜ合うか**: Clef は文を書かず、費用は入力ぶんのプロンプトの処理だけ（上限 16384 トークン）。プロンプトのブロックは GPU がいちばん効く所（T232 のレビューの見込み: 持ち主の Android で長いプロンプトは GPU が 2〜4 倍。生成のステップの固定費が無い）。分類器もサンプリングも要らない。
 - **足りないもの**（番号は付けず、ここに小段で。着手のときに T271 と合わせて分ける）:
   1. **linear attention（Gated DeltaNet）の層を GPU のプロンプトのブロックで**: 畳み込み・gate・デルタ則・状態。いまは `gpuUnfit()` が hybrid を丸ごと断る。**T271 の小段「Gated DeltaNet のステップ」「linear の層のプロンプト」と同じ仕事**（元ネタは Prism の fork の `gated_delta_net.wgsl`）。デルタ則は位置の順にしか進めないので、ブロックの中でも 1 トークンずつ（行列だけが全トークンまとめて: CPU と同じ形）。
@@ -641,16 +665,19 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   5. **頭を GPU で**（任意）: 頭は小さい（位置 × 1024 の memory への attention が 6 層）。CPU（T319 の NumPy）で足りるかを測ってから。GPU に置くなら 4 の読み戻しが要らなくなる。
 - **端末の見込み**（式、未計測）: `deviceMemory` 8 の Android は GPU だけで約 5 GB（4 ビット）なら置き場の規則の上では入る（8 と言う端末は GPU だけの上限なし）が、物理メモリに入るかは端末のもの。int8 の約 10 GB は PC の GPU だけ。言わないブラウザ（Safari・Firefox）は GPU だけにしない（T156）。
 - **順**: T316 の決め → CPU で通す（T317〜T323）→ 1・2（T271 と一緒に）→ 4 → 3 → 5。
+- **持ち主の決め（2026-11-26、選択肢で）**: Clef-Flash（MLX）はまだ進めない（調べの記録のまま）。共通の部品 T318〜T321 は NeoHorse-Jev-4B（T336）のために先に作り、Clef-Flash はその後で改めて聞く（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T326 [追加][Bonsai] 27B の文脈を読み込みの時に決める（保存の名前から外す） — 状態: 候補（2026-10-02、T233 のレビューから。持ち主の判断: T281 の後。規模 小〜中）
+### T326 [追加][Bonsai] 27B の文脈を読み込みの時に決める（保存の名前から外す） — 状態: 未着手（2026-11-26、持ち主の決め: T281 の前に作る）。前の状態: 候補（2026-10-02、T233 のレビューから。持ち主の判断: T281 の後。規模 小〜中）
 - 今は保存の名前（`public/kept.js` の `keptName`: リポジトリ@リビジョン:dtype:文脈）に文脈が入るので、T281 で文脈を後から変えると、5.95 GB の取得と 7.66 GB の保存を取り直す。3 値・int8・int6 のチェックポイントは、文脈が違うと**見出しの 4 バイト（`seq_len`）だけが違う**（RoPE の表をファイルに持たない。float16 と float32 の原本は表を持つのでファイルが変わる）。
 - 確かめ（T233 のレビュー）: `tests/page-27b.mjs` の long は、4096 で作った 7.66 GB のチェックポイントを、メモリの中で見出しの 4 バイト（`base + 24`）だけ 8192 に書き替えて、5,987 位置まで計算した（`forward.js` は文脈・RoPE の表・KV の上限を見出しから決める。`footprint()` は 8192 で 7.96 GiB。実測は 6,002 位置で後ろに 836.3 MiB、`footprint()` の 844.8 MiB の内）。だから**読み込みの時に見出しを書き替える形が成り立つ**。
 - 案: 保存の名前から文脈を外し（dtype が float16 と float32 のときだけ入れる）、worker が置き場を決める前に、見出しの `seq_len` を選んだ文脈にする（保存から読むときは読んだ見出しを書き替え、変換のときは `max_seq_len` に渡す）。URL の `?context=`（持ち主の判断）。今ある保存（文脈 4096 の名前）は読めれば使う。`footprint()` と 64 ビットのメモリの大きさは選んだ文脈で数える（27B は 4096 で 7.70、8192 で 7.96、16384 で 8.48、32768 で 9.52、65536 で 11.60、131072 で 15.75 GiB）。
+- **持ち主の決め（2026-11-26、選択肢で）**: T281 の「柔軟に対応」から、取り直しなしで文脈を替えられるように先に作る（取りまとめ役の読み）。順の 5（T326 → T281）。
 
-### T327 [バグ][CPU] 古い arm64 の Chrome（V8 14.2 以前）の Liftoff が 4 GiB を越える番地の `load32_splat` を誤る — ページに備えがあるか — 状態: 候補（2026-10-02、T233 のレビューから。急がない。規模 小〜中）
+### T327 [バグ][CPU] 古い arm64 の Chrome（V8 14.2 以前）の Liftoff が 4 GiB を越える番地の `load32_splat` を誤る — ページに備えがあるか — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-02、T233 のレビューから。急がない。規模 小〜中）
 - 事実（T233 のレビュー、Node 24 の V8 13.6 の arm64 で実測。run 36967650777・36967730997）: **Liftoff（V8 の最初の速いコンパイラ）の arm64 だけ**が、`v128.load8/16/32/64_splat` と `load32_lane` を、4 GiB を越える番地を下の 32 ビットで読む（V8 のコミット `ff9dbb26c2`、V8 14.3 = Chrome 143 で直った）。TurboFan の arm64 と x86-64 の Liftoff・Firefox・WebKit は正しい。当たるのは Chrome 142 以前の arm64（Apple Silicon の Chrome、Windows on ARM、更新が止まった Chromebook）が 4 GiB を越える番地でスケールを読む 3 値のカーネルと int8 のタイル（`matmul_q8r_tile`）を使うとき: 27B と、64 ビットのメモリに置く 3B 以上の int8 のモデルのプロンプト（複数トークンの塊）。
 - 当たりにくい訳: 関数は呼ばれて数 ms で TurboFan の版に替わり、27B の最初の呼びは 2.3 GiB より下の行列で、4 GiB を越える行列は後で来る。最初の高い番地の呼びが正しかった割合は、前に低い番地の呼びが 3072 行で 20 / 20、1024 行で 6 / 20、256 行で 0 / 20（新しい process）。**時間の勝ちで保証ではない**。Node 24 の arm64 でページの経路を回した数は x86-64 と 4 桁まで同じだった（run 36958791867・36968778769）。
 - 案: (a) 何もしない（Chrome 143 以降は直っていて、自動更新で追いつく。持ち主の端末で当たる可能性があるのは Chromebook だけ。「持ち主の端末でまとめて見るもの」に Chrome のバージョンを足した）。(b) 4 GiB を越えるモデルを読む前に、76 バイトの wasm（`tests/ternary-check.mjs` の `CANARY`）を 4 GiB を越える番地で 1 回呼び、誤れば断る（「this browser reads memory above 4 GB wrongly: update it」）。その呼びは Liftoff の最初の呼びなので、当たるエンジンでは必ず誤る（実際のカーネルが運よく正しい場合も断る）。勧めは (a)。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
 ### T328 [調査][Gemma4] Gemma 4 を動かす: 全体と順 — 状態: 未着手（2026-10-05、持ち主「[Gemma4]・[Neohorse]・[Agents] で対応モデルを増やすタスクを積んでほしい」。調べは T248 の Gemma 4 の節と 2026-10-05 の HF の一覧）
 - **実物**（HF、2026-10-05 のダウンロード）: `google/gemma-4-E2B-it`（303 万、全体 5.12B）、`gemma-4-E4B-it`（442 万、8.00B）、`gemma-4-12B-it`（189 万、11.96B、別のクラス `gemma4_unified`）。どれも apache-2.0・ゲートなし・絵と音も受ける（ページは `text_config` の言語モデルだけを読む）。`gemma-4-26B-A4B-it`（1285 万）は MoE、`gemma-4-31B-it`（991 万）は int8 で 16 GiB を越えるので外す。
@@ -659,18 +686,21 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **順**: T257 → T261 → T331 → T330 → T329 → T333（E2B・E4B）→ T332 → T334。
 - **見込み**（int8、未計測）: E2B は層ごとの埋め込みの表（262,144 × 256 × 35 = 23.5 億）が全体の半分近くで約 5.5 GB、E4B は約 8.6 GB で、どちらも 64 ビットのメモリ（Chrome と Firefox）。表を引くのは 1 トークンに 1 行なので、表は速さに効かず大きさだけに効く。
 
-### T332 [追加][Gemma4] 12B（`gemma4_unified`） — 状態: 候補（2026-10-05。規模 中〜大）
+### T332 [追加][Gemma4] 12B（`gemma4_unified`） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-05。規模 中〜大）
 - 別のクラスで `attention_k_eq_v: true`（K と V が同じ）ほか。int8 と補正で約 15.0 GB で、64 ビットのメモリの 16 GiB に入るかは境界（T129 の `pastWide()`）。入らなければ 6 ビット（Chrome と Firefox）か外す。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 状態: 候補（2026-10-05。規模 大。Clef-Flash（T316〜T323）と同じ種類）
+### T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす。T318〜T321 の共通の部品から。順はいちばん後ろ）。前の状態: 候補（2026-10-05。規模 大。Clef-Flash（T316〜T323）と同じ種類）
 - `TokenRhythm/NeoHorse-Jev-4B`（-GGUF @`b1bc36970f69cef2bfea75aec8f820fd3d20b040`、Q8_0 5,168,327,744 バイト、apache-2.0）。文を書かず、状態と問いから選択肢の確率を出す（タグ: decision-model・non-generative。Clef のカードが言う「Jev / SystemOne」の API の名前）。背骨は 4B（Qwen3.5 の形の見込み、未確認）で、頭は `PointerHead`（決めの位置の隠れ状態と選択肢の位置の隠れ状態から点、幅 256）。付属の `runtime/support/neohorse_decision/_vendor/model.py` を読んだ範囲: 選択肢ごとに**枝の attention の mask**（`branch_mask`・`option_isolation`）と位置の番号を自分で付ける。**linear attention の層（状態を持つ層）に枝の mask をどう掛けるかは未確認**（読む前に決めない）。
 - 要るもの: T318（全位置の隠れ状態）・T320 と同じ入力の組み立て・枝の mask（エンジンに無い。大）・頭（小）。Clef の部品と分け合う。
+- **持ち主の決め（2026-11-26、選択肢で）**: NeoHorse-Jev-4B は、Clef-Flash と共通の部品（T318〜T321 の形）から作って先に動かす。Clef-Flash はその後で改めて聞く。順はいちばん後ろ（順の 8 の最後）。
 
 ### T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 状態: 保留（2026-10-05。規模 大。入らない）
 - `InternScience/Agents-A1` @`e4a30b76e439b5093ac4c14efa6017718781d48f`（`Qwen3_5MoeForConditionalGeneration`、40 層、幅 2048、専門家 256 のうち 8、全体 35.1B）。MoE の forward（ルータと専門家ごとの FFN）がエンジンに無く、int8 で約 35 GB は 64 ビットのメモリの 16 GiB を越える（3 値も無い）。動くのは、専門家を 4 ビット以下で持ち、要る専門家だけを読む形ができたときだけ（大きな設計）。
 
-### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
+### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 1。
 
 ### T136 [性能][変換] Hugging Face などからの取得を速くする — 状態: **段 ① は済（8 項目を GGUF に、レビュー済み、2026-09-26）。段 ② は仕様に 10 点を足して進めてよい（レビュー、2026-09-26）。段 ② は実装して 19 項目を替えた。レビュー済み（must-fix 1 つを直した、2026-09-26 の 4 回目）。段 ③ の GPT-2 と GPT-NeoX（6 項目）は持ち主の判断で替える（2026-09-27、ブランチ `t136-stage3`）。レビュー済み（must-fix 0、記録の直し 2、2026-09-27）。残りは段 ③ の DeepSeek-R1（MIT のカードの Q8_0 が複数ある、未検査）と完了条件の本番の前後の数字**（**仕様はレビュー済み、2026-09-26。(2) を段に分けて進めてよい**）（2026-09-26、持ち主の指示「すぐにできそうなら着手、無理そうなら仕様をいったんレビューする」。計測したら、この開発機の回線ではすぐ効く手が無かった）（2026-09-26、持ち主の指示「Hugging Face などからのダウンロードの高速化を台帳に追加したい」。**まず計測から**。順番は持ち主が決める（Opus の提案: T128 の後、T134・T135 と並べて）。規模 小〜中）
 - 根拠: 大きいモデルの準備完了の大半は取得。日本の回線（この開発機）で huggingface.co から 8.3 MB/s（16 MiB × 6 本、T123）、1B 級で約 300 秒、7〜8B（15〜17GB）では約 30〜35 分。CI（米国）では部品の大きさが効き（Qwen2.5 0.5B が 4 MiB で 23 秒、16 MiB で 8.3 秒）、並列数は 4 → 12 で 1 割前後（T107）。**その値は米国の CI で決めたもので、日本の回線では測っていない**。
@@ -721,7 +751,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **固定値の文**: どちらも壊れていない。Pythia 70M の新しい文は、原本の int8 の greedy と同じ文（原本の float32 は生成の 3 トークン目、上位 2 つの差 0.050 の所で分かれる。古い文の道には差 0.026〜0.050 の所が 4 つあった）。GPT-2 は生成の 15 トークン目（原本の float32 の差 0.249）で分かれ、原本の int8 とは最後の 1 つだけ違う（「it's」と「it is」）。GGUF の float32 の差の最小は GPT-2 の最後の 0.011（float32 の足す順の違いで入れ替わる大きさではない）。
   - **調べの直し**: DeepSeek-R1 Distill Qwen 1.5B の Q8_0 でカードが MIT なのは Mungert だけではない。mradermacher（`DeepSeek-R1-Distill-Qwen-1.5B.Q8_0.gguf`、1,894,532,384 B、`base_model` が原本）・second-state・mmnga などにもある。Mungert の大きさは bartowski（1,894,532,192 B）と 288 B 違う（lmstudio-community と同じ）。GGUF の前分割は `deepseek-r1-qwen`、bos 151646（段 ② の形なら語彙と options は原本と一覧から）。替えるなら mradermacher のものを `candidates` に（段 ③ の 6 つと同じ作り手）。Qwen3 の 12 項目は 7 リポジトリ（0.6B・1.7B・4B・8B・Swallow 8B RL・4B Instruct 2507・4B Thinking 2507）で、取得は 62.5 → 32.7 GB。GGUF の無い 6 つ（5.87 GB）は正しい（あるのは ONNX だけ）。
   - **あれば良い（やらない）**: (1) GPT-2 の GGUF の `output.weight`（埋め込みの写し、41 MB）は変換が読まないのに取る（178 MB の 23%）: 読まないテンソルの範囲を取らないのは取得の仕組みの変更で、別の T に。(2) 実物の固定値の GPT-2・NeoX は GGUF の道だけになり、safetensors の GPT-2・NeoX（一覧の rinna の 3 つ）の固定値は無くなった（変換の計画と options は共通なので、外れたのは safetensors の読みだけ）。
-### T137 [性能][変換] 変換のレジューム: 取得と変換が途中で止まっても、次は続きから — 状態: **第 0 段（計測）の CI の数字が出た、2026-09-26。持ち主の端末の数字とレビュー担当の判定を待つ**（**仕様は決まった。実装はまだしない**。2026-09-26 に仕様をレビューし、足すもの 7 つを書いた、2026-09-26、持ち主の指示「変換のレジュームの実装を検討してほしい、実装はまだしない」→「T137 は仕様をつめて台帳を更新」。T136 の (3) をこの番号に分けた。規模 中）
+- **持ち主の決め（2026-11-26、選択肢で）**: 段 ③: DeepSeek-R1 の蒸留モデルは `gguf_check.py tensors` を通った Q8_0 の GGUF だけに替える（順の 3 の最後）。
+### T137 [性能][変換] 変換のレジューム: 取得と変換が途中で止まっても、次は続きから — 状態: 端末の計測で線を満たせば聞き直さずに実装（2026-11-26、持ち主の決め）。前の状態: **第 0 段（計測）の CI の数字が出た、2026-09-26。持ち主の端末の数字とレビュー担当の判定を待つ**（**仕様は決まった。実装はまだしない**。2026-09-26 に仕様をレビューし、足すもの 7 つを書いた、2026-09-26、持ち主の指示「変換のレジュームの実装を検討してほしい、実装はまだしない」→「T137 は仕様をつめて台帳を更新」。T136 の (3) をこの番号に分けた。規模 中）
 - **根拠**: 日本の回線（8.3 MB/s、T123）で 7〜8B の取得は約 30〜35 分（15〜17GB）、3B 級で約 12〜13 分。今はタブを閉じる・再読み込み・回線が切れて取り直し（`fetchRange` の 3 回）が尽きる、のどれでも最初から。保存（T99）は変換が最後まで済んでから。起きる頻度は未計測。
 - **いまの作り（読んで確かめた、2026-09-26）**: 取得は `inOrder()` がファイルの順に `Stream.feed()` へ渡す。`Stream` はテンソルが揃うたびに変換し、`Writer` が出力の位置へ書く（`sink.write(offset, bytes)` → 重みのメモリ）。`Writer` は書き込みのほかに状態を持たない。**テンソルの境目での `Stream` の状態は 3 つだけ**: 次のテンソルの番号（`step`）、そのテンソルの始まり（`steps[step][0]`）、終わった値の数（`done`）。途中まで溜めたもの（`pending`）は境目では空。出力の並び・RoPE の表・見出し・ビット数は見出しと設定から作り直せる。**自動のビット数（T115）は見出しを読んでから決まる**ので、保存の名前（`keptName` はビット数を含む）もそこで決まる: `sink.open(bytes, header, dtype, arch)` がその時点。
 - **仕様（案 B。案 A「元のバイトを溜めて最初から変換し直す」は置く量が約 3 倍なので採らない）**
@@ -745,19 +776,21 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 関係: T136 の (3) をここに分けた。T129 の (3)（1 つの部品が最終的に失敗した後も取得が続く）は、再開の前に止めるので一緒に直す。T124（qwen3）の後でも前でもよい。
 - **レビュー（Opus xhigh、2026-09-26、仕様）: 核の主張は正しい。下の 7 つを仕様に足してから第 0 段へ。** 確かめ方: 新規のサブエージェントが `Stream`・`Writer`・`Conversion` の `feed()` の間に変わる状態を全部洗い、リポジトリを変えずに再開を試作した。(a) 数字: 境目の状態は `step`・`position`（= `steps[step][0]`）・`done` の 3 つで、`pending` と `first` は境目で空。GPT-2 の `c_attn` と NeoX の `query_key_value` は 1 つのテンソルの中で溜めるので境目をまたがない。**再開の試作が止めずに変換した結果と 1 バイトも違わなかった**: 選んだ位置（境目の手前・ちょうど・すぐ後・大きいテンソルの中・最初・全部食わせて finish の前）× 2 つの塊の大きさで 216 回（Llama の bf16 / f32 から int8・int6・float16・float32、Qwen2 の bias、GPT-2、NeoX、2〜3 シャード、GGUF の Q8_0）、すべての境目からで 898 回。止まって失うのは、止まった位置のテンソル + 取得中の部品（最大 12 × 16 MiB = 192 MiB、8.3 MB/s で約 23 秒）。(b) 式: 失う時間 ≒（止まった位置のテンソルの大きさ + 取得中の部品）÷ 回線。(c) 判定: 進める。仕様に足すもの: ① **`?hf=` の版がブランチ（既定の `main`）のときは再開しない**（または解決したコミットを記録して比べる）。版が動くと、形が同じ 2 つの重みを黙ってつなぐ。② `sink.open()` は Python から同期で呼ばれ、`createSyncAccessHandle()` は非同期: 取っ手は `Conversion` を作った後に開き、作るときに書いたもの（見出し、float の RoPE の表）を model.bin に写す。再開では作った後に model.bin を重みのメモリへ読む。③ `done` は `feed()` の中で境目をまたいだ時点の値を記録する（`feed()` の後の値は次のテンソルの行を数えていて、`finish()` が「途中で終わった」と誤る）。最初の境目の前の記録は作ったときの `done`（RoPE の表の分）、全部食わせた後は `step == len(steps)` で `begin` はファイルの終わり。④ `progress.json` が読めない（書きかけ、空）ときは「途中なし」として消して最初から。ただし**別のタブが取っ手を持っているフォルダは消さない**（取っ手が取れない = 使用中）。⑤ 中止とエラーで取っ手を閉じる（開いたままだと次の `open` が失敗し「別のタブ」と誤る）。今の `keep()` は失敗でフォルダごと消すので、再開の道ではそうしない。⑥ 記録の `total` と `bytes` を新しい `Stream` と比べ、`resume()` は `position` と `begin` の一致を確かめる（違う位置から食わせても例外にならず黙って壊れる、を試作で見た）。⑦ シャードの進捗の数えは前のシャードの長さの和から。(d) 覆す条件: 仕様のとおり（OPFS の飛び飛びの書き込みが取得の 10 倍に届かない端末が主、または止まることがほとんど無い）に加えて、対象のブラウザの Worker で同期の取っ手が取れないと分かったとき。
 - **参考（2026-10-16、T552 の naidan の調べから）**: naidan（MIT）は HF の GGUF の取得をリポジトリごとの日誌に書き（`src/features/llama-cpp-browser/hugging-face/storage.ts` の `readJournal()`）、Web Locks の `ifAvailable` で 2 つ目のタブを「busy」で断る（`withRepositoryLock()`）。この仕様は「Web Locks は使わない」と決めてあるので形は変えない（読むのは日誌の中身の形だけ）。表は docs/notes/t552-naidan-2026-10-16.md。
+- **持ち主の決め（2026-11-26、選択肢で）**: 端末の計測（/benchmark/ の Storage）で「保存が取得の 10 倍以上」を満たせば、聞き直さずに実装に進む。満たさない端末があれば数字を見せて相談。
 
-### T83 [文書][文書] gist に計測の表（`30-measurements.md`）を足し、`10-overview.md` を今の姿に直す — 状態: 未着手（2026-09-24 採用、Fable の提案。**T81 と、T81 で見つかったモデルの追加の後**（2026-09-25、持ち主の判断）。T84 の表も使う。規模 小〜中、文章）
+### T83 [文書][文書] gist に計測の表（`30-measurements.md`）を足し、`10-overview.md` を今の姿に直す — 状態: 端末の数字待ち（2026-11-26、持ち主の決め: gist は端末の計測の後に 1 回で）。前の状態: 未着手（2026-09-24 採用、Fable の提案。**T81 と、T81 で見つかったモデルの追加の後**（2026-09-25、持ち主の判断）。T84 の表も使う。規模 小〜中、文章）
 - 担当（Fable の切り分け、2026-09-25。レビューは Opus xhigh）: **Opus が下書き**（`30-measurements.md` と `10-overview.md` の差分を、gist に載せる前のファイルとしてリポジトリの外、`~/tmp` に置く）→ Opus xhigh が読む → **公開は持ち主が文面を見てから**（外向きで取り消しにくい操作）。
 - 根拠: このプロジェクトの価値は「測って**公開する**」こと。先週で測るものは揃った（T52 の分解、T45 のベンチ、21 モデル、スレッドの上限）のに、gist は 4 系統・21 モデルになる前の姿のままで、計測の表（`30-`）は予定のまま無い。**測った数字が gist に無ければ、外から見えるのは古い数字だけ。**
 - 手順: (1) `10-overview.md` の「どこまで来たか」「しくみ」「どのブラウザで動くか」を 2026-09-24 の状態に直す（4 系統、21 モデル、chat_template、スイッチ）。(2) `30-measurements.md` を新設: T52 の分解表（Node と Chromium）、T84 の梯子、CI の全体走行から出る OS × ブラウザ × モデルの表（T82 の JSON から）、T68 の読み込みの時系列、スレッドの計測（2 倍と帯域）。**数字はすべて日付と条件（backend、ブラウザの版、機械）つき**。(3) `00-pyodide-llm.md` の目次に足す。
 - 決まり: 公開（gist の更新）は外向きなので、**文面を持ち主が見てから**。数値は既存の文書と CI の Summary からの写しだけで、ここで新しく測らない。
 - 完了条件: gist の 3 ファイルが今の実装と食い違っていない。表の各行に条件が書いてある。
+- **持ち主の決め（2026-11-26、選択肢で）**: gist の更新は端末の計測の後に 1 回で（T234 の gist の分もこのとき。文面は更新の前に見せる）。
 
 ## 候補（採否未定）
 
 2026-09-19 に Fable が提案したもの。持ち主が 1 つずつ採用か却下かを決める。採用したら「これからのタスク」へ移し、却下したら理由を添えて「やらないと決めたこと」へ移す。番号はどちらの場合もそのまま。並びは提案時の費用対効果の順。
 
-### T121 [追加][モデル] 画像を生成する: まず自己回帰型（画像のトークンを言語モデルで書く）が動くかの判定 — 状態: 候補（2026-09-25、持ち主の問い「画像生成ってできるかな」への Opus xhigh の考察。持ち主が候補に積んだ。規模 判定は小〜中）
+### T121 [追加][モデル] 画像を生成する: まず自己回帰型（画像のトークンを言語モデルで書く）が動くかの判定 — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-09-25、持ち主の問い「画像生成ってできるかな」への Opus xhigh の考察。持ち主が候補に積んだ。規模 判定は小〜中）
 - 見立て: **相性が良いのは、画像をトークン列として言語モデルで 1 つずつ書く自己回帰型**。LlamaGen（中身は Llama。ImageNet の 1000 クラスを指定して 256×256 を 16×16 のトークンで。いちばん小さい B は 111M）と Janus-Pro-1B（文章から 384×384 を 576 トークンで。言語モデルの部分は DeepSeek-LLM 系）。今のエンジンと forward がほぼそのまま使え、「言語モデルで画像のトークンを書く」ので目的（言語モデルを動かす実験）の中に収まる。細部（2 次元の RoPE か、トークナイザの形、ライセンス）は着手のときにモデルカードとコードで確かめる（未確認）。
 - 足りないもの: (1) 画像の縦横の位置の RoPE、(2) CFG（条件あり・なしの 2 本を同時に回して logits を混ぜる。T108 のまとめ処理で重みの読みを 1 回にできる見込み）、(3) トークンを画素に戻す VQ のデコーダ（畳み込み。**行列×行列で演算律速**なので、今の行列×ベクトルのカーネル（帯域律速、T93）とは別の、ブロックした行列積と畳み込みのカーネルが要る）、(4) ページで画素を描く（Worker が RGBA を送り canvas に。簡単）。
 - 速さの見積もり（未計測）: Janus-Pro-1B は今の 1B 級の速さ（CI の 4 vCPU で 20〜26 tok/s）から 576 トークンで 30 秒〜1 分台 + デコーダ。LlamaGen-B は 256 トークンで数秒 + デコーダ。
@@ -765,12 +798,14 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 持ち主に決めてほしいこと: 公開サイトで文章から描くモデル（何でも描ける）を置くか。LlamaGen のクラス指定ならその心配は小さい。
 - 判定の手順（採るなら）: LlamaGen-B で (1) デコーダの畳み込みの速さを NumPy と SIMD で測る、(2) CFG 込みの 1 枚の時間、(3) 参照（PyTorch。この開発機には無いので CI）と同じトークン列・同じ画素になるか（T86 の固定値のやり方）。報告して止まる。
 - T122 と土台（畳み込みと行列×行列のカーネル）を共有する。演算律速になるので、スレッドは帯域でなくコア数で伸びる見込み（T93 の約 2 倍の頭打ちとは事情が違う。未計測）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 9。
 
-### T122 [追加][モデル] 音声を合成する（TTS）: 言語モデル型が動くかの判定 — 状態: 候補（2026-09-25、持ち主の問い「TTS ってできるかな」への Opus xhigh の考察。持ち主が候補に積んだ。規模 判定は小〜中）
+### T122 [追加][モデル] 音声を合成する（TTS）: 言語モデル型が動くかの判定 — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-09-25、持ち主の問い「TTS ってできるかな」への Opus xhigh の考察。持ち主が候補に積んだ。規模 判定は小〜中）
 - 見立て: **言語モデルで音声のトークン（音声コーデックの符号）を書く型**（OuteTTS など。中身は Qwen や Llama 系）なら、今のエンジンにそのまま乗る。足りないのは、符号を波形に戻すデコーダ（畳み込み。T121 と同じ土台）と、ページで鳴らすこと（Worker が波形を送り Web Audio で。逐次の再生もできる）。FFT は NumPy に入っている。文字をそのまま入れる型なら、読みの辞書が要らない。
 - 速さの見積もり（未計測）: 音声 1 秒に数十〜百トークン前後（コーデックによる。要確認）。0.5B 級（CI で 40〜55 tok/s）では実時間と同じくらいか少し遅い見込み。
 - **日本語の壁は文字の読み**: 小さな専用モデル（Kokoro-82M、Piper など。自己回帰でないので速い）は、文字を発音記号に直す部品（英語は espeak-ng、日本語は OpenJTalk の辞書）が要り、どちらも C のライブラリで今の Pyodide に無い。言語モデルでもないので目的の外。
 - 判定の手順（採るなら）: 日本語を読める言語モデル型を 1 つ選び（対応言語とライセンスはモデルカードで確かめる。方針 8）、(1) 1 秒の音声を作る時間（実時間との比）、(2) デコーダの速さ、(3) 参照（CI）と同じ符号列になるか、を測って報告して止まる。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 9。
 
 ## 保留
 
@@ -850,12 +885,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - T50 オフライン対応（PWA）。2026-09-19 に却下: 古い `worker.js` のキャッシュで 404 を出した前例があり、Service Worker はその種の事故をもっと起こしやすい。「Pyodide は常に最新を実行時に解決する」方針とも噛み合わない。
 - T46 会話の継続（ターンをまたぐ KV キャッシュ、文脈があふれたときの作り直し、リセット）。2026-09-19 に却下: 実験の範囲の外。このプロジェクトの価値は「WASM Python でどこまでできるかを測って公開する」ことで、状態を持つチャットの作り込みは測れるものを増やさない。150M の指示モデルの受け答えは弱く、チャットボットとして評価される土俵に自分から上がることになる。T46 のもう半分、チャットテンプレート（1 ターンだけ、状態なし）は、T60 で HF の一覧に指示モデルを入れる場合の付属としてだけ残した。「チャット風の UI なのに続きを書くだけ」という違和感は文言で解く。長い入力の処理速度が問題になったら、見直すのは T49（prefill のバッチ化）。
 
-### T489 [整理][その他] T380.1 の後の残り — 状態: 持ち主の文面待ち（2026-10-30 に見直した。前の状態: 未着手、2026-10-12、T380.1 とそのレビューから。規模 小。文面は持ち主）
+### T489 [整理][その他] T380.1 の後の残り — 状態: 未着手（2026-11-26、持ち主の決め: 文面は全部 (a)）。前の状態: 持ち主の文面待ち（2026-10-30 に見直した。前の状態: 未着手、2026-10-12、T380.1 とそのレビューから。規模 小。文面は持ち主）
 - **見直し（2026-10-30、取りまとめ役の決め）**: 文面でないものは今のまま置く。`REASONS` の全項目が `path.*.js` に入るのは数 KB で、分ければ表が 2 つになる。`worker/timing.ts`・`worker/load.ts` の訳は worker の文で、worker は `forward/reasons.ts` を読まない決まり（束の分け方: `reasons-check`）なので表に入れない。`samplingSettings()` の「more than N stop tokens」は届かないが安い番として残す。`REASONS.quiet()` は `reasons-check` の `SAID` が秒の文を持つ（呼ぶ所の `GPU_QUIET_MS` は 200 秒）。`isLate(error)` の 5 か所は実ブラウザの `updated-in-browser.mjs` が見る。**残るのは上の行の持ち主の文面だけ。**
 - **持ち主の文面**: フォールバックのアダプタを言う文が 2 つある（`gpuOnlyUnfit()` の「a fallback adapter」は訪問者に出ない側: 出る側の文に寄せてよいか）。4 の倍数でない head の文も 2 つ。`/benchmark/` のラウンドの読み込みは WebGPU があっても「no WebGPU in a worker here」になる（ページに出るかは未確認）。`gpuOnlyUnfit()` の文は訪問者にもコンソールにも出ない: GPU だけに置けなかった訳を知る手段が無い（出すなら文面）。
 - ページのスクリプトの共有の塊 `path.*.js` に `REASONS` の全 39 項目が入る（使うのは 3 項目、数 KB）。`worker/timing.ts` の 3 つの訳と `worker/load.ts` の 2 つは表の外（エンジンに言わせれば入る）。`shaders/run.ts` の `samplingSettings()` が「more than N stop tokens」を自分でも投げる（届かない）。`REASONS.quiet()` の秒の二重割りを見る試験が無い（180 秒の見張りを走らせる試験が無い）。`isLate(error)` を読む 5 か所は手元で走らない。訳を 1 つ足す場所は 3 か所（表・使う所・文を固定する試験の `SAID`）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 文面は全部 (a)（`docs/notes/owner-texts-2026-11-26.md` の 6〜9）: 6・7 は見えない側の文を見える側にそろえる、8 はベンチのラウンドが GPU を使わない作りなら `the GPU is not used in this round`（出る所を確かめてから）、9 はコンソールに `gpu: {訳}: the model stays on the CPU alone`。順の 2 の文面の回。
 
-### T491 [整理][WebGPU] T380.3 の後の残り — 状態: 持ち主の判断待ち（文面と動き: 固まった GPU の Worker を CPU で読み直す形の訳の文と、GPU だけの道の最初の読み込みの打ち切り。試験の部分は本線（9e7564b7〜972b7d23）・レビュー済み、ブランチ `t.491-gpu-updated` はもうリモートに無い。2026-11-12 に台帳を見直した）。前の見出し: 進行中（2026-11-04、Opus medium: 試験の部分はブランチ `t.491-gpu-updated`。残りは持ち主の文面と動きの判断待ち。前の状態: 未着手、2026-10-12、T377・T382 とそのレビューから。規模 小）
+### T491 [整理][WebGPU] T380.3 の後の残り — 状態: 未着手（2026-11-26、持ち主の決め: 固まった GPU の Worker は CPU で読み直す。GPU だけの道は最初の読み込みを打ち切る）。前の状態: 持ち主の判断待ち（文面と動き: 固まった GPU の Worker を CPU で読み直す形の訳の文と、GPU だけの道の最初の読み込みの打ち切り。試験の部分は本線（9e7564b7〜972b7d23）・レビュー済み、ブランチ `t.491-gpu-updated` はもうリモートに無い。2026-11-12 に台帳を見直した）。前の見出し: 進行中（2026-11-04、Opus medium: 試験の部分はブランチ `t.491-gpu-updated`。残りは持ち主の文面と動きの判断待ち。前の状態: 未着手、2026-10-12、T377・T382 とそのレビューから。規模 小）
 - **見直し（2026-10-30）**: AGENTS.md の T371 の場合の数の行は蒸留（T569）で無くなっていた。固まった GPU の Worker を CPU で読み直す形と GPU だけの道の打ち切りは訳の文（持ち主）か動きの変更、残る試験（始まらない Worker の GPU だけの道を `updated-in-browser.mjs` で）は CI の実ブラウザの回: この順の後ろで取りかかる。
 - **固まった GPU の Worker**（`error` も出さず数えも進めない）は今も 60 秒で読み込みが失敗する（CPU に読み直す形にするなら訳の文が要る: 今ある `REASONS.quiet` か新しい文か = 文面）。そのとき保存した変換の読みは `room()` の失敗を「保存が読めない」と読み、保存が正しくても変換し直しに行く（読みだけ）。
 - GPU の Worker が始まらなかった GPU だけのモデルは、最初の読み込みを最後まで走らせてから CPU で読み直す（GB 級の変換では無駄が大きい。打ち切るなら `weights.ts` が「読み直し」を投げる形。今の形は T156 の「GPU が生成中に落ちた」道と同じ流れ）。訪問者には「Downloading …」が 2 回出る見込み（未確認）。
@@ -868,8 +904,10 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - レビュー（Sonnet low、2026-11-04、試験の部分）: must なし。should 2 つ（Firefox・WebKit の分岐でエラーとステータス行を見る、SwiftShader の起動の失敗を failures に）をこのタスクのコミットで直した。GPU の Worker の頼みを Chromium で必須にしていること、`weights.ts` の文がこの道だけのもの、404 と 500 の HEAD の線と SLOWER、期限と closed()/leave() を読んだ。should の 3 つ目（毎晩は実質 Chromium だけが見る）は記録のとおりでそのまま。
   - **最後の CI**: レビューの直しの後のコミットで、同じ頼み（壊し方なし）を run 41890255541（コミット d4d6e5b4）で回した: 2 つとも ok、準備完了は 404 で 4.8 秒・500 で 5.3 秒。前の頼みで 67da6072 に回した run 41890004414 は、この直しの後の 1 回にまとめるために取り消した。
   - **製品の誤りは見つかっていない**。持ち主待ちのまま触っていないもの: 固まった GPU の Worker を CPU で読み直す形（訳の文 = 文面）と、GPU だけの道の最初の読み込みの打ち切り（動き）。AGENTS.md の T371 の場合の数の行は蒸留で無くなっている（見直しのとおり）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 固まった GPU の Worker（60 秒何も言わない）は、読み込みの失敗にせず CPU で読み直す。訳の文は今ある `REASONS.quiet` を使い回す（`docs/notes/owner-texts-2026-11-26.md` の 10 の (a)）。
+- **持ち主の決め（2026-11-26、選択肢で）**: GPU の Worker が始まらなかった GPU だけのモデルは、分かった時点で最初の読み込みを打ち切って CPU 用に読み込む。順の 5。
 
-### T502 [整理][その他] T363（Saluki のエンジン）の後の残り — 状態: 持ち主の文面待ち（T502.3・T502.4。T502.1・T502.2・T502.5・T502.6 は本線・レビュー済み。2026-11-12 に台帳を見直した）。前の見出し: 進行中（2026-10-25、Opus medium。前の状態: 未着手、2026-10-13、T363.2〜.5 とそのレビューから。規模 小〜中）
+### T502 [整理][その他] T363（Saluki のエンジン）の後の残り — 状態: 未着手（2026-11-26、持ち主の決め: T502.3・T502.4 の文面は (a)）。前の状態: 持ち主の文面待ち（T502.3・T502.4。T502.1・T502.2・T502.5・T502.6 は本線・レビュー済み。2026-11-12 に台帳を見直した）。前の見出し: 進行中（2026-10-25、Opus medium。前の状態: 未着手、2026-10-13、T363.2〜.5 とそのレビューから。規模 小〜中）
 - **子タスクの番号**（取りまとめ役の決め: 下の項目は互いに関わらない）: T502.1 道具の古いコメント 2 つ（`kernels-in-browser.mjs` の頭、`ci.mjs` の `--ref`） — 完了。T502.2 `forward/engine.ts`（845 行・58 KB、目安を越えた。T502 を積んだ 2026-10-13 は 733 行・49.4 KB: その後の GPU の回（T547・T558・T565 など）と T371 で伸びた）から塊の部分を `forward/blocks.ts` に — 完了。T502.3 `kinds` に塊でない型を書いた形を、エンジンを作るときに断るか `footprint()` が数えるか — 持ち主の文面待ち。T502.4 Python の小さな断り（変換器の zip の無い所の塊の行、`kind_named` の混ざった並び、`tiled` と回した基底） — 持ち主の文面待ち。T502.5 試験の穴（Granite・GPT-2・NeoX の形の K 量子化の GGUF を `blocks=True` で、`blocks-forward-check` の 14 秒、束ねた worker の塊のカーネル） — 完了。T502.6 T502.5 の試験の残り（GPT-2・NeoX の形の K 量子化の GGUF を `blocks=True` で、作り物の幅を 256 の倍数に） — 完了（本線 14e469b3）。
 - **残りの確かめ（2026-11-12、Opus medium）**: 残るのは T502.3・T502.4 の文面だけ（上の「区切りのまとめで持ち主に見せる文」の (6) に積んである）。下の最後の項目たちのうち、T502.5 の題にあって「この回では触らない」とした 2 つはもう見られている: 束ねた worker が `_astro/` から塊のカーネルを取る所は `tests/blocks-in-browser.ts` の `isolated`・`again`・`wide`・`plain`・`no-relaxed`、塊のカーネルが 404 の場合は同じ道具の `gone`（道具の頭のコメント）。`blocks-forward-check` は今も軽い組の `part`（14 秒は受け入れる: 呼び出しを計画とカーネルの模型に照らす唯一の検査）。`signed_dots` を聞かずに符号つきのタイルを取る壊し方が x86-64 でだけ落ちるのは relaxed SIMD の決まっていない動きの性質で、直す物は無い。CI を省いた。訳: 台帳だけ。
 - **T502.3・T502.4（2026-10-25）**: どちらも新しい断りの文が要る（訪問者に見える）ので、区切りのまとめで持ち主に（下の「区切りのまとめで持ち主に見せる文」の (6)）。調べ: T502.3 の形は変換器が作らず、手元のフォルダの設定に自分で `kinds` を書いたときだけ。エンジンは int6 の行を詰めたまま掛け、float16 の行を float32 に広げた写しを取る（`footprint()` が数えないのは後者）。T502.4 の (a) 変換器の zip の無い所の塊の行は、いまは届かない（塊を保つのは int8 のカーネルで掛ける読み込みだけ: `convert.ts`）、(c) `tiled` と回した基底を一緒に作る変換は無い。
@@ -886,8 +924,9 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 変換器の zip の無い所で塊の行を NumPy で読むと「No module named convert」。`kind_named` は `DTYPES` と `BLOCKS` の名前の混ざった並びを断らない。`tiled` と回した基底が一緒の形をエンジンは断らない（いまその形を作る変換は無い）。
 - 試験: Granite・GPT-2・NeoX の形の K 量子化の GGUF を `blocks=True` で通す試験が無い（広げる道に落ちることは読んだだけ）。`signed_dots` を聞かずに符号つきのタイルを取る壊し方は x86-64 の CI でだけ落ちる。`blocks-forward-check` が軽い組に 14 秒足す。束ねた worker が `_astro/` から塊のカーネルを取る所と、`updated-in-browser.mjs` の塊のカーネルが 404 の場合は、ブラウザで通していない（T364）。
 - `tests/kernels-in-browser.mjs` の頭の「WebKit has no such memory」は古い（Playwright の WebKit 27.2 は Linux で 64 ビットのメモリを作る）。`tests/ci.mjs run A + B` の `--ref` は最後に 1 回だけ書く（組ごとに書くと 2 つ目が始まらない: 道具の頭に書く）。
+- **持ち主の決め（2026-11-26、選択肢で）**: T502.3・T502.4 の文面は (a)（`docs/notes/owner-texts-2026-11-26.md` の 5）: どちらも断り、同じ文 `The form gives {行} the kind {型}: a row of a kind of its own is one of llama.cpp's blocks, int8 or float32.` に寄せる。届かない道には文を作らない。順の 2 の文面の回。
 
-### T505 [追加][変換] GGUF を URL とフォルダからそのまま開く — 状態: 持ち主の判断待ち（2026-11-12 に台帳を見直した: T505.1〜T505.3 は本線・レビュー済み。残るのは T505.4 の見送りを持ち主に確かめることだけ（区切りのまとめで聞く、と前の見出しにある）。文面の残りは T508）。前の見出し: 進行中（**T505.1・T505.2 は完了**（2026-10-13、本線に入れた。ページに届くものは変わらないので本番の確かめは省いた。**レビュー（Sonnet low、2026-10-13）: OK、必ず直すもの 0。** 網の違いは Python の窓口の 4 つの名前と新しい試験だけ、`conversions_compare` は 118/118 同じ（GGUF だけの道を通る 9 項目を含む）、`engine.zip` は本線と同じバイト、`fork_readers.py` の 8 型が 40,000 個の塊でビット単位に一致、壊し方 8 通りは全部名前つきで落ちた、`smaug-bpe`・`deepseek-r1-qwen` は `llama-vocab.cpp` の枝を読んで確かめた、新しい断りの文は 0。レビューが回していない軽い組（308 秒）・build・`dist-check` は取りまとめ役が先頭で回した。回せなかったもの: `saluki_rows.py`（期限）。気づき: BOS も EOS も言わない GGUF の断りが「BOS」でなく「EOS」を言うようになった（文は同じ）、`tokenizer.ggml.precompiled_charsmap` を持つ sentencepiece の GGUF を読まずに開く（T505.3 で: 鍵が在れば断る）。**持ち主の決定（2026-10-13、選択肢で）: (A) 取るファイルは質を先に（Q8_0、無ければ Q6_K → Q5_K_M → Q4_K_M）、(B) 名指しは両方（`?hf=owner/repo` は一覧から自動で選び、`&file=名前.gguf` があればそのファイル）、(C) 前分割の名前を書いていない GGUF は断る（今ある文で）。**）、**T505.3 の文面も持ち主が選んだ（2026-10-13）**: シートに 3 つ目の欄「GGUF file (optional)」（placeholder「the best one there」。空なら自動で選ぶ）、説明文は「A model published as safetensors or as GGUF. It is fetched from huggingface.co and converted to int8 in this browser; what the converter cannot take, it refuses in words.」、safetensors も読める GGUF も無いときは「{repo} has no model.safetensors and no GGUF file this page can read.」。**T505.3 は完了**（2026-10-14、本線 b4c8c16c、デプロイ run 38488781253。**本番（Chromium 156、run 38489471307）**: `?hf=LiquidAI/LFM2.5-230M-GGUF` が準備完了 11.6 秒・93.5 tok/s・2 回目 2.6 秒（OPFS）、今ある `?hf=HuggingFaceTB/SmolLM2-135M` が 9.3 秒・111.1 tok/s・2 回目 2.5 秒、tiny-lm と Qwen3.5 0.8B も通る。ブランチの CI（run 38480618924）: Firefox 157 と WebKit 27.2 で同じ GGUF のリポジトリが開く。**レビュー（Sonnet low、2026-10-13）: OK、入れた直し 1 つ**（一覧の API に期限が無く、答えない回線で `?hf=` とシートが止まった → 10 秒で離す、231989ad）。軽い組（先頭、取りまとめ役）・types・build・dist-check・網の `models`・`exports`・`repository-check`・実 Chrome の実物が通った。**持ち主の決定（2026-10-13〜14、選択肢で）**: F16・BF16・F32 は Q8_0 のすぐ後ろ（今の実装）、選択欄のファイル名と URL の `&file=` の書き足しは残す、URL で開く 500 MB 超は今までどおり確かめない。残りは T508）、**T505.4 は見送り**（2026-10-14、取りまとめ役の読み。訳: 上位 500 のここの形 202 リポジトリのうち Q8_0 を持つのは 153。広げて int8 にする道で入らないのは 16 GiB を越える 14B 級以上で、塊のまま持っても 1 秒に 1 語未満（Saluki の実測 0.4 tok/s）。区切りのまとめで持ち主に聞く）。2026-10-13、T504 の表から。持ち主が選んだ（「GGUF を URL から開く」「GGUF だけで開くときの断りを外す」）。規模 中〜大）
+### T505 [追加][変換] GGUF を URL とフォルダからそのまま開く — 状態: 未着手（2026-11-26、持ち主の決め: T505.4 をやる）。前の状態: 持ち主の判断待ち（2026-11-12 に台帳を見直した: T505.1〜T505.3 は本線・レビュー済み。残るのは T505.4 の見送りを持ち主に確かめることだけ（区切りのまとめで聞く、と前の見出しにある）。文面の残りは T508）。前の見出し: 進行中（**T505.1・T505.2 は完了**（2026-10-13、本線に入れた。ページに届くものは変わらないので本番の確かめは省いた。**レビュー（Sonnet low、2026-10-13）: OK、必ず直すもの 0。** 網の違いは Python の窓口の 4 つの名前と新しい試験だけ、`conversions_compare` は 118/118 同じ（GGUF だけの道を通る 9 項目を含む）、`engine.zip` は本線と同じバイト、`fork_readers.py` の 8 型が 40,000 個の塊でビット単位に一致、壊し方 8 通りは全部名前つきで落ちた、`smaug-bpe`・`deepseek-r1-qwen` は `llama-vocab.cpp` の枝を読んで確かめた、新しい断りの文は 0。レビューが回していない軽い組（308 秒）・build・`dist-check` は取りまとめ役が先頭で回した。回せなかったもの: `saluki_rows.py`（期限）。気づき: BOS も EOS も言わない GGUF の断りが「BOS」でなく「EOS」を言うようになった（文は同じ）、`tokenizer.ggml.precompiled_charsmap` を持つ sentencepiece の GGUF を読まずに開く（T505.3 で: 鍵が在れば断る）。**持ち主の決定（2026-10-13、選択肢で）: (A) 取るファイルは質を先に（Q8_0、無ければ Q6_K → Q5_K_M → Q4_K_M）、(B) 名指しは両方（`?hf=owner/repo` は一覧から自動で選び、`&file=名前.gguf` があればそのファイル）、(C) 前分割の名前を書いていない GGUF は断る（今ある文で）。**）、**T505.3 の文面も持ち主が選んだ（2026-10-13）**: シートに 3 つ目の欄「GGUF file (optional)」（placeholder「the best one there」。空なら自動で選ぶ）、説明文は「A model published as safetensors or as GGUF. It is fetched from huggingface.co and converted to int8 in this browser; what the converter cannot take, it refuses in words.」、safetensors も読める GGUF も無いときは「{repo} has no model.safetensors and no GGUF file this page can read.」。**T505.3 は完了**（2026-10-14、本線 b4c8c16c、デプロイ run 38488781253。**本番（Chromium 156、run 38489471307）**: `?hf=LiquidAI/LFM2.5-230M-GGUF` が準備完了 11.6 秒・93.5 tok/s・2 回目 2.6 秒（OPFS）、今ある `?hf=HuggingFaceTB/SmolLM2-135M` が 9.3 秒・111.1 tok/s・2 回目 2.5 秒、tiny-lm と Qwen3.5 0.8B も通る。ブランチの CI（run 38480618924）: Firefox 157 と WebKit 27.2 で同じ GGUF のリポジトリが開く。**レビュー（Sonnet low、2026-10-13）: OK、入れた直し 1 つ**（一覧の API に期限が無く、答えない回線で `?hf=` とシートが止まった → 10 秒で離す、231989ad）。軽い組（先頭、取りまとめ役）・types・build・dist-check・網の `models`・`exports`・`repository-check`・実 Chrome の実物が通った。**持ち主の決定（2026-10-13〜14、選択肢で）**: F16・BF16・F32 は Q8_0 のすぐ後ろ（今の実装）、選択欄のファイル名と URL の `&file=` の書き足しは残す、URL で開く 500 MB 超は今までどおり確かめない。残りは T508）、**T505.4 は見送り**（2026-10-14、取りまとめ役の読み。訳: 上位 500 のここの形 202 リポジトリのうち Q8_0 を持つのは 153。広げて int8 にする道で入らないのは 16 GiB を越える 14B 級以上で、塊のまま持っても 1 秒に 1 語未満（Saluki の実測 0.4 tok/s）。区切りのまとめで持ち主に聞く）。2026-10-13、T504 の表から。持ち主が選んだ（「GGUF を URL から開く」「GGUF だけで開くときの断りを外す」）。規模 中〜大）
 - **なぜ**: Hugging Face でダウンロードの多い GGUF のリポジトリ上位 500 のうち 202（ダウンロードの 39%）は、ここがもう動かせる形なのに、ページから開けるのは一覧に手で書いた項目だけ（docs/notes/t504-llama-cpp-gaps-2026-10-13.md）。足りないのは入口と型と、GGUF だけで開くときの断り。どれも Python で書ける（持ち主の向き: llama.cpp の中身は Python に、速い所だけカーネル）。
 - **子タスクの番号**: **T505.1** 残りの量子化の型の読み手（Q6_K・Q5_K・Q3_K と、幅が 256 で割れない行列の代わりの型 Q4_0・Q4_1・Q5_0・Q5_1 など: 読み手だけ。今の「広げて int8」の変換で開く。llama.cpp の C とビット単位で同じことを `tests/fork_readers.py` で）/ **T505.2** GGUF だけで開くときの断りを外す（BOS を言わない GGUF、`rope_freqs` の表、sentencepiece の語彙を GGUF から読む、前分割の名前の表を llama.cpp の同じ枝に落ちる名前まで広げる: 実物の頭で 1 つずつ確かめる）/ **T505.3** 入口（`?hf=` とシートで `.gguf` を名指す、フォルダの門（T410）、どの量子化のファイルを選ぶか、大きさと dtype の選び。**訪問者に見える文面（シート・断り・note）は持ち主に選んでもらってから**）/ **T505.4** int8 に広げると入らない大きさの GGUF を塊のまま開く（残りの型のカーネル: T363.4 の形。T505.1〜.3 の後で、要るかを数字で決める）。
 - **決まり**: 今ある項目と `?hf=`（safetensors）の変換は 1 バイトも options も変えない（`CONVERTER` を上げない: 上げるなら持ち主に聞く）。読み手は形と式から NumPy で書き、表を写すなら許諾文（方針 10）。全員が取る `engine.zip` を太らせない（読み手は変換器の側）。
@@ -922,6 +961,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **3 つの物差し**: (1) 単独の試験: `repository.ts` は Node が import して、一覧は配列、API は偽の `fetch` で試験できる。ページの流れ（`urlLooked()`・シート）は実ブラウザだけ。(2) 札を 1 つ足す: 製品 1 ファイル 1 行（`QUANTIZATIONS`）、試験 1 行（`ORDER`）。共有の流れの中は 0。(3) 取り込み元の種類を 1 つ足す（たとえば分かれた GGUF）: 段取りは今までどおり `conduct.py` の 1 関数と表の 1 行、ページは `repository.ts` の `settled()` の 1 か所（何を選ぶか）。`choose.ts`・worker は触らない。モデルの家族を足す手間には効かない。
   - **持ち主に選んでもらうこと**: (a) float の GGUF（F16・BF16・F32）の位置: いまは Q8_0 のすぐ後ろ（質は Q8_0 と同じ、取得は 2〜4 倍）。Q8_0 が無く F16 と Q4_K_M だけのリポジトリは F16 を取る。持ち主の順（Q8_0 → Q6_K → …）を字のとおり読むなら Q4_K_M の後ろ。(b) フォルダの門（T410）の文面。(c) 「kept in this browser」の一覧は、同じリポジトリの 2 つのファイルを同じ名前で並べる（manifest の名前がリポジトリ）。(d) README の `?hf=` の段落（「It does not open a repository that has only GGUF files」）と docs。(e) URL で開く 500 MB 超の GGUF は確かめずに始まる（`?model=` と同じ）。(f) select の「Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX」は前のまま。
   - **気づき（採番していない）**: Service Worker が入っている profile で初めて `?coi=off` を開いた訪問が「Failed to start the worker: undefined」で止まった（一覧のモデルでも同じ。再読み込みすると動く。この枝の木で見た: 本線の木では確かめていない）。`tests/serving.mjs` は毎回別の番地（ポート）なので、道具をまたいだ保存は見えない。
+- **持ち主の決め（2026-11-26、選択肢で）**: T505.4 はやる（int8 に広げると入らない GGUF を塊のまま開く: 残りの型のカーネル）。順の 7 の頭。
 
 ### T506 [不具合][遠隔試験] WebKit 27.2 で 4 GB を越えるモデルが、断られずに黙って止まる — 状態: 調べは完了、製品の直しは持ち主の端末（本物の Safari）を見てから（2026-10-13、道具と記録を本線に入れた。**レビュー（Sonnet low、2026-10-13）: OK、直しなし。** 製品は変わっていない（差分は tests と記録だけ）。手元の Chrome の e2e（tiny-lm・stories260K の `E2E_TWICE`）と `workflows-check`・`serving-check` が通り、CI の run 38474223166・38476174570 の行が報告と合う。レビューが回していないもの: `wide-in-browser.mjs`、WebKit のソースの読み直し、run 38468412338 の行。気づき: 答えないページへの 2 秒ごとの問いが積み上がる（害は無い）。選択肢 4 つは最後のまとめで持ち主に）。前の状態:  調べまで（2026-10-13、Opus medium、ブランチ `t506-webkit-wide`、レビュー前。**製品は変えていない**: 原因は WebKit の側の決まりで、今ある文のどれも当てはまらない。試験の道具を直した。持ち主に選んでもらうことが下にある）
 - **見えたこと（T364.3 の本番の確かめ）**: 本番を Playwright の WebKit 27.2（Linux x64、`models.yml browser=webkit`）で開くと、Underdog Saluki 27B（run 38432524924、900 秒）も Ternary Bonsai 2 27B（run 38434899430、600 秒）も、断りの文も答えも出ずに時間切れ。コンソールは「Loaded numpy」で終わり、e2e の最後の問いにページが答えない。前の記録（T233、Playwright 1.60 の WebKit）は「約 20 秒で断る」。
@@ -942,8 +982,9 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   3. **8 GB を越えるモデルを Safari で開く前に一言出す**: Safari は `deviceMemory` を言わないので今の警告（`memoryWarning()`）は出ない。案の文: 「{name} needs about {N} MB of memory. Safari closes a page that takes more than 8 GB on a Mac with 16 GB or less: it may reload while this model loads.」/「{name} needs about {N} MB of memory, which may be more than Safari lets one page take.」（出る所: モデルを選んだ時の、今のメモリの警告と同じ場所。Safari かどうかを UA で見ることになる: いま製品に UA の分岐は無い）。
   4. **落ちた後の訪問で言う**: 読み込みの前に印を書き（`/benchmark/` の Page memory の節と同じ形、T173）、読み込み直したページが印を見つけたら「{name} did not finish loading the last time: the browser may have closed the page for the memory it took.」と言って、同じモデルを自動で読み直さない（Safari はプロセスを終わらせた後ページを読み直す: 覚えていたモデルをまた読み、また落ちる輪になりうる。未確認）。ブラウザを見分けずに済む。
 - **気づき**: (a) **取得の間のバッファ**: `ranges.ts` は取った 1 バイトにつき 2 バイトの捨てる配列を作る。V8 と SpiderMonkey はすぐ回収するが、JavaScriptCore は大きなメモリを持つワーカーでは数 GB ためる。部品の配列を使い回す・BYOB の読み手にする、で減らせる見込み（未計測。Chromium と Firefox の道が変わるので別のタスクに: 採番していない）。(b) WebKit の 64 ビットのメモリの `grow()` は遅い（上）: KV を伸ばす `grow()` が 27B で何秒かかるかは未計測。(c) AGENTS.md の「6 ビットになるのは Safari と…」は、64 ビットのメモリを持つ WebKit では当たらない（int8 のまま 64 ビットに置く）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T508 [整理][変換] T505.3 の残り — 状態: 持ち主の文面待ち（2026-10-25: 小さな直しの子タスクは済んだ（T508.1・T508.3・T508.4 は本線、T508.2 は見送り）。残りは上の「文面」の項目と、シートの Open の後の 10 秒に出す文: 区切りのまとめで。前の状態: 進行中（Opus medium）。前の状態: 未着手、2026-10-14、レビューと実装の気づき。区切りのまとめで持ち主に聞くものを含む）
+### T508 [整理][変換] T505.3 の残り — 状態: 未着手（2026-11-26、持ち主の決め: 文面は全部 (a)）。前の状態: 持ち主の文面待ち（2026-10-25: 小さな直しの子タスクは済んだ（T508.1・T508.3・T508.4 は本線、T508.2 は見送り）。残りは上の「文面」の項目と、シートの Open の後の 10 秒に出す文: 区切りのまとめで。前の状態: 進行中（Opus medium）。前の状態: 未着手、2026-10-14、レビューと実装の気づき。区切りのまとめで持ち主に聞くものを含む）
 - **子タスクの番号**（取りまとめ役の決め: 「小さな直し」を 1 つずつ。文面の項目は区切りのまとめで）: T508.1 1,000 ファイルを越えるリポジトリの一覧（ページ） — 完了。T508.2 一覧の API を worker の init と並べて聞く — 見送り。T508.3 `threadsKey`・`gpuKey` をファイルで分ける — 完了。T508.4 `&file=` の長さの上限 — 完了。シートの Open の後の 10 秒に何も出ないこと（見える文が要る）は区切りのまとめで。
 - **T508.2（見送り、取りまとめ役の決め）**: worker の `init` と `load` は 1 つの受け口で、モデルを受けて Pyodide とモデルの取得を一緒に始める。モデルを決める前に Pyodide だけを始めるには知らせを 1 つ足す（`contracts/messages.ts`・`receiver.ts`・worker）。得はファイルを名指さない `?hf=` の訪問の HF の往復 1 回（1〜3 秒、未計測）だけなので、知らせを足すほどではない。覆す条件: その訪問が多いと分かる。
 - **T508.4 の結果**: `src/page/address.ts` の `FILE`（`&file=` とシートの欄の両方の型）の頭に先読み `(?=.{1,256}$)`、`FILE_MOST` 256（取りまとめ役の決め: GGUF のファイルの名前はふつう 100 字に届かない。名前で無い長い文がアドレスから worker の取得の番地に入らない）。シートの欄はブラウザが同じ型を `v` の旗で読む（先読みも読める: 試験の `new RegExp(…, "v")` が通る）。試験: `repository-check`（ちょうど 256 字は通る、257 字は通らない、型の数と `FILE_MOST` が合う）。CI を省いた。訳: 型の 1 か所と Node の試験。軽い組は通った。
@@ -955,8 +996,9 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **文面（区切りで持ち主に）**: README の 100〜102 行「It does not open a repository that has only GGUF files…」が古い（docs/architecture.md の GGUF の説明も）。選択欄の「Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX」。手元のフォルダから `.gguf` を開く門（T410 と一緒: 案 (a) 門の文は変えず `.gguf` 1 つを選んだら開く・ボタンの `title` に「…, or one .gguf file」、(b) 門の文も直す、(c) やらない）。「kept in this browser」の一覧が同じリポジトリの 2 つのファイルを同じ名前で並べる（名前にファイルを付けるか）。
 - **小さな直し**: 一覧の API を worker の init と並べて聞く（いまは直列: `?hf=` の訪問がその往復ぶん遅れる、未計測）。シートの Open の後、一覧を待つ最大 10 秒のあいだ画面に何も出ない。トップが 1,000 ファイルを越えるリポジトリは一覧が切れる。`&file=` に長さの上限が無い。`threadsKey`・`gpuKey` がファイルで分かれない。
 - **確かめていないもの**: 空でない恒等の `precompiled_charsmap` を持つ sentencepiece の GGUF を断りすぎていないか（実物の Mistral の GGUF の頭で）。`pre` の無い実物の GGUF の断り。GB 級の GGUF を `?hf=` で。オフラインの 2 回目の訪問。本物の Safari。
+- **持ち主の決め（2026-11-26、選択肢で）**: 文面は全部 (a)（`docs/notes/owner-texts-2026-11-26.md` の 11〜15。16 は T410）。順の 2 の文面の回。
 
-### T510 [整理][Gemma4] T261.1・T261.2 の残り — 状態: 反映済み（残りは持ち主の文面待ち: GGUF が原本と合わないときの文（`gemma3_agrees`）。2026-11-13、Opus medium: 番号の無い残りの 3 つを直し、√dim の倍率の丸めを測った: 下の「T510 の残りの結果」。レビュー前）。前の状態: 未着手の残り（T510.1 は完了・レビュー済み。2026-11-12 に台帳を見直した）。前の見出し: 進行中（**T510.1 は完了**（2026-10-15、本線に入れた。**本番（Chromium 156、run 38713408641、デプロイ run 38712473111）**: Gemma 3 270M 準備完了 15.0 秒・66.5 tok/s・2 回目 3.7 秒、1B 25.7 秒・22.9 tok/s・2 回目 4.6 秒、tiny-lm・Qwen3.5 0.8B も通る。局所の層の鍵と値を周期 窓 + 16 の輪に 2 つの写しで持つ: 文脈 4096 で 270M 195.3 → 106.3 MiB、1B 344.9 → 214.3 MiB。**持ち主の決定（2026-10-15、選択肢で）: 輪は最初に全部取る（今の実装）**: 短い文（256 位置まで）では 270M +23 MiB・1B +34 MiB。**レビュー（Sonnet low、2026-10-14）: OK、直しなし。** `calls` は Gemma だけ違い、今ある 150 と `choices`・`shaders`・`models`・`exports` は同じ。軽い組は通り、作り物の forward-check（窓 300 の輪 3 周）は NumPy と最尤 100%・logits 1.2e-5。壊し方 2 つ（周期を窓 + 15・2 つ目の添字のずれ）が `layer-parts-check` で落ちた。`footprint()` の式が実物と合う。tiny-lm の x86-64 の 0.963 は生の幅 ±8% の内（覆す条件: 別の run でも 0.95 を割る）。気づき: 窓 48 は文脈 128 では輪にならず、`--plain`・`--wide` の窓 300 の 400 位置も輪を踏まない（共有メモリの 960 位置だけが大きい窓の継ぎ目をまたぐ）。）、残りは下）。前の状態:  未着手（**T510.1 はレビュー前**、2026-10-14、Opus medium、ブランチ `t510.1-window-kv`。**持ち主に選んでもらうこと 1 つ**: 下の T510.1 の「選択肢」）（2026-10-14、レビューと実装の気づき）
+### T510 [整理][Gemma4] T261.1・T261.2 の残り — 状態: 反映済み（残りは GGUF が原本と合わないときの文（`gemma3_agrees`）: 2026-11-26 に持ち主が (a) に決めた。2026-11-13、Opus medium: 番号の無い残りの 3 つを直し、√dim の倍率の丸めを測った: 下の「T510 の残りの結果」。レビュー前）。前の状態: 未着手の残り（T510.1 は完了・レビュー済み。2026-11-12 に台帳を見直した）。前の見出し: 進行中（**T510.1 は完了**（2026-10-15、本線に入れた。**本番（Chromium 156、run 38713408641、デプロイ run 38712473111）**: Gemma 3 270M 準備完了 15.0 秒・66.5 tok/s・2 回目 3.7 秒、1B 25.7 秒・22.9 tok/s・2 回目 4.6 秒、tiny-lm・Qwen3.5 0.8B も通る。局所の層の鍵と値を周期 窓 + 16 の輪に 2 つの写しで持つ: 文脈 4096 で 270M 195.3 → 106.3 MiB、1B 344.9 → 214.3 MiB。**持ち主の決定（2026-10-15、選択肢で）: 輪は最初に全部取る（今の実装）**: 短い文（256 位置まで）では 270M +23 MiB・1B +34 MiB。**レビュー（Sonnet low、2026-10-14）: OK、直しなし。** `calls` は Gemma だけ違い、今ある 150 と `choices`・`shaders`・`models`・`exports` は同じ。軽い組は通り、作り物の forward-check（窓 300 の輪 3 周）は NumPy と最尤 100%・logits 1.2e-5。壊し方 2 つ（周期を窓 + 15・2 つ目の添字のずれ）が `layer-parts-check` で落ちた。`footprint()` の式が実物と合う。tiny-lm の x86-64 の 0.963 は生の幅 ±8% の内（覆す条件: 別の run でも 0.95 を割る）。気づき: 窓 48 は文脈 128 では輪にならず、`--plain`・`--wide` の窓 300 の 400 位置も輪を踏まない（共有メモリの 960 位置だけが大きい窓の継ぎ目をまたぐ）。）、残りは下）。前の状態:  未着手（**T510.1 はレビュー前**、2026-10-14、Opus medium、ブランチ `t510.1-window-kv`。**持ち主に選んでもらうこと 1 つ**: 下の T510.1 の「選択肢」）（2026-10-14、レビューと実装の気づき）
 - **T510.1 局所の層の鍵と値を窓の分だけ持つ（予定、実装の前に書いた）**: 形は「写しを 2 つ持つ輪」。局所の層（窓 W）の鍵と値を周期 C = W + 16（16 はプロンプトのブロック BATCH: ブロックの最初のトークンの窓が、同じブロックの最後のトークンに上書きされない最小）の輪にし、位置 p を輪の p mod C と p mod C + C の 2 か所に書く（2C 位置ぶん）。こうすると、どのトークンの窓も輪の上の 1 つの続いた範囲（p mod C から W 個）で、**attention のカーネルは変えない**（今と同じ順に同じ数を読むので、Gemma の答えもビット単位で今と同じのはず）。輪にするのは 2C が文脈より小さいときだけ（小さい文脈は今の形）。輪は伸ばさず最初に全部取り、伸びる全位置の層の鍵と値はその後ろ（「伸びるのでメモリの最後」はそのまま）。代わりに払うもの: 写しの 2 つ目の書き込み（1 トークン 1 層に kvDim の写し 1 回）と、窓 1 つ分の写しのメモリ（270M で約 15.5 MiB）。カーネルを 2 つの範囲を読む形に変えれば写しは要らない（別の子タスクの候補として記録する）。**予定した違い**: 網の `calls` は Gemma の 20 通りの番地が変わり（局所の層の鍵と値の置き場）、今ある 150 通りは番地ごと同じ。`choices` は Gemma の必要なメモリが減る。`shaders`・`models`・`page`・`exports`（`footprint` の署名は同じ）・`layouts`・`python` は同じ。**`footprint()` の見込み（int8、4096 位置、鍵と値は float32）**: 270M は鍵と値が 144 MiB → 54.9 MiB（3 層 × 4096 位置と 15 層 × 1056 位置）、1B は 208 MiB → 77.4 MiB。順でない位置: 輪の層は、位置 0 か「書いた最後の位置 − 16」より後からしか受けない（それより前へ戻ると窓の位置が上書きされている）。生成はいつも 0 から順なので当たらない。
 - **T510.1 の結果（2026-10-14、コード a423c19f）**: 予定の形のまま（写しを 2 つ持つ輪、カーネルは変えていない）。`cache.ts` は `hold(count, windows)` で層ごとの窓を受け、輪（`ring(place)`）か全位置の塊の番号（`index(place)`）を決める。種類は作るときに自分の層の事実を受ける（`make(core, count, facts)`）。`footprint()` は options の `local` で輪を数える（`ringPositions()`）。輪の層は前へ 16 より大きく戻る位置を断る（文は開発者向け、生成の道では出ない）。`tests/compare-engines.mjs` は変換したモデルの `<out>` も取るようにした（止まりなし: 長い文脈を測るため。頼まれていない足し物）。
   - **正しさ**: 作り物（`forward-check`、窓 5・48・300）が NumPy と今までと同じ線で通り、ブロックとビット単位（窓 300 は 960 位置 = 輪 316 の 3 周、ブロックが輪の継ぎ目をまたぐ。窓 5 は 128 位置で 6 周。共有・共有でない・64 ビットのメモリ、`--without relaxed`）。`threads-check`（1・2・4・8 本でビット単位）。**今の本線と同じ数**: 手元の `compare-engines` で作り物 3 つが 960 トークン同じ文、CI の実物 270M の perplexity（Wikipedia 1500 トークン = 窓の約 3 倍）が T261.2 の値と 4 桁まで同じ（英 51.513・日 87.891（7 ビット）、51.237・84.507（8 ビット）、x86-64 run 38518998664・arm64 run 38518998990）、700 トークンの生成も同じ文。`layer-parts-check` に輪の部品の試験（置き場・2 か所の書き込み・継ぎ目をまたぐ窓・戻りの断り・GPU だけのとき輪なし）。
@@ -982,36 +1024,31 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **CI の判断**: CI を省いた。訳: どれも手元の試験（pytest・Node の検査・作り物の forward-check・軽い組）が踏む。(2) はページに届くので、デプロイの後に本番の `models.yml` で Gemma 3 270M を 1 本: **デプロイ run 43366559623**（1 回目は軽い組の `worker-fetches-check` が「Pyodide 314.0.7: "jinja2" got nothing from the network for 30 seconds」で落ちた: CI の回線で jinja2 の取得が 30 秒止まった。この変更の道ではないので落ちたジョブだけを走らせ直して通った）。**本番 run 43368212602**（Chromium 156）: 準備完了 16.0 秒・64.7 tok/s・プロンプト 321.6 tok/s（T510.1 の本番は 15.0 秒・66.5 tok/s: 1 回ずつで、速さの判断には使わない）。
 - **レビュー（Sonnet high、2026-11-13）: (2) は must-fix 級の読み違いがあり直した。(3) は軽い組に入れた。(1)(4) は OK。** **(1)**: 断りの条件（`local_tables` が無く `layer["local"]` が真の層がある）は `Llama`（`self.local` が `local_layers()` の値のときだけ表を作る）と同じで、`local_layers()` は層が空なら `None` を返す。`python_facts.py` の作り物（局所の層なし）・`tests/plans.ts`・GPU だけの道（同じ `Llama(external=)`）は断られない。`make kernels`（`python_facts.py`）・smoke（1 分 16 秒、ok）・pytest の plan・Gemma・architectures 525 件が通る。壊し方（断りを `if False and` にする）は `test_the_local_layers_of_a_plan_and_their_tables` が落ちた。**(2)**: options の `local` が層を言うとき、は Python の条件と同じだが、**新しい訪問の変換は `sink.open()` が FORM だけ（`local` を持たない）で `footprint()` を呼ぶ**（`checkpoint.py` の `form_of()`。`local` は FORM の鍵でない）ので、そこでは局所の表が数えられなくなっていた。Gemma 3 は窓の輪が鍵と値を縮めるので数えなくても上限だが、**Gemma 2 2B（窓 4096 = 文脈、輪なし）は変換の見積もりが実物より 4 MiB 低い**（`footprint` 1191168800 対、`local` ありの 1195363104）。メモリの最大は要る量 + 1 GiB なので足りなくなる所は 32 ビットの 4 GiB の境の 4 MiB 以内だけ（実害は小さい）が、上限と言う見積もりが上限でなくなった。`memory-check` は `local` を渡す道（`tests/plans.ts` の `both()`）しか踏まず落とさなかった。直した: **options が `local: null` と言うときだけ数えず、言わない形（FORM だけ）は前のとおり数える**（`sizes-check` に両方の断言。戻すと「a form that says nothing of local layers」が落ちる）。`local` の言い方（Gemma 3 の 4B 以上・Gemma 4・Gemma 2・Spark）は全部 `convert/families/local.py` の 1 つの関数で、層が空なら鍵を置かないので、Python と JavaScript の条件は同じ。**(3)**: 窓を 1 狭める壊し方（`attention.ts` の `from`）で `--varied` は窓 48 が logits 3.38・最尤 90.5%、窓 300 が 0.558 で落ち、`--varied` 無しは 6.2e-06・1.14e-05 で通った（実装担当の数と同じ向き）。**同じ壊し方を `--varied` 無しで Gemma 2・Gemma 4・Spark の作り物に当てると落ちる（0.64・5.75・0.26）が、Gemma 4 の long（窓の輪）だけは 7.6e-06 で通り、`--varied` で 3.67 に出る**: 今まで見えていなかった誤り。直した: `tests/suite.sh` の軽い組に「Gemma 3 の 2 つ（窓 48・300）と Gemma 4 の long を `--varied` で 400 位置」の 1 部を足した（約 23 秒、全部の組の同じ行は重なるので外した）。ほかの作り物（Gemma 2・Gemma 4 の 3 つ・Spark・Qwen3.5・LFM2・SmolLM3）に `--varied` を当てても、右のエンジンは NumPy と最尤 100% で線に入る（Qwen3.5 の int8 は線の内）。**例外 1 つ**: Gemma 4 の shared（float32）は 128 位置で 1.06e-3（線 1e-3）、256 位置で 1.43e-3 で線を越える。shared でない Gemma 4 も 256 位置で 1.04e-3 になり、位置とともに伸びる。窓の取り違えのような桁違い（0.5〜9）ではないので float32 の累積と読むが、**原因は未確認**（`--varied` を Gemma 4 の shared に足さなかった訳）。再現: `python tests/make_gemma4.py .tmp/made-up-gemma4-shared-float32 float32 shared` の後 `node tests/forward-check.ts .tmp/made-up-gemma4-shared-float32 --rounds 1 --positions 256 --varied`。**(4)**: 台本が無いので測り直していない。台帳の記述（モデルと版、float32 への変換、エンジンの NumPy、3 記事の 1500 トークン、窓 512、`embedding_times()` と同じ形で埋め込みに 25.25/25.2982 を掛けた、英語 +0.012%・日本語 −0.12%、揺れ ±0.3%）は何をどう掛けたかが追える。足りないのは記事の名前と台本の置き場だけ（「質の差は無い」と読むには、向きが言語で逆なことと揺れの内なことの 2 つで足りる）。**デプロイ 1 回目の落ち**（run 43366559623 の 1 回目、「この変更と関係ない」とは言えなかった）: `worker-fetches-check` が最初の 1 件で jinja2 を Node の `pyodide` の `loadPackage`（jsDelivr）で読むのを、`tests/worker-harness.ts` の時計（`SCALE = 100`: 1 秒の間隔が実際の 10 ms）の下の worker の `watchArrivals()` が見て、実際の回線が 0.3 秒を越えると「30 秒何も届かない」と数えた（ログで「Loading Jinja2」から失敗まで 0.54 秒）。手元の jinja2 の読みは 31〜34 ms。原因はこの変更でなく検査の作り: 直した（jinja2 を harness の前に 1 回読む。AGENTS.md の「回線の要る軽い組の検査」に足した）。採番は要らない。
 - T261.4（GPU）のとき: CPU の「番地を `from×KV` ずらす」は GPU に移らない（storage buffer の offset の揃え）。attention のシェーダに `from` を uniform で足す形になり、端末の鍵が 1 回動く。head 256 の flash タイルが workgroup のメモリに入るかを先に確かめる。
+- **持ち主の決め（2026-11-26、選択肢で）**: GGUF が原本と合わないときの文は (a)（`docs/notes/owner-texts-2026-11-26.md` の 18）: 値を文にする（局所の層は `layers 0 to 4, 6 to 10, … with a window of 512 and a RoPE base of 10000`、無いときは `none`、RoPE の縮めは `linear by 8`）。順の 2 の文面の回。
 
-### T513 [性能][モデル] 量子化を組み合わせて、スマホ向けのモデルをもっと軽くする — 状態: 調べまで済み（表と勧めは docs/notes/t513-quant-combos-2026-10-15.md、ブランチ `t513-quant-combos`。持ち主の選択待ち: 下の A〜C）（2026-10-15、持ち主「量子化も組み合わせて軽くできないかね？」。Gemma 4 の表を保存から読む決定の後の言葉）
-- **結果（2026-10-15、Opus medium、レビュー前）**: 6 つのモデル（Shisa V2.1c LFM2 350M・LFM2.5 230M・Qwen3.5 0.8B・Gemma 3 1B・LFM2.5 1.2B JP・Gemma 4 E2B）を int8・6 ビット・塊のまま（同じリポジトリの Q4_K_M と IQ4_XS）で。**速さはどれも int8 がいちばん**（CI の arm64 の 4 本で 6 ビットは 0.60〜0.74 倍、Q4_K_M は 0.86〜0.88 倍。Gemma 3 1B の塊は 1.0）。**塊の Q4_K_M は取得が約 4 割減る**（Shisa 350M 379 → 229 MB、LFM2.5 1.2B JP 1246 → 731 MB）、メモリは 2〜3 割減る（Q6_K・Q5_K の層は部品が無く int8 に広げる）。6 ビットはメモリ 2 割減・取得は同じ。質（1 文字あたりの nats、日本語）は 6 ビット −2.8〜+1.0%、Q4_K_M +0.7〜+6.8%、IQ4_XS +1.4〜+4.2%、12 の問いの事実（機械で数えた）はほぼ同じ。Gemma 3 1B は幅 1152 のため塊がほとんど残らない（取得だけ 1069 → 806 MB）。Gemma 4 E2B は塊を作れない（変換器が Gemma 4 の GGUF を読まない）: 6 ビットでメモリ約 2.57 → 2.0 GB の見込み。持ち主の Android の見込みは、帯域で決まるなら軽い形が 1.1〜1.4 倍速く、計算で決まるなら CI と同じく遅い（両端だけ）。
-  - **勧め**: 既定の形は int8 のまま。取得を減らすなら、既定のモデル（Shisa 350M）だけ Q4_K_M の塊（379 → 229 MB、CI の 1 トークン 0.79〜0.88 倍、nats +1.2%）。
-  - **持ち主に聞くもの（区切りのまとめで）**: A. 既定のモデルの形（int8 のまま〔勧め〕 / Q4_K_M の塊 / 持ち主の Android で両方を測ってから）。B. Gemma 4 E2B を軽くする手（変換器に Gemma 4 の GGUF を読ませるタスクを積む〔勧め〕: 取得 10.2 → 5.0 GB / 6 ビットを E2B の既定に / 何もしない）。C. Q6_K・Q5_K の部品を足すか（今は足さない〔勧め〕 / 足す）。
-  - **道具**（`T513:` のコミット）: `tests/quant_sizes.py`（ファイルの頭だけから形ごとの大きさと、塊のまま残る行・広げる行）、`tests/quant_combos.sh`（1 つの項目を形ごとに同じランナーで: 大きさ・nats・12 の問い・速さ）、`tests/perplexity_prepare.py --blocks`。製品のコードは変えていない。
-  - **CI の判断**: CI を回した（6 本: x86-64 はモデルごとに 5 本、arm64 は速さだけ 1 本）。訳: GB 級（E2B）と速さの判断は手元で見られない。run: arm64 38773014063、x86-64 38772993110・38772997482・38773001158・38773006126・38773010032。手元では道具を LFM2.5 230M の小さな組で通した。
-  - **見ていないもの**: 持ち主の端末、実ブラウザで塊の形の項目を開くこと、Firefox・WebKit、事実を人が読むこと、Q6_K・Q5_K の部品を足したときの数、E2B の int6 で表を保存に残す道、E2B の nats が高い訳。T519.3（KV を 8 ビットに）はこの回の外。
-- **候補**: (1) 6 ビット（今ある形: 重みが int8 の約 78%、計算は int8 の約 0.45 倍: T98・T166）。(2) llama.cpp の塊のまま持つ（T363 の形: Q4_K_M なら重みが int8 の約半分。Q4_K の計算の部品はある、Q6_K・Q5_K は無い: T505.4 で見送ったもの）。(3) Gemma 4 の層ごとの埋め込みの表を小さくする（メモリには効かず、取得と保存の量に効く）。
-- **やること**: Gemma 4 E2B が int8 で動いたら（T331.2〜T329.2 の後）、E2B と Gemma 3 1B・Qwen3.5 0.8B などスマホの大きさのモデルを「int8・6 ビット・塊のまま」で、メモリ（ヒープ）・速さ（CI の x86-64 と arm64、持ち主の Android の見込みの式）・質（perplexity と書かせた文）を同じ物差しで並べる。速さと軽さのどちらを取るかは数字を見せて持ち主に（スマホのユーザが多い: T511）。
-
-### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 持ち主の判断待ち（2026-10-25、区切りのまとめで聞く。前の状態: 未着手、2026-10-15、T333 のレビューの気づき）
+### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-11-26、持ち主の決め: 今ある警告の文の数に表の大きさを足す）。前の状態: 持ち主の判断待ち（2026-10-25、区切りのまとめで聞く。前の状態: 未着手、2026-10-15、T333 のレビューの気づき）
 - **調べ（2026-10-25）**: 警告（`src/models/memory.js` の `memoryWarning()`）は項目を選んだときにページが出し、そのときページは保存が使えるか（worker の `opfsWritable()`: 同期のアクセスハンドル）を知らない。数も、項目が持つのは表を引いた `loaded` だけ。だから直すには (a) ページが保存を使えるかを見積もる、(b) 項目に表を入れた大きさを持たせる、の 2 つが要る。案: (1) **勧め**: 今ある文（「… needs about N of memory, and this device has …」）を使い回し、保存の使えない訪問（ページの `navigator.storage.getDirectory` が無いか断る）では N に表を足す。新しい文は要らない。(2) 何もしない（保存の使えない訪問は Firefox の private のような少ない場合で、そのときは読み込みが落ちてメモリ不足の文が出る）。(3) 保存できない訪問だけに別の 1 文を足す（文面は持ち主）。
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
+- **持ち主の決め（2026-11-26、選択肢で）**: 保存の使えない訪問では、今ある警告の文の数に表の大きさを足す（新しい文なし）。順の 1。
 
 ### T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 中。先に使えるかを調べる）
 - **当たるモデル**: GPU に置ける全部のプロンプトのブロック（その機能のある端末だけ）。
 - **作るもの**: 今の形の候補（llama.cpp の register tiling・TF.js の vec4・ORT の DP4A、`promptForms()`）に、subgroup matrix で掛けるタイルを 1 つ足し、今までどおり読み込みの時に JavaScript と比べて測って選ぶ。**先に調べること**: Chrome の `chromium-experimental-subgroup-matrix` が旗なしで訪問者に出ているか、持ち主の Android（Arm Valhall）で使えるか（どちらも未確認）。旗の後ろだけなら、訪問者に効かないので採らない。
 - **元ネタ**: llama.cpp の ggml-webgpu の行列積（subgroup matrix の形）。
 - **鍵**: 動く（候補が増えると `devicePromptForms()` が変わる）。確かめは CI（Dawn に機能があるか）と端末。
+- **持ち主の決め（2026-11-26、選択肢で）**: 候補のまま（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
 ### T550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 中。今は効く端末が少ない）
 - いまの GPU は int6 を int8 に広げて持つ（T155: 1.125 バイト / 重み）ので、int6（0.875）を選んだメモリの少ない端末では GPU だけに置けない（`PACKED` の int6 の `alone: false`）。**当たるのは** `deviceMemory` が 8 より小さいと言う Chromium（4 GB と丸められる 6 GB の Android など）で int6 になる 2B〜3B 級（64 ビットのメモリのある Chromium は int8 のまま: T133）。Safari には当たらない（GPU だけに置くのは `gpuOnlyAllowed()` が `deviceMemory` を求める）。
 - **作るもの**: ステップの行列とプロンプトのタイルで 32 個を 24 バイトから読む（`pack6` の並び）。`Packing` に 1 行、`PACKED` の int6 の `gpu` を `{ as: "int6", alone: true }` に。
 - **元ネタ**: 無い（このプロジェクトの詰め方: `gpu-writer-unsourced`）。**鍵**: 動く。確かめは CI。
+- **持ち主の決め（2026-11-26、選択肢で）**: 候補のまま（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
 ### T551 [性能][WebGPU] 1 回の submit のステップの数とプロンプトのブロックの大きさを、端末で測って選ぶ — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 小〜中。効くかは未計測）
 - いまは固定: 答えのステップは `GPU_TOKENS = 4` ステップを 1 回の submit、プロンプトのブロックは `GPU_BLOCK = 64` トークンまで（`forward/choice.ts`）。持ち主の Android は submit の待ちが 2.6〜8.4 ms（T147 のレビュー）で、ステップをもっとまとめれば固定費が割れる見込み（未計測）。ただしステップを先に引く乱数の数（Python の `generate()` がステップの数だけ先に引く）・止まりのトークンの後に捨てるステップ・`STOPS_MOST` の置き場が数に結び付いている。
 - **作るもの**: まず `/benchmark/` の GPU の節で 4・8・16 ステップとブロック 64・128 を測って報告に出す（端末の数字を見てから、選ぶ仕組みにするかを決める）。開発機の値を既定にしない（持ち主の指示）。
 - **鍵**: 調べてから（数がシェーダの文に入るかは未確認）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 候補のまま（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
 ### T557 [描画][その他] モデルのページの取得と変換の間も画面を消さない — 状態: 未着手（2026-10-16、T552 の調べの途中で気づいた。**naidan の形ではない**（naidan も Wake Lock は計測の時だけ）。勧めの順の 2 番目。規模 小）
 - **今**: `src/wake.js` の `wakeKeeper()`（T194: Screen Wake Lock を頼み、隠れたら見えたときに頼み直す）は `/benchmark/` だけが使う。モデルのページは、初めての訪問の 379 MB の取得と変換（家の回線で 42〜54 秒、スマホの回線ではもっと）の間に画面が消えうる。
@@ -1019,11 +1056,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **先に確かめる**: スマホで画面が消えたとき、Worker の取得が止まるか遅れるか（持ち主の端末の一覧に積む: 止まらないなら入れない）。CI では見られない（画面が消えない）。
 - **試験**: `tests/wake.mjs` の形で、読み込みの始まりと終わりの出来事に頼みと放しが付くこと（偽の navigator）。
 
-### T578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 状態: 未着手（2026-10-24、T547.2.3 のレビューの勧め。規模 小。2026-11-04 に調べた: 持ち主の端末の数字を待つ）
+### T578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 状態: 端末の数字待ち（2026-11-26、持ち主の決めの順で）。前の状態: 未着手（2026-10-24、T547.2.3 のレビューの勧め。規模 小。2026-11-04 に調べた: 持ち主の端末の数字を待つ）
 - いまはスレッドごとに k の 1 ステップで群の和を DP4A 8 回で作り（内側のループの ALU が約 25% 増、同じトークンを 4 スレッドが重ねて作る）、int8 のタイルの 0.6〜0.8 倍の見込み（未計測）。案: `loadSHMA` でトークン × 群の和を workgroup のメモリ `sum_A` に 1 回書く（+256 バイト、Q4_K の文と鍵だけが動く）。先に CI の `bench.yml` か gpu-check の秒で int8 の形と Q4_K の形の ms / トークンを測る（覆す条件: 0.9 倍以上なら入れない）。
 - **2026-11-04 の調べ（Opus medium）**: 先に測る道が CI に無い。`bench.yml`・`gpu-prompt.yml` のランナーは GPU を持たず（`bench.yml` の頭のコメント）、WebGPU は SwiftShader と Dawn の上のソフトウェアのアダプタ（lavapipe）だけで、AGENTS.md の決まり（「ソフトウェアのアダプタの速さでシェーダの費用を決めない」）で int8 と Q4_K のタイルの比は読めない。だから実装も CI も入れずに止めた。CI を回していない。訳: 決めるための数（本物の GPU の ms / トークン）を CI のどの run も出せず、シェーダの文も変えていない。
 - いまの形の読み（`shaders/prompt.ts` の `dp4a({ weights })` の塊の枝、未計測）: k の 1 ステップでスレッドは `blk_sum` 2 回（DP4A 8 回）でトークンの半分の和を作り、16 行の `BLK` が DP4A 128 回と float の積和 4 回ずつ。和の DP4A は全体の約 6% で、`BLK` の float の 4 回（int8 は尺度の 1 回）のほうが重い見込み。`sum_A` に寄せて減るのは前者だけ（同じトークンを 16 列の 4 スレッドが重ねて作るぶん）。
 - **案（取りまとめ役が決める）**: 「持ち主の端末でまとめて見るもの」の PC と Android の行（T547.2.3・T547.2.4 の 4-bit と int8 の Shisa の比べ）で決める。もう一覧にあるので足さない。長いプロンプト（64 トークン超）を読む速さが int8 の Shisa の 0.9 倍未満なら、`loadSHMA` でトークン × 半分の和を `sum_A`（`array<vec2<f32>, 64>`、+512 バイト）に 1 回書く形を入れ、それでも 0.9 倍に届かなければ `BLK` の尺度と最小値を群の 2 つの半分で畳む形（llama.cpp の CUDA の mmq が Q8_1 の和を活性値の側に持つ形）を次に測る。入れる回の確かめは `gpu-prompt.yml`（`full=true`、`synthetic-q4k`・`synthetic-q4k-layers`・`synthetic-saluki-layers`）、網の `shaders` と `device-key-check`（塊を持たないモデルの鍵が変わらないこと）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
 ### T579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 状態: 端末の数字待ち（T579.2: 持ち主の端末の 4-bit と int8 の Shisa の答えの tok/s。T579.1 は本線・レビュー済み。2026-11-12 に台帳を見直した）。前の見出し: 進行中（2026-10-24、T547.2.4 のレビューの勧め。規模 小〜中）
 - **子タスクの番号**（取りまとめ役の決め: 速さは持ち主の端末でしか決められず、管の数は今決められる）: T579.1 使う管だけを作る — 完了。T579.2 Q4_K と塊の答えのステップの形 — 未着手（持ち主の端末の数字を待つ: 4-bit と int8 の Shisa の答えの tok/s。ソフトウェアのアダプタの速さでシェーダの費用を決めない）。
@@ -1032,35 +1070,44 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **T579.1 の結果**（Opus medium）: GPU の層の種類の欄 `writes()` を `matrices(plan)`（その種類の行列を役ごとに: `qkv`・`mix`・`write`・`join`）に替え、`tokenShape()` が種類の欄と FFN（w1・w3 は glu、w2 は join）と分類器から役ごとの詰め方の集まり `roles` を作る。`join` は後ろの norm（`attentionPost`・`ffnPost`）があれば `write`、無ければ `add`（`joining()` と同じ判定）。`tokenCodes()` は役の素の鍵を、その役に int8 か 3 値の行列があるときだけ、「役:型」の鍵をその役の行列が持つ型の分だけ作る。`matrix()` は役の名前で管を引き、`TokenForm` の `blocks`（管から型ごとの管への表）は消えた。シェーダの文と端末の鍵は同じ。作る管は、塊のモデルで「型の数 × 6 役」から「役ごとの型の数」へ、Gemma 3 は使わない `add` の 1 本が減る（守りの網の `gpusteps` の差はこれだけ: 予定した違い）。減った秒は未計測。CI を回した。訳: WebGPU の道。**run 40144872089**（Dawn と SwiftShader、13 の作り物）: Dawn は全部通り、SwiftShader は `synthetic-q4k-tables` の最初の greedy の同点だけで落ちた。本線の同じ作り物も同じ 6 行で落ちる（**run 40148023893**）: T547.3.6 から `DAWN_ONLY` にある既知の同点で、`models=` に名指したので SwiftShader でも回った（取りまとめ役の読み: この変更とは関わりない）。軽い組 448 秒。試験: `gpu-worker-parts-check` が混ざったモデルの鍵の並びそのもの（壊し方「役に何か詰め方があれば素の鍵を作る」が落ちる）と、偽の計画 5 つ（Llama・Gemma 3・後ろの norm が片方・LFM2・塊の Qwen3.5）の `roles`（壊し方「w2 をいつも add に」が落ちる）。
 - **本番（T579.1 の後）**: デプロイ run 40148804215 の後の `models.yml` run 40149341044（`query=gpuTest=on&steps=40`）: 4-bit の Shisa は「prompts and answers on WebGPU」で準備完了、答えを WebGPU で（SwiftShader）。
 - レビュー（Sonnet low、2026-10-25）: must-fix なし。15 か所の `matrix()` の役は全部どこかの宣言にある、`join` の振り分けは `joining()` と同じ、`form.blocks` に頼る所は tokens.ts の外に無い。should の 2 つを入れた: 宣言に無い役の管は名指しの Error（`bindAt(undefined)` の TypeError の代わり）、`tokenShape()` の役を偽の計画で試す。nice-to-have の 2 つも入れた: 使われなくなった `Stepping.form` を落とし、`TokenForm` のコメントの鍵の一覧を直した。直しは手元の試験（軽い組・網・壊し方）で、CI を省いた。訳: シェーダの文も管の選び方も変わらない。
+- **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 状態: 未着手（2026-10-16、T271 のレビューの気づき。持ち主の端末で費用を測ってから）
+### T566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 状態: 端末の数字待ち（2026-11-26、持ち主の決めの順で）。前の状態: 未着手（2026-10-16、T271 のレビューの気づき。持ち主の端末で費用を測ってから）
 - いまはブロックごとと 4 ステップごとに状態全体（Qwen3.5 0.8B で約 20 MiB）を読み戻して写す。見積もり（未計測）でブロックの 3〜5%、ステップの 10〜15%。
+- **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
-### T585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 状態: 未着手（2026-10-25、持ち主「発見した bun の未対応の対応などをプルリクしていくのが目標です」）
+### T585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 状態: 未着手（2026-11-26、持ち主の決め: 2 つ目の候補の再現と issue の下書きを見せる）。前の状態: 未着手（2026-10-25、持ち主「発見した bun の未対応の対応などをプルリクしていくのが目標です」）
 - 置き場: `~/GitHub/bun`（`origin` = oven-sh/bun、`my` = takano32/bun のフォーク、どちらも ssh）。**手元では建てない**（下の行）。試した形と訳は docs/notes/t584-bun-2026-10-25.md。
 - **候補**（上流にまだ見当たらないもの）: (1) 問いだけ違う `file:` の URL の動的 import が同じモジュールになる（相対の指定・絶対の道なら別。Node と仕様は別のモジュール）: **issue oven-sh/bun#46900 を出した**（2026-10-25、持ち主「出していいよ」。文は `.tmp/bun/issue-file-url-query.md` の下書きのまま）。直す PR は手元で建てられないので、上流が拾うかを見てから。(2) WebAssembly のメモリの `grow` がエンジンの形で約 1 秒かかる（小さな再現はまだ）。**出さないもの**（上流に出ている）: `stripTypeScriptTypes`（PR #41649 ほか）、`onmessage` で終わらない（issue #24256、PR #32482 ほか）、共有の 64 ビットのメモリが worker に 32 ビットで届く（issue #45739、PR #45916: 前に候補 (3) と書いた「`address` を読まない」は取りまとめ役の読み違いで、本当はこれ）。
 - **手元のビルドは試してやめた（2026-10-25、持ち主の決め）**: LLVM 22 では建たない（手元の Rust は stable も LLVM 23 で、bun のビルドは clang と rustc の LLVM の大きい版をそろえることを求める）。LLVM 23 は入れない。試しの途中でビルドの道具が固定の nightly を入れた（取りまとめ役の誤り）のは消した。だから PR は、候補ごとに小さな再現と上流の試験の形の文を作り、issue か、上流の CI に任せる PR で出す（出す前に持ち主に見せる: 外向きの操作）。経緯は docs/notes/t584-bun-2026-10-25.md。
+- **持ち主の決め（2026-11-26、選択肢で）**: bun の 2 つ目の候補（WebAssembly のメモリの grow が約 1 秒）の小さな再現と issue の下書きを作って見せる（順の 9 の最後）。外向きの操作（issue を出す）は見せてから。
 
-### T615 [追加][モデル] Mamba2 の層（PLaMo 2・Nemotron-Nano-9B-v2-Japanese） — 状態: 候補（2026-10-30、T591 から。規模 大）
+### T615 [追加][モデル] Mamba2 の層（PLaMo 2・Nemotron-Nano-9B-v2-Japanese） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-30、T591 から。規模 大）
 - 新しい状態を持つ層の種類（AGENTS.md の「層の種類を足す」）。開くもの: pfnet/plamo-2-translate（likes 128、Q8_0 10.13 GB、T614 のトークナイザも要る）・plamo-2-1b・plamo-2.1-2b-cpt、nvidia/NVIDIA-Nemotron-Nano-9B-v2-Japanese @ 3979dd16634988c34cc3bd911583c51e6a731d10（nemotron_h、Swallow の順位表で ≤14B の 4 位）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T616 [追加][モデル] stablelm の家族（Japanese StableLM 3B） — 状態: 候補（2026-10-30、T591 から。規模 中）
+### T616 [追加][モデル] stablelm の家族（Japanese StableLM 3B） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-30、T591 から。規模 中）
 - LayerNorm・head の 25% を回す・SwiGLU。開くもの: japanese-stablelm-3b-4e1t の base と instruct（Q8_0 2.97 GB）、JSLM2 1.6B（ゲート付き）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 状態: 候補（2026-10-30、T591 から。規模 中）
+### T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-30、T591 から。規模 中）
 - 層の小さな違いと `qwen.tiktoken` のトークナイザ。開くもの: rinna/nekomata-7b(-instruction)（Q8_0 8.21 GB）。14B は上限を越える。古いので勧めは低い。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T591 から。規模 中）
+### T619 [追加][モデル] LFM3（lfm3） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-30、T591 から。規模 中）
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
 
-### T655 [改善][モデル] モデルが自分で開く複数トークンの考えの印を追う（PLaMo 3 の考える形の上限） — 状態: 候補（2026-11-07、T614 のレビューから。規模 小〜中）
+### T655 [改善][モデル] モデルが自分で開く複数トークンの考えの印を追う（PLaMo 3 の考える形の上限） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-11-07、T614 のレビューから。規模 小〜中）
 - PLaMo の `<|plamo:begin_think:plamo|>`…`<|plamo:end_think:plamo|>` は 3 トークンずつ（`<|plamo:begin_`・think・`:plamo|>`）で、`engine/generation.py` の `mark_of()` は 1 語片の印しか拾わないので、考えの上限（`thinking`、項目の 3,584）が効かない（ページは文で畳むので折りたたみは効く）。harmony の開く印は「書式が開くときだけ」追うが、PLaMo はモデルが自分で開く。トークンの列で開く印と閉じる印を見つけ、上限で閉じる印の 3 トークンを書く形が要る。要るのは PLaMo の考える形が増えるときか、考えの中の繰り返しの対策として（greedy で 12 の問いの 4 つが 1,500 トークンまで閉じなかった。今は標本抽出の組で閉じている）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T657 [追加][モデル] PLaMo 3 NICT 2B・8B base を原本と照らさずに一覧に — 状態: 未着手（2026-11-07、持ち主の決め（選択肢で）「照らさず足す」: T614 の続き。規模 小〜中。2026-11-12 調べて止めた: 下の「調べ」、持ち主の決め待ち）
+### T657 [追加][モデル] PLaMo 3 NICT 2B・8B base を原本と照らさずに一覧に — 状態: 未着手（2026-11-26、持ち主の決め: (a)。T684 の後に 2B・8B の base を足す）。前の状態: 未着手（2026-11-07、持ち主の決め（選択肢で）「照らさず足す」: T614 の続き。規模 小〜中。2026-11-12 調べて止めた: 下の「調べ」、持ち主の決め待ち）
 - 原本 pfnet/plamo-3-nict-2b-base・8b-base はゲート付きで、重みの写しは mmnga-o の GGUF（2B `0b028e35…`・8B `e4b163b3…`、Q8_0 2.77・8.60 GB）だけ。`gguf_check.py tensors` で原本と照らせないので、Translate 2B・8B の語彙と config で開き、`rebuilt: true` の項目に（文の続きを書く base の形: `bos` だけ、placeholder `JAPANESE`）。書かせて読むは CI。ライセンスは PLaMo Community License の第 4 条（T614 の形）。
 - **調べ（2026-11-12、Opus medium。製品のコードは変えていない）: Translate の config では開けない。** (1) mmnga-o の GGUF（どちらも 2025-12-29 に作られた）は `plamo3.context_length` 4096 で yarn の鍵が無い（`rope.scaling.*` なし。寸法は 2B が 24 層・幅 2560・head 24・鍵と値 4、8B が 32 層・4096・32・4、語彙 107,520、`tokenizer.ggml.model` plamo2、BOS 1・EOS 2）。Translate 2B・8B の config は `max_position_embeddings` 262144・`rope_scaling_factor` 256・`initial_context_length` 4096（全体の層に yarn）・`eos_token_id` 1。(2) 変換器の `gguf_agrees()` は yarn を比べるので、この組は「its yarn RoPE scaling is None here and {…} there」で断る（mradermacher の 610M の GGUF を断ったのと同じ線: T614）。線を外して通すと、base に yarn の倍率 1.55 と縮めた角が掛かって文が壊れる。(3) base の本当の config は yarn なし: ゲートの無い写し（midorin-Linux/plamo-3-nict-8b-base-bnb-4bit @ 47abe245d181af0b9557ee36d109db95c003d7c7（2026-02、config・`tokenizer.jsonl`・書式あり）、WayBob/Way-sft-plamo-3-8b-chat、midorin-Linux/plamo-3-12b-self-merged-base）の config は 3 つとも `max_position_embeddings` 4096・`rope_scaling_factor` なし・`initial_context_length` なし・`eos_token_id` 2。GGUF の 4096 と合う（llama.cpp が yarn を書くようになったのは 2026-09-27 の 9adc7f42 で、GGUF はその前だが、文脈 4096 は config の値）。2B の base の config のゲートの無い写しは見つからない（Gurunath/plamo-3-nict-2b-tool-calling-lora は LoRA と `tokenizer.jsonl` だけ）。原本は 2B が 2026-08-21、8B が 2026-10-08 に更新されているが、ゲートで中は見えない。
 - **持ち主に出す選択肢**（取りまとめ役へ）: (a)（勧め）一覧の項目が語彙のリポジトリの config.json の鍵を上書きできる形を変換器と段取りに足す（新しい T 番号、規模 中: 項目に `max_position_embeddings: 4096`・`rope_scaling_factor: 1`・`eos_token_id: 2` を書き、`gguf_agrees()` は上書きの後の config と比べる。今ある変換の出すものは変わらないので `CONVERTER` は上げない）。2B・8B とも Translate の語彙で開ける。(b) 8B だけ、語彙と config を midorin-Linux の写し（第三者がゲートの原本から写したもの、PLaMo Community License）から取って今の形のまま足す。2B は足さない。(c) 足さない。
+- **持ち主の決め（2026-11-26、選択肢で）**: (a): 一覧の項目が語彙のリポジトリの config.json の鍵を上書きできる形を変換器と段取りに足す（T684）。その後ここで 2B・8B の base を足す（順の 3: T684 → T657）。
 
 ### T664 [調査][モデル] plamo-translate-desktop から取り込むものの洗い出しと順 — 状態: 調べは完了（2026-11-13、取りまとめ役。持ち主「対応したいからタスクに分轄して採番 https://github.com/tanakh/plamo-translate-desktop」。コードは変えていない）
 - 読んだのは `tanakh/plamo-translate-desktop` の `3d69a116c45a8116159f1a405311a59039ec4b95`（v0.6.0、Apache-2.0 か MIT）。何か・ここにもうあるもの・無いもの・取り込まないもの（アプリと拡張と PDF、一覧の自動の更新）は docs/notes/t664-plamo-translate-desktop-2026-11-13.md。
@@ -1068,7 +1115,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **作るもの（それぞれ自分の番号）と順**（取りまとめ役の決め: エンジンの側を先に、訪問者に見える所は文面を見せてから）: (1) T665 PFML3 のプロンプトを Python で組む → (2) T666 長文を段落の切れ端に分けて履歴つきで訳す → (3) T667 くり返しの検出と立て直し → (4) T668 DRY の標本抽出 → (5) T669 PLaMo 3 Translate を 1 つの翻訳の項目にまとめ、言語と文体を選ぶ（**文面と一覧の形は持ち主に見せてから**）→ (6) T670 文脈と用語集の欄（同じく）→ (7) T671 ほかの量子化と 31B → (8) T672 PFN の公表した品質の数を見せる（候補）。
 - **行を写すなら**、写したファイルのコメントに元の著作権の行と許諾文の全文（方針 10、MPL-2.0 と両立）。形と数（切れ端の大きさ、くり返しの線、DRY の値）を取るだけなら要らない。
 
-### T669 [描画][モデル] PLaMo 3 Translate を 1 つの翻訳の項目にまとめ、翻訳先の言語と文体を選ぶ — 状態: 未着手（2026-11-13、T664 から。T665 の後。規模 中。**文面と一覧の形は持ち主に見せてから**）
+### T669 [描画][モデル] PLaMo 3 Translate を 1 つの翻訳の項目にまとめ、翻訳先の言語と文体を選ぶ — 状態: 未着手（2026-11-26、持ち主の決め: 一覧の形と文面が決まった）。前の状態: 未着手（2026-11-13、T664 から。T665 の後。規模 中。**文面と一覧の形は持ち主に見せてから**）
 - 今は大きさごとに「English → Japanese」「Japanese → English」の 2 項目（`shares` で変換は分け合う）。向こうは翻訳先を選び（既定は「日本語 ⇄ 英語（自動）」: 原文が日本語なら英語へ、ほかは日本語へ）、原文の言語はモデルに見分けさせる。
 - 案: 大きさごとに 1 項目にして、答えの欄の上に翻訳先の言語（53 と、試験的な `ja(easy)`）と、翻訳先が日本語のときの文体（なし・敬体・常体）を出す。Firefox Translations（Marian）の翻訳の項目（`Translating`）の画面の形に寄せられるかを先に見る。選んだものは覚える（`remembered.ts` の `recall`・`keep`）、URL の名前は `parameters.ts` の `NAMES`。
 - **T666 から（ページにつなぐときの案。文面は持ち主に見せる）**: 長文は `engine/document.py` の `translate_document()` で切れ端ごとに訳す。worker の知らせに切れ端の境と進みを足す案: 切れ端の前の `told(index, count, chunk)` を `{ type: "chunk", load, index, count }` の知らせにする（仕事の終わりの知らせではないので `heard.ts` の `ENDS` には入れない。`receiver.ts` の `HEARD` に 1 行と worker の `REPLIES`）。ステータス行の文の案: 訳している間は「Translating part 2 of 5…」、終わりの行に「5 parts」、止まりで終わらなかった切れ端があれば「part 3 ran out of room」（T667 の立て直しと印が入ればその文に寄せる）。1 つの切れ端だけの文（今の短い依頼）は何も足さない。`model.stats` に `chunks`・`retries`・`cut` がある（T667 で `unfinished` を替えた）。 **T667 から（文面は持ち主に見せる）**: `translate_document()` は文のほかに `Withdrawn(字数)`（最後の何字を取り消す: 走り去った訳を訳し直す前）と `Cut(切れ端の番号, 訳 "loop"・"long"・"short", 原文)`（そこに印を書く）を yield する。worker は文と同じく流し、ページは `answer.ts` で末尾を削る・印を書く（知らせの鍵が 2 つ増える案: `{ type: "withdrawn", characters }`・`{ type: "cut", reason }`、どちらも仕事の終わりの知らせではない）。**`Withdrawn` の字数は Python の字（符号位置）で数えたもの**: JavaScript の `.length`（UTF-16）で削ると、U+FFFF より上の字（絵文字・一部の漢字）が 1 つあるたびに 1 字ずれる。`[...text]` で数えるか、worker で UTF-16 の数に直して渡す（T667 のレビュー）。**印の文の案**（向こうは UI の言語で印を書く。ここのページは英語）: 訳の中に「 […]」（勧め: 短く、訳文の言語を問わない）、または「[the rest of this sentence was cut: the model kept repeating itself]」、終わりのステータス行に「1 sentence cut」（訳し直しがあれば「3 parts translated again」も）。Markdown を描くので印に `[` を使うならリンクに読まれないことを確かめる。 **T666 のレビューから**: `model.stats` には `tokens_per_second`・`prompt_tokens_per_second`・`first_token_seconds`・`prompt_seconds`・`thought` が無い（`lines.ts` の `.toFixed` が落ちる）: 和から作るか、長文の行を別に描く。窓口 `llama2_numpy.py` は `translate_document` を出していない。
@@ -1076,14 +1123,57 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **T668 のレビューから（GPU だけのモデル）**: DRY は GPU の SAMPLE に無いので、DRY のある生成は CPU のステップになるが、**GPU だけに置いたモデル（8 GB と言う端末の 8B など）には CPU のステップが無い**: `forward()` が `notHere()` を投げ、GPU を止めて worker が CPU で読み直す（長文の訳の最後の段が走ると、訳の途中でこうなる）。T669 で長文の訳をページにつなぐ前に、(a) GPU だけのモデルでは最後の DRY の段を飛ばして切る（勧め: CPU で読み直す費用が 1 文の訳より大きい）、(b) DRY を GPU の SAMPLE に足す（端末の鍵が動く。T669 の欄と同じ回に）、(c) 長文の訳は GPU だけのモデルに出さない、から決める。（T680 の口（logits を作らないトークンを 1 つのブロックで GPU に）は DRY には使えない: DRY のステップは logits が要る）
 - **T668 から（DRY をページの欄に出すなら。持ち主の判断）**: 設定は `Sampling` の `dry_multiplier`・`dry_base`・`dry_allowed_length`・`dry_penalty_last_n`・`dry_sequence_breakers`（llama.cpp の名前）。案: (a) 出さない（勧め: 翻訳の長文は最後の段で `PENALIZED` を使うだけで欄は要らない。DRY はふつうの答えの正当なくり返しも罰する）。(b) URL だけ（`contracts/messages.ts` の `Sampled` に鍵、`fields.ts` の `LIMITS`（倍率 0〜5、底 1〜4、許す長さ 0〜20 の整数、窓 −1〜4096 の整数）、`parameters.ts` の `NAMES` に `dry_multiplier` ほか）: 項目の `generation` にも書ける。(c) (b) に加えてシートに倍率の欄 1 つ（ほかは既定のまま、区切りは出さない）。どれでも、DRY の生成は CPU のステップ（GPU の SAMPLE に無い）なので、欄の説明かステータス行に一言要る（文面は持ち主）。
 - **持ち主に聞くこと**: 項目の数が 6 → 3 になる（id が変わる: 覚えたモデルと `?model=` のリンクの移し方）、言語の名前の書き方、既定の向き。保存した変換は `keptName()` が取り込み元から作るので取り直しは無いはず（確かめる）。見た目は `preview.yml` で撮る。
+- **持ち主の決め（2026-11-26、選択肢で）**: GPU だけのモデルでは長文の訳の DRY の段を飛ばして切る。DRY は設定の欄にも URL にも出さない。
+- **持ち主の決め（2026-11-26、選択肢で）**: PLaMo 3 Translate を大きさごとに 1 項目（6 → 3）にまとめる。古い id（覚えたモデル・`?model=`）は新しい項目に読み替える。翻訳先の既定は「日本語 ⇄ 英語の自動」（原文が日本語なら英語へ、ほかは日本語へ）。言語の名前は「英語名 — 自身の名」（Japanese — 日本語）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 切った文の印は訳文の中に「 […]」、答えの下の行に「1 sentence cut」。進みの表示は案のとおり（「Translating part 2 of 5…」、終わりに「5 parts」、訳し直しは「3 parts translated again」）。順の 4 の頭。
 
-### T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 状態: 未着手（2026-11-13、T664 から。T665・T669 の後。規模 小〜中。**文面は持ち主に見せてから**）
+### T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 状態: 未着手（2026-11-26、持ち主の決め: 文脈と用語集の欄を両方足す。T669 の後）。前の状態: 未着手（2026-11-13、T664 から。T665・T669 の後。規模 小〜中。**文面は持ち主に見せてから**）
 - 向こう: 文脈は依頼ごとの自由な文（覚えない）、用語集は 1 行 1 語 `原語 = 訳語`（タブ・`=>`・`→` も、`#` はコメント）で覚える。どちらかを変えると訳し直す。
 - ここでは翻訳の項目の設定のパネルに 2 つの欄。用語集の読み方は Python（T665 の組み手が受ける形）か純なページの部品（Node が import できる）に。フォームの中に `<input>` を足さない（落とし穴「ページとブラウザ」）。
+- **持ち主の決め（2026-11-26、選択肢で）**: 文脈と用語集の欄を両方足す（T669 の後。画面を見せる）。順の 4。
 
-### T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 状態: 未着手（2026-11-13、T664 から。規模 小〜中。一覧に何を足すかは持ち主）
+### T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 状態: 未着手（2026-11-26、持ち主の決め: 小さい量子化と 31B の Q2_K の両方を足す）。前の状態: 未着手（2026-11-13、T664 から。規模 小〜中。一覧に何を足すかは持ち主）
 - PFN の GGUF: 0.8B・2B は Q4_0・Q3_K_M・Q2_K も、8B は Q3_K_M・Q2_K、31B は Q4_K_M 19.53 GB・Q3_K_M 15.86 GB・Q2_K 12.61 GB（docs/notes/t664-… の 6）。ここのメモリの上限は 64 ビットで 16 GiB なので、31B は Q2_K だけが入りうる（`footprint()` で数える）。小さい量子化はスマホ向け（0.8B Q2_K 0.41 GB）。
 - 先に、塊のまま持てる型か（`BLOCKS` と GPU の `SUPERBLOCKS` に Q3_K・Q4_0 があるか。無ければ型を足すタスクを別に）と、`gguf_check.py tensors` で原本と照らす線（4 ビット未満は Q8_0 の線では照らせない: T649.4 の形）。品質の差は T672 の数で見せられる。
+- **持ち主の決め（2026-11-26、選択肢で）**: 小さい量子化（0.8B・2B の Q3_K_M・Q2_K）と 31B の Q2_K の両方を足す（原本と照らす線を先に、31B は `footprint()` で 16 GiB に入るかを先に）。順の 4。
 
-### T672 [描画][モデル] PFN が公表した品質の数を見せる — 状態: 候補（2026-11-13、T664 から。規模 小。持ち主の判断）
+### T672 [描画][モデル] PFN が公表した品質の数を見せる — 状態: 未着手（2026-11-26、持ち主の決め: 量子化ごとの note に 1 行ずつ）。前の状態: 候補（2026-11-13、T664 から。規模 小。持ち主の判断）
 - 向こうは量子化ごとに PFTB（日英）と FLORES+ chrF++（多言語）を量子化なしとの差で出す（`engine::models::QUALITY`、出どころは PFN の公表）。ここでは項目の note か About に 1 行。数の出どころ（PFN のブログかカード）を項目のコメントに書く。T671 で量子化を選ばせるなら要る。
+- **持ち主の決め（2026-11-26、選択肢で）**: PFN の公表した質の数を、量子化ごとの項目の説明（note）に 1 行ずつ（文面は見せる）。順の 4 の最後。
+
+### T682 [性能][Gemma4][WebGPU] Gemma 4 の E2B・E4B を GPU だけに置く — 状態: 未着手（2026-11-26、持ち主の決め（T334.3 の続き）。規模 小）
+- 持ち主の決め（2026-11-26、選択肢で）: E2B と E4B はどちらも GPU だけに。`gpuOnlyUnfit()` の `REASONS.alonePerLayer` の門を外す（いまは `?gpuTest=only` のときだけ GPU だけ）。
+- 材料（T334.3・T334.2）: 8 と言う端末では E2B も E4B も 2 重に入らず、門を外すと両方が GPU だけになる。GPU だけの Gemma 4 は層ごとの埋め込みの表を GPU にも CPU のメモリにも置かず、保存から CPU が行を読む（`gpuOnlyWeights()` の `apart`）。
+- 確かめ: 本番の `models.yml` で E2B・E4B。入った後に docs/notes/owner-devices-2026-11-21.md の Gemma 4 の手順（A-8 の 1・2、B-9 の 1、「持ち主の判断で手順が変わるもの」）を直す。順の 1 の頭。
+
+### T683 [追加][モデル] DeepSeek-R1-0528-Qwen3-8B を Q8_0 の GGUF から一覧に — 状態: 未着手（2026-11-26、持ち主の決め（T259 の続き）。規模 小〜中）
+- 持ち主の決め（2026-11-26、選択肢で）: Q8_0 の GGUF から一覧に足す。`gguf_agrees()` が GGUF に無い `attn_factor` を許す直しが要る（T259: 公開の Q8_0 の GGUF はどれも鍵を持たない。変換器は config の `attn_factor` を `yarn_attention()` で読む）。
+- `gguf_check.py tensors` を先に、書式・BOS・止まりは `format_check.py` で。名前と note と標本抽出の文面は持ち主に見せる（8B、int8 9.2 GB で Chrome と Firefox だけ）。順の 3。
+
+### T684 [追加][変換] 一覧の項目が語彙のリポジトリの config.json の鍵を上書きできる形 — 状態: 未着手（2026-11-26、持ち主の決め（T657 の (a)）。規模 中）
+- 持ち主の決め（2026-11-26、選択肢で）: T657 の (a)。変換器と段取りに、一覧の項目が語彙のリポジトリの config.json の鍵を上書きできる形を足す。
+- 材料（T657 の調べ）: PLaMo 3 NICT base の GGUF は yarn の鍵が無く、Translate の config では `gguf_agrees()` が断る。項目に `max_position_embeddings: 4096`・`rope_scaling_factor: 1`・`eos_token_id: 2` を書き、`gguf_agrees()` は上書きの後の config と比べる。今ある変換の出すものは変わらないので `CONVERTER` は上げない見込み。その後 T657 で 2B・8B の base を足す。順の 3。
+
+### T685 [整理][文書] 持ち主が決めた文面のうち、完了済みのタスクの分を入れる — 状態: 未着手（2026-11-26、持ち主の決め（文面は全部 (a)）。規模 小）
+- 持ち主の決め（2026-11-26）: docs/notes/owner-texts-2026-11-26.md の 26 項目を全部 (a) で。この番号で入れるのは完了済みのタスクの分: 1・2（T547 の `packed`・`floatClassifier` の分け）、3（T573）、4（T542）、20（T283）、21（T659: 次に `CONVERTER` を上げる回に）、22（T270）。
+- 開いているタスクの分は各タスクの番号で: T489 の 6〜9、T491 の 10、T502.3・T502.4 の 5、T508 の 11〜15、T410 の 16、T416 の 17、T510 の 18、T402 の 19。23〜26 は本番に入っていて確かめ済み。順の 2 の文面の回。
+
+### T686 [性能][CPU] x86-64 の 3 値のカーネルの int16 の和の形を、端末で測って選ぶ — 状態: 未着手（2026-11-26、持ち主の決め（T288 の (1)）。規模 中）
+- 持ち主の決め（2026-11-26、選択肢で）: T288 の (1) を入れる。int16 の和の形 `x16` を、x86-64 で端末で測って選ぶ。
+- 材料（T288）: `x16` は Zen 3・4 で 1.33〜1.36 倍（Node と Chromium）、Neoverse-N2 で 0.63〜0.65 倍なので arm では使わない。費用はカーネルとタイルと選ぶ手順と試験、`WORK` に 1〜2 行。測る道具は `tests/ternary-browser-bench.ts --relaxed`。順の 7。
+
+### T687 [性能][CPU] arm64 の Firefox のための 3 値の表の形 — 状態: 未着手（2026-11-26、持ち主の決め（T288 の (2)）。規模 大）
+- 持ち主の決め（2026-11-26、選択肢で）: T288 の (2) を入れる。BitNet 流の表の形 `tl`（重みの並びがファイルの形式から変わる）。
+- 取りまとめ役の読み: 的の Android の Chrome（arm64 の V8 で 0.94〜1.01 倍）を遅くしないよう、変換は訪問者の端末でするので、端末で測って速い端末だけがその並びで変換する形にする。材料（T288）: `tl` は Neoverse-N2 の Firefox で 1.81 倍。ファイルの形式が変わるので `CONVERTER` と保存・GPU の上げ方・埋め込みの行の読みに当たる。順の 7 の最後。
+
+### T688 [整理][モデル] Pythia 70M・160M・410M の `converted` を実際の数に — 状態: 未着手（2026-11-26、持ち主の決め（T84 のレビューから）。規模 小）
+- 持ち主の決め（2026-11-26、選択肢で）: 3 つの `converted` を実際の数に直す。ずれた訳も調べ、ほかの項目も見る。
+- 材料（T84）: 3 つの `converted` は実際より 17・30・49 MB 大きい（2026-11-13 の再開の所の記録）。順の 2。
+
+### T689 [整理][解析分割] Shisa V2.1 unphi4 14B の `stripped: {}` を外して本物の ID に — 状態: 未着手（2026-11-26、持ち主の決め（T258.1 の答え）。規模 小）
+- 持ち主の決め（2026-11-26、選択肢で）: 項目の `stripped: {}` を外し、送る ID を本物に合わせる。`format_check.py` の `KNOWN` の `unstripped` も外す。外した後に書かせて読む。
+- 材料（T258）: 新しい読みでは一覧の送る ID が本物と完全に同じ（`format_check.py` 一覧 9/9、`--hf` も 9 つとも）だが、今あるモデルの答えが変わる。順の 3。
+
+### T690 [運用][遠隔試験] `ci.ts run` が dispatch の直後の 404 で「no such run」と終わる — 状態: 未着手（2026-11-26、取りまとめ役が見つけた。規模 小）
+- 2026-11-26、`preview.yml` を 2 本起こして 2 本とも「no such run」（終わり方 3）で終わった: run 45801328531・45801328142 は実際には成功していた。
+- 直し: 起こした直後の `gh api …/runs/<ID>` の 404 を数秒おきに取り直す（期限つきで）。順の 2 の最後。

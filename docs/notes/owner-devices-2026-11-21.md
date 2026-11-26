@@ -40,7 +40,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 
 - 3 値のモデル（Ternary Bonsai）はもう GPU に置ける（T232）。T230・T246 の「prompts on the CPU (ternary weights are not on the GPU yet)」は古い。
 - Qwen3.5 と LFM2 の層も GPU に置ける（状態を持つ層を GPU に）。T229 の「linear-attention layers are not on the GPU yet」、T260 の「convolution layers are not on the GPU yet」は古い（Qwen3.5 で特別な形のものだけ前の文が残る）。
-- Gemma 4 の答えのステップは T334.2 から GPU に置けるようになった。T334.1 の「a Gemma 4's answers are not on the GPU yet」は古い。置き場は持ち主の判断待ち（下の A-8 と B-9）。
+- Gemma 4 の答えのステップは T334.2 から GPU に置けるようになった。T334.1 の「a Gemma 4's answers are not on the GPU yet」は古い。置き場は持ち主が決めた（2026-11-26: E2B・E4B とも GPU だけ。T682 で入れる。下の A-8 と B-9）。
 - 端末の鍵は T367 の後も T379.2・T261.4.1・T334・T344 で何度か動いた。T367.3.2・T367.5 の「前に覚えた形を選び直さない」は、いまはもう見られない（鍵が動いたので最初の 1 回は必ず選び直す）。残りの見方（警告が出ない・tok/s が前と同じ桁・`/benchmark/` の GPU の節が通る）は A-2・A-5・B-1 で見る。
 
 ---
@@ -96,6 +96,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 **A-8 GB 級（Wi-Fi で）（T246・T571・T337・T130・T226・T210・T249 (b)・T253 (b)・T255・T258・T334.1・T334.2・T334.3・T344）**
 1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: 長い問い L を 1 つ。[状]・[答]・[コ]（`gpu:` の「a whole block: 16 tokens … ms, 64 tokens … ms」、`gpu: answers on the CPU (the classifier on the GPU as well (… MB with the layers) …)` の MB、`gpu: a step of a generation: …` があればその 2 つの数）（T334.1・T334.2）。
 2. ★ 同じ E2B を `頭?model=hf-gemma-4-e2b&gpuTest=only` で: 長い問い L を 1 つ。[状]（「prompts and answers on WebGPU」か）・[答]（tok/s が 1. より速いか、文が壊れていないか）・[コ]（`gpu: a token by … (a step of a run of 1: …)` の ms）。**T334.3 の置き場の判断（(a) 勧め・(b)・(c)）の材料**。判断の後は手順が変わる: (a) を選べば 1. のときから GPU だけになり 2. は要らない。
+   - **T682 で GPU だけに替わる: 入った後に手順を直す**（2026-11-26、持ち主の決めは (a)）。
 3. Ternary Bonsai 4B `頭?model=hf-ternary-bonsai-4b` と 8B `頭?model=hf-ternary-bonsai-8b`: 1 つずつ日本語で。[状]・[答]・[目]（8B でタブが落ちないか）（T246）。
 4. Qwen3.5 4B `頭?model=hf-qwen3.5-4b` と Agents-A1 4B `頭?model=hf-agents-a1-4b`: 同じ短い問い J を送り、最初のトークンまでの秒の差（T337）。Qwen3.5 4B が GPU だけ（[状] が「prompts and answers on WebGPU」で「N threads」が付かない）で準備完了まで行くか（T571）。余裕があれば Qwen3.5 9B `頭?model=hf-qwen3.5-9b` も（T571）。
 5. Spark-X2.5 4B `頭?model=hf-spark-x2.5-4b`: 1 つ。[状]・[答]（GPU だけに替わって tok/s が前より落ちていないか: T344）。
@@ -165,6 +166,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 
 **B-9 Gemma（T334.1・T334.2・T334.3）**
 1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b` と `頭?model=hf-gemma-4-e2b&gpuTest=only`: A-8 の 1. と 2. と同じ。E4B `頭?model=hf-gemma-4-e4b&gpuTest=only` も長い問い L で（メモリのある PC で）。**T334.3 の判断の材料**（判断の後は手順が変わる: A-8 の 2. の注）。
+   - **T682 で GPU だけに替わる: 入った後に手順を直す**（2026-11-26、持ち主の決めは (a)）。
 2. Gemma 3 4B `頭?model=hf-gemma-3-4b`、Gemma 3 12B `頭?model=hf-gemma-3-12b`、PLaMo 3 Translate 8B `頭?model=hf-plamo-3-translate-8b-ja-en`: 1 つずつ。[状]・[答]・[コ]（「loaded again on the CPU」の有無: GPU に載らずに読み直したか）（T334.3）。
 
 **B-10 大きすぎる断り（T129 (d)）**
@@ -240,7 +242,7 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 
 ## F. Chromebook（ARM、Chrome）: 全 4 手順、約 40 分〜1 時間
 
-**F-1 Chrome のバージョン（T233 のレビュー (a)）**: `chrome://version` の版を写す。142 以下なら、4 GiB を越えるモデル（例 `頭?model=hf-ternary-bonsai-8b&bits=8`）に 1 つ聞いて、壊れた文を書かないか。143 以上なら 1 行写すだけ。
+**F-1 Chrome のバージョン（T233 のレビュー (a)）**: `chrome://version` の版を写す。142 以下なら、4 GiB を越えるモデル（例 `頭?model=hf-qwen3-4b`: Qwen3 4B、int8 4.5 GB。2026-11-26、持ち主の決め（T311）で Ternary Bonsai 8B から替えた）に 1 つ聞いて、壊れた文を書かないか。143 以上なら 1 行写すだけ。
 
 **F-2 ★ `/benchmark/` の Run all（T226）**: `頭benchmark/` → 「Run all」。機能の節の `deviceMemory` が 4 か 8 か。[報]。
 
@@ -320,6 +322,6 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 
 ## 持ち主の判断で手順が変わるもの
 
-- **T334.3（Gemma 4 E2B・E4B の置き場）**: (a) 勧め: 8 と言う端末で両方を GPU だけに → A-8 の 1・B-9 の 1 が初めから GPU だけになり、`&gpuTest=only` の 2 回目は要らない。(b) E2B だけ部屋を広げる → E2B は (a) と同じ、E4B は CPU のまま。(c) いまのまま → 上の手順のまま。端末で見てから決めるなら、上の手順のまま見て、その数字で決める。
+- **T334.3（Gemma 4 E2B・E4B の置き場）**: **持ち主の決め（2026-11-26）は (a)。T682 で GPU だけに替わる: 入った後に手順を直す。** (a) 勧め: 8 と言う端末で両方を GPU だけに → A-8 の 1・B-9 の 1 が初めから GPU だけになり、`&gpuTest=only` の 2 回目は要らない。(b) E2B だけ部屋を広げる → E2B は (a) と同じ、E4B は CPU のまま。(c) いまのまま → 上の手順のまま。端末で見てから決めるなら、上の手順のまま見て、その数字で決める。
 - **T236 の (3)（考える形の項目）・T229 の 7 ビット**: A-6 の 4・5 の結果が材料。決めた後で見直す項目は無い。
 - **T129 の判断（遅い回線のフォールバック）**: A-11 が材料（任意）。
