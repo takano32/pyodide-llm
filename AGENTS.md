@@ -284,7 +284,7 @@
 
 ### モデルを一覧に足す（`src/models/`）
 
-一覧に項目を足す・書式や BOS を替えるとき。**`bos` と `template` は組**（片方だけだとエラーにならず文が悪くなる）、GGUF は先に `gguf_check.py tensors` を 1 つずつ、書式は `format_check.py` で本物と突き合わせ、書かせて人が読む。全文は [docs/notes/adding/models-list.md](docs/notes/adding/models-list.md)。
+一覧に項目を足す・書式や BOS を替えるとき。**`bos` と `template` は組**（片方だけだとエラーにならず文が悪くなる）、GGUF は先に `gguf_check.py tensors` を 1 つずつ、書式は `format_check.py` で本物と突き合わせ、書かせて人が読む。**項目の数（HF・GGUF・Q8_0）は README と `docs/architecture.md` の文にあり、`tests/docs-check.ts` が違えば落とす: 足したら直す**（T309）。全文は [docs/notes/adding/models-list.md](docs/notes/adding/models-list.md)。
 
 ### 家族（config.json の `model_type`）を足す（変換器）
 
