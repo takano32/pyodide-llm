@@ -1,4 +1,5 @@
-// The license of every source of the list, as its model card names it (tests/models-check.ts holds the list to it).
+// The license of every source of the list, as its model card names it (tests/models-check.ts holds the list to it),
+// but where the owner chose the license that holds it over the card's words (T302: GPT-2 124M and Hermes 3).
 
 // Where each model comes from, and under which license (T87). A model of this site names its source with
 // `source`; one fetched from Hugging Face is its `hf.repo`. The page lists them from here, and
@@ -22,7 +23,11 @@ const LLAMA_3 = "Meta Llama 3 Community License";
 const LLAMA_2 = "Llama 2 Community License";
 // T602: EvoLLM-JP v1 7B's card: "MICROSOFT RESEARCH LICENSE TERMS (due to the inclusion of the WizardMath model)"
 const MS_RESEARCH = "Microsoft Research License Terms";
-// T251: the cards of GPT-2's medium, large and XL: "License: Modified MIT License" (OpenAI's, github.com/openai/gpt-2)
+// T251: the cards of GPT-2's medium, large and XL: "License: Modified MIT License" (OpenAI's, github.com/openai/gpt-2).
+// T302 (the owner's choice of 2026-11-26): GPT-2 124M's card says "MIT License", but all four sizes are under the one
+// LICENSE of OpenAI's github.com/openai/gpt-2 (its title: "Modified MIT License"), so 124M and its GGUF say it too: a
+// name that is not its card's (nothing compares the list with the cards' words: tests/models-check.ts holds that every
+// source has a license, and that a GGUF's is its original's)
 const MODIFIED_MIT = "Modified MIT License";
 // T252: the cards of unsloth's copy and of bartowski's GGUF say llama3.1 (the license's own title: "Llama 3.1 Community
 // License Agreement"), and DeepSeek's card says what its Llama distill was made from
@@ -56,7 +61,7 @@ export const LICENSES: Record<string, string> = {
   "EleutherAI/pythia-1b": APACHE, "EleutherAI/pythia-1.4b": APACHE,
   "HuggingFaceTB/SmolLM2-135M-Instruct": APACHE, "HuggingFaceTB/SmolLM2-360M-Instruct": APACHE,
   "bartowski/SmolLM2-135M-Instruct-GGUF": APACHE,
-  "openai-community/gpt2": MIT, "TinyLlama/TinyLlama-1.1B-Chat-v1.0": APACHE,
+  "openai-community/gpt2": MODIFIED_MIT, "TinyLlama/TinyLlama-1.1B-Chat-v1.0": APACHE,
   "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B": MIT,
   "meta-llama/Llama-3.2-1B-Instruct": LLAMA_32, "unsloth/Llama-3.2-1B-Instruct": LLAMA_32,
   // T81 (2026-09-26)
@@ -131,7 +136,8 @@ export const LICENSES: Record<string, string> = {
   "EleutherAI/pythia-6.9b": APACHE, "mradermacher/pythia-6.9b-GGUF": APACHE,
   // T252 (2026-10-02): well-known ones, and the Q8_0 GGUFs they are taken from. Qwen2.5-Coder-3B's card names the
   // license of Qwen2.5-3B (license_name: qwen-research; its LICENSE: "Qwen RESEARCH LICENSE AGREEMENT"). Hermes 3's
-  // card says llama3 (its base model is Llama 3.2 3B). DeepSeek's card, under License: "the model weights are licensed
+  // card says llama3, but it is made from Llama 3.2 3B, whose license is what holds it: T302 (the owner's choice of
+  // 2026-11-26) names that one, not its card's. DeepSeek's card, under License: "the model weights are licensed
   // under the MIT License ... DeepSeek-R1-Distill-Llama-8B is derived from Llama3.1-8B-Base and is originally licensed
   // under llama3.1 license" (its metadata, and its GGUF's: mit)
   "HuggingFaceTB/SmolLM2-135M": APACHE, "mradermacher/SmolLM2-135M-GGUF": APACHE,
@@ -139,7 +145,7 @@ export const LICENSES: Record<string, string> = {
   "Qwen/Qwen2.5-Coder-1.5B-Instruct": APACHE, "bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF": APACHE,
   "Qwen/Qwen2.5-Coder-3B-Instruct": QWEN_RESEARCH, "bartowski/Qwen2.5-Coder-3B-Instruct-GGUF": QWEN_RESEARCH,
   "Qwen/Qwen2.5-Coder-7B-Instruct": APACHE, "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF": APACHE,
-  "NousResearch/Hermes-3-Llama-3.2-3B": LLAMA_3, "NousResearch/Hermes-3-Llama-3.2-3B-GGUF": LLAMA_3,
+  "NousResearch/Hermes-3-Llama-3.2-3B": LLAMA_32, "NousResearch/Hermes-3-Llama-3.2-3B-GGUF": LLAMA_32,
   "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": MIT, "mradermacher/DeepSeek-R1-Distill-Qwen-7B-GGUF": MIT,
   "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": MIT_OF_LLAMA_31, "mradermacher/DeepSeek-R1-Distill-Llama-8B-GGUF": MIT_OF_LLAMA_31,
   "meta-llama/Llama-3.1-8B-Instruct": LLAMA_31, "unsloth/Meta-Llama-3.1-8B-Instruct": LLAMA_31,
@@ -201,7 +207,7 @@ export const LICENSES: Record<string, string> = {
   // T136's third stage: GPT-2 and GPT-NeoX (the card's license is the original's)
   "mradermacher/pythia-70m-deduped-GGUF": APACHE, "mradermacher/pythia-160m-GGUF": APACHE,
   "mradermacher/pythia-410m-GGUF": APACHE, "mradermacher/pythia-1b-GGUF": APACHE, "mradermacher/pythia-1.4b-GGUF": APACHE,
-  "mradermacher/gpt2-GGUF": MIT,
+  "mradermacher/gpt2-GGUF": MODIFIED_MIT,
   // T203 (T136's fourth stage): Qwen3 and DeepSeek-R1 (the card's license is the original's)
   "unsloth/Qwen3-0.6B-GGUF": APACHE, "unsloth/Qwen3-1.7B-GGUF": APACHE, "Qwen/Qwen3-4B-GGUF": APACHE,
   "Qwen/Qwen3-8B-GGUF": APACHE, "mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf": APACHE,
