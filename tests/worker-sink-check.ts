@@ -408,6 +408,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   } });
   const typesPosted = (worker) => worker.posted.map(({ type }) => type);
   const placedForms = [];
+  let placing = tensors;  // (T682: the tensors the stand-in of Python places, a Gemma 4's below)
   const android = { deviceMemory: 8, gpu: { requestAdapter: async () => ({ info: { isFallbackAdapter: false },
     limits: { maxStorageBufferBindingSize: 2 ** 28, maxBufferSize: 2 ** 28, minStorageBufferOffsetAlignment: 256 } }) } };
   const gpuContext = vm.createContext({
@@ -425,7 +426,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       external: () => ({ engine: { gpu: engineGpu } }),
     },
     // (T571: the form it is asked with is written down: where the tensors are depends on all of it)
-    llama2_numpy: { KV_START: 256, OUTLIER_CHANNELS: 8, external_tensors: (header, dtype, form) => { placedForms.push(form); return { toJs: () => tensors, destroy() {} }; },
+    llama2_numpy: { KV_START: 256, OUTLIER_CHANNELS: 8, external_tensors: (header, dtype, form) => { placedForms.push(form); return { toJs: () => placing, destroy() {} }; },
       Llama: { callKwargs: () => ({}) } },
   };
   vm.runInContext(strictly("forwardModule = stand.forward; llama2_numpy = stand.llama2_numpy; jsKernels = { relaxed: true }; " +
@@ -479,6 +480,110 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     own.release();
     await vm.runInContext(strictly("loadBegan({ id: 'the next load' })"), gpuContext);
     await vm.runInContext(strictly("gpuOnlyEnding"), gpuContext);
+  }
+  // T682: a Gemma 4 on a device that says 8 GB, with no test asking for the GPU alone (the owner's choice, 2026-11-26: no
+  // line of its own keeps a table of every layer's inputs off it). The place is weightsPlace()'s as for any model, of the
+  // bytes the memory holds: where the table stays where the model is kept (the file kept as it comes on the first visit,
+  // the kept one attached on the next), the memory holds the rest alone, and the E2B's 2.5 GB with the GPU's 2.6 GB fit
+  // twice (both, as before); the E4B's do not, and it goes on the GPU alone, the engine reading the table's rows from that
+  // file (direct.rows). Where nothing keeps it (no file: a visit with no origin private file system, T525), the table is
+  // in the memory with the rest: the E2B does not fit twice then and goes on the GPU alone too, the engine reading the
+  // table's rows in the memory (no direct.rows), which holds the table and the rest, less than the CPU's whole model.
+  // (The tensors are Python's for the forms of google/gemma-4-E2B-it's and E4B-it's config.json, int8, a context of 4096)
+  {
+    const E2B = [1536, 6144, 35, 8, 1, 262144, 4096], E4B = [2560, 10240, 42, 8, 2, 262144, 4096];
+    const formOf = (wide, shared, from, double) => ({ ...FORM, arch: "gemma4", head_dim: 256, wide: { layers: wide, head_dim: 512 },
+      kv_shared: { layers: shared, from: shared.map((l) => (wide.includes(l) ? from[1] : from[0])) }, double, per_layer: 256 });
+    const e2bShared = Array.from({ length: 20 }, (_, i) => 15 + i), e4bShared = Array.from({ length: 18 }, (_, i) => 24 + i);
+    const models = {
+      E2B: { header: E2B, form: formOf([4, 9, 14, 19, 24, 29, 34], e2bShared, [13, 14], e2bShared) },
+      E4B: { header: E4B, form: formOf([5, 11, 17, 23, 29, 35, 41], e4bShared, [22, 23], null) },
+    };
+    for (const model of Object.values(models)) {
+      model.placed = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
+        "import json, sys; sys.path.insert(0, sys.argv[1]); import llama2_numpy; " +
+        "print(json.dumps(llama2_numpy.external_tensors(json.loads(sys.argv[2]), 'int8', json.loads(sys.argv[3]))))", python(), JSON.stringify(model.header), JSON.stringify(model.form)],
+      { cwd: fileURLToPath(root) }).toString());
+      // (past the last tensor's start, a vector of floats: its length is not asked of here)
+      model.size = Math.max(...Object.values(model.placed).flatMap((t) => [t.offset, t.scales || 0])) + 2 ** 20;
+      model.hole = forward.tableHole(model.placed);
+      model.without = (stretches) => model.size - stretches.reduce((sum, [a, b]) => sum + b - a, 0);
+      model.holes = forward.gpuHoles(model.placed);
+    }
+    const keeperOf = () => {
+      const keep = { dtype: "int8", held: null, closed: 0, holding(stretch) { keep.held = stretch; }, write() {}, read: (into) => into.length,
+        whole: () => true, close() { keep.closed++; } };
+      return keep;
+    };
+    const ask = (code) => vm.runInContext(strictly(code), gpuContext);
+    const opened = async (name, keep) => {
+      const { header, form, size, placed } = models[name];
+      placing = placed;
+      await ask(`loadBegan({ id: "${name}" })`);
+      gpuContext.keep = keep;
+      const into = ask("checkpointSink(keep)");
+      into.sink.open(size, proxy(header), "int8", proxy(form));
+      return into.weights;
+    };
+    // the engine built on a model on the GPU alone: what reads its table's rows (undefined: the memory, where they are)
+    const built = async (weights) => {
+      weights.llama({}, {});
+      const { rows } = weights.direct;
+      await weights.direct.end();
+      await ask("rowsLetGo")();
+      return rows;
+    };
+    // the E2B, its table in the file kept as it comes: held twice, as before
+    {
+      const keep = keeperOf(), weights = await opened("E2B", keep);
+      assert.deepEqual(weights.hole, models.E2B.hole, "the E2B's table stays in the file kept as it comes");
+      assert.ok(!weights.direct, "the E2B went on the GPU alone where both copies fit, its table in the kept file");
+      weights.destroy();
+    }
+    // the E4B on the first visit: on the GPU alone, its table in the file kept as it comes
+    {
+      const keep = keeperOf(), weights = await opened("E4B", keep);
+      assert.ok(weights.direct, "a Gemma 4 E4B on a device that says 8 GB did not go on the GPU alone");
+      assert.deepEqual([weights.hole, keep.held], [models.E4B.hole, models.E4B.hole], "the E4B's table stays in the file kept as it comes");
+      assert.equal(weights.direct.stored, models.E4B.without([...models.E4B.holes, models.E4B.hole]), "the memory holds neither the GPU's matrices nor the table");
+      assert.equal(typeof await built(weights), "function", "the engine reads the table's rows from the file kept as it came");
+      assert.equal(keep.closed, 1, "the file let go of with the model");
+    }
+    // the next visit: the kept E4B, its file attached before the engine is built
+    {
+      await ask('loadBegan({ id: "E4B" })');
+      placing = models.E4B.placed;
+      gpuContext.form = { ...models.E4B.form, dtype: "int8" };
+      const weights = ask("weightsBuffer")(models.E4B.size, E4B, gpuContext.form, undefined, true);
+      assert.ok(weights.direct, "a kept Gemma 4 E4B did not go on the GPU alone");
+      assert.deepEqual(weights.hole, models.E4B.hole, "a kept E4B on the GPU alone reads its table from the kept file");
+      assert.equal(weights.direct.stored, models.E4B.without([...models.E4B.holes, models.E4B.hole]));
+      const reader = keeperOf();
+      weights.attach(reader);
+      assert.equal(typeof await built(weights), "function");
+      assert.equal(reader.closed, 1, "the kept file let go of with the model");
+    }
+    // nothing keeps them: the table in the memory, and both on the GPU alone
+    for (const name of ["E2B", "E4B"]) {
+      const weights = await opened(name, undefined);
+      assert.ok(weights.direct, `a Gemma 4 ${name} whose table nothing keeps did not go on the GPU alone`);
+      assert.equal(weights.hole, null);
+      assert.equal(weights.direct.stored, models[name].without(models[name].holes), "where nothing keeps it, the memory holds the table with the rest");
+      assert.equal(await built(weights), undefined, "the engine reads the table's rows in the memory");
+    }
+    // (a device that says 4 GB keeps them off the GPU alone, as before: the GPU's copy alone is past half of it)
+    android.deviceMemory = 4;
+    for (const name of ["E2B", "E4B"]) {
+      const weights = await opened(name, undefined);
+      assert.ok(!weights.direct, `a Gemma 4 ${name} went on the GPU alone on a device that says 4 GB`);
+      weights.destroy();
+    }
+    android.deviceMemory = 8;
+    placing = tensors;
+    await ask("loadBegan({ id: 'the next load' })");
+    await ask("gpuOnlyEnding");
+    console.log("ok: T682, a Gemma 4 on a device that says 8 GB: the E4B on the GPU alone, its table read from the file it is kept in as it comes or was kept in; " +
+      "the E2B held twice where its table is kept so, on the GPU alone where nothing keeps it; both, their tables in the memory then; neither on one that says 4 GB");
   }
   // (3) built, its GPU ready: kept (destroy() lets nothing go); then its GPU fails: let go before the load on the CPU
   for (const lost of [null, "the GPU was lost (a test)"]) {

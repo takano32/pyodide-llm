@@ -203,8 +203,7 @@ const KINDS = { attention: plain, echo };
   // own, the first of them in aloneFactsUnfit()'s order (said to nobody but the tests: the worker reads yes or no)
   const POSITIONS = "a table of positions is not on the GPU alone yet",
     FFN = "an FFN without a gate is not on the GPU alone yet", NORMS = "LayerNorms are not on the GPU alone yet", STATE = "layers that keep a state are not on the GPU yet",
-    ACTIVATION = "a gate of the FFN that is neither SiLU's nor GELU's is not on the GPU alone",
-    PER_LAYER = "a table of every layer's inputs goes on the GPU alone where a test asks for it";
+    ACTIVATION = "a gate of the FFN that is neither SiLU's nor GELU's is not on the GPU alone";
   for (const [arch, { gatedFfn, layerNorm, positions, activation }] of Object.entries(ARCHITECTURES)) {
     const said = gpuOnlyUnfit(header, "int8", { arch }, adapter);
     assert.equal(said, positions ? POSITIONS : !gatedFfn ? FFN : layerNorm ? NORMS : !["silu", "gelu", "gelu_erf"].includes(activation) ? ACTIVATION : null, `${arch}: ${said}`);
@@ -219,9 +218,9 @@ const KINDS = { attention: plain, echo };
   const CAPPED = "attention whose scores are capped is not on the GPU yet";
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma2" }, adapter), null);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma2", score_softcap: 50 }, adapter), CAPPED, "a Gemma 2 whose scores are capped went on the GPU alone");
-  // (T334.3: but a table of every layer's inputs where a test asks for it alone, ?gpuTest=only: the owner's choice)
-  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma4", per_layer: 32 }, adapter), PER_LAYER);
-  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma4", per_layer: 32 }, adapter, { only: true }), null);
+  // (T682: and a table of every layer's inputs, a Gemma 4's, with no test asking for it: the owner's choice, 2026-11-26.
+  // Its rows stay where the model is kept, or in the memory where nothing keeps it: worker/weights.ts's tableInFile())
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "gemma4", per_layer: 32 }, adapter), null, "a Gemma 4 with its table of every layer's inputs was kept off the GPU alone");
   // (T487: the table's five lines never have one of these facts without another, so each is asked by itself here, of
   // facts no architecture has: RMSNorms with GPT-2's FFN, LayerNorms with a gated one, a table of positions alone)
   const LLAMAS = { stateful: false, positions: false, gatedFfn: true, layerNorm: false, activation: "silu", local: false };

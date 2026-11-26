@@ -59,10 +59,6 @@ export const REASONS = {
   // (T261; T334.3: a SiLU's or a GELU's are, a Gemma 3's and 4's, and their layers that attend a window; T344: the exact
   // GELU too, a Spark-X2.5's: a BitNet's squared ReLU is what reads this)
   aloneActivation: "a gate of the FFN that is neither SiLU's nor GELU's is not on the GPU alone",
-  // T334.3: a model with a table of every layer's inputs (a Gemma 4's) goes on the GPU alone where a test asks for it
-  // (?gpuTest=only) until the owner chooses (TASKS.md's T334.3): its E2B and E4B are both too large to hold twice on a
-  // device that says 8 GB, and the E2B's place is the owner's to change
-  alonePerLayer: "a table of every layer's inputs goes on the GPU alone where a test asks for it",
   aloneDtype: (dtype: string) => `${dtype} weights stay on the CPU`,
   aloneHeads: "heads of a size that is no multiple of 4",
   aloneStarts: "q, k and v or gate and up would not start where this GPU binds a buffer",

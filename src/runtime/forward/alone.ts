@@ -325,10 +325,6 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype,
   // CPU at its first answer. Distinct ones, as generate() hands them on (Python's set). Where the form says none (a
   // file of the visitor's with no settings), nothing is refused here: generateMany() says it then, as before
   if (new Set(form.stop_tokens ?? []).size > STOPS_MOST) return REASONS.stops(STOPS_MOST);
-  // T334.3: a model with a table of every layer's inputs (a Gemma 4's) where a test asks for the GPU alone (?gpuTest=only)
-  // and nowhere else yet: on a device that says 8 GB its E2B is as much too large to hold twice as its E4B, and where the
-  // E2B goes is the owner's choice (TASKS.md's T334.3: this line goes then)
-  if (form.per_layer && !force.only) return REASONS.alonePerLayer;
   // T271.1: nor a rotated basis whose blocks the GPU's shader does not take
   if (form.rotated && rotatedBlockUnfit(Number(form.rotated.block))) return REASONS.rotatedBlock;
   // T363.5: nor a model whose rows have kinds of their own (llama.cpp's blocks are the CPU's kernels' alone: gpu.ts

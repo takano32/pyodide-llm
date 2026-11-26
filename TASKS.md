@@ -108,7 +108,7 @@
 - T670 [描画][モデル] 翻訳の文脈と用語集の欄 — 未着手
 - T671 [追加][モデル] PLaMo 3 Translate のほかの量子化と 31B — 未着手
 - T672 [描画][モデル] PFN が公表した品質の数を見せる — 未着手
-- T682 [性能][Gemma4][WebGPU] Gemma 4 の E2B・E4B を GPU だけに置く — 未着手
+- T682 [性能][Gemma4][WebGPU] Gemma 4 の E2B・E4B を GPU だけに置く — 進行中
 - T683 [追加][モデル] DeepSeek-R1-0528-Qwen3-8B を Q8_0 の GGUF から一覧に — 未着手
 - T684 [追加][変換] 一覧の項目が語彙のリポジトリの config.json の鍵を上書きできる形 — 未着手
 - T685 [整理][文書] 持ち主が決めた文面のうち、完了済みのタスクの分を入れる — 未着手
@@ -1125,10 +1125,17 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 向こうは量子化ごとに PFTB（日英）と FLORES+ chrF++（多言語）を量子化なしとの差で出す（`engine::models::QUALITY`、出どころは PFN の公表）。ここでは項目の note か About に 1 行。数の出どころ（PFN のブログかカード）を項目のコメントに書く。T671 で量子化を選ばせるなら要る。
 - **持ち主の決め（2026-11-26、選択肢で）**: PFN の公表した質の数を、量子化ごとの項目の説明（note）に 1 行ずつ（文面は見せる）。順の 4 の最後。
 
-### T682 [性能][Gemma4][WebGPU] Gemma 4 の E2B・E4B を GPU だけに置く — 状態: 未着手（2026-11-26、持ち主の決め（T334.3 の続き）。規模 小）
+### T682 [性能][Gemma4][WebGPU] Gemma 4 の E2B・E4B を GPU だけに置く — 状態: 進行中（2026-11-26 着手、Opus medium、ブランチ `t682-gemma4-gpu-alone`。2026-11-26、持ち主の決め（T334.3 の続き）。規模 小）
 - 持ち主の決め（2026-11-26、選択肢で）: E2B と E4B はどちらも GPU だけに。`gpuOnlyUnfit()` の `REASONS.alonePerLayer` の門を外す（いまは `?gpuTest=only` のときだけ GPU だけ）。
 - 材料（T334.3・T334.2）: 8 と言う端末では E2B も E4B も 2 重に入らず、門を外すと両方が GPU だけになる。GPU だけの Gemma 4 は層ごとの埋め込みの表を GPU にも CPU のメモリにも置かず、保存から CPU が行を読む（`gpuOnlyWeights()` の `apart`）。
 - 確かめ: 本番の `models.yml` で E2B・E4B。入った後に docs/notes/owner-devices-2026-11-21.md の Gemma 4 の手順（A-8 の 1・2、B-9 の 1、「持ち主の判断で手順が変わるもの」）を直す。順の 1 の頭。
+- **中身（2026-11-26）**: `gpuOnlyUnfit()`（`forward/alone.ts`）の門 `REASONS.alonePerLayer` を外した（文も `reasons-check` の `SAID` から）。シェーダの文は変えていない（網の `shaders`・`gpuworker`・`gpusteps` は同じ）。置き場は `weightsPlace()` の規則のまま（方針 9: 2 重が部屋に入れば両方、入らなければ GPU だけ）。
+- **予定した違いと実際**: 網の `choices` に Gemma 4 の GPU だけが出る見込みだったが、`choices` は同じ（4869 を比べた: 網は層ごとの埋め込みのある form を GPU だけで問わない）。違いは worker の置き場だけ。
+- **分かったこと（台帳の材料の読み直し）: 2 重に入るかは、表がどこにあるかで変わる**。`weightsBuffer()` は表が保存に残るとき（`hole`）、メモリに持つバイト（表を除く）で `weightsPlace()` に聞く。実物の E2B（int8、文脈 4096、Python の `external_tensors()` の置き場）は、表が保存にあれば CPU 2963 MB + GPU 2652 MB で線 6979 MB の内（**2 重**、GPU の部屋 4016 MB に答えのステップの 2657 MB も入る）、表がメモリにあれば CPU 5604 MB（本番のコンソールでは 5567 MB）で越える（**GPU だけ**）。E4B はどちらでも越える（**GPU だけ**）。T334.2・T334.3 の「8 と言う端末では E2B も 2 重に入らない」「本番の E2B の答えは CPU」は、**CI の Playwright の Chromium の OPFS の割り当て（3〜5 GiB）が E2B の 5.2 GB の保存を断り、表をメモリに持って読み直した**ときの数だった（本番の E2B を CI の Chromium で開いたコンソール、tests.yml run 45838053105: 「kept: the file this model was kept in as it came stopped taking its bytes before its table of every layer's inputs was whole: loaded again with the table in the memory」の後に「both copies would not fit: the CPU's 5567 MB …」「answers on the CPU (the classifier on the GPU as well (2657 MB with the layers) would not leave this device enough memory)」。この run の Chromium は 16 GB と言う）。
+- **取りまとめ役の決め（訳: 方針 9 の規則を Gemma 4 だけ曲げない。取り消しやすい）**: 門を外すだけにして、E2B を規則の外で GPU だけに強いない。だから 8 と言う端末で: **E4B はいつも GPU だけ**。**E2B は保存（OPFS）に表を置ける訪問では 2 重**（今までと同じ。プロンプトのブロックも答えのステップも測って GPU か CPU。GPU の部屋に答えのステップが入る: 見積もり。端末では未計測）、**保存に置けない訪問では GPU だけ**（表はメモリに）。持ち主の (a) の「E2B も GPU だけ」と違うのは、表を保存に置ける E2B だけ。E2B もいつも GPU だけにするなら、`weightsPlace()` に「層ごとの埋め込みの表のあるモデルは 2 重に入っても GPU だけ」の 1 行を足す（持ち主に見せる: 区切りのまとめ）。
+- **保存が使えない訪問（OPFS の同期のハンドルが無い・割り当てを越えた・ほかのタブがファイルを持つ）**: 表を読む所が無いので、**GPU だけのまま表をメモリに持つ**（今ある形: `gpuOnlyBuffer()` に `table` が無いとき、表は `gpuHoles()` の外なのでメモリの側に入り、エンジンは `rows` 無しでメモリから行を写す。`forward.ts` の `external()` は `direct.rows` が無ければ表の番地もメモリへ置き直す）。CPU のメモリは表の 2.6 GB（E2B）・3.2 GB（E4B）と残りで、CPU の道（モデル全部と表）より小さい。新しい文は無い。変換の途中で保存が書けなくなった E4B は今と同じく `rowsReady()` が表をメモリに持って読み直す。
+- **8 と言わない端末の置き場は変わらない**: メモリを言わない端末（Safari・Firefox）は `gpuOnlyAllowed()` が GPU だけを許さない（前と同じ）。4 と言う端末は部屋が 2 GiB で GPU の写しだけで越えるので CPU（`worker-sink-check` が E2B・E4B で見る）。
+- **試験**: `sizes-check`（Gemma 4 の form が `gpuTest` なしで GPU だけに通る）、`reasons-check`（文を外した）、`worker-sink-check` に T682 の節（実物の E2B・E4B の form と Python の置き場で: E2B は表が保存にあれば 2 重、E4B は最初の訪問と保存を読む訪問で GPU だけ・表は保存から `direct.rows`、保存が無ければ両方 GPU だけで表はメモリ・`rows` 無し、4 と言う端末では両方 GPU だけにしない）。**壊し方**: (1) 門を戻すと `sizes-check`「a Gemma 4 with its table of every layer's inputs was kept off the GPU alone」・`worker-sink-check`「a Gemma 4 E4B on a device that says 8 GB did not go on the GPU alone」で落ちた。(2) `gpuOnlyBuffer()` の `direct.rows` を置かないと「the engine reads the table's rows from the file kept as it came」。(3) `weightsPlace()` に表を含む大きさを渡すと「the E2B went on the GPU alone where both copies fit」。手元: `types`・`sizes-check`・`reasons-check`・`gpu-choice-check`・`gpu-alone-check`・`gpu-part-check`・`worker-sink-check`・`plan-keys-check`・`silent-check`、網（`choices`・`shaders`・`gpuworker`・`gpusteps`）が同じ。
 
 ### T683 [追加][モデル] DeepSeek-R1-0528-Qwen3-8B を Q8_0 の GGUF から一覧に — 状態: 未着手（2026-11-26、持ち主の決め（T259 の続き）。規模 小〜中）
 - 持ち主の決め（2026-11-26、選択肢で）: Q8_0 の GGUF から一覧に足す。`gguf_agrees()` が GGUF に無い `attn_factor` を許す直しが要る（T259: 公開の Q8_0 の GGUF はどれも鍵を持たない。変換器は config の `attn_factor` を `yarn_attention()` で読む）。
