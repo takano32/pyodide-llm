@@ -95,7 +95,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 
 **A-8 GB 級（Wi-Fi で）（T246・T571・T337・T130・T226・T210・T249 (b)・T253 (b)・T255・T258・T334.1・T334.2・T334.3・T344）**
 1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: 長い問い L を 1 つ。[状]（両方に置いたときは「… 4 threads, prompts and answers on WebGPU」のようにスレッドの本数が付く。GPU だけのときは「prompts and answers on WebGPU」で本数が付かない）・[答]・[コ]（`gpu:` の「a whole block: 16 tokens … ms, 64 tokens … ms」、`gpu: a token by … (a step of a run of 1: …)` の ms、`gpu: both copies would not fit` か `kept:` で始まる行があればそれも）（T334.1・T334.2・T682）。
-2. ★ 同じ E2B をもう一度開く（2 回目の訪問: 保存から読む）: 長い問い L を 1 つ。[状]・[答]・[コ]（1. と同じ）。1. と [状] が違えば（片方だけスレッドの本数が付く）それも書く。**T682 の材料**: E2B もいつも GPU だけにするか（TASKS.md の T682 の「取りまとめ役の決め」）。
+2. ★ 同じ E2B をもう一度開く（2 回目の訪問: 保存から読む）: 長い問い L を 1 つ。[状]・[答]・[コ]（1. と同じ）。1. と [状] が違えば（片方だけスレッドの本数が付く）それも書く（持ち主の決め（2026-11-26）: E2B は両方に置いて測る。保存が使えればどちらの訪問も本数が付き、保存が使えなければ GPU だけで本数が付かない）。
 3. Ternary Bonsai 4B `頭?model=hf-ternary-bonsai-4b` と 8B `頭?model=hf-ternary-bonsai-8b`: 1 つずつ日本語で。[状]・[答]・[目]（8B でタブが落ちないか）（T246）。
 4. Qwen3.5 4B `頭?model=hf-qwen3.5-4b` と Agents-A1 4B `頭?model=hf-agents-a1-4b`: 同じ短い問い J を送り、最初のトークンまでの秒の差（T337）。Qwen3.5 4B が GPU だけ（[状] が「prompts and answers on WebGPU」で「N threads」が付かない）で準備完了まで行くか（T571）。余裕があれば Qwen3.5 9B `頭?model=hf-qwen3.5-9b` も（T571）。
 5. Spark-X2.5 4B `頭?model=hf-spark-x2.5-4b`: 1 つ。[状]・[答]（GPU だけに替わって tok/s が前より落ちていないか: T344）。
@@ -164,7 +164,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 3. PC のメモリが 16 GB 未満なら: 27B を開いてどこで止まるか（準備完了の前にタブが落ちるか、「ran out of memory」が出るか: T233 のレビュー (b)）。16 GB 以上なら手順なし。
 
 **B-9 Gemma（T334.1・T334.2・T334.3）**
-1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: A-8 の 1. と 2. と同じ。E4B `頭?model=hf-gemma-4-e4b` も長い問い L で（メモリのある PC で。GPU だけ: [状] は「prompts and answers on WebGPU」で本数が付かない）。[状]・[答]・[コ]（`gpu: a token by … (a step of a run of 1: …)` の ms）（T334.3・T682）。
+1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: A-8 の 1. と 2. と同じ。E4B `頭?model=hf-gemma-4-e4b` も長い問い L で（メモリのある PC で。GPU だけ: [状] は「prompts and answers on WebGPU」で本数が付かない）。[状]・[答]・[コ]（`gpu: a token by … (a step of a run of 1: …)` の ms と、`gpu: both copies would not fit: … on the GPU alone` の行）（T334.3・T682）。**E4B が GPU に載ってステータス行が出るか**（スマホでも開けるなら: 保存が書けない訪問では表を 32 ビットの共有メモリに約 3.2 GB 持つので、予約が通らなければ「This browser gave no shared memory for a model on the GPU alone.」で落ちる見込み。未計測。T682 のレビュー）。
 2. Gemma 3 4B `頭?model=hf-gemma-3-4b`、Gemma 3 12B `頭?model=hf-gemma-3-12b`、PLaMo 3 Translate 8B `頭?model=hf-plamo-3-translate-8b-ja-en`: 1 つずつ。[状]・[答]・[コ]（「loaded again on the CPU」の有無: GPU に載らずに読み直したか）（T334.3）。
 
 **B-10 大きすぎる断り（T129 (d)）**
@@ -320,6 +320,6 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 
 ## 持ち主の判断で手順が変わるもの
 
-- **T334.3・T682（Gemma 4 E2B・E4B の置き場）**: 持ち主の決め（2026-11-26）の (a) を T682 で入れた。上の手順はいまの形（E4B は GPU だけ、E2B は表を保存に置ければ両方・置けなければ GPU だけ）。E2B もいつも GPU だけにすると決めたら、A-8 の 1・2 の [状] は本数の付かない「prompts and answers on WebGPU」になる。
+- **T334.3・T682（Gemma 4 E2B・E4B の置き場）**: 持ち主の決め（2026-11-26、正しい前提で聞き直した）で決まった: E2B は両方に置いて測る（保存が使えれば 2 重でスレッドの本数が付く、使えなければ GPU だけ）、E4B はいつも GPU だけ（本数が付かない）。上の手順はこの形。
 - **T236 の (3)（考える形の項目）・T229 の 7 ビット**: A-6 の 4・5 の結果が材料。決めた後で見直す項目は無い。
 - **T129 の判断（遅い回線のフォールバック）**: A-11 が材料（任意）。

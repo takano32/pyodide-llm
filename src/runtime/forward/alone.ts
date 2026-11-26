@@ -34,8 +34,9 @@ export type Adapter = { fallback: boolean; limits: { maxStorageBufferBindingSize
 export type Place = { mode: "both" | "gpu" | "cpu"; gpuRoom?: number };
 // a stretch of a checkpoint that the GPU alone holds: [start, end)
 export type Hole = [number, number];
-// T156: a model on the GPU alone, as the worker makes it and the engine reads it: the bytes kept in the memory (stored)
-// of size, where each is (place), the multiply-adds of its layers, /benchmark/'s CPU reading and the page's use (what
+// T156: a model on the GPU alone, as the worker makes it and the engine reads it: the bytes kept in the memory (stored),
+// where each is (place), the bytes of the checkpoint a token written reads (size: T682's review, the whole checkpoint
+// but a table of every layer's inputs, a Gemma 4's, of which a token reads one row), the multiply-adds of its layers, /benchmark/'s CPU reading and the page's use (what
 // the GPU is held against), and onLost(why), told where the GPU stops under it. The GPU's side writes verdict: the CPU
 // is faster here (the page keeps it). T334.3: rows, what reads the rows of a table of every layer's inputs (a Gemma
 // 4's) from where the model is kept, where the table is neither in the memory nor on the GPU (place() leaves its
@@ -186,7 +187,7 @@ export function weightsPlace({ cpu, gpuOnly, gpu, deviceMemory = 4, eligible = f
   const room = deviceMemory >= 8 ? BOTH_ON_8 : (deviceMemory * 2 ** 30) / 2;
   if (forced && eligible) return { mode: "gpu" };
   if (cpu + gpu <= room) return { mode: "both", gpuRoom: room - cpu };
-  if (eligible && (deviceMemory >= 8 || gpuOnly! + gpu <= room)) return { mode: "gpu" };
+  if (eligible && (deviceMemory >= 8 || gpuOnly! + gpu <= room)) return { mode: "gpu", gpuRoom: room - cpu };
   return { mode: "cpu", gpuRoom: room - cpu };
 }
 

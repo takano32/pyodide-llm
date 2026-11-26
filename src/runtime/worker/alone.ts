@@ -131,19 +131,25 @@ export function gpuOnlyWeightsFor(size: number, header: Header, options: Options
     // (T334.2's review: where the GPU would take the model but not both copies, the numbers the room was weighed by,
     // a line then alone: the status line says the GPU's bytes where they do not fit, not the room. Normal visits of
     // a model held twice, or of a page with no GPU, say nothing)
-    if (place.mode === "cpu" && gpuAdapter && !benchPage) {
-      const mb = (bytes: number) => Math.round(bytes / 1e6);
-      console.info(`gpu: both copies would not fit: the CPU's ${mb(cpu)} MB and the GPU's ${mb(gpu)} MB, in ${mb(cpu + place.gpuRoom!)} MB of a device ` +
-        `that says ${deviceMemory} GB: the GPU's room beside the CPU's is ${mb(place.gpuRoom!)} MB`);
-    }
+    if (place.mode === "cpu" && gpuAdapter && !benchPage) said(cpu, gpu, place.gpuRoom!, deviceMemory, `the GPU's room beside the CPU's is ${mb(place.gpuRoom!)} MB`);
     return place;
   }
   // (T571: of the whole form as the options carry it, as gpuOnlyUnfit() is asked above: four keys of it went before, and a
   // Qwen3.5 on the GPU alone, whose linear-attention layers are in the form's linear, was refused by Python)
   const tensors = placesOf(header, dtype, options), stored = size - forward.gpuHoles(tensors).reduce((sum, [a, b]) => sum + b - a, 0);
   const gpuOnly = stored + afterCheckpoint(header, stored, { ...options, direct: true }, true);
-  return { ...forward.weightsPlace({ cpu, gpuOnly, gpu, deviceMemory, eligible, forced: gpuForce.only }), tensors, stored, gpuOnly };
+  const place = forward.weightsPlace({ cpu, gpuOnly, gpu, deviceMemory, eligible, forced: gpuForce.only });
+  // (T682's review: and where the GPU alone takes it for that, the same numbers, a line too: the visit of a model too
+  // large to hold twice, as the line above. A test that asks for the GPU alone (gpuForce.only) weighs no room: no line)
+  if (place.mode === "gpu" && place.gpuRoom !== undefined) said(cpu, gpu, place.gpuRoom, deviceMemory, "on the GPU alone");
+  return { ...place, tensors, stored, gpuOnly };
 }
+const mb = (bytes: number) => Math.round(bytes / 1e6);
+// (T334.2's review, T682's: the numbers a model's place was weighed by, where both copies do not fit: the CPU's bytes,
+// the GPU's, the room of the device, and where the model goes)
+const said = (cpu: number, gpu: number, gpuRoom: number, deviceMemory: number, then: string) =>
+  console.info(`gpu: both copies would not fit: the CPU's ${mb(cpu)} MB and the GPU's ${mb(gpu)} MB, in ${mb(cpu + gpuRoom)} MB of a device ` +
+    `that says ${deviceMemory} GB: ${then}`);
 // T156: the weights of a model on the GPU alone: the layers' matrices to the GPU's worker as they come (forward.ts's
 // gpuOnlyWeights), the rest into a memory of their size, and every byte to keep's file where the conversion is kept
 // (T334.3, table: a table of every layer's inputs that stays where the model is kept, neither in the memory nor on the
@@ -193,8 +199,11 @@ export function gpuOnlyBuffer(size: number, header: Header, options: Options, { 
     throw error;
   }
   // (T156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
-  // estimate the GPU is held against: forward.ts's aloneVerdict)
-  const direct: GpuOnly = gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,
+  // estimate the GPU is held against: forward.ts's aloneVerdict. T682's review: the size without a Gemma 4's table of
+  // every layer's inputs, of which a token reads one row, wherever the table is: the CPU's token was reckoned to read
+  // the E2B's 2.6 GB of it and the E4B's 3.2 GB, 2.0 and 1.6 times what it reads)
+  const tableOf = forward.tableHole(tensors), reads = size - (tableOf ? tableOf[1] - tableOf[0] : 0);
+  const direct: GpuOnly = gpuOnlyNow = { worker, lost: null, stored, size: reads, place: weights.place,
     layerWeights, cpu: gpuRequest?.cpu, usage: gpuRequest?.usage ?? forward.USAGE_UNKNOWN,
     room: weights.room, drained: weights.drained, onLost: (why) => { direct.lost = why; }, end };
   pooled(memory);

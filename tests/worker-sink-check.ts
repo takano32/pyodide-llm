@@ -509,6 +509,8 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       model.hole = forward.tableHole(model.placed);
       model.without = (stretches) => model.size - stretches.reduce((sum, [a, b]) => sum + b - a, 0);
       model.holes = forward.gpuHoles(model.placed);
+      // (T682's review: what a token reads of it, the CPU's side of aloneVerdict(): all but the table, of which it reads a row)
+      model.reads = model.size - (model.hole[1] - model.hole[0]);
     }
     const keeperOf = () => {
       const keep = { dtype: "int8", held: null, closed: 0, holding(stretch) { keep.held = stretch; }, write() {}, read: (into) => into.length,
@@ -546,6 +548,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       assert.ok(weights.direct, "a Gemma 4 E4B on a device that says 8 GB did not go on the GPU alone");
       assert.deepEqual([weights.hole, keep.held], [models.E4B.hole, models.E4B.hole], "the E4B's table stays in the file kept as it comes");
       assert.equal(weights.direct.stored, models.E4B.without([...models.E4B.holes, models.E4B.hole]), "the memory holds neither the GPU's matrices nor the table");
+      assert.equal(weights.direct.size, models.E4B.reads, "the CPU's token is reckoned to read all of the checkpoint but the table");
       assert.equal(typeof await built(weights), "function", "the engine reads the table's rows from the file kept as it came");
       assert.equal(keep.closed, 1, "the file let go of with the model");
     }
@@ -565,10 +568,17 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     }
     // nothing keeps them: the table in the memory, and both on the GPU alone
     for (const name of ["E2B", "E4B"]) {
+      // (T682's review: the console says the numbers the place was weighed by, once, as where the CPU takes the model)
+      const was = gpuContext.console, infos = [];
+      gpuContext.console = { ...console, info: (line) => infos.push(line) };
       const weights = await opened(name, undefined);
+      gpuContext.console = was;
+      assert.deepEqual(infos.filter((line) => line.startsWith("gpu: both copies would not fit")).map((line) => line.replace(/\d+ MB/g, "N MB")),
+        ["gpu: both copies would not fit: the CPU's N MB and the GPU's N MB, in N MB of a device that says 8 GB: on the GPU alone"], `the console of the ${name} on the GPU alone`);
       assert.ok(weights.direct, `a Gemma 4 ${name} whose table nothing keeps did not go on the GPU alone`);
       assert.equal(weights.hole, null);
       assert.equal(weights.direct.stored, models[name].without(models[name].holes), "where nothing keeps it, the memory holds the table with the rest");
+      assert.equal(weights.direct.size, models[name].reads, "and the CPU's token is reckoned to read none of the table but a row, there too");
       assert.equal(await built(weights), undefined, "the engine reads the table's rows in the memory");
     }
     // (a device that says 4 GB keeps them off the GPU alone, as before: the GPU's copy alone is past half of it)

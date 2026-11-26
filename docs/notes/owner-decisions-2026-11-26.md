@@ -1,6 +1,6 @@
 # 持ち主の決め（2026-11-26、選択肢で）
 
-- T334.3: Gemma 4 の E2B と E4B はどちらも GPU だけに（`gpuOnlyUnfit()` の `alonePerLayer` の門を外す）。
+- T334.3: Gemma 4 の E2B と E4B はどちらも GPU だけに（`gpuOnlyUnfit()` の `alonePerLayer` の門を外す）（下の「訂正」: E2B は両方に置いて測る）。
 - T669: GPU だけのモデルでは長文の訳の DRY の段を飛ばして切る。
 - T665〜T667: MIT の許諾文はいまのまま（document.py・repetition.py・generation.py に置き、pfml.py には置かない）。
 - T259: DeepSeek-R1-0528-Qwen3-8B を Q8_0 の GGUF から一覧に足す（`gguf_agrees()` が GGUF に無い `attn_factor` を許す直し、名前と note の文面は見せる）。

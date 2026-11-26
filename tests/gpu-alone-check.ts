@@ -18,8 +18,9 @@ import { runtime, runtimeUrl } from "./tree.ts";
 
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
-const { createForward, GPU_BLOCK } = await import(forwardFile);
+const { createForward, external, GPU_BLOCK } = await import(forwardFile);
 const { GPU_TOKENS } = await import(path.join(path.dirname(forwardFile), "forward", "choice.ts"));  // (T641.10: the part, beside the window)
+const { GPU_ALONE } = await import(path.join(path.dirname(forwardFile), "forward", "alone.ts"));
 const { CONTROL_BYTES, QUIT, GPU_DONE, GPU_FAILED } = await import(runtimeUrl("jobs.ts"));
 const { plansOf, planOf, FORM, empty } = plans(new URL("..", import.meta.url));
 
@@ -274,4 +275,40 @@ console.log("ok: T375.4, a model on the GPU alone, of int8 or of ternary weights
   assert.throws(() => made(true, planOf(f), f.size), /The matrix wq is of f32, which is not on the GPU alone\./);
 }
 console.log("ok: T486, an engine of float32 weights on the GPU alone says which matrix the GPU does not take");
+// ---- T682's review: external() as the worker builds a model on the GPU alone, a made-up Gemma 4 with a table of every
+// layer's inputs: the plan's tensors where the memory holds them (direct.place()), the GPU's matrices at their offsets
+// in the checkpoint; and the table at its offset in the checkpoint where direct.rows reads it from the kept file, or
+// placed as the rest where it is in the memory (no rows). Taking either way for the other reads the table's rows from
+// where they are not (both broke unseen: the review's two breakages, which every check here passed)
+{
+  const [g] = plansOf([{ header: [64, 128, 2, 4, 4, 100, 128], form: { ...FORM, arch: "gemma4", head_dim: 32, per_layer: 32 }, dtype: "int8" }]);
+  const SHIFT = 4096, pages = Math.ceil((CONTROL_BYTES + g.size + SHIFT) / PAGE) + 64;
+  for (const rows of [undefined, () => {}]) {
+    const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+    const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
+    const { factory: gpu } = workers({ answer: endedThen((data, worker) => {
+      if (data.type === "start") queueMicrotask(() => worker.say(READY({ blocks: [{ count: 16, ms: 1 }, { count: 64, ms: 2 }], tokens: { form: "fused", attention: "vec", ms: 1, forms: [] } })));
+      else {
+        Atomics.store(ctl, GPU_FAILED, 0);
+        Atomics.store(ctl, GPU_DONE, data.serial);
+      }
+    }) });
+    const plan = planOf(g), was = plan.tensors;
+    assert.ok(was.per_layer_table, "the made-up Gemma 4 has a table of every layer's inputs");
+    const direct = { stored: g.size + SHIFT, size: g.size, place: (offset) => offset + SHIFT, rows, layerWeights: 0, cpu: undefined, usage: { prompt: 1, written: 1 } };
+    const outside = external({ memory, base: CONTROL_BYTES, size: g.size, kernels: { plain: empty, relaxed: empty, wide: false },
+      spawn: () => Promise.resolve({ terminate() {} }), gpu, direct });
+    const engine = outside.start(plan);
+    const now = plan.tensors, said = rows ? "kept in the file (direct.rows)" : "in the memory";
+    assert.equal(now.per_layer_table.offset, rows ? was.per_layer_table.offset : was.per_layer_table.offset + SHIFT, `the table ${said}: its offset`);
+    assert.equal(now.per_layer_table.scales, rows ? was.per_layer_table.scales : was.per_layer_table.scales + SHIFT, `the table ${said}: its scales`);
+    for (const [name, t] of Object.entries(was)) {
+      if (name === "per_layer_table") continue;
+      assert.equal(now[name].offset, GPU_ALONE.includes(name) ? t.offset : t.offset + SHIFT, `${name}, the table ${said}`);
+    }
+    await engine.gpu;
+    assert.equal(await engine.release(), true);
+  }
+}
+console.log("ok: T682's review, external() of a Gemma 4 on the GPU alone places every tensor but the GPU's matrices, and its table but where direct.rows reads it from the kept file");
 process.exit(0);
