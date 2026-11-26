@@ -40,7 +40,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 
 - 3 値のモデル（Ternary Bonsai）はもう GPU に置ける（T232）。T230・T246 の「prompts on the CPU (ternary weights are not on the GPU yet)」は古い。
 - Qwen3.5 と LFM2 の層も GPU に置ける（状態を持つ層を GPU に）。T229 の「linear-attention layers are not on the GPU yet」、T260 の「convolution layers are not on the GPU yet」は古い（Qwen3.5 で特別な形のものだけ前の文が残る）。
-- Gemma 4 の答えのステップは T334.2 から GPU に置けるようになった。T334.1 の「a Gemma 4's answers are not on the GPU yet」は古い。置き場は持ち主が決めた（2026-11-26: E2B・E4B とも GPU だけ。T682 で入れる。下の A-8 と B-9）。
+- Gemma 4 の答えのステップは T334.2 から GPU に置けるようになった。T334.1 の「a Gemma 4's answers are not on the GPU yet」は古い。置き場は T682（2026-11-26）から: メモリを 8 と言う端末で **E4B は GPU だけ**（CPU にモデルを持たない）。**E2B は保存（OPFS）に層ごとの埋め込みの表を置ける訪問では CPU と GPU の両方**（プロンプトのブロックも答えのステップも、測って速いほう）、**置けない訪問では GPU だけ**（表は CPU のメモリに）。下の A-8 と B-9。
 - 端末の鍵は T367 の後も T379.2・T261.4.1・T334・T344 で何度か動いた。T367.3.2・T367.5 の「前に覚えた形を選び直さない」は、いまはもう見られない（鍵が動いたので最初の 1 回は必ず選び直す）。残りの見方（警告が出ない・tok/s が前と同じ桁・`/benchmark/` の GPU の節が通る）は A-2・A-5・B-1 で見る。
 
 ---
@@ -94,9 +94,8 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 5. GPT-2 large `頭?model=hf-gpt2-large` と XL `頭?model=hf-gpt2-xl`: 開くか（「desktop only」の線: T251 (b)）。[状]・[目]。
 
 **A-8 GB 級（Wi-Fi で）（T246・T571・T337・T130・T226・T210・T249 (b)・T253 (b)・T255・T258・T334.1・T334.2・T334.3・T344）**
-1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: 長い問い L を 1 つ。[状]・[答]・[コ]（`gpu:` の「a whole block: 16 tokens … ms, 64 tokens … ms」、`gpu: answers on the CPU (the classifier on the GPU as well (… MB with the layers) …)` の MB、`gpu: a step of a generation: …` があればその 2 つの数）（T334.1・T334.2）。
-2. ★ 同じ E2B を `頭?model=hf-gemma-4-e2b&gpuTest=only` で: 長い問い L を 1 つ。[状]（「prompts and answers on WebGPU」か）・[答]（tok/s が 1. より速いか、文が壊れていないか）・[コ]（`gpu: a token by … (a step of a run of 1: …)` の ms）。**T334.3 の置き場の判断（(a) 勧め・(b)・(c)）の材料**。判断の後は手順が変わる: (a) を選べば 1. のときから GPU だけになり 2. は要らない。
-   - **T682 で GPU だけに替わる: 入った後に手順を直す**（2026-11-26、持ち主の決めは (a)）。
+1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: 長い問い L を 1 つ。[状]（両方に置いたときは「… 4 threads, prompts and answers on WebGPU」のようにスレッドの本数が付く。GPU だけのときは「prompts and answers on WebGPU」で本数が付かない）・[答]・[コ]（`gpu:` の「a whole block: 16 tokens … ms, 64 tokens … ms」、`gpu: a token by … (a step of a run of 1: …)` の ms、`gpu: both copies would not fit` か `kept:` で始まる行があればそれも）（T334.1・T334.2・T682）。
+2. ★ 同じ E2B をもう一度開く（2 回目の訪問: 保存から読む）: 長い問い L を 1 つ。[状]・[答]・[コ]（1. と同じ）。1. と [状] が違えば（片方だけスレッドの本数が付く）それも書く。**T682 の材料**: E2B もいつも GPU だけにするか（TASKS.md の T682 の「取りまとめ役の決め」）。
 3. Ternary Bonsai 4B `頭?model=hf-ternary-bonsai-4b` と 8B `頭?model=hf-ternary-bonsai-8b`: 1 つずつ日本語で。[状]・[答]・[目]（8B でタブが落ちないか）（T246）。
 4. Qwen3.5 4B `頭?model=hf-qwen3.5-4b` と Agents-A1 4B `頭?model=hf-agents-a1-4b`: 同じ短い問い J を送り、最初のトークンまでの秒の差（T337）。Qwen3.5 4B が GPU だけ（[状] が「prompts and answers on WebGPU」で「N threads」が付かない）で準備完了まで行くか（T571）。余裕があれば Qwen3.5 9B `頭?model=hf-qwen3.5-9b` も（T571）。
 5. Spark-X2.5 4B `頭?model=hf-spark-x2.5-4b`: 1 つ。[状]・[答]（GPU だけに替わって tok/s が前より落ちていないか: T344）。
@@ -165,8 +164,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 3. PC のメモリが 16 GB 未満なら: 27B を開いてどこで止まるか（準備完了の前にタブが落ちるか、「ran out of memory」が出るか: T233 のレビュー (b)）。16 GB 以上なら手順なし。
 
 **B-9 Gemma（T334.1・T334.2・T334.3）**
-1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b` と `頭?model=hf-gemma-4-e2b&gpuTest=only`: A-8 の 1. と 2. と同じ。E4B `頭?model=hf-gemma-4-e4b&gpuTest=only` も長い問い L で（メモリのある PC で）。**T334.3 の判断の材料**（判断の後は手順が変わる: A-8 の 2. の注）。
-   - **T682 で GPU だけに替わる: 入った後に手順を直す**（2026-11-26、持ち主の決めは (a)）。
+1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: A-8 の 1. と 2. と同じ。E4B `頭?model=hf-gemma-4-e4b` も長い問い L で（メモリのある PC で。GPU だけ: [状] は「prompts and answers on WebGPU」で本数が付かない）。[状]・[答]・[コ]（`gpu: a token by … (a step of a run of 1: …)` の ms）（T334.3・T682）。
 2. Gemma 3 4B `頭?model=hf-gemma-3-4b`、Gemma 3 12B `頭?model=hf-gemma-3-12b`、PLaMo 3 Translate 8B `頭?model=hf-plamo-3-translate-8b-ja-en`: 1 つずつ。[状]・[答]・[コ]（「loaded again on the CPU」の有無: GPU に載らずに読み直したか）（T334.3）。
 
 **B-10 大きすぎる断り（T129 (d)）**
@@ -308,7 +306,7 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 | T379.2（シェーダの文の掃除） | A-2・A-5、B-1 |
 | T334.1（Gemma 4 のプロンプトを GPU に） | A-8 の 1、B-9 の 1 |
 | T334.2（Gemma 4 の答え） | A-8 の 1、B-9 の 1 |
-| T334.3（Gemma 4 の GPU だけ、置き場の判断） | A-8 の 2、B-9 の 1・2。**判断で手順が変わる** |
+| T334.3・T682（Gemma 4 の置き場） | A-8 の 1・2、B-9 の 1 |
 | T344（Spark-X2.5） | A-7 の 2・A-8 の 5、B-4 の 4 |
 | T557 の前に（画面を消した間の取得） | A-1、D-1 |
 
@@ -322,6 +320,6 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 
 ## 持ち主の判断で手順が変わるもの
 
-- **T334.3（Gemma 4 E2B・E4B の置き場）**: **持ち主の決め（2026-11-26）は (a)。T682 で GPU だけに替わる: 入った後に手順を直す。** (a) 勧め: 8 と言う端末で両方を GPU だけに → A-8 の 1・B-9 の 1 が初めから GPU だけになり、`&gpuTest=only` の 2 回目は要らない。(b) E2B だけ部屋を広げる → E2B は (a) と同じ、E4B は CPU のまま。(c) いまのまま → 上の手順のまま。端末で見てから決めるなら、上の手順のまま見て、その数字で決める。
+- **T334.3・T682（Gemma 4 E2B・E4B の置き場）**: 持ち主の決め（2026-11-26）の (a) を T682 で入れた。上の手順はいまの形（E4B は GPU だけ、E2B は表を保存に置ければ両方・置けなければ GPU だけ）。E2B もいつも GPU だけにすると決めたら、A-8 の 1・2 の [状] は本数の付かない「prompts and answers on WebGPU」になる。
 - **T236 の (3)（考える形の項目）・T229 の 7 ビット**: A-6 の 4・5 の結果が材料。決めた後で見直す項目は無い。
 - **T129 の判断（遅い回線のフォールバック）**: A-11 が材料（任意）。
