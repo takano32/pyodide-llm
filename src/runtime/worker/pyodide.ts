@@ -147,7 +147,7 @@ function stepOf(version: string, watch: Watch, said = true) {
       // "[object Object]" (bench.yml's Windows WebKit, 2026-10-01: its fetches of jsDelivr failed together now and then).
       // Told as a step of Pyodide's that stopped, as one whose file never came is
       if (isError(error)) throw error;
-      throw stop(name, `ended as it started (${told(error)}): one of its files may not have arrived`);
+      throw stop(name, `stopped as soon as it started (${told(error)}): one of its files may not have arrived`);
     } finally {
       quiet.cancel();
     }

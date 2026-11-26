@@ -45,7 +45,7 @@
 - T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 未着手
 - T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 端末の数字待ち
 - T298 [運用][変換] 静けさの 30 秒に、モデルの部品の届いたバイトも数える — 未着手
-- T300 [運用][その他] Pyodide のファイルの取得の失敗: 取り直すか、と文面 — 未着手
+- T300 [運用][その他] Pyodide のファイルの取得の失敗: 取り直すか、と文面 — 反映済み
 - T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 未着手
 - T302 [描画][モデル] 新しい項目の名前と note の文面をまとめて決める — 反映済み
 - T303 [運用][モデル] 一覧の整理: 残すか外すか、と設定 — 未着手
@@ -549,9 +549,10 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - モデルの部品が回線を埋めると jsDelivr の最初のバイトが 30 秒に間に合わずフォールバックする（CI の 0.15 Mbps で再現、T129 のレビュー）。代わりに jsDelivr が落ちているときの発見が遅れる。
 - **持ち主の決め（2026-11-26、選択肢で）**: 静けさの 30 秒に、モデルの部品の届いたバイトも数える（遅い回線で止まらないように）。案はブランチ `t129-review-model-bytes`（本線に入れたら消す）。順の 5。
 
-### T300 [運用][その他] Pyodide のファイルの取得の失敗: 取り直すか、と文面 — 状態: 未着手（2026-11-26、持ち主の決め: 取り直しは足さず、文を直す）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
+### T300 [運用][その他] Pyodide のファイルの取得の失敗: 取り直すか、と文面 — 状態: 反映済み（2026-11-26、Opus medium。レビュー前）。前の状態: 未着手（2026-11-26、持ち主の決め: 取り直しは足さず、文を直す）。その前: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
 - 失敗は Windows の Playwright の WebKit で約 2%（T242）。レビューの勧め: 取り直しは足さない（方針 2）、文は「ended as it started」を「stopped as soon as it started」に。CPU の節の 1 GiB は外さない（外すと 120 回に 6 回落ちた）。
 - **持ち主の決め（2026-11-26、選択肢で）**: 取り直しは足さず、失敗の文を「stopped as soon as it started」に直す（順の 2）。
+- **入れた形（2026-11-26、Opus medium）**: `src/runtime/worker/pyodide.ts` の `pyodideSteps()` が、`loadPyodide()` が Error でないもの（Emscripten の `ExitStatus`: 標準ライブラリが届かず Python が始まってすぐ終わる）で拒否したときの文の「ended as it started」だけを替えた。前: `Pyodide 314.0.7: "the runtime" ended as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived`、後: `Pyodide 314.0.7: "the runtime" stopped as soon as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived`（版と括弧の中は実行時のもの）。種類は `runtime` のまま、取り直しは足していない。文を写す検査は `tests/worker-memory-check.ts` の 1 か所。CI を省いた。訳: 文 1 つの差し替えで、手元の `worker-memory-check`（軽い組）がその文を断言する。
 
 ### T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 状態: 未着手（2026-11-26、持ち主の決め: 文面は取りまとめ役に任せ、後で一覧にして見せる）。前の状態: 未着手（2026-10-02 の洗い出しで採番。T227 のレビューから。持ち主の判断: 文面。規模 小）
 - 文面 2 つ（「N warnings, all in the whole report below」、「<節>: WRONG」）。GPU の `info` の失敗が「not in this browser」と読まれる。CPU の行「the browser did not start that many software threads」が一覧に出ない。ページの中の Markdown の組み立て（約 150 行）を `src/bench.js` に寄せる。
