@@ -480,6 +480,20 @@ def stand_in_model(log, answers, stop_tokens=(0,), **more):
         token_block=lambda: 0), **more})
 
 
+def test_a_drawn_unknown_piece_is_counted_and_not_written():
+    """T267: the unknown piece a model draws is no text (Tokenizer.decode()'s), and still a token of the run: in the
+    history the sampler reads, and in the counts of the stats"""
+    from llama2_numpy import Tokenizer
+    rows = [(-1e9, b"<unk>"), (-1e9, b"<s>"), (-1e9, b"</s>"), (0.0, b" a"), (0.0, b"b")]
+    tokenizer = Tokenizer(pack_tokenizer(rows), len(rows), kind="unigram", unknown=0)
+    UNK, A, B = 0, 3, 4
+    log = []
+    model = stand_in_model(log, [UNK, B, UNK, 2], stop_tokens=(2,), tokenizer=tokenizer)
+    assert "".join(generation.generate(model, "a", steps=20, temperature=1.0)) == "ab"
+    assert log[-1][2:] == ([1, A, UNK, B, UNK], [UNK, B, UNK])
+    assert (model.stats["tokens"], model.stats["sampled"], model.stats["prompt_tokens"]) == (4, 4, 1)
+
+
 def test_generate_writes_with_stand_ins_for_every_part():
     """generate() alone: the sampler asked once how it draws, by the settings as one value; the prompt forced without
     logits, then forward and a draw a step, with every token so far and the sampled ones, until a stop token."""

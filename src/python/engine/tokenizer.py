@@ -849,6 +849,11 @@ class Tokenizer:
         return tokens
 
     def decode(self, prev_token, token, bos=1):
+        # T267: the unknown piece (a model's without byte pieces: rinna's) is written as nothing, as transformers'
+        # text-generation pipeline writes it (decode()'s skip_special_tokens, True there). The token is still the
+        # model's: in the history, the counts and the next token's decoding (no dummy prefix comes off after it)
+        if token == self.unknown:
+            return b""
         return self.decoding(self, prev_token, token, bos)
 
     def decode_bytes(self, prev_token, token, bos):

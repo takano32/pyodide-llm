@@ -364,6 +364,34 @@ def test_an_nmt_normalizer_makes_newlines_and_tabs_spaces_and_one_space_of_many(
     assert before.charsmap is None and 13 in before.encode("a\nb"), "without the normalizer: byte + 3"
 
 
+def test_the_unknown_piece_is_written_as_nothing():
+    """T267: rinna's japanese-gpt2 xsmall draws its unknown piece (one in five answers). transformers' text-generation
+    pipeline decodes with skip_special_tokens, and writes nothing for it (5.16.1: "富士山は、 mas" for 富士山は、 <unk>
+    ▁mas; its decode()'s own default writes "<unk>", sentencepiece's " ⁇ "): the engine writes nothing either, by
+    the ids, and the token after it keeps its space as the pipeline's does. A tokenizer that names no unknown piece
+    (a sentencepiece model with byte pieces: the converter does not name it; a byte-level BPE's) writes every piece
+    as before."""
+    from llama2_convert import sentencepiece_options, sentencepiece_pieces, tokenizer_bin
+    model, size = sentencepiece(b"")
+    options = sentencepiece_options(model)
+    assert options["unknown"] == 0
+    tokenizer = Tokenizer(vocabulary(model, size), size, kind=options["tokenizer_kind"], unknown=options["unknown"])
+    a, b, x = (tokenizer.index[piece.encode()] for piece in (" a", " b", "x"))
+    UNK, BOS = 0, 1
+    assert [tokenizer.decode(BOS, token) for token in (UNK, a)] == [b"", b"a"]
+    assert detokenize(tokenizer, [a, UNK, b, UNK, UNK, x]) == "a bx"
+    assert detokenize(tokenizer, [UNK, a, b]) == " a b"  # (the space comes off after the BOS alone)
+    # with byte pieces no unknown piece is named, and every token is written as its piece
+    spelled, size = sentencepiece(b"", spelled=True)
+    assert "unknown" not in sentencepiece_options(spelled)
+    plain = Tokenizer(tokenizer_bin(sentencepiece_pieces(spelled), size), size, kind="unigram")
+    assert [plain.decode(BOS, token) for token in (UNK, a)] == [b"[UNK]", b"a"]
+    # a byte-level BPE writes a piece "<unk>" as its text
+    rows = [(0.0, b"<unk>"), (0.0, b"a"), (0.0, b"b")]  # (a and b are their own characters in the byte table)
+    bytes_level = Tokenizer(pack_tokenizer(rows), len(rows), kind="bytebpe")
+    assert bytes_level.unknown is None and detokenize(bytes_level, [1, 0, 2]) == "a<unk>b"
+
+
 def test_an_identity_normalizer_without_collapsing_changes_nothing():
     """Llama's and Mistral's tokenizer.model: identity, no map, remove_extra_whitespaces off; tiny-lm's: nfkc, off.
     T216: a model's name says nothing: its map (none with identity) is its normalizer."""

@@ -25,7 +25,7 @@
 - T171 [設計][WebGPU] forward の単位で backend を分ける（CPU の WASM と GPU を並べる） — 未着手
 - T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 反映済み
 - T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 未着手
-- T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 未着手
+- T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 反映済み
 - T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 未着手
 - T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 未着手
 - T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 未着手
@@ -359,9 +359,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 状態: 未着手（2026-11-26、持ち主の決め: 毎晩の全部の組に入れる）。前の状態: 候補（2026-10-01、T249・T250 のレビューから。79 項目で 4.7 分。持ち主の判断）
 - **持ち主の決め（2026-11-26、選択肢で）**: `format_check.py` を毎晩の全部の組に入れる（順の 2）。
 
-### T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 状態: 未着手（2026-11-26、持ち主の決め: `<unk>` を画面に出さない）。前の状態: 候補（2026-10-01、T249 のレビューから。持ち主の判断）
+### T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 状態: 反映済み（2026-11-26）。その前: 未着手（2026-11-26、持ち主の決め: `<unk>` を画面に出さない）。前の状態: 候補（2026-10-01、T249 のレビューから。持ち主の判断）
 - ページの既定のサンプリングで 192 の答えの 37（19%）に `<unk>`（small は 4、medium は 2、tiny-lm は 0）。引くときに `<unk>` を除くと 0。レビューの案 3 つは T249 の項。
 - **持ち主の決め（2026-11-26、選択肢で）**: `<unk>` は画面に出さない（本物の decode の既定と同じ。どのモデルにも）（順の 2）。
+- **実装（2026-11-26）**: エンジンの `Tokenizer.decode()`（`engine/tokenizer.py`、どの種類の decode の関数も通る 1 か所）が、トークナイザの知る unknown の ID（`unknown`）を空のバイトにする。引く段は変えない。**本物の既定を確かめた**（`.venv` の transformers 5.16.1・sentencepiece 0.2.2、rinna/japanese-gpt2-xsmall の `spiece.model` で「富士山は、」+ `<unk>` + 「▁mas」）: sentencepiece の `decode` は「富士山は、 ⁇  mas」、transformers の `decode()` の既定（`skip_special_tokens=False`）は「富士山は、<unk> mas」、**文を作るパイプライン（`TextGenerationPipeline.postprocess`）は `skip_special_tokens` の既定が真で「富士山は、 mas」**。画面は生成の文なので、パイプラインの形に合わせた（unk の後のトークンは空白を残す: 空白を落とすのは BOS の直後だけ、パイプラインと同じ）。**数え**: unk は引いたトークンのまま（history・`written`・`tokens`・`sampled` に入る。罰や DRY も見る）。文にしないだけ。
+  - **取りまとめ役の決め（訳）**: (1) 落とすのは unk だけ（パイプラインはほかの特殊トークンも落とすが、持ち主の決めは `<unk>` だけ）。(2) 「どのモデルにも」は「トークナイザが unknown を名指すモデルはどれも」と読んだ: 変換器が `unknown` を書くのは byte の語片の無い sentencepiece（rinna の 4 つと GGUF の同じ形）だけで、byte の語片のある sentencepiece（Llama・Mistral など）の unk の ID はエンジンに届かない（変換器が書かない: 書くには新しい options と `CONVERTER` を上げる回が要る。それらのモデルは unk を符号化に使わないので、学習でほとんど見ていない）。byte-level BPE は unk を持たず変わらない。残りは候補として持ち主のまとめに積む（番号はまだ採らない）。(3) `containing()`（DRY の区切り）も decode を通るので unk は区切りの字を持たない（llama.cpp は unk を「▅」と書き、ASCII の区切りを持たないので同じ）。
+  - 試験: `tests/test_tokenizer.py` の `test_the_unknown_piece_is_written_as_nothing`（ID の列で: unk が空・後ろの空白・byte の語片のあるモデルと byte-level BPE は前のまま）、`tests/test_parts.py` の `test_a_drawn_unknown_piece_is_counted_and_not_written`（`generate()` の文と history と stats）。壊し方: decode の比べを外すと 2 つとも落ちた。実ブラウザ（手元の Playwright の Chromium、ビルドしたページで xsmall を HF から）: 同じ問いを `seed=1〜12` で 12 回答えさせ、どれも `<unk>` 無し（種 5「'mas会」・7「「」」・10「「ew ork」」・11「4 850」が unk を引いた跡）、コンソールのエラー無し。実物: ネイティブの NumPy で xsmall の int8（変換器の options のまま）に「これからの流行りは」を種 1〜12（0.7・0.9・罰 1.1、200 トークン）: 種 10・11・12 が unk を 25・3・2 回引き、文に `<unk>` は無い（種 10 は「「oogle dords」と呼ばれる…」: 大文字の頭が抜ける）。網 `unchanged.ts python`: 前からの 3919 の記録は同じで、違いは足した 2 つの試験だけ。CI を省いた。訳: Python のエンジンの decode だけで、pytest・smoke・軽い組・実ブラウザの Chromium が全部踏む。
 
 ### リファクタリングの組（T346〜T357、2026-10-09 に採番。持ち主「デザインパターンを活用して抽象化と責務の分割でファイルが扱いやすいサイズになることを重視したい」）
 - **ねらい**: 大きいファイルを責務ごとに分け、1 つを読めば 1 つのことが分かる形にする。いまの大きさ（2026-10-09）: `public/shaders.js` 233 KB・4379 行、`public/benchmark/gpu.js` 196 KB、`public/llama2_convert.py` 168 KB、`public/forward.js` 137 KB、`public/gpu.js` 134 KB、`tests/gpu-check.mjs` 127 KB、`src/models.js` 125 KB、`public/llama2_numpy.py` 124 KB、`public/worker.js` 111 KB、`src/pages/index.astro` 75 KB、`kernels/kernel.ts` 68 KB。
