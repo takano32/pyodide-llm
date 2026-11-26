@@ -71,7 +71,7 @@
 - T332 [追加][Gemma4] 12B（`gemma4_unified`） — 未着手
 - T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 未着手
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
-- T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 進行中
+- T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 反映済み
 - T136 [性能][変換] Hugging Face などからの取得を速くする — 段 ① は済
 - T137 [性能][変換] 変換のレジューム: 取得と変換が途中で止まっても、次は続きから — 端末の計測で線を満たせば聞き直さずに実装
 - T83 [文書][文書] gist に計測の表（`30-measurements.md`）を足し、`10-overview.md` を今の姿に直す — 端末の数字待ち
@@ -681,7 +681,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 状態: 保留（2026-10-05。規模 大。入らない）
 - `InternScience/Agents-A1` @`e4a30b76e439b5093ac4c14efa6017718781d48f`（`Qwen3_5MoeForConditionalGeneration`、40 層、幅 2048、専門家 256 のうち 8、全体 35.1B）。MoE の forward（ルータと専門家ごとの FFN）がエンジンに無く、int8 で約 35 GB は 64 ビットのメモリの 16 GiB を越える（3 値も無い）。動くのは、専門家を 4 ビット以下で持ち、要る専門家だけを読む形ができたときだけ（大きな設計）。
 
-### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 進行中（2026-11-26、Opus medium、ブランチ `t263-nan-probe`）。その前: 未着手（2026-11-26、持ち主の決め: 起こす）。その前: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
+### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 反映済み（2026-11-26、本線に入れた。Opus medium、ブランチ `t263-nan-probe`。shader-reviewer のレビュー待ち）。その前: 未着手（2026-11-26、持ち主の決め: 起こす）。その前: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
 - **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 1。
 - **やったこと（2026-11-26）**: GPU の節の 2 段目に段 `nan`（`src/runtime/benchmark/gpu/nan.ts`、契約の `ToBenchGpu`・`BenchGpuResults` の `nan`、`STEPS` と `gpuPlan()` に 1 行ずつ）。場合は `shaders/bench.ts` の `NAN_CASES`（37: float32 の 31 と f16 の 6）と作る関数 `nanShader(half)`（1 スレッド 1 つの場合、入力は記憶域から f32 で読み、作ったものを `bitcast` の語と f32 の書き込みの両方で返す）。読みは `src/bench/nan.ts`（`NAN_READINGS`・`nanClass()`・`nanTable()`・`nanSummary()`・`nanBroken()`）で、節の Markdown の検査の行の下に表、要約に 1 行。**見る性質**（エンジンのシェーダを読んで選んだ）: (1) f32 の NaN・±Inf の読みと書き、(2) `1.5 + NaN`・`NaN × 0`（T241 の NaN の尺度 × 整数の和）・`exp(NaN)`・softmax（attention の形: `max()` の後の `exp()` の和で重み付け）の NaN と +Inf の点数・SiLU の NaN と −Inf の gate・GEGLU の NaN の gate、(3) ビットの判定（`(bits & 0x7fffffff) > 0x7f800000` で NaN、`== 0x7f800000` で無限大、有限の 3e38 を有限と読むか）、(4) `pack2x16float()` の NaN・±Inf（GPU の K と V: CPU は指数の 5 ビットで見る）・`unpack2x16float()` の float16 の NaN と +Inf（attention がキャッシュを読む形）・`f16()` の NaN と +Inf・f16 の NaN の掛け算と足し算・f16 の NaN の f32 への変換（llama.cpp の f16 のタイルと f16 の attention）。頼らないが端末が何をするかを見せる場合: `+Inf × 0`・`+Inf − +Inf`・`exp(±Inf)`・`max(NaN, 1)`・`max(1, NaN)`・`min(NaN, 1)`・`clamp(NaN, −9, 9)`・`tanh(NaN)`・`x != x`・float16 の最大を越える 1e6 と 70000。
