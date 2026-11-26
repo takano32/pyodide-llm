@@ -1,11 +1,12 @@
 // What a model takes once loaded, the dtype it is converted to, and what the page says of a device's memory.
 import { PYTHON_BYTES } from "../runtime/built/facts/bytes.ts";
+import { PYTHON_WEIGHTS } from "../runtime/built/facts/weights.ts";
 import type { Entry } from "./builders.ts";
 import type { Dtype } from "../runtime/contracts/form.ts";
 
 // T643.1: what is read here of a model: an entry of the list, or a model the page made of a visitor's files or a link
 // (src/page/model.ts's Model), whose kinds say no more of these than an entry's do
-type Weighed = Pick<Entry, "name" | "options" | "weights" | "wide" | "needs"> & { bytes?: number; converted?: number; loaded?: number; hf?: object; conversion?: { dtype?: Dtype } };
+type Weighed = Pick<Entry, "name" | "options" | "weights" | "wide" | "needs"> & { bytes?: number; converted?: number; loaded?: number; table?: number; hf?: object; conversion?: { dtype?: Dtype } };
 
 // T116, T643.6: what a model fetches from Hugging Face anew (`download`) past this many bytes is asked for before the
 // page starts it: a choice says what will be fetched, and a model remembered from the last visit, or the large GGUF of
@@ -25,12 +26,14 @@ const megabytes = (bytes: number) => `${Math.round(bytes / 1e6).toLocaleString("
  * itself (T364.3: one kept as its file has it, llama.cpp's blocks, whose size no ?bits= changes), or `converted`, the
  * bytes of a conversion's weights in its own dtype (`weights`: ternary for a ternary model, T230, four times that as
  * int8 where ?bits= asks for it; else int8). T643.17: the entry's words, not its note's (which says them for a visitor,
- * "int8 N MB", and tests/models-check.ts holds to them). undefined when none says (a file of the visitor's). */
-export function modelBytes(entry: Weighed): number | undefined {
+ * "int8 N MB", and tests/models-check.ts holds to them). undefined when none says (a file of the visitor's).
+ * T525, keeps: whether this visit can keep a conversion where the worker reads a table of every layer's inputs from
+ * (kept/opfs.ts's opfsOpens()); where it cannot, the memory holds that table too (`table`, which `loaded` leaves out) */
+export function modelBytes(entry: Weighed, keeps = true): number | undefined {
   // a float16 original is widened to float32 when loaded, next to the file it came from: llm-jp-3 150M's 305 MB
   // file measures about 800 MB of heap (AGENTS.md), so three times the file is the honest estimate
   if (entry.bytes) return entry.options?.dtype === "float16" ? entry.bytes * 3 : entry.bytes;
-  if (entry.loaded) return entry.loaded;
+  if (entry.loaded) return entry.loaded + (keeps ? 0 : entry.table ?? 0);
   const said = entry.converted, asked = entry.conversion?.dtype;
   if (!said) return undefined;
   if (entry.weights && !["int8", "int6"].includes(asked!)) return said;
@@ -49,6 +52,9 @@ export const SIX_OF_EIGHT = PYTHON_BYTES.int6 / PYTHON_BYTES.int8;
 export const TERNARY_OF_EIGHT = PYTHON_BYTES.ternary / PYTHON_BYTES.int8;
 // T634.2: a binary one, one bit each: 16 bytes and a float16 scale per group of 128
 export const BINARY_OF_EIGHT = PYTHON_BYTES.binary / PYTHON_BYTES.int8;
+/** T525: the bytes of so many weights as int8 (Python's bytes of a row of PYTHON_WEIGHTS of them: a byte each and a
+ * scale of each group), for a table the list says by its shape (builders.ts's gemma4()) */
+export const int8Bytes = (weights: number) => weights * PYTHON_BYTES.int8 / PYTHON_WEIGHTS;
 
 // T133: Chromium's navigator.deviceMemory stops at 8: a device that says 8 has 8 GB or more, as many as it likes
 export const DEVICE_MEMORY_CAP = 8;
@@ -72,17 +78,18 @@ export function weightsFor(entry: Weighed, asked: string | null | undefined, dev
 }
 /** Whether memoryWarning() keeps quiet (T643.21): a device that does not say its memory (nothing is guessed), a model
  * of unknown size, or a model that needs at most half of what the device says (all of it at the cap). */
-export function fits(entry: Weighed, deviceMemory: number | undefined): boolean {
-  const bytes = modelBytes(entry);
+export function fits(entry: Weighed, deviceMemory: number | undefined, keeps = true): boolean {
+  const bytes = modelBytes(entry, keeps);
   if (!deviceMemory || !bytes) return true;
   return bytes + PAGE_MEMORY <= deviceMemory * 2 ** 30 / (deviceMemory >= DEVICE_MEMORY_CAP ? 1 : 2);
 }
 /** A sentence for a device that says it has less memory than twice what the model needs, or "". deviceMemory is
  * navigator.deviceMemory (GB; only Chromium tells, and at most 8): without it nothing is guessed. A device at the cap
- * has 8 GB or more, so it is warned only of a model that needs more than 8 GB (T133). */
-export function memoryWarning(entry: Weighed, deviceMemory: number | undefined): string {
-  if (fits(entry, deviceMemory)) return "";
-  const bytes = modelBytes(entry)!;
+ * has 8 GB or more, so it is warned only of a model that needs more than 8 GB (T133). T525 (the owner's choice of
+ * 2026-11-26): keeps false, a visit that can keep nothing, counts what modelBytes() counts then, in the same words. */
+export function memoryWarning(entry: Weighed, deviceMemory: number | undefined, keeps = true): string {
+  if (fits(entry, deviceMemory, keeps)) return "";
+  const bytes = modelBytes(entry, keeps)!;
   const capped = deviceMemory! >= DEVICE_MEMORY_CAP;
   return `${entry.name} needs about ${megabytes(bytes + PAGE_MEMORY)} of memory, and this device has ` +
     `${capped ? `${DEVICE_MEMORY_CAP} GB or more` : `${deviceMemory} GB`}: it may run out of memory.`;

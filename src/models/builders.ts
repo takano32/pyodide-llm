@@ -4,6 +4,7 @@ import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25, 
 import { atOnce, greedy, sampled, thinking } from "./sampling.ts";
 import type { Hf, OfHuggingFace, Sampled, Translation } from "../runtime/contracts/messages.ts";
 import type { Dtype } from "../runtime/contracts/form.ts";
+import { int8Bytes } from "./memory.ts";
 
 // An entry of the list (src/models.ts, which exports this type): an id, a name and a note (the note of the list: the
 // window adds the devices it is for; T643.17: words for a visitor, which nothing reads: what the page reads are the
@@ -13,7 +14,8 @@ import type { Dtype } from "../runtime/contracts/form.ts";
 // (source: the repository it was built from, checkpoint, tokenizer and bytes), or one of Hugging Face converted in the
 // page (hf, original: the repository whose model it is, download, conversion, shares, weights: the dtype it keeps where
 // it names one, converted: the bytes of its weights once converted, in that dtype (else int8), loaded: its bytes once
-// loaded where they are not those (llama.cpp's blocks kept, a table read from the kept file), rebuilt: its weights are not the
+// loaded where they are not those (llama.cpp's blocks kept, a table read from the kept file), T525, table: the bytes of
+// that table, which loaded leaves out and the memory holds where nothing can be kept, rebuilt: its weights are not the
 // original's; T634.2, wide: its forward pass at the context passes a 32-bit memory where its weights alone do not;
 // T289, needs: the GB of memory its note says it needs, where the page's count is short of what it takes and a device
 // that says 8 GB is not warned),
@@ -52,6 +54,7 @@ export type Site = Shared & {
   weights?: undefined;
   converted?: undefined;
   loaded?: undefined;
+  table?: undefined;
   rebuilt?: undefined;
   translation?: undefined;
   url?: undefined;
@@ -66,6 +69,7 @@ export type Remote = Shared & {
   weights?: Dtype;
   converted?: number;
   loaded?: number;
+  table?: number;
   rebuilt?: boolean;
   source?: undefined;
   checkpoint?: undefined;
@@ -92,6 +96,7 @@ export type Translating = Shared & {
   weights?: undefined;
   converted?: undefined;
   loaded?: undefined;
+  table?: undefined;
   rebuilt?: undefined;
   url?: undefined;
 };
@@ -113,6 +118,7 @@ export type Linked = Shared & {
   weights?: undefined;
   converted?: undefined;
   loaded?: undefined;
+  table?: undefined;
   rebuilt?: undefined;
   translation?: undefined;
 };
@@ -240,12 +246,16 @@ export const gemma2Jpn = (revisions: Revisions, download: number, sizes: string,
  * cannot (it gives the file's size). The BOS (<bos>) and the format (<|turn>user … <|turn>model, the real
  * apply_chat_template's without a thought) are the converter's. The stops are generation_config.json's eos_token_id,
  * <eos>, <turn|> and <|tool_response> (1, 106, 50): the converter names <bos> and <eos> alone (T524), and an answer
- * then went on past <turn|>. The sampling is generation_config.json's: a temperature of 1.0, top-k 64, top-p 0.95 */
-export const gemma4 = (size: string, revisions: Revisions, download: number, loaded: number, sizes: string, converted: number): Entry => ({
+ * then went on past <turn|>. The sampling is generation_config.json's: a temperature of 1.0, top-k 64, top-p 0.95.
+ * T525, table: the bytes of that table as int8 (a row of every layer's input for each of the vocabulary's 262144 tokens,
+ * 256 wide a layer: config.json's vocab_size_per_layer_input and hidden_size_per_layer_input, the same in both sizes),
+ * which a visit that can keep nothing holds in the memory (memory.ts's modelBytes()) */
+export const gemma4 = (size: string, revisions: Revisions, download: number, loaded: number, layers: number, sizes: string,
+  converted: number): Entry => ({
   group: "hf", id: `hf-gemma-4-${size.toLowerCase()}`, name: `Google Gemma 4 ${size}`,
   note: `answers instructions · 日本語 / English · ${sizes}`, japanese: true, converted,
   ...ggufOf(`ggml-org/gemma-4-${size}-it-GGUF`, revisions.gguf, `gemma-4-${size}-it-Q8_0.gguf`, `google/gemma-4-${size}-it`,
-    revisions.original), download, loaded,
+    revisions.original), download, loaded, table: int8Bytes(262144 * layers * 256),
   conversion: {}, options: { stop_tokens: [1, 106, 50] },
   generation: { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,

@@ -14,11 +14,11 @@
 import { PYTHON_CONVERTER } from "./built/facts/converter.ts";
 import { PYTHON_QUANTIZED } from "./built/facts/quantized.ts";
 import { cache } from "./kept/cache.ts";
-import { keeper as keeperIn, opfs, openRows } from "./kept/opfs.ts";
+import { keeper as keeperIn, opfs, opfsOpens, openRows } from "./kept/opfs.ts";
 import type { Conversion, Kept, Manifest, Slice } from "./kept/place.ts";
 
 export type { Conversion, Kept, Manifest, Reader } from "./kept/place.ts";
-export { openRows };
+export { openRows, opfsOpens };  // (T525: opfsOpens() for the page, src/models/memory.ts's modelBytes())
 // (T368.1, the types. What is read here of a model of the list: where its weights come from and how they are converted.)
 export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number; blocks?: boolean };
   hf: { repo: string; revision: string; weights?: string; vocabulary?: { repo: string; revision: string } } };

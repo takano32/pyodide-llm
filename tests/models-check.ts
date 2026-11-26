@@ -292,12 +292,17 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
 // the converter's sizes of the real headers less forward.ts's tableHole()), not the 5.2 and 8.4 GB of their notes. So
 // a 4 GB phone is warned of both, and only the E4B needs a 64-bit memory (the E2B ran in a 32-bit one in WebKit, T329.3).
 // The stops are generation_config.json's (<eos>, <turn|>, <|tool_response>: the converter says <bos> and <eos>, T524);
-// the BOS and the format are the converter's (no `bos` nor `template`); the sampling is generation_config.json's
+// the BOS and the format are the converter's (no `bos` nor `template`); the sampling is generation_config.json's.
+// T525 (the owner's choice of 2026-11-26): a visit that can keep nothing holds the table in the memory too (table, of
+// its shape as int8: loaded and it are the converter's whole checkpoint, a second time here), and is warned of it in
+// the same words: E2B 5,508 MB and not 2,866 on a 4 GB device, and the E4B on one at the cap (8,698 MB past 8 GiB)
 {
   // (T529: the weights from ggml-org's Q8_0 GGUF, half the download; the vocabulary, config.json and template the original's)
-  for (const [size, revision, gguf, download, loaded, devices] of [
-    ["E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", "b4243c156154b6dca9324415f8c7ccc098b4aed1", 4967497152, 5207962792 - 2642411520, "desktop only"],
-    ["E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", "b8093469224f83f5c38f691eb906c380e9e63114", 8031242688, 8397500612 - 3170893824, "desktop only · Chrome and Firefox"]]) {
+  for (const [size, revision, gguf, download, loaded, table, devices, kept, apart] of [
+    ["E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", "b4243c156154b6dca9324415f8c7ccc098b4aed1", 4967497152, 5207962792 - 2642411520, 2642411520, "desktop only",
+      ["2,866 MB", "", ""], ["5,508 MB", "", ""]],
+    ["E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", "b8093469224f83f5c38f691eb906c380e9e63114", 8031242688, 8397500612 - 3170893824, 3170893824, "desktop only · Chrome and Firefox",
+      ["5,527 MB", "", ""], ["8,698 MB", "8,698 MB", ""]]]) {
     const entry = byId(`hf-gemma-4-${size.toLowerCase()}`);
     assert.equal(entry.name, `Google Gemma 4 ${size}`);
     assert.deepEqual(entry.hf, { repo: `ggml-org/gemma-4-${size}-it-GGUF`, revision: gguf, weights: `gemma-4-${size}-it-Q8_0.gguf`,
@@ -306,6 +311,14 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
     assert.equal(LICENSES[entry.hf.repo], "Apache License 2.0", entry.id);
     assert.equal(LICENSES[entry.original], "Apache License 2.0", entry.id);
     assert.ok(entry.download === download && entry.loaded === loaded && modelBytes(entry) === loaded, entry.id);
+    assert.ok(entry.table === table && modelBytes(entry, true) === loaded && modelBytes(entry, false) === loaded + table, `${entry.id}: the table where nothing is kept`);
+    for (const [keeps, said] of [[true, kept], [false, apart]]) {
+      for (const [at, deviceMemory] of [[0, 4], [1, 8], [2, undefined]]) {
+        const warned = memoryWarning(entry, deviceMemory, keeps);
+        assert.ok(said[at] ? warned.includes(`needs about ${said[at]} of memory, and this device has ${deviceMemory === 8 ? "8 GB or more" : `${deviceMemory} GB`}:`) : warned === "",
+          `${entry.id} on ${deviceMemory} GB, ${keeps ? "kept" : "nothing kept"}: ${warned || "no warning"}`);
+      }
+    }
     assert.ok(entry.note.endsWith(` · ${devices}`), `${entry.id}: ${entry.note}`);
     assert.deepEqual(entry.options, { stop_tokens: [1, 106, 50] }, entry.id);
     assert.ok(!("template" in entry) && !("bos" in entry.options), `${entry.id}: the converter's BOS and format`);

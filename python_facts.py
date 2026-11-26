@@ -27,6 +27,7 @@
 #   quantized      (kept.ts, T628.3) engine/dtypes.py's QUANTIZED: the dtypes a kept conversion may be of
 #   bytes          (src/models/memory.ts's ratios, T628.3) the bytes of each of those of a row of WEIGHTS weights,
 #                  its values and its scales: a ratio of two is a ratio of whole numbers
+#   weights        (src/models/memory.ts, T525) WEIGHTS, the weights of that row: bytes over it are bytes of a weight
 import base64
 import json
 import struct
@@ -68,7 +69,8 @@ def architectures():
 def facts():
     return {"architectures": architectures(), "tokenizers": list(conduct.TOKENIZERS),
             "blocks": {name: [ggml, size] for name, (ggml, size, _) in SUPERBLOCKS.items()},
-            "converter": CONVERTER, "madeup": madeup(), "quantized": list(D.QUANTIZED), "bytes": {name: bytes_of(name) for name in D.QUANTIZED}}
+            "converter": CONVERTER, "madeup": madeup(), "quantized": list(D.QUANTIZED), "bytes": {name: bytes_of(name) for name in D.QUANTIZED},
+            "weights": WEIGHTS}
 
 
 # /benchmark/'s made-up model: Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and

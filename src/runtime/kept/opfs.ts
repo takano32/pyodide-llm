@@ -23,6 +23,15 @@ async function folders(create = false) {
 }
 // OPFS with the synchronous access a worker needs to write a file of gigabytes piece by piece
 const opfsWritable = () => typeof FileSystemFileHandle !== "undefined" && "createSyncAccessHandle" in FileSystemFileHandle.prototype;
+/** T525: the page's guess of whether the worker can keep a conversion here (opfsWritable() and folders() above):
+ * the page has no sync access handle to ask of (a worker's alone), so it asks whether the origin private file system
+ * opens at all (none, or a private window's refusal: false). It says yes where the worker may still keep nothing: a
+ * browser whose OPFS has no sync access handle (an older Safari's), room that runs out while it writes (weights.ts's
+ * tableInMemoryFromNow()) */
+export async function opfsOpens() {
+  if (!globalThis.navigator?.storage?.getDirectory) return false;
+  return navigator.storage.getDirectory().then(() => true, () => false);
+}
 
 const access = async (folder: FileSystemDirectoryHandle, file: string) =>
   (await folder.getFileHandle(file, { create: true }) as WorkerFile).createSyncAccessHandle();

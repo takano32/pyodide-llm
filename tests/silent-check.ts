@@ -141,6 +141,7 @@ const SILENT = {
   ],
   "src/runtime/kept/opfs.ts": [
     ["folders", "catch { return undefined; }", "no origin private file system here (or its folder not made yet): the Cache API is looked in, and keep() says why nothing was kept"],
+    ["opfsOpens", "navigator.storage.getDirectory().then(() => true, () => false)", `${STORAGE}the refusal is the answer (T525): nothing can be kept, and the page's memory warning counts what the memory then holds`],
     ["list", "catch {}", "a folder without a manifest is a conversion that did not finish: it is none of the kept models"],
     ["open", "directory?.getDirectoryHandle(name).catch(() => undefined)", "no folder of that name is the ordinary answer for a model that was never kept: NotFoundError"],
     ["open", "catch { return undefined; }", "half there (a conversion that was cut off): the Cache API is looked in, then the model is converted again, which the visitor sees as a download"],

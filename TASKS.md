@@ -85,7 +85,7 @@
 - T506 [不具合][遠隔試験] WebKit 27.2 で 4 GB を越えるモデルが、断られずに黙って止まる — 調べは完了
 - T508 [整理][変換] T505.3 の残り — 未着手
 - T510 [整理][Gemma4] T261.1・T261.2 の残り — 反映済み
-- T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
+- T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 反映済み
 - T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
 - T550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 候補
 - T551 [性能][WebGPU] 1 回の submit のステップの数とプロンプトのブロックの大きさを、端末で測って選ぶ — 候補
@@ -999,10 +999,15 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - T261.4（GPU）のとき: CPU の「番地を `from×KV` ずらす」は GPU に移らない（storage buffer の offset の揃え）。attention のシェーダに `from` を uniform で足す形になり、端末の鍵が 1 回動く。head 256 の flash タイルが workgroup のメモリに入るかを先に確かめる。
 - **持ち主の決め（2026-11-26、選択肢で）**: GGUF が原本と合わないときの文は (a)（`docs/notes/owner-texts-2026-11-26.md` の 18）: 値を文にする（局所の層は `layers 0 to 4, 6 to 10, … with a window of 512 and a RoPE base of 10000`、無いときは `none`、RoPE の縮めは `linear by 8`）。順の 2 の文面の回。
 
-### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-11-26、持ち主の決め: 今ある警告の文の数に表の大きさを足す）。前の状態: 持ち主の判断待ち（2026-10-25、区切りのまとめで聞く。前の状態: 未着手、2026-10-15、T333 のレビューの気づき）
+### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 反映済み（2026-11-26）。前の状態: 未着手（2026-11-26、持ち主の決め: 今ある警告の文の数に表の大きさを足す）。その前: 持ち主の判断待ち（2026-10-25、区切りのまとめで聞く。前の状態: 未着手、2026-10-15、T333 のレビューの気づき）
 - **調べ（2026-10-25）**: 警告（`src/models/memory.js` の `memoryWarning()`）は項目を選んだときにページが出し、そのときページは保存が使えるか（worker の `opfsWritable()`: 同期のアクセスハンドル）を知らない。数も、項目が持つのは表を引いた `loaded` だけ。だから直すには (a) ページが保存を使えるかを見積もる、(b) 項目に表を入れた大きさを持たせる、の 2 つが要る。案: (1) **勧め**: 今ある文（「… needs about N of memory, and this device has …」）を使い回し、保存の使えない訪問（ページの `navigator.storage.getDirectory` が無いか断る）では N に表を足す。新しい文は要らない。(2) 何もしない（保存の使えない訪問は Firefox の private のような少ない場合で、そのときは読み込みが落ちてメモリ不足の文が出る）。(3) 保存できない訪問だけに別の 1 文を足す（文面は持ち主）。
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
 - **持ち主の決め（2026-11-26、選択肢で）**: 保存の使えない訪問では、今ある警告の文の数に表の大きさを足す（新しい文なし）。順の 1。
+- **したこと（2026-11-26）**: (b) 項目に表の大きさ `table`（`builders.ts` の `gemma4()`: 語彙 262144 × 層の数 × 256 を int8 で。int8 の 1 重みのバイトは `python_facts.py` の書き出し `bytes` の int8 ÷ 新しい書き出し `weights`（`PYTHON_WEIGHTS`、1152）: `memory.ts` の `int8Bytes()`）。E2B 2,642,411,520・E4B 3,170,893,824 で、`loaded` と足すと変換器の本物の見出しの大きさ（5,207,962,792・8,397,500,612）にバイトまで合う（`models-check` が 2 つ目の写しで見る）。`modelBytes(entry, keeps)`・`fits()`・`memoryWarning()` に `keeps`（既定は真: 今までどおり）を足し、偽なら `loaded` に `table` を足す。文は今のまま。(a) ページの見積もりは `kept/opfs.ts` の `opfsOpens()`: `navigator.storage.getDirectory` が無いか断れば偽。`list.ts` が始めに 1 回聞いて `keepsHere`（答えが来るまで真）に置き、`choose.ts` が `askedFirst(…, keepsHere)` で渡す。
+- **worker の `opfsWritable()` と違いうる場合**（取りまとめ役の読み、未確認）: ページには同期のアクセスハンドルが無い（worker だけ）ので、ページは OPFS が開くかだけを聞く。(1) OPFS はあるが worker に同期のハンドルが無いブラウザ（古い Safari）: ページは「保存できる」、worker は表をメモリに持つ → 警告が表の分少ない。(2) 書く途中で割り当てが尽きる（`tableInMemoryFromNow()`、CI の Playwright の 3〜5 GiB）: 同じく少ない。(3) `?without=kernels`（NumPy が全部を Python に広げる）: どちらでも警告は数え足りない（前から）。(4) Cache API にだけ保存がある: 表はメモリだが、ページは OPFS が開けば「保存できる」と見る。逆向き（ページが「できない」と見て worker が保存できる）は無い見込み（worker の `folders()` も同じ `getDirectory()` を呼ぶ）。Firefox の private のウィンドウが `getDirectory()` を断るか、Safari の private がどう答えるかは端末で見ていない（未計測）。
+- **数え方**: 警告の N は「表を足したチェックポイント全部 + PAGE_MEMORY」。T682 の後の置き場で、保存の無い訪問は E2B も E4B も表を CPU のメモリに持ち、残りは GPU だけ（WebGPU の無い端末は全部 CPU）。どちらも端末のメモリに乗るのはチェックポイント全部（GPU だけの CPU 側の約 28・37 MB と GPU の K と V は数えない: 見積もり）なので、N はスマホと Apple（GPU と CPU が同じ物理メモリ）でその訪問の持つ量に合う。数: 4 GB の端末で E2B 2,866 → 5,508 MB、E4B 5,527 → 8,698 MB、8 と言う端末では E4B だけが新しく警告される（8,698 MB は 8 GiB を越える）。6 ビットに変換する訪問（`weightsFor()` が 4 GB の端末で int6 を選ぶ）でも `loaded` と同じく int8 で数える（前から）。`weightsFor()` の 6 ビットを選ぶ線と `devicesOf()` の note の言葉は表を数えないまま（警告だけ: 持ち主の決めの範囲）。
+- CI を省いた。訳: 変わるのは一覧の数とページの警告の文の数だけで、手元の軽い組・`dist-check`・網の `page`・`models`・実ブラウザの Chromium が全部踏む（WebGPU・GB 級のモデル・Firefox と WebKit だけの違いに触らない）。
+- 試験: `models-check`（Gemma 4 の 2 つで `table` と、保存あり・無しの警告を 4・8・言わない端末で）、`page-parts-check`（`askedFirst()` の保存あり・無し、表の無いモデルは同じ、`choose.ts` が `keepsHere` を渡し `list.ts` が `opfsOpens()` の答えを置く文の検査）。壊し方: `modelBytes()` で `keeps` を読まない（`return entry.loaded;`）と両方が落ちた（「hf-gemma-4-e2b: the table where nothing is kept」「and the table counted where nothing can be kept」）。
 
 ### T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 中。先に使えるかを調べる）
 - **当たるモデル**: GPU に置ける全部のプロンプトのブロック（その機能のある端末だけ）。

@@ -21,11 +21,12 @@ export const keptOf = (stored: readonly Kept[], entries: readonly (Converted & {
 
 /** What is asked before a model is loaded, or nothing: a large download (what is fetched, from whom, and that the
  * conversion happens here), unless the browser kept it; T90: and one that probably does not fit in a device that says
- * how much memory it has (Chromium only). `weighed` is the model as the worker gets it (address.ts's weighed()). */
-export function askedFirst(weighed: Model, kept: boolean, deviceMemory: number | undefined) {
+ * how much memory it has (Chromium only). `weighed` is the model as the worker gets it (address.ts's weighed()).
+ * T525, keeps: whether this visit can keep a conversion (list.ts's keepsHere): memoryWarning() counts more where not */
+export function askedFirst(weighed: Model, kept: boolean, deviceMemory: number | undefined, keeps = true) {
   const download = kept ? 0 : (weighed.download ?? 0);
   const asks = [asksBefore({ download }) && `${weighed.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
-                memoryWarning(weighed, deviceMemory)].filter(Boolean);
+                memoryWarning(weighed, deviceMemory, keeps)].filter(Boolean);
   return asks.length ? `${asks.join(" ")} Go on?` : undefined;
 }
 

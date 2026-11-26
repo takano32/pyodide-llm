@@ -791,6 +791,14 @@ console.log(`page-parts-check: parameters.ts by itself: the names of the address
     "a model past what a device says it has is asked for, a download or not");
   assert.equal(askedFirst(heavy, false, undefined), undefined, "and nothing is guessed where the device says nothing");
   assert.match(askedFirst({ ...heavy, download: 1e9 }, false, 4) ?? "", /^Big: 1\.0 GB will be fetched .* browser\. Big needs about .* Go on\?$/, "both, in that order");
+  // T525: a model whose table of every layer's inputs stays in the kept file (loaded without it, table) is warned of
+  // the table too where this visit can keep nothing (keeps false), in the same words; kept or not, nothing else changes
+  const tabled = { ...small, download: 0, bytes: undefined, loaded: 1.5e9, table: 1e9 };
+  assert.equal(askedFirst(tabled, false, 4), undefined, "1.8 GB within half of 4 GB where the table can be kept");
+  assert.equal(askedFirst(tabled, false, 4, false), "Big needs about 2,800 MB of memory, and this device has 4 GB: it may run out of memory. Go on?",
+    "and the table counted where nothing can be kept");
+  assert.equal(askedFirst(tabled, false, undefined, false), undefined, "nothing guessed where the device says nothing");
+  assert.equal(askedFirst(heavy, false, 8, false), askedFirst(heavy, false, 8), "a model of no table is weighed the same either way");
   assert.deepEqual(sheetSays(" https://huggingface.co/o/n/tree/main/x ", " ", " "), { repository: "o/n", revision: "main", file: undefined },
     "the sheet takes the address of a model's page, and main where the revision is empty");
   assert.deepEqual(sheetSays("o/n/", "v1", "n-Q8_0.gguf"), { repository: "o/n", revision: "v1", file: "n-Q8_0.gguf" }, "the revision and the file named");
@@ -809,7 +817,10 @@ console.log(`page-parts-check: parameters.ts by itself: the names of the address
   const chooseText = (await import("node:fs")).readFileSync(fileURLToPath(new URL("../src/page/choose.ts", import.meta.url)), "utf8");
   assert.ok(!chooseText.includes("kept in this browser") && /keptEntries\.has\(select\.value\)/.test(chooseText),
     "choose.ts reads list.ts's set of what was kept, not the words the select shows");
-  cases += 22;
+  // (T525: choose.ts reads elements as it is imported: what it hands is read as text, list.ts's answer of opfsOpens())
+  assert.ok(/askedFirst\([^;]*, keepsHere\)/.test(chooseText) && /keepsHere = opens/.test(listText),
+    "choose.ts hands askedFirst() whether this visit can keep a conversion, as list.ts heard it of opfsOpens()");
+  cases += 27;
 }
 console.log(`page-parts-check: choosing.ts by itself: the sheet's entry, the model an entry names, what is asked first, what was kept, the sheet's fields`);
 {

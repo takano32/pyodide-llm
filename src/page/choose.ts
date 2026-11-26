@@ -8,7 +8,7 @@ import { looked, unlisted, unnamed } from "./repository.ts";
 import { addressOf } from "./parameters.ts";
 import { gpuFor, threadsFor } from "./remembered.ts";
 import { type Model, type Unlisted, chose, loads, model, opensWith } from "./model.ts";
-import { keptEntries, stillKept } from "./list.ts";
+import { keepsHere, keptEntries, stillKept } from "./list.ts";
 import { show } from "./settings.ts";
 import { message } from "./draw.ts";
 import { root, worker } from "./receiver.ts";
@@ -171,7 +171,7 @@ function chooseSelected() {
 /** A model chosen (`kept`: the browser kept it, and nothing is fetched): asked for first where choosing.ts says so,
  * then the page's model, its address, its settings, and the worker's load. */
 function chooseModel(chosen: Model, kept: boolean) {
-  const asked = askedFirst(weighed(chosen), kept, (navigator as Navigator & { deviceMemory?: number }).deviceMemory);
+  const asked = askedFirst(weighed(chosen), kept, (navigator as Navigator & { deviceMemory?: number }).deviceMemory, keepsHere);
   if (asked && !confirm(asked)) {
     select.value = model.id;
     return;
