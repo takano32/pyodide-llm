@@ -83,10 +83,12 @@ The model list has three groups:
   [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project (260K to 42M parameters), in int8 (the small
   ones in float32). They are built into the site when it is deployed.
 - **Unquantized originals** of some of them (float16 or float32), to compare with int8.
-- **From Hugging Face, converted in this browser** (108 entries, from a 16 MB Pythia to 9B models and a ternary and a 1-bit 27B: Llama, Mistral,
-  Qwen2.5, Qwen3, Qwen3.5, Granite 4.2, SmolLM3, MiniCPM5, LFM2.5, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from
-  huggingface.co (for 97 of them a GGUF: Q8_0, and for the Ternary Bonsai models their ternary files, PQ2_0 or PTQ1_0, and for the 1-bit Bonsai models Q1_0, read with the original
-  repository's vocabulary and configuration),
+- **From Hugging Face, converted in this browser** (215 entries, from a 16 MB Pythia to 14B models and ternary, 1-bit and
+  2-bit 27B ones: Llama, Mistral, Qwen2.5, Qwen3, Qwen3.5, Granite 4.2, SmolLM3, MiniCPM5, LFM2.5, Gemma, PLaMo 3, Phi,
+  BitNet, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from huggingface.co (for
+  194 of them a GGUF: Q8_0, and for the Ternary Bonsai models their ternary files, PQ2_0 or PTQ1_0, for the 1-bit Bonsai
+  models Q1_0, and for some of the largest llama.cpp's blocks, Q4_K_M or IQ2, read with the original repository's
+  vocabulary and configuration),
   converts them to int8 in your browser (Ternary Bonsai stays in its 2 bits, the 1-bit Bonsai in 1 bit) with the same Python code that
   builds the site's models, and keeps the result for the next visit. About lists what is kept and deletes it. A
   download of more than 500 MB asks first.
@@ -96,13 +98,13 @@ The model list has three groups:
 ### A model that is not in the list
 
 - `?hf=<owner>/<repository>` (optionally `&revision=` and `&template=` with `{prompt}` in it) converts a Hugging
-  Face repository, and says in words what it cannot run. What it reads: the Llama architecture (with Llama 3,
-  linear and yarn RoPE scaling, yarn only as a factor and an original context, nothing else it can set; Mistral is read
-  as Llama), Qwen2, Qwen3, GPT-2 and GPT-NeoX, in safetensors (one file or
-  several shards), with a Unigram or byte-level BPE `tokenizer.json` or a sentencepiece model. It does not open a
-  repository that has only GGUF files: the GGUFs of the list are read together with the vocabulary and
-  configuration of their original repository. Instruction models get what you type inside their chat template,
-  for one turn; the page keeps no conversation.
+  Face repository, and says in words what it cannot run. What it reads: the families Llama, Mistral, Granite,
+  SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 2, Gemma 3, Gemma 4, Spark-X2.5, PLaMo 3, BitNet, Phi-3, GPT-2 and
+  GPT-NeoX (by config.json's `model_type`; RoPE scaling as Llama 3, linear or yarn), in safetensors (one file or
+  several shards) with a Unigram or byte-level BPE `tokenizer.json` or a sentencepiece model, or in a GGUF, which
+  holds its vocabulary and configuration (`&file=` names one; without it the page takes the best quantization there;
+  a GGUF of an architecture it does not read is refused in words). Instruction models get what you type inside the
+  repository's own chat template, for one turn, where it has one; the page keeps no conversation.
 - `?checkpoint=<url>&tokenizer=<url>` reads files in llama2.c's format from any server that answers cross-origin
   range requests, for example
   `?checkpoint=https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin&tokenizer=https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.bin`.

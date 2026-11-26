@@ -10,7 +10,7 @@ flowchart TD
   page["the page: src/pages/index.astro"]
   worker["Web Worker: src/runtime/worker.ts<br/>resolves Pyodide, downloads and converts models, keeps them (src/runtime/kept.ts)"]
   engine["the engine: src/python/llama2_numpy.py<br/>checkpoint, tokenizer, sampling, generate()"]
-  convert["the converter: src/python/llama2_convert.py<br/>safetensors and GGUF to the llama2.c format, int8, 6 bits or ternary"]
+  convert["the converter: src/python/llama2_convert.py<br/>safetensors and GGUF to the llama2.c format, int8, 6 bits, ternary, 1 bit or llama.cpp's blocks"]
   forward["src/runtime/forward.js<br/>the forward pass, on its own WebAssembly memory"]
   kernels["kernels/: WebAssembly SIMD kernels"]
   helper["src/runtime/helper.ts: software threads"]
@@ -30,7 +30,7 @@ flowchart TD
 | `src/pages/index.astro` and `src/page/` | The chat page and the modules of its script. It draws what the worker reports; the URL holds the state (`?model=`, `?hf=`, `?bits=`, `?without=` and others). |
 | `src/models.ts` | The model list: files, sizes, engine options, generation settings, chat templates. Its `DEFAULT_MODEL` is the model a first visit opens. |
 | `src/runtime/worker.ts` and `src/runtime/worker/` | The worker's window (`init()`, `generate()`, the messages) and its parts: Pyodide's loading, where the weights go, the fetching of a model's parts (this site's and Hugging Face's), the conversion, and what `/benchmark/` times. It loads Pyodide and NumPy, downloads the model in parts while Pyodide loads, and runs `generate()`. |
-| `src/python/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
+| `src/python/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary, binary: 1 bit as Q1_0 holds it; and rows in llama.cpp's blocks), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE, PLaMo's), the architectures (Llama, Qwen2 and Qwen3 as Llamas, Qwen3.5, LFM2, Gemma 2, Gemma 3, Gemma 4, Spark-X2.5, PLaMo 3, BitNet, Phi-3, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
 | `src/python/llama2_convert.py` | Converts a Hugging Face model (or a GGUF: Q8_0, the ternary PQ2_0 and PTQ1_0, or the 1-bit Q1_0) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (with Pyodide's jinja2, as transformers does). |
 | `python_archive.py` | Packs the two at build time into `engine.zip` and `converter.zip`, which the worker fetches whole and unpacks in Pyodide: one request each (the converter's only when a model is first converted). The same sources give the same bytes. |
 | `src/runtime/forward.js` and `src/runtime/forward/` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. `forward.js` is the window; the engine (`engine.js`), its software threads (`threads.js`), its GPU side (`gpuside.js`), the choice between the two (`choice.js`) and the memory a model takes (`memory.js`, `alone.js`) are the modules of `forward/`. |
@@ -122,9 +122,10 @@ used, but not kept, and is run again once the GPU is ready.
 - Hugging Face models are fetched in parts of 8 or 16 MiB over 6 connections, in the order of the file, and each
   tensor is converted when it arrives. The download is never held as a whole: the peak is about the converted
   model.
-- 93 of the 103 Hugging Face entries in the list are fetched as a GGUF (88 as Q8_0, the Ternary Bonsai models as ternary files), with the vocabulary and the
-  configuration of the original repository: about half the download, the same weights to within the rounding of
-  the scales. Each GGUF was compared with its original tensor by tensor before it replaced it, one file at a time:
+- 194 of the 215 Hugging Face entries in the list are fetched as a GGUF (167 as Q8_0, the Ternary Bonsai models as
+  ternary files, the 1-bit Bonsai models as Q1_0, 17 of the largest in llama.cpp's blocks, Q4_K_M or IQ2), with the
+  vocabulary and the configuration of the original repository: Q8_0 is about half the download and the same weights
+  to within the rounding of the scales; the ternary, 1-bit and block files are kept as they are. Each GGUF was compared with its original tensor by tensor before it replaced it, one file at a time:
   two GGUFs from the same publisher can differ (Qwen's own GGUFs of Qwen3 0.6B and 1.7B did not match their
   originals, so those two come from another publisher).
 - Converted models are kept in the browser (OPFS, or the Cache API), so the next visit fetches nothing.

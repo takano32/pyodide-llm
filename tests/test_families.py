@@ -529,3 +529,18 @@ def test_the_local_layers_of_a_gguf_agree_with_config_json_through_float32():
     apart = float(np.nextafter(np.float32(10000.1), np.float32(np.inf)))
     _, here, there = local_agrees(said(apart), said(10000.1))
     assert here != there
+
+
+def test_the_page_names_the_tables_families(monkeypatch):
+    """T309: the titles python_facts.py writes for the page (the model list's last entry, which tests/docs-check.ts
+    also holds README's ?hf= to) are the table's, each once and in its order, as the refusals name them: a family
+    added to the table is said, one taken off is not."""
+    import python_facts
+    written = python_facts.facts()["families"]
+    assert written == families.titles(FAMILIES.values())
+    assert families.named(FAMILIES.values()) == ", ".join(written[:-1]) + f" and {written[-1]}"
+    assert written.count("Qwen3.5") == 1  # (qwen3_5_text and qwen3_5)
+    monkeypatch.setattr(python_facts, "FAMILIES", {**FAMILIES, "made_up": LLAMA._replace(title="Made-up", gguf=None)})
+    assert python_facts.facts()["families"] == [*written, "Made-up"]
+    monkeypatch.setattr(python_facts, "FAMILIES", {name: family for name, family in FAMILIES.items() if family.title != "Phi-3"})
+    assert "Phi-3" not in python_facts.facts()["families"]

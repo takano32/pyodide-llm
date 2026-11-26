@@ -125,7 +125,7 @@
 | worker の検査 | `worker-check`・`worker-memory-check`・`worker-sink-check`（`FORM` が変換器から `footprint()` まで届くこと）・`worker-parts-check`・`worker-init-check`・`worker-conduct-check`・`worker-fetches-check`（変換が頼むものの列: わざと変えたら `--write` して差分を読む）・`worker-outdated-check` |
 | forward の部品の検査 | `threads-part-check`・`gpu-part-check`・`gpu-alone-check`・`layer-parts-check`・`kernel-registry-check`（`WORK`・`PACKED` を Python の `DTYPES` と）・`sizes-check`・`plan-facts-check`・`plan-keys-check`（計画と GPU の計画の鍵を両端で）・`memory-check`・`frame-check`・`thread-search-check`・`paths-check`・`finite-check`・`unfinite-check` |
 | GPU の Worker とシェーダの検査 | `gpu-worker-parts-check`（偽の装置）・`gpu-forms-check`・`gpu-tokens-check`・`gpu-start-check`（答えの計算は `tests/gpu_answers.py`）・`gpu-reference-check`・`gpu-choice-check`・`gpu-default-check`（`--quick` は軽い組）・`gpu-hybrid-check`・`layer-check`・`shaders-catalogue-check`・`device-key-check`・`shaders-modules-check`・`bench-nan-check`（`/benchmark/` の NaN の段を偽の装置の 6 つの型で） |
-| 失敗・ページ・道具の検査 | `failure-check`・`reasons-check`（`SAID`）・`silent-check`（`SILENT`）・`updated-check`（`LATER`）/ `page-parts-check`・`models-check`・`bos-check`・`bench.ts`・`kept-check`・`coi-js-check`・`python-archive-check`・`contracts-check` / `tree-check`・`imports-check`・`fakes-check`・`fetching-check`・`serving-check`・`conducting-check`・`workflows-check`・`dist-rules-check`・`gpu-check-dry-check`・`reference_dry.py`（CI だけの道具を代役で端から端まで） |
+| 失敗・ページ・道具の検査 | `failure-check`・`reasons-check`（`SAID`）・`silent-check`（`SILENT`）・`updated-check`（`LATER`）/ `page-parts-check`・`models-check`・`docs-check`（README と一覧の最後の項目の家族・数）・`bos-check`・`bench.ts`・`kept-check`・`coi-js-check`・`python-archive-check`・`contracts-check` / `tree-check`・`imports-check`・`fakes-check`・`fetching-check`・`serving-check`・`conducting-check`・`workflows-check`・`dist-rules-check`・`gpu-check-dry-check`・`reference_dry.py`（CI だけの道具を代役で端から端まで） |
 | 回線の要る軽い組の検査 | `markdown-check.ts`（最新の marked を jsDelivr から）・`repository-check.ts`・`worker-fetches-check.ts`（jinja2 を jsDelivr から 1 回、検査の頭で: 作り物の時計の下で読ませると、30 秒の静けさが回線の 0.3 秒になって落ちた。T510 のレビュー） |
 | 塊の型の試験 | `test_blocks.py`・`saluki_form.py`・`test_kept.py`・`test_widened.py` / `tests/blocks-forward-check.ts`・`blocks-check.ts`（`blocks-model.ts`） |
 | Saluki の道具 | `reference_saluki.sh`・`page_saluki.sh`（段は各スクリプトの頭）・`saluki-kernel-bench.ts`（塊のカーネルの速さを測る唯一の道具） |
@@ -288,7 +288,7 @@
 
 ### 家族（config.json の `model_type`）を足す（変換器）
 
-変換器に新しい `model_type` を読ませるとき。`convert/families/` に `Family` を 1 つと `FAMILIES` に 1 行、試験は `test_families.py` の `FACTS` の 1 行。**`_replace` は GGUF の名前も引き継ぐ**。llama.cpp が値や並びを変えて書くテンソルは家族の `gguf_marks(config)` の表（印は `convert/gguf.py` の `MARKS`。名前を `endswith` で選ばない: 書き忘れるとエラーにならず値が違う）。全文は [docs/notes/adding/family.md](docs/notes/adding/family.md)。
+変換器に新しい `model_type` を読ませるとき。`convert/families/` に `Family` を 1 つと `FAMILIES` に 1 行、試験は `test_families.py` の `FACTS` の 1 行。**`_replace` は GGUF の名前も引き継ぐ**。llama.cpp が値や並びを変えて書くテンソルは家族の `gguf_marks(config)` の表（印は `convert/gguf.py` の `MARKS`。名前を `endswith` で選ばない: 書き忘れるとエラーにならず値が違う）。**家族の `title` は訪問者に見える**（T309: `python_facts.py` の `families` が書き出し、ページの一覧の最後の項目 `OTHER_REPOSITORY`（`src/page/repository.ts`）が組む。README の `?hf=` の文は手で書き、`tests/docs-check.ts` が表と違えば落とす: 家族を足したら README にも。README と `docs/architecture.md` の一覧の項目の数（HF・GGUF・Q8_0）も同じ検査が見るので、項目を足したら数も）。全文は [docs/notes/adding/family.md](docs/notes/adding/family.md)。
 
 ### アーキテクチャを足す（`LAYOUTS`）
 

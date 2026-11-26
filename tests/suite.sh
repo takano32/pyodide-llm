@@ -73,6 +73,9 @@ page_modules() {
   node tests/wake.ts
   node tests/summary-check.ts
   node tests/models-check.ts
+  # T309: the families the page and README say a repository may be of, and README's numbers of the list's entries,
+  # held to the converter's table (python_facts.py's families) and to the list
+  node tests/docs-check.ts
   # T367.1: where in a tree what is (tests/tree.ts, tests/tree.py and their one rule), on made-up trees of every layout
   # the tools are to read; and the one reader of how a file takes its neighbours' names (tests/imports.ts), on made-up texts
   node tests/tree-check.ts

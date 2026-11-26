@@ -56,7 +56,13 @@ def of_layout(arch):
     return LAYOUTS[arch]
 
 
+def titles(families):
+    """Their titles, each once, in their order: what a refusal names, and the page's list of what a repository may be of
+    (T309: python_facts.py writes those of FAMILIES for the page, and tests/docs-check.ts holds README's to them)."""
+    return list(dict.fromkeys(family.title for family in families))
+
+
 def named(families):
     """Their titles as a refusal lists them: "A, B and C"."""
-    titles = list(dict.fromkeys(family.title for family in families))
-    return f"{', '.join(titles[:-1])} and {titles[-1]}"
+    *rest, last = titles(families)
+    return f"{', '.join(rest)} and {last}" if rest else last

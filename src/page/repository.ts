@@ -9,6 +9,16 @@
 // Which requests a conversion then makes, and in which order, is the conduct's to say (src/python/convert/conduct.py):
 // what is decided here is the one name it is handed, hf.weights.
 import type { Model, Unlisted } from "./model.ts";
+import { PYTHON_FAMILIES } from "../runtime/built/facts/families.ts";
+
+/** T309: titles as the page lists them, "A, B or C" */
+export function anyOf(titles: readonly string[]) {
+  const rest = titles.slice(0, -1);
+  return rest.length ? `${rest.join(", ")} or ${titles.at(-1)}` : titles.join("");
+}
+/** The model list's last entry, which opens a repository nobody listed (T88): the families it may be of are the
+ * converter's (convert/families' FAMILIES, which python_facts.py writes for the page: T309, the owner, 2026-11-26) */
+export const OTHER_REPOSITORY = `Other repository… — any ${anyOf(PYTHON_FAMILIES)}`;
 
 /** The file the conversion of a repository asks for where nobody named one, and the index that stands for its shards. */
 export const SAFETENSORS = "model.safetensors";

@@ -28,6 +28,9 @@
 #   bytes          (src/models/memory.ts's ratios, T628.3) the bytes of each of those of a row of WEIGHTS weights,
 #                  its values and its scales: a ratio of two is a ratio of whole numbers
 #   weights        (src/models/memory.ts, T525) WEIGHTS, the weights of that row: bytes over it are bytes of a weight
+#   families       (src/page/repository.ts, T309) the titles of convert/families' FAMILIES, each once, in its order: the
+#                  families a repository nobody listed may be of, which the page names in the model list's last entry
+#                  (and tests/docs-check.ts finds in README's ?hf=)
 import base64
 import json
 import struct
@@ -37,6 +40,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "src" / "python"))
 from convert import conduct  # noqa: E402
+from convert.families import FAMILIES, titles  # noqa: E402
 from convert.version import CONVERTER  # noqa: E402
 from convert.superblocks import SUPERBLOCKS  # noqa: E402
 from engine import dtypes as D  # noqa: E402
@@ -70,7 +74,7 @@ def facts():
     return {"architectures": architectures(), "tokenizers": list(conduct.TOKENIZERS),
             "blocks": {name: [ggml, size] for name, (ggml, size, _) in SUPERBLOCKS.items()},
             "converter": CONVERTER, "madeup": madeup(), "quantized": list(D.QUANTIZED), "bytes": {name: bytes_of(name) for name in D.QUANTIZED},
-            "weights": WEIGHTS}
+            "weights": WEIGHTS, "families": titles(FAMILIES.values())}
 
 
 # /benchmark/'s made-up model: Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and
