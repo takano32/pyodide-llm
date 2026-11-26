@@ -34,7 +34,6 @@
 - T416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
 - T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
-- T457 [整理][WebGPU] `forward/gpuside.js` を分ける — 保留の残り
 - T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T278 [描画][モデル] 「Built with Llama」の表示 — 未着手
 - T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 端末の数字待ち
@@ -499,21 +498,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-11-26、持ち主の決め: float32 でも `rope_scaling` が効くように実装し、RoPE の表の出どころを抽象化する）。前の状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
 - **持ち主の決め（2026-11-26、選択肢で）**: 持ち主「追加実装して対応しない？抽象化してほしい」: 断る・無視するのでなく、float32 でも `rope_scaling` が効くように実装する。RoPE の表の出どころ（ファイルの表・options から作る表）を 1 つの部品に抽象化する（順の 5 の頭）。
-
-### T457 [整理][WebGPU] `forward/gpuside.js` を分ける — 状態: 保留の残り（T457.2: 覆す条件つきで分けない、区切りのまとめで持ち主に見せる。T457.1 は完了・レビュー済み。`gpuside.ts` は 2026-11-12 に 631 行で目安の内。2026-11-12 に台帳を見直した）。前の見出し: 進行中（2026-10-11、T378.2 から。規模 中）
-- 606 行で、1 つの関数が 480 行。状態に持ち主ができたので、置けるかの判定・Worker の始まりと知らせ・プロンプト・ステップに分けられる。
-- **子タスクの番号**（2026-10-30、取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位が 2 つ）: T457.1 置けるかの判定（`gpuFit()`）を自分のファイルに — 完了。T457.2 `gpuSide()` の閉包を、Worker の始まりと知らせ・プロンプト・ステップに分ける — 保留（下の T457.2 の項）。
-
-#### T457.1 `gpuFit()` を `forward/gpufit.ts` に — 状態: 完了（2026-10-30）
-- 動かすだけのコミット: `gpuFit()` と、`gpuSide()` と分け合う型（`Shape`・`Held`・`Placed`・`Taken`）・`onGpuAs`・`kindOf` を `forward/gpufit.ts` に（文は 1 字も変えず、`kindOf` に `export` を付けただけ）。`gpuside.ts` は 815 → 626 行。読む側（`engine.ts`・`kinds.ts`・`gpu-part-check`・`forward-modules-check` の `PARTS`・`reasons-check` の読み手の一覧）を新しい置き場に。続くコミットで 2 つのファイルの頭のコメントと AGENTS.md の一覧。
-- 同じの証明: 前後のビルドの `forward` の塊の最上位の文 141 が集合として同じ（`dist-same` は順の違いで「different」と言う: 動かした宣言が前に来る。比べの道具は `.tmp/` の捨て）。型検査・`forward-modules-check`・`gpu-part-check`・`reasons-check`・`imports-check`・`tree-check`・`updated-check`。CI を省いた。訳: 束の文が同じ。
-- レビュー（Sonnet high、shader-reviewer、2026-10-30）: OK。両方の import に余りも欠けも無く、検査の名指しも直っている。直したもの: 試験の 2 つのコメント（`layer-parts-check` の `kindOf()` の置き場、`gpu-part-check` の頭）が `gpuside` を言っていた、AGENTS.md の「種類の名前を比べない」に `gpufit.ts` を（同じ子タスクのコミット）。`gpuside.ts` は 626 行（記録の 627 は数え違い）。
-
-#### T457.2 `gpuSide()` の閉包を分ける — 状態: 保留（2026-10-30、取りまとめ役の決め）
-- 閉包の関数ごとに、どの状態の変数に触るかを数えた（`.tmp/` の捨ての道具）。プロンプトの道（`promptOnGpu`・`gpuKeysAndValues`・`prompt`）とステップの道（`generateMany`・`gpuSteps`）が、どちらも GPU の Worker・`gpuEnd`・`gpuSerial`・`written`・`gpuStateAt` を書く。`startGpu`・`stopGpu`・`release` はほぼ全部の状態に触る。
-- 分けると、何人もが書く状態を 1 つのオブジェクトにして渡すか、書くたびの出来事（「GPU が pos まで書いた」など）を 10 ほど足すことになる。前者は「設計の決まり」の「分け合うオブジェクトは無い・setter は無い」に反し、後者は 1 トークン・1 ブロックの道に関数の呼び出しを足す。T457.1 で `gpuside.ts` は 626 行になり、目安の 800 行の内。
-- 決め: 今は分けない。覆す条件: GPU の側にまた機能を足して 800 行を越えるとき、または状態の一部（例えばステップの時間と測り直しの数）を、ほかと書き合わない持ち主に出せると分かったとき。区切りのまとめで持ち主に見せる。
-- **持ち主の決め（2026-11-26、選択肢で）**: T457.2 は見送りでよい（分けない）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
 
 ### T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-11-26、持ち主の決め: About に 1 行）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
 - モデルの NOTICE.txt が求めている。Bonsai の 5 項目（1.7B・4B・8B・27B の 2 つ）。
