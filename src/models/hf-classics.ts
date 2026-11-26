@@ -8,8 +8,10 @@ import { ggufOf, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
 
 export const HF_CLASSICS: Entry[] = [
-  // English. Pythia is the same design at five sizes: a ladder for measuring (T80)
-  { group: "hf", id: "hf-pythia-70m", name: "EleutherAI Pythia 70M", note: "English · fetches 77 MB (GGUF) → int8 96 MB", japanese: false, converted: 96e6,
+  // English. Pythia is the same design at five sizes: a ladder for measuring (T80). T688: converted is the bytes the
+  // converter opens its checkpoint with (its sink's size); the 70M's, 160M's and 410M's were Hugging Face's count of
+  // the safetensors' parameters, the causal masks (attention.bias, a byte for each of 2048 × 2048 a layer) among them
+  { group: "hf", id: "hf-pythia-70m", name: "EleutherAI Pythia 70M", note: "English · fetches 77 MB (GGUF) → int8 79 MB", japanese: false, converted: 79e6,
     ...ggufOf("mradermacher/pythia-70m-deduped-GGUF", "de94e2866e79534ca28e66593069e941988ac217", "pythia-70m-deduped.Q8_0.gguf",
     "EleutherAI/pythia-70m-deduped", "e93a9faa9c77e5d09219f6c868bfc7a1bd65593c"),
     download: 76722400,
@@ -19,33 +21,33 @@ export const HF_CLASSICS: Entry[] = [
   // model and its license are HuggingFaceTB's (`original`). Its BOS is <|im_start|> itself (bos_token_id 1), which the page
   // begins every text with: the format begins after it, where CHATML here made two (T250's review, tests/format_check.py's
   // same_ids(): its own answers to five questions were 5.5% higher in perplexity, the likeliest next token differed at 9 in 100)
-  { group: "hf", id: "hf-smollm2-135m-instruct", name: "Hugging Face SmolLM2 135M Instruct", note: "answers instructions · English · fetches 145 MB (GGUF) → int8 145 MB", japanese: false, converted: 145e6,
+  { group: "hf", id: "hf-smollm2-135m-instruct", name: "Hugging Face SmolLM2 135M Instruct", note: "answers instructions · English · fetches 145 MB (GGUF) → int8 151 MB", japanese: false, converted: 151e6,
     original: "HuggingFaceTB/SmolLM2-135M-Instruct",
     hf: { repo: "bartowski/SmolLM2-135M-Instruct-GGUF", revision: "09816acd5d99df7be770d85ea30822623dab342c",
           weights: "SmolLM2-135M-Instruct-Q8_0.gguf" }, download: 144811360,
     conversion: {}, options: chatml, generation: JAPANESE_SAMPLING, template: CHATML_AFTER_START,
     ...ASKED_ENGLISH },
-  { group: "hf", id: "hf-pythia-160m", name: "EleutherAI Pythia 160M", note: "English · fetches 175 MB (GGUF) → int8 213 MB", japanese: false, converted: 213e6,
+  { group: "hf", id: "hf-pythia-160m", name: "EleutherAI Pythia 160M", note: "English · fetches 175 MB (GGUF) → int8 183 MB", japanese: false, converted: 183e6,
     ...ggufOf("mradermacher/pythia-160m-GGUF", "7a79d8f693376ce9f1ba21e2c0586c3bc874e68c", "pythia-160m.Q8_0.gguf",
     "EleutherAI/pythia-160m", "50f5173d932e8e61f858120bcb800b97af589f46"),
     download: 174602272,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, ...STORY_ENGLISH },
-  { group: "hf", id: "hf-gpt2", name: "OpenAI GPT-2 124M", note: "English · fetches 178 MB (GGUF) → int8 157 MB", japanese: false, converted: 157e6,
+  { group: "hf", id: "hf-gpt2", name: "OpenAI GPT-2 124M", note: "English · fetches 178 MB (GGUF) → int8 140 MB", japanese: false, converted: 140e6,
     ...ggufOf("mradermacher/gpt2-GGUF", "0cda0c2b1459ccd32256c6ddde9d230934112c1c", "gpt2.Q8_0.gguf",
     "openai-community/gpt2", "607a30d783dfa663caf39e06633721c8d4cfcd7e"),
     download: 177669376,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, ...STORY_ENGLISH },
-  { group: "hf", id: "hf-smollm2-360m-instruct", name: "Hugging Face SmolLM2 360M Instruct", note: "answers instructions · English · fetches 386 MB (GGUF) → int8 390 MB", japanese: false, converted: 390e6,
+  { group: "hf", id: "hf-smollm2-360m-instruct", name: "Hugging Face SmolLM2 360M Instruct", note: "answers instructions · English · fetches 386 MB (GGUF) → int8 407 MB", japanese: false, converted: 407e6,
     original: "HuggingFaceTB/SmolLM2-360M-Instruct",
     hf: { repo: "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF", revision: "593b5a2e04c8f3e4ee880263f93e0bd2901ad47f", weights: "smollm2-360m-instruct-q8_0.gguf" }, download: 386404992,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING,
     ...ASKED_ENGLISH },
-  { group: "hf", id: "hf-pythia-410m", name: "EleutherAI Pythia 410M", note: "English · fetches 433 MB (GGUF) → int8 506 MB", japanese: false, converted: 506e6,
+  { group: "hf", id: "hf-pythia-410m", name: "EleutherAI Pythia 410M", note: "English · fetches 433 MB (GGUF) → int8 457 MB", japanese: false, converted: 457e6,
     ...ggufOf("mradermacher/pythia-410m-GGUF", "29569dd6a296a653472b3086dbc8ded8479e9707", "pythia-410m.Q8_0.gguf",
     "EleutherAI/pythia-410m", "9879c9b5f8bea9051dcb0e68dff21493d67e9d4f"),
     download: 433397664,
     conversion: {}, options: {}, generation: JAPANESE_SAMPLING, ...STORY_ENGLISH },
-  { group: "hf", id: "hf-qwen2.5-coder-0.5b-instruct", name: "Alibaba Qwen2.5 Coder 0.5B Instruct", note: "writes code · English · fetches 531 MB (GGUF) → int8 545 MB", japanese: false, converted: 545e6,
+  { group: "hf", id: "hf-qwen2.5-coder-0.5b-instruct", name: "Alibaba Qwen2.5 Coder 0.5B Instruct", note: "writes code · English · fetches 531 MB (GGUF) → int8 556 MB", japanese: false, converted: 556e6,
     original: "Qwen/Qwen2.5-Coder-0.5B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF", revision: "69a2c192eed24297fb09a34d8ba948b8624cc3e2", weights: "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf" }, download: 531068576,
     conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: JAPANESE_SAMPLING,

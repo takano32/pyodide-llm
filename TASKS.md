@@ -103,7 +103,7 @@
 - T685 [整理][文書] 持ち主が決めた文面のうち、完了済みのタスクの分を入れる — 未着手
 - T686 [性能][CPU] x86-64 の 3 値のカーネルの int16 の和の形を、端末で測って選ぶ — 未着手
 - T687 [性能][CPU] arm64 の Firefox のための 3 値の表の形 — 未着手
-- T688 [整理][モデル] Pythia 70M・160M・410M の `converted` を実際の数に — 未着手
+- T688 [整理][モデル] Pythia 70M・160M・410M の `converted` を実際の数に — 反映済み
 - T689 [整理][解析分割] Shisa V2.1 unphi4 14B の `stripped: {}` を外して本物の ID に — 未着手
 - T690 [運用][遠隔試験] `ci.ts run` が dispatch の直後の 404 で「no such run」と終わる — 反映済み
 - T691 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面の残り — 未着手
@@ -1095,9 +1095,15 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 持ち主の決め（2026-11-26、選択肢で）: T288 の (2) を入れる。BitNet 流の表の形 `tl`（重みの並びがファイルの形式から変わる）。
 - 取りまとめ役の読み: 的の Android の Chrome（arm64 の V8 で 0.94〜1.01 倍）を遅くしないよう、変換は訪問者の端末でするので、端末で測って速い端末だけがその並びで変換する形にする。材料（T288）: `tl` は Neoverse-N2 の Firefox で 1.81 倍。ファイルの形式が変わるので `CONVERTER` と保存・GPU の上げ方・埋め込みの行の読みに当たる。順の 7 の最後。
 
-### T688 [整理][モデル] Pythia 70M・160M・410M の `converted` を実際の数に — 状態: 未着手（2026-11-26、持ち主の決め（T84 のレビューから）。規模 小）
+### T688 [整理][モデル] Pythia 70M・160M・410M の `converted` を実際の数に — 状態: 反映済み（2026-11-26、持ち主の決め（T84 のレビューから）。規模 小）
 - 持ち主の決め（2026-11-26、選択肢で）: 3 つの `converted` を実際の数に直す。ずれた訳も調べ、ほかの項目も見る。
 - 材料（T84）: 3 つの `converted` は実際より 17・30・49 MB 大きい（2026-11-13 の再開の所の記録）。順の 2。
+- **実数の取り方**: 変換器が sink を開く大きさ（`Writer` のチェックポイントのバイト数）を、`tests/conducting.py` の `converted(Heads.of(…), hf, weights=False, dtype=…, sink=…)` で `open(size, …)` を覚える sink から取った（重みは取らず、config・トークナイザ・GGUF の頭だけ。dtype は項目の `conversion.dtype`・`weights`、無ければ int8。`max_seq_len` は既定の 4096 でページと同じ）。捨ての道具は `.tmp/t688/sizes.py`（台帳だけ: リポジトリに足していない）。手順は `docs/notes/adding/models-list.md` の 1 行に足した。
+- **ずれた訳**: 3 つの数は HF の API の safetensors のパラメータの数（`total`）を 1 バイトずつ数えたものだった（70M 95,592,496・160M 212,654,688・410M 505,997,504 → 96・213・506 MB。2026-09-21 の T72・T80 の、まだ safetensors から変換していた頃の一覧）。その数は F16 の重みのほかに、層ごとの因果の mask `attention.bias`（U8 の 2048 × 2048: 70M 25.2 M・160M 50.3 M・410M 100.7 M）も数える。変換器は mask を書かず、int8 は 1 重み 1.125 バイト（32 個に float32 の尺度）。T136（2026-09-27）で GGUF に移したときも数は直されなかった。1B・1.4B は 1.1・1.6 GB の丸めの内（変換器 1139.5・1593.3 MB）。
+- **直した数**（変換器のバイト数 → 一覧の新しい値、前の値）: Pythia 70M 79,347,740 → 79 MB（96）、160M 182,962,204 → 183 MB（213）、410M 456,925,212 → 457 MB（506）。note の「int8 N MB」も（`models-check` が欄と突き合わせる）。`kernels/README.md` の梯子の節に訳を書いた（表の int8 MB の列は run の時の値のまま）。
+- **ほかの項目**（取りまとめ役の決め）: HF の項目 216 を全部、同じ道で数えた（手元、約 25 分、取得は頭だけ）。丸め（1 GB 未満は 1 MB、それより上は 0.1 GB）の外は 27 で、うち: (a) **同じ頃（2026-09-21、T63〜T65・T72）に書いた小さい 7 つも実際と違ったので直した**（訳はそれぞれ違い、HF の数と合わない: その頃の変換器の形の数と読む。確かめていない）: OpenAI GPT-2 157 → 140（変換器 140.3 MB）、rinna japanese-gpt2 small 130 → 125（124.6）、rinna japanese-gpt-neox small 193 → 173（172.8）、SmolLM2 135M 145 → 151（151.4）、SmolLM2 360M 390 → 407（407.2）、Qwen2.5 0.5B Instruct と Qwen2.5 Coder 0.5B Instruct 545 → 556（556.0）。(b) **訳のあるずれで直さない**: llm-jp-3 150M（float16）は `loaded` が 3 倍（広げる分、わざと）、Gemma 4 の E2B・E4B は `loaded` が層ごとの埋め込みの表を除く（T525、わざと）。(c) **直さず残す 7B の 11 項目**: Mistral 7B 系（EvoLLM-JP 2 つ・ArrowPro・Vecteus・Umievo・Japanese StableLM gamma 2 つ・Mistral 7B Instruct v0.2・Zephyr）は変換器 8147.7 MB を 8.2 GB と、Oumuamua 7B v2・Swallow-MS 7B は 8247.2 MB を 8.3 GB と書く（0.6% 上、丸めの向きだけ。Mistral 7B Instruct v0.3 の 8154.8 は 8.2 で丸めの内）。8.1・8.2 に直すかは小さいので残した（直すなら note と並びが 1 回変わる）。ほかの 189 は丸めの内。
+- **`converted` を読む所**: `modelBytes()`（`src/models/memory.ts`）だけで、一覧の並び（T128 の軽い → 重い）・メモリの警告と失敗の文（`memoryWarning()`・`memoryFailure()`）・6 ビットにするかの線（`weightsFor()`）・「desktop only」「Chrome and Firefox」（`devicesOf()`）が読む。進みの表示と取得のバッファは `download`・`bytes` で、`converted` を読まない（落とし穴の「モデルのサイズが変わったら `bytes` も直す」とは別の欄）。直した 10 項目はどれも 600 MB 未満（言う端末のメモリが 1 GB 以下なら 6 ビットの線にかかりうる）。**並びは変わる**: GPT-2 が Pythia 160M と SmolLM2 135M の前に、SmolLM2 360M が 1 つ後ろに（英語の HF のグループの中、軽い順のとおり）。
+- 確かめ: `models-check`・`npm run types`・`npm run build && node tests/dist-check.ts`・網 `node tests/unchanged.ts models`（違うのは `MODELS` と 10 項目の `modelBytes`・`memoryFailure` だけ: 予定どおり）・軽い組。**CI を省いた。訳**: 一覧の数と note だけで、触った所を手元の試験が全部踏む。
 
 ### T689 [整理][解析分割] Shisa V2.1 unphi4 14B の `stripped: {}` を外して本物の ID に — 状態: 未着手（2026-11-26、持ち主の決め（T258.1 の答え）。規模 小）
 - 持ち主の決め（2026-11-26、選択肢で）: 項目の `stripped: {}` を外し、送る ID を本物に合わせる。`format_check.py` の `KNOWN` の `unstripped` も外す。外した後に書かせて読む。

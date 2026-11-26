@@ -12,7 +12,7 @@ const table = ladderMarkdown([run("hf-pythia-160m", 60), run("tiny-lm", 400), ru
   run("hf-pythia-70m", 120), run("hf-pythia-1.4b", 5, { load: null, heapMB: null, meta: "x · 9 tokens · 5 tok/s · int8" })]);
 const rows = table.split("\n").filter((line) => line.startsWith("| EleutherAI Pythia"));
 assert.deepEqual(rows.map((row) => row.split(" | ")[0]), ["| EleutherAI Pythia 70M", "| EleutherAI Pythia 160M", "| EleutherAI Pythia 1.4B"], "in the order of size, only the ladder");
-assert.ok(rows[0].includes("| 96 | 20.0 | 15.0 | 6.0 | 30 | 256 | 120.0 | 4 | 11.52 | 300 |  |"), rows[0]);  // the last run of a model wins
+assert.ok(rows[0].includes("| 79 | 20.0 | 15.0 | 6.0 | 30 | 256 | 120.0 | 4 | 9.48 | 300 |  |"), rows[0]);  // the last run of a model wins
 assert.ok(rows[2].includes("| 1600 | 20.0 |  |  |  | 9 | 5.0 | 1 | 8.00 |  |  |"), rows[2]);  // missing numbers stay empty; one thread unsaid
 assert.ok(!table.includes("undefined") && !table.includes("NaN") && !table.includes("null"), table);
 assert.ok(table.includes("chromium 148.0; linux x64, AMD EPYC 7763 64-Core Processor; on the CPU (no WebGPU)."), table);

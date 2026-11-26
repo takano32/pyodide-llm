@@ -288,8 +288,8 @@ One design at five sizes (Pythia 70M to 1.4B, Q8_0 GGUFs that the page fetches a
 on the deployed site in Playwright's Chromium 156.0.8078.4, the five in one job after one another (models.yml, so
 one runner and one CPU for the five), the same prompt (tests/e2e.ts's) and the same settings (`?threads=4&seed=1`,
 temperature 0.7, at most 256 tokens), on the CPU: the runners have no GPU. Made by `node tests/ladder.ts
-<results.jsonl …>`. int8 MB is the list's `converted` (rounded: 1.1 and 1.6 GB for the two largest; and it is above the int8 file's own
-bytes for the three smaller, see below); "GB/s of weights" is int8 MB × tok/s, the weights read per second if every
+<results.jsonl …>`. int8 MB is the list's `converted` as it was then (rounded: 1.1 and 1.6 GB for the two largest; and it was above the
+int8 file's own bytes for the three smaller, see below); "GB/s of weights" is int8 MB × tok/s, the weights read per second if every
 token reads the whole file once (it does not: below); "fetch and convert" is the wall
 time of both (they overlap), "of which converting" the time Python was converting; the memory is the WebAssembly
 memory's size once ready. One run of each, so a cell moves by run (below).
@@ -341,10 +341,12 @@ the small ones are further from reading at the machine's rate than the large one
 arm64: 21 to 25 against 39). Why is not measured: a cost per layer or per phase that does not grow with the bytes
 (the threads' hand-over, the calls from Python, the sampling: AGENTS.md puts the part outside forward.ts at 16 to 20%
 for tiny-lm) would do it, and the arm64 step between 410M and 1B is where the width goes from 1024 to 2048. The list's
-`converted` is 96, 213 and 506 MB for the three smaller, 17, 30 and 49 MB over the file's rows (the 1B's and 1.4B's
-are within their rounding); the GGUFs the page fetches are 76.7 and 175 MB for the first two, which a float32 scale
-instead of float16 puts at 81 and 185 MB as int8, so the rows are the better count; what `converted` counts beyond
-them is not known.
+`converted` was 96, 213 and 506 MB for the three smaller, 17, 30 and 49 MB over the file's rows (the 1B's and 1.4B's
+are within their rounding). T688 found why: those three were Hugging Face's count of the safetensors' parameters at a
+byte each, which counts the causal masks too (`attention.bias`, a U8 of 2048 × 2048 a layer: 25.2, 50.3 and 100.7
+M of them), and the converter writes no mask. The converter's own checkpoint is 79,347,740, 182,962,204 and
+456,925,212 bytes (the size it opens its sink with, from the GGUFs' heads), the rows above, and `converted` is now
+79, 183 and 457 MB.
 
 Unexplained in these runs: the 70M on x86-64 ran on one thread although the URL said `?threads=4` (its status line
 names no threads; the page was cross-origin isolated; the console was not kept). It did not happen again in 28 loads of
