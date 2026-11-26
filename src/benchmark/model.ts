@@ -1,6 +1,6 @@
 // The section "Model": the model page's worker itself, the page's path timed and the rounds (T184, T190).
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
-import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable, drift } from "../bench.ts";
+import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, modelResult } from "../bench.ts";
 import { BASE, $, parameters } from "./dom.ts";
 import type { Measured, Result } from "../bench.ts";
 import { staged, worker, model, workerFailed } from "./section.ts";
@@ -14,8 +14,7 @@ import type { Bench, ModelWorker, Paths, Progress, Ready, Round, ToWorker } from
 type Answered = { init: Ready; paths: Paths; bench: Bench };
 type Unanswered = { error: string };
 type Heard = Answered[keyof Answered] | Unanswered;
-// what the model section measured, under the name of the model it ran (the choice may change after)
-// said (T227's review): what the page's path says went wrong in its first line (src/bench.ts's pathWarnings()), for the warnings
+// what the model section measured, under the name of the model it ran (the choice may change after: src/bench/model.ts's modelResult())
 // (a round of ?bench=1 as src/bench/rounds.ts lists it: the contract's Round)
 export let measured: Measured | undefined;
 export async function modelSection(): Promise<Result<"model">> {
@@ -92,11 +91,9 @@ export async function modelSection(): Promise<Result<"model">> {
     const answer = await request({ type: "bench", model: entry, load: 1, rounds: asked, prompt, steps: 64 });
     if ("error" in answer) return { status: "error", markdown: answer.error };
     if (siteUpdated) return { status: "error", markdown: UPDATED };
-    const table = pathTable(paths, entry.name);
-    measured = { name: entry.name, rows: answer.rows, pyodide: answer.pyodide, paths: table, said: pathWarnings(paths) };
-    const lines = [...roundsTable(answer.rows), ...[drift(answer.rows)].filter(Boolean).flatMap((line) => ["", line])];
-    return { status: "ok", data: { rows: answer.rows, paths },
-             markdown: `${entry.name} · Pyodide ${answer.pyodide}\n\n${lines.join("\n")}\n\n${table}` };
+    const made = modelResult(entry.name, answer.pyodide, answer.rows, paths);
+    measured = made.measured;
+    return made.result;
   } finally {
     w.terminate();
   }

@@ -55,8 +55,9 @@ export function warnings(sections: Written[]): string[] {
       } else if (lines[i + 1]?.startsWith("|---")) head = cellsOf(line);
       else if (marked(line)) add(cellsOf(line).map((cell, j) => cell && `${head[j] ? `${head[j]}: ` : ""}${cell}`).filter(Boolean).join("; "));
     });
-    // a section the page calls WRONG or failed with none of the above: its state at the least
-    if (out.length === before && (status === "wrong" || status === "error")) add(STATE[status].said, 0);
+    // a section the page calls WRONG or failed with none of the above: its state at the least, in the word its title
+    // has in the report ("GPU: WRONG", T301)
+    if (out.length === before && (status === "wrong" || status === "error")) add(STATE[status].shown, 0);
   }
   // (a sort keeps the order of equals: the sections' own)
   return [...new Set(out.sort((a, b) => a.rank - b.rank).map(({ text }) => text))];
@@ -67,6 +68,8 @@ export function warnings(sections: Written[]): string[] {
 export function warningsBlock(warned: string[], kept = warned.length): string {
   if (!warned.length) return "";
   const rest = warned.length - kept;
-  const more = rest ? [`- ${kept ? `… and ${rest} more` : `${rest} of them`}, in the whole report below`] : [];
+  // (T301: where none of them has room, the line is the only one under the heading, and says what it counts)
+  const more = !rest ? [] : [`- ${kept ? `… and ${rest} more, in the whole report below`
+    : rest === 1 ? "1 warning, in the whole report below" : `${rest} warnings, all in the whole report below`}`];
   return ["#### Warnings", "", ...warned.slice(0, kept).map((line) => `- ${line}`), ...more].join("\n");
 }

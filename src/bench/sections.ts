@@ -21,8 +21,8 @@ export type Result<Section extends Name = Name> = { status: "ok" | "none" | "wro
 // what the sections found, by their names
 export type Results = { [Section in Name]?: Result<Section> };
 
-// the words of a state: shown, on the page's label and in the report's titles; said, after "the CPU section " (T157:
-// why the GPU has no CPU beside it) and as a warning of a section that failed as a whole (T227)
+// the words of a state: shown, on the page's label, in the report's titles and as the warning of a section that is WRONG
+// or failed with nothing else to say (T227, T301); said, after "the CPU section " (T157: why the GPU has no CPU beside it)
 export const STATE = { ok: { shown: "done" }, none: { shown: "not in this browser", said: "found nothing to run on here" },
   wrong: { shown: "WRONG", said: "computed something wrong" }, error: { shown: "failed", said: "failed" } };
 

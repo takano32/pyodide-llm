@@ -1,6 +1,7 @@
 // The section "Page memory" (T173), which may end the tab: "Run all" leaves it out.
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
-import { memoryResult, holdMemory, memoryLimit } from "./page-memory.ts";
+import { holdMemory, memoryLimit } from "./page-memory.ts";
+import { memoryResult } from "../bench.ts";
 import { parameters } from "./dom.ts";
 import type { Result } from "../bench.ts";
 import { staged, ask, worker } from "./section.ts";

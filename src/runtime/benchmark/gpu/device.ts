@@ -94,11 +94,15 @@ const SMALL_PER_LAYER = 7;
 const PROMPT_MODEL: ModelShape = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8 };
 const matrixBytes = ([rows, n]: Shape) => rows * n + (rows * n / shared.GROUP) * 4;
 
+// the adapter, asked for once (null: navigator.gpu gave none, which is no GPU here and no failure: T301)
+async function adapterHere(): Promise<GPUAdapter | null> {
+  shared.adapter ??= await navigator.gpu.requestAdapter({ powerPreference: "high-performance" }) as GPUAdapter;
+  return shared.adapter ?? null;
+}
 async function gpu(): Promise<GPUDevice> {
   if (shared.device) return shared.device;
   if (!self.navigator?.gpu) throw new Error("no navigator.gpu in a worker here");
-  shared.adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" }) as GPUAdapter;
-  if (!shared.adapter) throw new Error("navigator.gpu gave no adapter");
+  if (!(await adapterHere())) throw new Error("navigator.gpu gave no adapter");
   shared.fallback = Boolean(shared.adapter.info?.isFallbackAdapter ?? (shared.adapter as Older).isFallbackAdapter);
   // as much of a buffer and of a binding as the adapter allows: the weights are the point. T146's tiled shaders use
   // shader-f16 and subgroups where the adapter has them (asked for only then: a device refuses a feature it lacks)
@@ -116,7 +120,9 @@ async function gpu(): Promise<GPUDevice> {
 
 async function info(): Promise<GpuInfo> {
   const found: GpuInfo = { worker: Boolean(self.navigator?.gpu) };
-  if (!found.worker) return found;
+  // T301: no adapter is answered (the section is then "not in this browser"); what fails past it (a device refused)
+  // is thrown, and the section says it failed
+  if (!found.worker || !(await adapterHere())) return found;
   await gpu();
   const about = shared.adapter.info ?? {};
   Object.assign(found, {

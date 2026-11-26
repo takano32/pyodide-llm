@@ -70,7 +70,8 @@ export function cpuTable(r: CpuMeasured): string[] {
     "So a prompt can pass 100% of that loop. Its bound lies between that loop and relaxed_dot on registers alone, " +
     "and below the second by the tile's own work: each row, token and group's sum is turned, scaled and added (on arm64, 32 of the 96 vector instructions a tile spends on a group are dots).", "",
     "| software threads | ms a token | GB/s | tok/s | ms a token of a prompt, 16 at once | G MAC/s of the prompt |", "|---:|---:|---:|---:|---:|---:|",
-    ...r.rows.map((row) => (row.none ? `| ${row.asked} | ${tableCell(row.none)} | | | | |`
+    // (T301: a count the browser did not start is a row that was skipped, which the report's warnings list)
+    ...r.rows.map((row) => (row.none ? `| ${row.asked} | ${tableCell(`skipped: ${row.none} (it started ${row.threads})`)} | | | | |`
       : `| ${row.threads} | ${number(row.msPerToken)} | ${number(row.GBps)}${share(read(row), readAt(row.threads))} | ${number(1000 / row.msPerToken!)} | ` +
         `${number(row.promptMsPerToken, 2)} | ${number(promptGMACs(row))}${row.threads === 1 ? share(promptGMACs(row), dot) : ""} |`))];
   lines.push("", "**Ceilings** (T163): loops of one kind of instruction, each timed as 2n passes less n. " +

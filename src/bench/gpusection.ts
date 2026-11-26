@@ -72,12 +72,13 @@ export function gpuKept(found: GpuFound, key: GpuStepKey, step: Step<unknown>): 
   else found[key] = step as Step<never>;
 }
 
-/** Why the GPU section does not run here, from the adapter's step (its result, or what failed); undefined where it runs. */
+/** Why the GPU section does not run here, from the adapter's step: no WebGPU or no adapter is "none" (not in this
+ * browser), and a step that failed (a device refused, T301) is the section's failure; undefined where it runs. */
 export function gpuNone(adapter: Step<GpuInfo>): Result<"gpu"> | undefined {
   const info = adapter.result;
+  if (adapter.error) return { status: "error", markdown: adapter.error };
   if (info?.worker && info.adapter) return undefined;
-  const why = adapter.error ?? (info?.worker ? "navigator.gpu gave no adapter" : REASONS.noWebGpu);
-  return { status: "none", markdown: why };
+  return { status: "none", markdown: info?.worker ? "navigator.gpu gave no adapter" : REASONS.noWebGpu };
 }
 
 /** The GPU section from its steps: WRONG where the check found a shader wrong, failed where the shaders could not be

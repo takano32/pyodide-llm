@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { benchMarkdown, cpuBaseline, cpuSummary, cpuTable, deviceSummary, gpuSummary, lineSummary, shortReport, generateTable, layerStepsTable,
          layerTable, matVecTable, pathTable, reportTooLong, reportUrl, tableCell, tokenTable, checkVerdict, pathWarnings, warnings, warningsBlock,
          SECTIONS, STATE, TITLES, deviceResult, cpuResult as cpuOf, DOWNLOAD_MBPS, storageNone, storageResult, lineResult, overheadMarkdown,
-         ceilingsMarkdown, promptMarkdown, BRIDGE_ROUNDS, gpuNone, gpuResult, gpuMarkdown, reportOf } from "../../src/bench.ts";
+         ceilingsMarkdown, promptMarkdown, BRIDGE_ROUNDS, gpuNone, gpuResult, gpuMarkdown, reportOf, modelResult, roundsTable, drift } from "../../src/bench.ts";
 import fs from "node:fs";
 import { MODELS } from "../../src/models.ts";
 import { rows, pageText } from "./rounds.ts";
@@ -116,7 +116,9 @@ assert.notEqual(gpuMarkdown(gpuFound, noBridge, undefined, undefined).markdown, 
 // no GPU here: why, in the words the page says
 assert.deepEqual(gpuNone({ name: "the adapter", result: { worker: false } }), { status: "none", markdown: "no WebGPU in a worker here" });
 assert.deepEqual(gpuNone({ name: "the adapter", result: { worker: true } }), { status: "none", markdown: "navigator.gpu gave no adapter" });
-assert.deepEqual(gpuNone({ name: "the adapter", error: "boom" }), { status: "none", markdown: "boom" });
+// T301: a step that failed (a device refused) is the section's failure, not "not in this browser"
+assert.deepEqual(gpuNone({ name: "the adapter", error: "boom" }), { status: "error", markdown: "boom" });
+assert.deepEqual(warnings([{ title: "GPU", ...gpuNone({ name: "the adapter", error: "OperationError: refused" })! }]), ["GPU: failed: OperationError: refused"]);
 assert.equal(gpuNone(gpuAdapter), undefined);
 // the tables of the GPU's besides, ceilings and prompt, each not measured where its step failed or did not run
 assert.deepEqual(overheadMarkdown({ name: "x", error: "a | b" }), ["**Besides the weights**: failed: a | b"]);
@@ -136,7 +138,11 @@ assert.ok(promptMarkdown(aPrompt, aCheck, aCeilings, aBaseline, { lost: "x" }, c
 // the whole report (reportOf()): the model's table on top, the warnings of the head and the sections, a section with its
 // state where it did not measure, and the summary in the link where the whole is too long (T185, T192)
 const aResults = { model: { status: "ok", markdown: "THE MODEL SECTION'S OWN TABLE" }, device: deviceResult({ result: aDevice }), cpu: cpuNotFinite, gpu: gpuWrong, storage: storageResult({ error: refusal }), line: lineResult({ result: aLine }) };
-const aMeasured = { name: "tiny-lm 29M", rows, pyodide: "314.0.7", paths: pathTable(real, "tiny-lm 29M"), said: pathWarnings(real) };
+// (T301: the model section's result and what the head holds of it are modelResult()'s, from the worker's answers)
+const aModel = modelResult("tiny-lm 29M", "314.0.7", rows, real), aMeasured = aModel.measured;
+assert.deepEqual(aMeasured, { name: "tiny-lm 29M", rows, pyodide: "314.0.7", paths: pathTable(real, "tiny-lm 29M"), said: pathWarnings(real) });
+assert.deepEqual(aModel.result, { status: "ok", data: { rows, paths: real },
+  markdown: `tiny-lm 29M · Pyodide 314.0.7\n\n${[...roundsTable(rows), ...[drift(rows)].filter(Boolean).flatMap((line) => ["", line])].join("\n")}\n\n${aMeasured.paths}` });
 const theReport = reportOf({ results: aResults, measured: aMeasured, environment: android, hidden: "" });
 assert.ok(theReport.markdown.startsWith(`${benchMarkdown(rows, android)}\n\n${aMeasured.paths}\n\n`), theReport.markdown.slice(0, 400));
 const wholeWarned = warnings([{ title: "Model", markdown: [benchMarkdown(rows, android), aMeasured.paths].join("\n\n"), said: aMeasured.said },
@@ -207,7 +213,7 @@ for (const [what, pattern] of [
   ["the GPU section's steps go to gpuResult() with the CPU section's result", /return gpuResult\(found, bridge, lost, results\.cpu\);/],
   // (T643.14: as a new result, which running.ts holds in its place)
   ["and are written again after the CPU section", /const rewritten = \{ \.\.\.g, \.\.\.gpuMarkdown\(g\.data\.found, g\.data\.bridge, g\.data\.lost, results\.cpu\) \};\s*gpuRewritten\(rewritten\);/],
-  ["the model section hands over what its path says", /said: pathWarnings\(paths\)/],
+  ["the model section's result and what it hands over are modelResult()'s", /const made = modelResult\(entry\.name, answer\.pyodide, answer\.rows, paths\);\s*measured = made\.measured;\s*return made\.result;/],
   ["the report is reportOf()'s", /reportOf\(\{ results, measured, environment, hidden: hiddenLine\(awake\.hidden\(\)\) \}\)/],
   // T242's review: the worker makes its shared memory for the loads it is told follow, without a gigabyte for a next model
   // (the Windows WebKit of bench.yml went down in that gigabyte, one run in four), and only this page's init says them

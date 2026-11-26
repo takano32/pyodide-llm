@@ -9,7 +9,7 @@ import { deviceSummary, cpuSummary, storageSummary, lineSummary, gpuSummary } fr
 import { warnings, warningsBlock } from "./warnings.ts";
 import { shortReport, reportUrl, reportTooLong } from "./report.ts";
 import { SECTIONS, STATE, TITLES } from "./sections.ts";
-import { memorySummary } from "../benchmark/page-memory.ts";
+import { memorySummary } from "./memory.ts";
 import type { Name, Result, Results, SectionData } from "./sections.ts";
 import type { Environment } from "./rounds.ts";
 import type { BenchRow } from "../runtime/contracts/messages.ts";

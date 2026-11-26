@@ -4,7 +4,7 @@
 // T353: this file is the window: every name it exported as one file, from the modules of bench/, a section each: rounds.js
 // (the rounds and their table), report.js (the issue's body and link, the short report, reading reports back), warnings.js
 // (what came out wrong, at the report's head), cpu.js, gpu.js, layersteps.js and generate.js (the CPU's and the GPU's
-// tables; T270: ternary.js, the GPU's ternary weights; T263: nan.js, the GPU's NaN and infinities), path.js (the page's own path), summary.js (a line a section) and cells.js (what the tables share).
+// tables; T270: ternary.js, the GPU's ternary weights; T263: nan.js, the GPU's NaN and infinities), path.js (the page's own path), model.js and memory.js (T301: the model's and the page memory's sections), summary.js (a line a section) and cells.js (what the tables share).
 export { threadsOf, times, timesFaster, noRatios, tableCell, cellsOf, unmeasured } from "./bench/cells.ts";
 export { ROUNDS, FULL_ROUNDS, MEMORY_UNSAID, DRIFT_LINE, roundsHere, environmentOf, benchMarkdown, roundsTable, drift } from "./bench/rounds.ts";
 export { threadCounts, cpuTable, kernelsTable, cpuResult, CPU_SPEED_KEY, USAGE_KEY, USAGE_DECAY, usedAfter, cpuBaseline, cpuSpeed } from "./bench/cpu.ts";
@@ -22,6 +22,8 @@ export { deviceSummary, cpuSummary, gpuSummary, storageSummary, lineSummary } fr
 export { SECTIONS, STATE, TITLES } from "./bench/sections.ts";
 export type { Name, Result, Results, SectionData } from "./bench/sections.ts";
 export { deviceResult } from "./bench/device.ts";
+export { modelResult } from "./bench/model.ts";
+export { memoryResult, memorySummary } from "./bench/memory.ts";
 export { DOWNLOAD_MBPS, storageNone, storageResult, lineResult } from "./bench/storage.ts";
 export { overheadMarkdown, ceilingsMarkdown, promptMarkdown } from "./bench/prompt.ts";
 export { BRIDGE_ROUNDS, gpuPlan, gpuKept, gpuNone, gpuResult, gpuMarkdown } from "./bench/gpusection.ts";

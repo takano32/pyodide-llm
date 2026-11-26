@@ -2,7 +2,8 @@
 //
 //   node tests/page-memory.ts
 import assert from "node:assert/strict";
-import { MEMORY_MARK, MEMORY_MOST, MEMORY_STEP, holdMemory, memoryLimit, memoryResult, memorySummary, readMark } from "../src/benchmark/page-memory.ts";
+import { MEMORY_MARK, MEMORY_MOST, MEMORY_STEP, holdMemory, memoryLimit, readMark } from "../src/benchmark/page-memory.ts";
+import { memoryResult, memorySummary } from "../src/bench.ts";
 
 const MiB = 2 ** 20;
 // sessionStorage as the page has it; `log` keeps every mark written, in order

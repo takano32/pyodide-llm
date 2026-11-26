@@ -1,6 +1,6 @@
 // T173: the page-memory section of /benchmark/: how much memory the page can hold before the browser refuses it or
 // ends the tab. A plain module, so that Node tests it alone (tests/page-memory.ts); the page's worker is
-// src/runtime/benchmark/memory.ts.
+// src/runtime/benchmark/memory.ts, and the section's Markdown is src/bench/memory.ts's (T301).
 //
 // iOS ends a tab past about 2 to 3 GB (jetsam) without an error, so the limit is found by a mark: before each step
 // the page writes in sessionStorage what it held and what it is about to try; a tab the browser ended and loaded again
@@ -14,8 +14,6 @@
 // front, so a tab ended after that says nothing of the limit, and a page left is no tab ended. A mark found is then a
 // tab that ended with no such event: the browser ended it (for its memory, most likely: a crash of another cause
 // looks the same).
-import { tableCell } from "../bench/cells.ts";
-import type { Result } from "../bench/sections.ts";
 import type { Answer, MemoryGrown, Staged, ToMemory } from "../runtime/contracts/benchmark.ts";
 
 // (T480.1: the section's data, what the worker answers a step with, and the tab's sessionStorage where there is one)
@@ -28,7 +26,7 @@ export const MEMORY_MARK = "benchmark-memory";
 // that a step the page went on from was held for a while); up to 4 GiB, the most one 32-bit WebAssembly memory holds
 export const MEMORY_STEP = 64 * 2 ** 20, MEMORY_MOST = 4 * 2 ** 30, MEMORY_PAUSE_MS = 250;
 
-const mib = (bytes: number) => `${Math.round(bytes / 2 ** 20)} MiB`;
+export const mib = (bytes: number) => `${Math.round(bytes / 2 ** 20)} MiB`;
 const HIDDEN: unique symbol = Symbol("hidden");
 
 /** The limit the page is asked for (?memoryMB=, for tests: a runner stops short of its own limit), in whole steps,
@@ -102,37 +100,4 @@ export function readMark(storage: Storing, now = Date.now): MemoryData | undefin
   } catch {
     return undefined;
   }
-}
-
-// how a run ended (the owner chose the words that do not say more than the page knows, 2026-09-27: TASKS.md T173)
-function ending(d: MemoryData) {
-  switch (d.stop) {
-    case "reloaded": return `the tab ended while it grew to ${mib(d.trying!)} and the page was loaded again: the browser ended it, most likely for its memory`;
-    case "refused": return `the browser refused to grow it to ${mib(d.trying!)} (${d.why})`;
-    case "limit": return d.limit >= MEMORY_MOST ? "it held the most one 32-bit WebAssembly memory holds" : "it held all it was asked to";
-    default: return d.why ?? d.stop;
-  }
-}
-
-/** The section's result for the page: { status, markdown, data } */
-export function memoryResult(d: MemoryData): Result<"memory"> {
-  if (d.stop === "none") return { status: "none", markdown: d.why!, data: d };
-  if (d.stop === "error") return { status: "error", markdown: `${d.why} (after holding ${mib(d.held)})`, data: d };
-  if (d.stop === "hidden") return { status: "error", data: d, markdown:
-    `stopped: the page was hidden or left (another app, the screen locked, or another page) while it grew to ${mib(d.trying!)}, ` +
-    `after holding ${mib(d.held)}. A phone ends a hidden page far sooner than one in front, so this is not the limit: ` +
-    "run it again and keep this page in front until it ends." };
-  const room = d.maximum === null ? ` The browser refused a memory with room for ${mib(d.limit)}, so it was made without a maximum.` : "";
-  return { status: "ok", data: d, markdown: [
-    `One WebAssembly memory grown ${mib(MEMORY_STEP)} at a time and filled with random bytes, ${MEMORY_PAUSE_MS / 1000} s apart, up to ${mib(d.limit)}. ` +
-      `What the page used before it began is not counted.${room}`, "",
-    "| held | how it ended |", "|---:|---|",
-    `| ${mib(d.held)} | ${tableCell(ending(d))} |`,
-  ].join("\n") };
-}
-
-/** The section's line of the report's summary (T185) */
-export function memorySummary(d: MemoryData | undefined) {
-  if (!d || d.stop === "none" || d.stop === "error" || d.stop === "hidden") return [];
-  return [`Page memory: held ${mib(d.held)}; ${ending(d)}`];
 }

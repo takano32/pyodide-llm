@@ -75,7 +75,8 @@ assert.ok(listed > 0 && listed < many.length, `${listed}`);
 assert.ok(cut.includes(`\n- ${many[listed - 1]}\n- … and ${many.length - listed} more, in the whole report below\n\n#### Summary`), cut);
 assert.ok(loginUrl(t225Whole, android, cut).length <= REPORT_LIMIT && reportTooLong(shortReport(aHead, t225Lines, many), android));
 assert.equal(new URL(reportUrl(t225Whole, android, cut)).searchParams.get("body"), reportBody(cut));
-assert.equal(warningsBlock(many, 0), `#### Warnings\n\n- ${many.length} of them, in the whole report below`);
+assert.equal(warningsBlock(many, 0), `#### Warnings\n\n- ${many.length} warnings, all in the whole report below`);
+assert.equal(warningsBlock(many.slice(0, 1), 0), "#### Warnings\n\n- 1 warning, in the whole report below");
 // what else is listed: a skipped round with why (the row under its headers), a section that failed as a whole (its
 // Markdown is why), a device lost (the section's own line), a row with a failure or an unsteady time, a sentence
 // outside the tables, and a section the page calls WRONG that names nothing; a line twice is there once
@@ -90,7 +91,7 @@ assert.deepEqual(others, [
   "GPU: **The device was lost** (gone): the times measured after it are not the GPU's.",
   "GPU: a layer: llama.cpp, separate steps, subgroups; dispatches: failed: a | b c",
   'GPU: "DP4A, fused (T175)": failed: refused',
-  "Storage: computed something wrong",
+  "Storage: WRONG",
   `Model: what ran: without the kernels; tok/s: skipped; backend: ${MEMORY_UNSAID}`,
   "GPU: a layer: llama.cpp, fused (T150); dispatches: 5; GPU ms: unsteady: 2.10; GB/s: 32.6 (81.5%); its 16 layers, ms: 33.6"], others.join("\n"));
 // a step of the GPU section that failed as a whole says so in that word (a token's row, a table's one line), so it is

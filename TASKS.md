@@ -41,7 +41,7 @@
 - T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 未着手
 - T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 端末の数字待ち
 - T298 [運用][変換] 静けさの 30 秒に、モデルの部品の届いたバイトも数える — 未着手
-- T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 未着手
+- T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 反映済み
 - T305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 未着手
 - T306 [追加][変換] 古い並びの GPT-NeoX の GGUF を読む — 未着手
 - T309 [文書][変換] ページの「開けるモデル」の文と README に、足した形を書く — 反映済み
@@ -520,9 +520,23 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - モデルの部品が回線を埋めると jsDelivr の最初のバイトが 30 秒に間に合わずフォールバックする（CI の 0.15 Mbps で再現、T129 のレビュー）。代わりに jsDelivr が落ちているときの発見が遅れる。
 - **持ち主の決め（2026-11-26、選択肢で）**: 静けさの 30 秒に、モデルの部品の届いたバイトも数える（遅い回線で止まらないように）。案はブランチ `t129-review-model-bytes`（本線に入れたら消す）。順の 5。
 
-### T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 状態: 未着手（2026-11-26、持ち主の決め: 文面は取りまとめ役に任せ、後で一覧にして見せる）。前の状態: 未着手（2026-10-02 の洗い出しで採番。T227 のレビューから。持ち主の判断: 文面。規模 小）
+### T301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 状態: 反映済み（2026-11-26、本線に入れてデプロイした。レビュー前）。前の状態: 未着手（2026-11-26、持ち主の決め: 文面は取りまとめ役に任せ、後で一覧にして見せる。2026-10-02 の洗い出しで採番。T227 のレビューから。規模 小）
 - 文面 2 つ（「N warnings, all in the whole report below」、「<節>: WRONG」）。GPU の `info` の失敗が「not in this browser」と読まれる。CPU の行「the browser did not start that many software threads」が一覧に出ない。ページの中の Markdown の組み立て（約 150 行）を `src/bench.js` に寄せる。
 - **持ち主の決め（2026-11-26、選択肢で）**: /benchmark/ の Warnings の文面は取りまとめ役に任せ、入れた文を後で一覧にして見せる（順の 2）。
+- **したこと（2026-11-26）**: (1) 文面 2 つを替えた（下の表）。(2) GPU の節の `info` の段: アダプタが無いのは投げずに答え（`src/runtime/benchmark/gpu/device.ts` の `adapterHere()`）、段が投げた失敗（`requestDevice` が断る、WGSL の読み込み）は `gpuNone()` が「none」でなく「error」にする。節の題は「GPU (failed)」になり、警告に「GPU: failed: <訳>」が載る。(3) CPU の節の、ブラウザが始めなかった本数の行は警告に**載せる**と決めた（取りまとめ役の決め。訳: 頼んだ本数の計測が走らなかった行で、起きるのはスレッドが止まったときなど（`forward/threads.ts` の `Short`）。ふつうの端末では出ないので、正常な報告の警告は増えない）。表のセルを「skipped: …」にし、`warnings()` が skipped の順位で拾う。(4) 調べた: 約 150 行の Markdown の組み立ては T643.11・T263 などでもう `src/bench/` にあった（`gpusection.ts`・`prompt.ts`・`storage.ts`・`nan.ts` など）。ページに残っていたのはモデルの節の Markdown と `measured` の組み立て（`src/benchmark/model.ts`）と、Page memory の節の表と要約の行（`src/benchmark/page-memory.ts` の `memoryResult()`・`memorySummary()`）で、それぞれ `src/bench/model.ts` の `modelResult()` と `src/bench/memory.ts` に移した（Page memory の走り自体（印と段）は `page-memory.ts` のまま）。
+- **入れた英語の文（前 → 後。持ち主に後で見せる）**:
+
+  | 所 | 前 | 後 |
+  |---|---|---|
+  | 要約の警告に 1 行も入らないとき（`warningsBlock()`） | N of them, in the whole report below | N warnings, all in the whole report below（1 つなら 1 warning, in the whole report below） |
+  | 語の無い WRONG・failed の節の警告（`warnings()`） | <節>: computed something wrong | <節>: WRONG（failed の節は前と同じく <節>: failed） |
+  | GPU の節の `info` の段が投げたとき | 節の題「GPU (not in this browser)」、警告なし | 節の題「GPU (failed)」、警告「GPU: failed: <訳>」 |
+  | CPU の節の始まらなかった本数の行 | the browser did not start that many software threads | skipped: the browser did not start that many software threads (it started N) |
+
+  「the CPU section computed something wrong」（GPU の表の GPU ÷ CPU の訳、T157）は変えていない。
+- **試験**: `tests/bench/warnings.ts`（2 つの文）、`tests/bench/sections.ts`（`gpuNone()` の失敗が error で警告に「GPU: failed: …」、`modelResult()` の結果と `measured`、ページの配線の文の型を `modelResult()` に）、`tests/bench/cpu.ts`（skipped のセルと、その行が警告に failed の後・unsteady の前で載ること）、`tests/page-memory.ts` は `src/bench.ts` から読む。**壊し方**: `gpuNone()` の失敗を `none` に戻すと `tests/bench/sections.ts` が、セルの「skipped:」を外すと `tests/bench/cpu.ts` が落ちた。
+- **網** `node tests/unchanged.ts bench page`: モデルのページの文は同じ（893）。`/benchmark/` の文は予定どおり違う（Page memory の表とモデルの節の組み立てがページの文から `src/bench/` に出た: 消えたのは `| held | how it ended |` などの文と switch、増えたのは `.measured`）。`bench` の記録は違う: 試験に呼び出しを足したので番号がずれ、全部が「違う」と出る（記録が呼び出しの順の番号で比べるため。読めないので、違いは上の試験で見た）。
+- **確かめ**: `npm run types`、`npm run build && node tests/dist-check.ts`、`/benchmark/` を Playwright の Chromium で（`tests/bench-check.ts --dist chromium --run cpu`、`--run model,memory --unsaid --query memoryMB=256`: 節は ok で、報告の頭の「#### Warnings」に skipped のラウンドと unsteady の行が出た）。`--run cpu,gpu` は、開発機の Chromium の GPU の節が検査の段で 15 分の期限まで終わらず見られなかった（変更の前からの形かは未確認。GPU の節は CI の `preview.yml` が毎回見る）。軽い組は手元で通した。**CI を省いた。訳**: 触ったのは `/benchmark/` の文と判定と、GPU の Worker の `info` の段の枝 1 つで、手元の単体試験と実ブラウザの節が踏む。`info` の失敗の枝（装置が断る）はどのランナーでも起きないので CI でも見られない。
 
 ### T305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-02 の洗い出しで採番。T131 で却下した種類の変更）
 - 本物は BOS もダミーの空白も置かず、ページは両方置く（`format_check.py` は 0/9）。エンジンに 2 つの選びが要る。
