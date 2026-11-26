@@ -216,12 +216,14 @@ export const HF_FAMILIES: Entry[] = [
   // asks for careful thought, for which its card leaves room for 16384 tokens: hours at the speed of a CPU, and past
   // this context); with medium the thought ended after 59 to 267 tokens on three questions in CI. The sampling is the
   // card's (T274, BONSAI_2_SAMPLING): 0.7, 0.8, a top-k of 20 and a presence penalty of 1.5 without thinking; 1.0,
-  // 0.95, the top-k and a min-p of 0.05 with
+  // 0.95, the top-k and a min-p of 0.05 with. T289 (the owner, 2026-11-26): its note says it needs 16 GB (the page
+  // counts 7.7 GiB with its forward pass and 0.3 GB, under a device that says 8, which is not warned; it takes about
+  // 8.6 GB, 8,879 MB of WebAssembly memory in CI)
   ...thinkingAndNot("hf-ternary-bonsai-2-27b", "Prism ML Ternary Bonsai 2 27B",
     ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
     "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.2 GB",
-    { converted: 7.2e9, options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
+    { converted: 7.2e9, options: qwen35, weights: "ternary", rebuilt: true, needs: 16 }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
   // T286.5: Prism ML's 1-bit Bonsai 27B, a Qwen3.6 27B (a Qwen3.5 in its form, as Bonsai 2's) with every weight a
   // sign times a scale of its 128 (Q1_0, the embedding and the classifier too): 3.8 GB to fetch, kept binary as the
   // smaller 1-bit Bonsai are (T634.2: 3.88 GB, ternary's 7.24 before; with its forward pass at 4096 positions 4.18 GiB,

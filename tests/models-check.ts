@@ -437,14 +437,16 @@ for (const id of ["hf-smollm3-3b-thinking", "hf-smollm3-3b"]) {
 // device that says 4 GB is warned (memoryWarning()), "Chrome and Firefox" where what is loaded passes 4 GiB
 {
   assert.deepEqual(MODELS.filter((entry) => entry.wide).map(({ id }) => id), ["hf-bonsai-27b-thinking", "hf-bonsai-27b"], "the entries said to pass a 32-bit memory by their forward pass (T634.2)");
-  const DEVICES = /( · desktop only)?( · Chrome and Firefox)?$/;
+  // (T289: "desktop only (needs 16 GB of memory)" where the entry says needs, Ternary Bonsai 2 27B's alone)
+  assert.deepEqual(MODELS.filter((entry) => entry.needs).map(({ id, needs }) => [id, needs]), [["hf-ternary-bonsai-2-27b-thinking", 16], ["hf-ternary-bonsai-2-27b", 16]], "the entries whose note says the memory they need (T289)");
+  const DEVICES = /( · desktop only(?: \(needs \d+ GB of memory\))?)?( · Chrome and Firefox)?$/;
   for (const entry of MODELS) {
     const [, desktop, browsers] = DEVICES.exec(entry.note);
     assert.equal(Boolean(desktop), memoryWarning(entry, 4) !== "", `${entry.id}: "desktop only" where a 4 GB device is warned, and only there`);
     // (T634.2: or where its forward pass at the context passes 4 GiB with it, which its entry says: wide, the 1-bit Bonsai
     // 27B's 4.18 GiB)
     assert.equal(Boolean(browsers), Boolean(entry.wide) || modelBytes(entry) > 2 ** 32, `${entry.id}: "Chrome and Firefox" where it loads more than 4 GiB, and only there`);
-    assert.equal(entry.note.split(/ · desktop only| · Chrome and Firefox/).length, 1 + Boolean(desktop) + Boolean(browsers), `${entry.id}: the words once each, at the note's end`);
+    assert.equal(entry.note.split(/ · desktop only(?: \(needs \d+ GB of memory\))?| · Chrome and Firefox/).length, 1 + Boolean(desktop) + Boolean(browsers), `${entry.id}: the words once each, at the note's end`);
   }
   // no part of the list writes them itself (the rule adds them; written by hand, a note would say them twice)
   for (const entry of [...BUILT, ...HF_JAPANESE, ...HF_JAPANESE_LARGE, ...HF_CLASSICS, ...HF_FAMILIES]) {
@@ -458,5 +460,6 @@ for (const id of ["hf-smollm3-3b-thinking", "hf-smollm3-3b"]) {
   assert.deepEqual(said("stories42M"), [false, false], "47 MB (it said desktop only from the days of float32 on NumPy)");
   assert.deepEqual(said("hf-granite-4.2-3b"), [true, false], "4.1 GB: Safari takes it in six bits");
   assert.deepEqual(said("hf-llm-jp-3-3.7b-instruct3"), [true, true], "4.3 GB: past 4 GiB");
+  assert.match(byId("hf-ternary-bonsai-2-27b").note, / · desktop only \(needs 16 GB of memory\) · Chrome and Firefox$/, "T289: the owner's words");
 }
 console.log("ok");

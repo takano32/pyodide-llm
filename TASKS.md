@@ -40,7 +40,7 @@
 - T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 端末の数字待ち
 - T281 [追加][Bonsai] 27B の文脈の長さ — 未着手
 - T284 [追加][Bonsai] 27B の画像の入力（mmproj） — 未着手
-- T289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 未着手
+- T289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 反映済み
 - T292 [性能][CPU] Qwen3.5 の 7 ビットの活性値（日本語で +3%） — 未着手
 - T293 [性能][WebGPU] 2 重の線と置き場の見直し — 端末の数字待ち
 - T294 [追加][WebGPU] GPT-2・NeoX を GPU だけにも置く — 未着手
@@ -525,10 +525,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - いまは文字だけ。視覚の塔（0.46B）とページの画像の入口が要る。
 - **持ち主の決め（2026-11-26、選択肢で）**: 起こす（候補から未着手に）（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。順の 8。
 
-### T289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 状態: 未着手（2026-11-26、持ち主の決め: 27B の note の終わりの文）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 文面。規模 小）
+### T289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 状態: 反映済み（2026-11-26、27B の note の終わりの文。残りは未決: 下の「残り」）。前の状態: 未着手（2026-11-26、持ち主の決め: 27B の note の終わりの文）。その前: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 文面。規模 小）
 - 27B は 8 と言う端末に警告が出ないが実際は約 8.6 GB 要る（案: note に「16 GB」）。4 と言う端末の 4B は警告が出ない（footprint 2.66 GB、T230 のレビュー）。設定の「Automatic keeps int8 unless it does not fit」は 3 値のモデルでは合わない。
 - **T233 のレビューの数字**（`src/models.js` と `footprint()` を Node で出し直した）: ページが数える全体は文脈 4096 で 7.701 GiB = 8.269 GB（チェックポイント 7.662 GB + 後ろ 0.607 GB）、`PAGE_MEMORY` 0.3 GB を足して 8.57 GB。**警告の「needs about 8,000 MB」は note の 7.7 GB + 0.3 GB で、後ろの 0.6 GB を数えていない**。本番の Chromium（run 36962265758）の Worker の WebAssembly のメモリは合わせて 8,879 MB（Pyodide のヒープを含む。タブ全体は未計測）。`deviceMemory` が 4 以下の端末には警告が出る（1・2・4 で確かめた）。8 と言う端末には出ない（Chrome は 8 GB 以上をまとめて 8 と言うので、8 GB の機械と 32 GB の機械が見分けられない）。**文面の案**（持ち主が選ぶ。変えていない）: (a) note の終わりを「desktop only (needs 16 GB of memory) · Chrome and Firefox」にする（仕組みは変えない。勧め）。(b) 警告の数字を約 9,500 MB（チェックポイント 7.66 + 後ろ 0.61 + Pyodide 0.9 + ページ 0.3）に直す（8 と言う端末には出さない決まりのまま）。(c) 8 と言う端末にも「Ternary Bonsai 2 27B needs about 9.5 GB of memory; this browser reports 8 GB or more.」を出す（32 GB の PC にも出る）。`?bits=8` は取得の前に「needs about 35 GB … 16 GB at most」と断る（本番で確かめた）。
 - **持ち主の決め（2026-11-26、選択肢で）**: 27B の項目の説明の終わりを「desktop only (needs 16 GB of memory) · Chrome and Firefox」に（順の 1）。
+- **反映（2026-11-26）**: Ternary Bonsai 2 27B の 2 項目（考える形とすぐ答える形）の note の終わりが「desktop only (needs 16 GB of memory) · Chrome and Firefox」に。仕組み（警告の出し方と数）は変えていない。形: 項目に欄 `needs`（GB）を足し、`devicesOf()`（`src/models/memory.ts`）が「desktop only」を「desktop only (needs N GB of memory)」と書く（note の言葉を手で書かない T511.4 の決まりのまま）。`tests/models-check.ts` が `needs` を持つ項目（この 2 つだけ）と文を見る。**1-bit の Bonsai 27B には付けていない**（取りまとめ役の決め、訳: 同じ理由でない。1 ビットで 3.9 GB、ページの数えでも 4 と言う端末に警告が出て、8 と言う端末で足りる見込み）。確かめ: `models-check`・`npm run types`・`npm run build && node tests/dist-check.ts`・網 `unchanged.ts models`（MODELS だけが違う: 予定した違い、この 2 項目の note と `needs`）。CI を省いた。訳: 一覧の文と欄だけで、手元の検査が全部踏む。
+- **残り（未決: 持ち主に後で聞く）**: (1) 4 と言う端末の Ternary Bonsai 4B は警告が出ない（footprint 2.66 GB、T230 のレビュー）。(2) 設定の「Automatic keeps int8 unless it does not fit」は 3 値のモデルでは合わない（3 値は 3 値のまま持つ）。(3) **Underdog Saluki 27B**（読み込み 7.96 GB）も、ページの数え（+0.3 GB で 8 GiB の内）では 8 と言う端末に警告が出ず、同じ形かもしれない（後ろの分を数えた全体は未計測）。(4) 警告の数（「needs about 8,000 MB」が後ろの 0.6 GB を数えない、上の案 (b)）は今回の決めに入っていない。
 
 ### T292 [性能][CPU] Qwen3.5 の 7 ビットの活性値（日本語で +3%） — 状態: 未着手（2026-11-26、持ち主の決め: 丸め方の形をいくつか用意して選べるようにする）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 残すか。規模 小〜中）
 - 0.8B の日本語は 7 ビットで +2.6〜3.4%、8 ビットで約 0%。7 ビットは 1.31〜1.41 倍速い。レビュー（T229）の勧めは残す。中間の案: 出力行列だけ 8 ビット（誤差 −30〜35%、約 1.4% 遅い）、出力と down（−44〜53%、約 4.6%）。項目ごとに relaxed を外す仕組みは未実装。

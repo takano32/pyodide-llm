@@ -5,7 +5,7 @@ import type { Dtype } from "../runtime/contracts/form.ts";
 
 // T643.1: what is read here of a model: an entry of the list, or a model the page made of a visitor's files or a link
 // (src/page/model.ts's Model), whose kinds say no more of these than an entry's do
-type Weighed = Pick<Entry, "name" | "options" | "weights" | "wide"> & { bytes?: number; converted?: number; loaded?: number; hf?: object; conversion?: { dtype?: Dtype } };
+type Weighed = Pick<Entry, "name" | "options" | "weights" | "wide" | "needs"> & { bytes?: number; converted?: number; loaded?: number; hf?: object; conversion?: { dtype?: Dtype } };
 
 // T116, T643.6: what a model fetches from Hugging Face anew (`download`) past this many bytes is asked for before the
 // page starts it: a choice says what will be fetched, and a model remembered from the last visit, or the large GGUF of
@@ -93,12 +93,14 @@ export function memoryWarning(entry: Weighed, deviceMemory: number | undefined):
  * what it loads passes 4 GiB, which only a 64-bit memory holds (Safari has none and refuses it). Safari would take
  * six bits there (weightsFor()), and six bits with what the forward pass keeps after them (the keys and values, the
  * corrections of relaxed SIMD) pass 4 GiB about where eight bits alone do; the list has no header to count it
- * exactly (footprint()). The words in the order the notes have them, after everything else. */
+ * exactly (footprint()). T289 (the owner's choice of 2026-11-26): "desktop only (needs N GB of memory)" where the
+ * entry says it needs N (Ternary Bonsai 2 27B: about 8.6 GB with what the forward pass keeps, which no device that
+ * says 8 is warned of). The words in the order the notes have them, after everything else. */
 export function devicesOf(entry: Weighed) {
   const bytes = modelBytes(entry);
   // (T634.2: or an entry whose forward pass at the context passes it, its weights alone within: wide)
   const words: string[] = [];
-  if (!fits(entry, 4)) words.push("desktop only");
+  if (!fits(entry, 4)) words.push(entry.needs ? `desktop only (needs ${entry.needs} GB of memory)` : "desktop only");
   if (entry.wide || bytes! > 2 ** 32) words.push("Chrome and Firefox");
   return words;
 }

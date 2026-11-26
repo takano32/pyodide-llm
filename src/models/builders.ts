@@ -14,7 +14,9 @@ import type { Dtype } from "../runtime/contracts/form.ts";
 // page (hf, original: the repository whose model it is, download, conversion, shares, weights: the dtype it keeps where
 // it names one, converted: the bytes of its weights once converted, in that dtype (else int8), loaded: its bytes once
 // loaded where they are not those (llama.cpp's blocks kept, a table read from the kept file), rebuilt: its weights are not the
-// original's; T634.2, wide: its forward pass at the context passes a 32-bit memory where its weights alone do not),
+// original's; T634.2, wide: its forward pass at the context passes a 32-bit memory where its weights alone do not;
+// T289, needs: the GB of memory its note says it needs, where the page's count is short of what it takes and a device
+// that says 8 GB is not warned),
 // the engine's options, the template and the sampling of an answer, the prompt and the placeholder it
 // opens with
 // T643.1: the kinds are types (T648.4: three, with a translation model's; T653: four, with a checkpoint of Hugging Face's at its address), and an entry is one of them: what one kind has, the other says it has not
@@ -29,6 +31,7 @@ type Shared = {
   japanese: boolean;
   thinks?: boolean;
   wide?: boolean;
+  needs?: number;
   options: ListOptions;
   template?: string;
   generation: Generation;
