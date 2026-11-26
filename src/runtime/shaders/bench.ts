@@ -245,7 +245,9 @@ ${[...Array(16)].map((_, k) => `  s${k % 4} += data[id.x + ${k}u * apart];\n`).j
 //   a, b   the two inputs (an f32 each, read from a storage buffer as f32: nothing is a constant to the compiler);
 //   word   in place of a's bits in the buffer of words the thread reads as ua (a float16's bits), where given
 //   wgsl   the expression, of a and b (f32) and ua (u32); softmax2(s0, s1) is the attention's softmax over two scores,
-//          the values 2 and 3 weighed by it, the largest taken by max() as the engine's attention takes it
+//          the values 2 and 3 weighed by it, the largest taken by max() as the engine's attention takes it; online2(s0,
+//          s1) is the same over two blocks of a score each, as the flash attention sums them (shaders/attention.ts: the
+//          sum and the values so far times exp(the largest before − the largest now), plus exp(a score − the largest now))
 export type NanCase = { name: string; kind: "float" | "half" | "flag"; half?: boolean; a: number; b: number; word?: number; wgsl: string };
 const GEGLU_OF = (gate: string) => `0.5 * ${gate} * (1.0 + tanh(clamp(0.7978845608028654 * (${gate} + 0.044715 * ${gate} * ${gate} * ${gate}), -9.010913, 9.010913))) * b`;
 export const NAN_CASES: NanCase[] = [
@@ -255,6 +257,9 @@ export const NAN_CASES: NanCase[] = [
   { name: "1.5 + NaN", kind: "float", a: 1.5, b: NaN, wgsl: "a + b" },
   { name: "NaN × 0", kind: "float", a: NaN, b: 0, wgsl: "a * b" },
   { name: "+Inf × 0", kind: "float", a: Infinity, b: 0, wgsl: "a * b" },
+  { name: "NaN × 0 + 1", kind: "float", a: NaN, b: 0, wgsl: "a * b + 1.0" },
+  { name: "+Inf × 0 + 1", kind: "float", a: Infinity, b: 0, wgsl: "a * b + 1.0" },
+  { name: "fma(NaN, 0, 1)", kind: "float", a: NaN, b: 0, wgsl: "fma(a, b, 1.0)" },
   { name: "+Inf − +Inf", kind: "float", a: Infinity, b: Infinity, wgsl: "a - b" },
   { name: "exp(NaN)", kind: "float", a: NaN, b: 0, wgsl: "exp(a)" },
   { name: "exp(+Inf)", kind: "float", a: Infinity, b: 0, wgsl: "exp(a)" },
@@ -270,6 +275,8 @@ export const NAN_CASES: NanCase[] = [
   { name: "softmax of the scores 1 and NaN", kind: "float", a: 1, b: NaN, wgsl: "softmax2(a, b)" },
   { name: "softmax of the scores NaN and 1", kind: "float", a: NaN, b: 1, wgsl: "softmax2(a, b)" },
   { name: "softmax of the scores 1 and +Inf", kind: "float", a: 1, b: Infinity, wgsl: "softmax2(a, b)" },
+  { name: "online softmax of the blocks 1 and NaN", kind: "float", a: 1, b: NaN, wgsl: "online2(a, b)" },
+  { name: "online softmax of the blocks 1 and +Inf", kind: "float", a: 1, b: Infinity, wgsl: "online2(a, b)" },
   { name: "NaN × 2 found by its bits", kind: "flag", a: NaN, b: 2, wgsl: "select(0u, 1u, (bitcast<u32>(a * b) & 0x7fffffffu) > 0x7f800000u)" },
   { name: "+Inf × 2 found by its bits", kind: "flag", a: Infinity, b: 2, wgsl: "select(0u, 1u, (bitcast<u32>(a * b) & 0x7fffffffu) == 0x7f800000u)" },
   { name: "3e38 × 1 taken by its bits for a finite number", kind: "flag", a: 3e38, b: 1, wgsl: "select(0u, 1u, (bitcast<u32>(a * b) & 0x7fffffffu) < 0x7f800000u)" },
@@ -302,6 +309,14 @@ fn softmax2(s0: f32, s1: f32) -> f32 {
   let p0 = exp(s0 - m);
   let p1 = exp(s1 - m);
   return (p0 * 2.0 + p1 * 3.0) / (p0 + p1);
+}
+fn online2(s0: f32, s1: f32) -> f32 {
+  let m0 = s0;
+  let sum0 = exp(s0 - m0);
+  let m1 = max(m0, s1);
+  let scale = exp(m0 - m1);
+  let p1 = exp(s1 - m1);
+  return (sum0 * 2.0 * scale + p1 * 3.0) / (sum0 * scale + p1);
 }
 @compute @workgroup_size(${NAN_WORKGROUP})
 fn main(@builtin(global_invocation_id) id: vec3u) {

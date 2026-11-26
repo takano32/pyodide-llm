@@ -8,7 +8,9 @@
 // kinds: one that carries a NaN and an infinity as IEEE 754 has it; one that makes every NaN 0 (as it loads one and as
 // it makes one); one whose max() and min() drop a NaN for the other operand (and clamp() for its bound); one whose
 // exp() makes a NaN +Inf (SwiftShader's); one whose pack2x16float() clamps to float16's largest and makes a NaN 0;
-// one that folds x != x (lavapipe's: T219); and one without shader-f16. Each is a process of its own (the worker's device is made once a process). The reading must
+// one that folds x != x (lavapipe's: T219); one without shader-f16; one whose f16 shader does not compile, and one
+// where neither does (T263's review: a dispatch that failed is one warning, and the summary says the step did not run).
+// Each is a process of its own (the worker's device is made once a process). The reading must
 // list as broken the marks of the engine each device breaks, and those alone, and say no warning for what no mark
 // stands on (the max() of a device that drops a NaN). Simpler than a GPU: no WGSL runs, so that a case's WGSL that
 // does not do what its name says is CI's to see (bench.yml, gpu-prompt.yml's Dawn); the names of the cases, the
@@ -18,7 +20,7 @@ import { spawnSync } from "node:child_process";
 import { runtimeUrl } from "./tree.ts";
 import { standIn } from "./fakes/webgpu.ts";
 
-const DEVICES = ["ieee", "nan to zero", "max drops NaN", "exp of NaN is +Inf", "pack clamps", "folds x != x", "no f16"];
+const DEVICES = ["ieee", "nan to zero", "max drops NaN", "exp of NaN is +Inf", "pack clamps", "folds x != x", "no f16", "f16 refused", "nothing compiles"];
 if (process.argv[2] !== "device") {
   for (const one of DEVICES) {
     const ran = spawnSync(process.execPath, [import.meta.filename, "device", one], { encoding: "utf8", timeout: 120000 });
@@ -53,7 +55,12 @@ const BEHAVIOURS = {
   "pack clamps": { ...IEEE, pack: clampedHalf },
   "folds x != x": { ...IEEE, differs: () => false },
   "no f16": { ...IEEE, f16: false },
+  "f16 refused": { ...IEEE, refuses: (code) => code.startsWith("enable f16;") },
+  "nothing compiles": { ...IEEE, refuses: () => true },
 };
+// what a device says of a shader it refused (an error's words run over lines: Dawn's do)
+const REFUSED = "error: the shader did not compile\n - While validating a made-up thing";
+const REFUSED_LINE = REFUSED.replace(/\s*\n\s*/g, " ");
 const device = BEHAVIOURS[kind];
 
 // ---- each case in JavaScript, by its name, as a device of that behaviour makes it: (o, a, b, ua) → a float (float), a
@@ -64,6 +71,11 @@ const softmax2 = (o, s0, s1) => {
   const m = o.max(s0, s1), p0 = o.made(f(o.exp(f(s0 - m)))), p1 = o.made(f(o.exp(f(s1 - m))));
   return f(f(p0 * 2 + p1 * 3) / f(p0 + p1));
 };
+// the flash attention's sum over two blocks of a score each (shaders/bench.ts's online2())
+const online2 = (o, s0, s1) => {
+  const sum0 = o.made(f(o.exp(f(s0 - s0)))), m1 = o.max(s0, s1), scale = o.made(f(o.exp(f(s0 - m1)))), p1 = o.made(f(o.exp(f(s1 - m1))));
+  return f(f(f(f(sum0 * 2) * scale) + f(p1 * 3)) / f(f(sum0 * scale) + p1));
+};
 const halfIn = (o, ua) => o.load(floatOfHalf(ua & 0xffff));
 const MODELS = {
   "a NaN loaded and stored": (o, a) => a,
@@ -72,6 +84,9 @@ const MODELS = {
   "1.5 + NaN": (o, a, b) => f(a + b),
   "NaN × 0": (o, a, b) => f(a * b),
   "+Inf × 0": (o, a, b) => f(a * b),
+  "NaN × 0 + 1": (o, a, b) => f(f(a * b) + 1),
+  "+Inf × 0 + 1": (o, a, b) => f(f(a * b) + 1),
+  "fma(NaN, 0, 1)": (o, a, b) => f(a * b + 1),
   "+Inf − +Inf": (o, a, b) => f(a - b),
   "exp(NaN)": (o, a) => f(o.exp(a)),
   "exp(+Inf)": (o, a) => f(o.exp(a)),
@@ -87,6 +102,8 @@ const MODELS = {
   "softmax of the scores 1 and NaN": (o, a, b) => softmax2(o, a, b),
   "softmax of the scores NaN and 1": (o, a, b) => softmax2(o, a, b),
   "softmax of the scores 1 and +Inf": (o, a, b) => softmax2(o, a, b),
+  "online softmax of the blocks 1 and NaN": (o, a, b) => online2(o, a, b),
+  "online softmax of the blocks 1 and +Inf": (o, a, b) => online2(o, a, b),
   "NaN × 2 found by its bits": (o, a, b) => Number(mag(o.made(f(a * b))) > 0x7f800000),
   "+Inf × 2 found by its bits": (o, a, b) => Number(mag(o.made(f(a * b))) === 0x7f800000),
   "3e38 × 1 taken by its bits for a finite number": (o, a, b) => Number(mag(o.made(f(a * b))) < 0x7f800000),
@@ -126,6 +143,10 @@ const { device: fake, adapter } = standIn({ fallback: true, answer: (pipeline, e
   });
 } });
 if (device.f16) { fake.features.add("shader-f16"); adapter.features.add("shader-f16"); }
+if (device.refuses) {
+  const compiled = fake.createComputePipelineAsync.bind(fake);
+  fake.createComputePipelineAsync = async (asked) => { if (device.refuses(asked.compute.module.code)) throw new Error(REFUSED); return compiled(asked); };
+}
 globalThis.self = globalThis;
 const posted = [];
 globalThis.postMessage = (message) => posted.push(message);
@@ -139,13 +160,13 @@ const found = answer.result;
 assert.deepEqual(found.cases.map((one) => one.name), names, "a case a row, in NAN_CASES' order");
 
 // ---- what each device breaks: the marks the reading says do not hold here
-const broken = nanBroken(found).map((line) => line.replace(/ \(made .*\)$/, ""));
+const broken = nanBroken(found).map((line) => line.replace(/ \((?:made|answered) .*\)$/, ""));
 const reliedOn = (test) => names.filter((name) => NAN_READINGS[name].relied && test(name));
 const WANTS = {
   ieee: [],
   // every case a mark stands on that has a NaN in it (the device zeroes NaNs it loads or makes), and the two that make
   // one from an infinity (−Inf / +Inf in SiLU, +Inf − +Inf in the softmax)
-  "nan to zero": reliedOn((name) => /NaN/.test(name) && !/^\+Inf/.test(name)).concat("softmax of the scores 1 and +Inf", "SiLU of a −Inf gate"),
+  "nan to zero": reliedOn((name) => /NaN/.test(name) && !/^\+Inf/.test(name)).concat("softmax of the scores 1 and +Inf", "online softmax of the blocks 1 and +Inf", "SiLU of a −Inf gate", "+Inf × 0 + 1"),
   // the engine stands on no max() of a NaN: exp() carries it through the softmax
   "max drops NaN": [],
   // nor on exp() of a NaN alone: the softmax and SiLU carry it (+Inf against +Inf, a NaN over +Inf)
@@ -153,6 +174,8 @@ const WANTS = {
   "pack clamps": ["pack2x16float(NaN)", "pack2x16float(+Inf)", "pack2x16float(−Inf)"],
   "folds x != x": [],
   "no f16": [],
+  "f16 refused": [],
+  "nothing compiles": [],
 };
 assert.deepEqual(broken.sort(), [...WANTS[kind]].sort(), `${kind}: the marks that do not hold`);
 
@@ -167,8 +190,18 @@ for (const name of names) {
   assert.equal(failed, WANTS[kind].includes(name), `${kind}: ${name}'s row ${failed ? "says" : "does not say"} failed: ${row.join(" | ")}`);
 }
 const listed = warnings([{ title: "GPU", status: "ok", markdown }]);
-assert.equal(listed.length, WANTS[kind].length, `${kind}: a warning a mark broken:\n${listed.join("\n")}`);
 const f16Rows = names.filter((name) => NAN_CASES.find((one) => one.name === name).half);
+// a dispatch that failed: its rows say "not run", and one line below the table says why (one warning an error)
+const refused = names.filter((name) => device.refuses?.(f16Rows.includes(name) ? "enable f16;" : ""));
+// (the cases that failed with one error: here both dispatches say the same words, and are one line)
+const dispatches = refused.length ? [refused] : [];
+assert.equal(listed.length, WANTS[kind].length + dispatches.length, `${kind}: a warning a mark broken and one an error of a dispatch:\n${listed.join("\n")}`);
+for (const name of refused) assert.equal(rowOf(name)[2], "not run (below)", `${name}'s row where its dispatch failed`);
+for (const these of dispatches) {
+  const line = `The ${these.length} cases from ${these[0]} to ${these.at(-1)} failed: ${REFUSED_LINE}`;
+  assert.ok(lines.includes(line), `${kind}: the line of a dispatch that failed:\n${lines.join("\n")}`);
+  assert.ok(listed.includes(`GPU: ${line}`), `${kind}: the warning of a dispatch that failed:\n${listed.join("\n")}`);
+}
 if (kind === "no f16") for (const name of f16Rows) assert.equal(rowOf(name)[2], "no shader-f16 here", `${name} where there is no shader-f16`);
 // what each device makes of a case no mark stands on, as the row says it
 if (kind === "max drops NaN") assert.deepEqual(["max(NaN, 1)", "max(1, NaN)", "min(NaN, 1)", "clamp(NaN, −9, 9)"].map((name) => rowOf(name).slice(2)),
@@ -177,16 +210,19 @@ if (kind === "exp of NaN is +Inf") assert.deepEqual(rowOf("exp(NaN)").slice(2), 
 if (kind === "folds x != x") assert.deepEqual(rowOf("NaN × 2 found by x != x").slice(2), ["no", "nothing"]);
 if (kind === "ieee") {
   assert.deepEqual(rowOf("pack2x16float(1e6), past float16's largest").slice(1), ["+Inf", "+Inf", "nothing: as IEEE 754 has it"]);
-  assert.deepEqual(rowOf("NaN × 0").slice(2), ["NaN", "T241: a group's NaN scale times its integer sum (0 where its values are) stays NaN"]);
+  assert.deepEqual(rowOf("NaN × 0").slice(2), ["NaN", "T241: a group's NaN scale times its integer sum (0 where its values are) stays NaN, and so does the sum it is added to"]);
+  assert.deepEqual(rowOf("exp(−Inf)").slice(1), ["0", "0", "the attention's mask (FLOAT_MIN) and the sampler's −Inf logit weigh 0"]);
 }
 if (kind === "pack clamps") assert.equal(rowOf("pack2x16float(+Inf)")[2], "65504");
-// the summary's line
+// the summary's line (none where all the marks held: the short report's room is the warnings')
 const summary = nanSummary({ name: "NaN and infinities", result: found });
-const relied = names.filter((name) => NAN_READINGS[name].relied && !(kind === "no f16" && f16Rows.includes(name)));
-assert.ok(WANTS[kind].length ? summary.includes(`${relied.length - WANTS[kind].length} of the ${relied.length} cases the engine stands on carried, failed: `)
-  : summary.includes(`the ${relied.length} cases the engine stands on all carried`), summary);
+const relied = names.filter((name) => NAN_READINGS[name].relied && !(kind === "no f16" && f16Rows.includes(name)) && !refused.includes(name));
+if (kind === "nothing compiles") assert.equal(summary, `GPU, NaN and infinities: not run (${REFUSED_LINE})`);
+else assert.ok(WANTS[kind].length ? summary.includes(`${relied.length - WANTS[kind].length} of the ${relied.length} cases the engine stands on carried, failed: `)
+  : summary === undefined, `${kind}: ${summary}`);
 // a step that failed, and one not run
 assert.deepEqual(nanTable({ name: "t", error: "the worker stopped" }).at(-1), "failed: the worker stopped");
 assert.deepEqual(nanTable(undefined).at(-1), "not measured");
 assert.equal(nanSummary(undefined), undefined);
+assert.equal(nanSummary({ name: "t", error: "the worker stopped" }), "GPU, NaN and infinities: not run (the worker stopped)");
 console.log(`bench-nan-check: ${kind}: ${found.cases.length} cases, ${broken.length} marks that do not hold${broken.length ? ` (${broken.join(", ")})` : ""}: ok`);

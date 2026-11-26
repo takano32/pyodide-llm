@@ -12,7 +12,9 @@ import type { NanFound, NanGot } from "../runtime/contracts/benchmark.ts";
 // exponent all ones (forward/staging.ts's stagingFinite()). Each holds only where what a layer made reaches it.
 const STREAM = "a NaN or an infinity of a layer reaches the logits, which T219's sampler refuses";
 const ALL_LOW = "T219's sampler refuses logits that are all −Inf";
-const SCALE = "T241: a group's NaN scale times its integer sum (0 where its values are) stays NaN";
+// (the matrices add it to the sum so far, acc += f32(dot) * sa * sb, which a compiler may make one fma(): a row each)
+const SCALE = "T241: a group's NaN scale times its integer sum (0 where its values are) stays NaN, and so does the sum it is added to";
+const MASKED = "the attention's mask (FLOAT_MIN) and the sampler's −Inf logit weigh 0";
 const SOFTMAX = "the attention carries a NaN or an infinite score through its softmax";
 const FFN = "the FFN carries a gate that is no finite number";
 const BITS = "T219's sampler and T241's quantizing see what is no finite number by its bits";
@@ -32,12 +34,15 @@ export const NAN_READINGS: Record<string, { wants: string[]; relied?: string }> 
   "1.5 + NaN": { wants: ["NaN"], relied: STREAM },
   "NaN × 0": { wants: ["NaN"], relied: SCALE },
   "+Inf × 0": { wants: ["NaN"] },
+  "NaN × 0 + 1": { wants: ["NaN"], relied: SCALE },
+  "+Inf × 0 + 1": { wants: ["NaN"], relied: SCALE },
+  "fma(NaN, 0, 1)": { wants: ["NaN"], relied: SCALE },
   "+Inf − +Inf": { wants: ["NaN"] },
   // (exp() of a NaN alone is no mark's: SwiftShader makes it +Inf, and its softmax and SiLU carry the NaN all the same,
   // +Inf against +Inf or a NaN over +Inf: the rows of those are the marks', bench.yml's run 45879339792)
   "exp(NaN)": { wants: ["NaN"] },
   "exp(+Inf)": { wants: ["+Inf"] },
-  "exp(−Inf)": { wants: ["0"] },
+  "exp(−Inf)": { wants: ["0"], relied: MASKED },
   "max(NaN, 1)": { wants: ["NaN"] },
   "max(1, NaN)": { wants: ["NaN"] },
   "min(NaN, 1)": { wants: ["NaN"] },
@@ -49,6 +54,8 @@ export const NAN_READINGS: Record<string, { wants: string[]; relied?: string }> 
   "softmax of the scores 1 and NaN": { wants: ["NaN"], relied: SOFTMAX },
   "softmax of the scores NaN and 1": { wants: ["NaN"], relied: SOFTMAX },
   "softmax of the scores 1 and +Inf": { wants: NOT_FINITE, relied: SOFTMAX },
+  "online softmax of the blocks 1 and NaN": { wants: ["NaN"], relied: SOFTMAX },
+  "online softmax of the blocks 1 and +Inf": { wants: NOT_FINITE, relied: SOFTMAX },
   "NaN × 2 found by its bits": { wants: ["yes"], relied: BITS },
   "+Inf × 2 found by its bits": { wants: ["yes"], relied: BITS },
   "3e38 × 1 taken by its bits for a finite number": { wants: ["yes"], relied: BITS },
@@ -98,13 +105,15 @@ const readOf = (got: NanGot): NanRead => {
  * carry, as "1.5 + NaN (made 0)". [] where all held (or nothing ran). */
 export function nanBroken(found: NanFound | undefined): string[] {
   return (found?.cases ?? []).map(readOf).filter((read) => read.made !== undefined && read.relied && !read.carries)
-    .map((read) => `${read.got.name} (made ${read.made}${read.stored ? `, stored ${read.stored}` : ""})`);
+    .map((read) => `${read.got.name} (${read.got.kind === "flag" ? "answered" : "made"} ${read.made}${read.stored ? `, stored ${read.stored}` : ""})`);
 }
 
 /** The table of the step "nan" (s: {name, result: {cases}} or {name, error}): a row a case, what it should make, what it
  * made, and the engine's mark that stands on it. A case a mark stands on that did not carry says "failed" (warnings()
  * lists the row): that mark does not hold on this device. A case no mark stands on says what the device did, and no
- * warning. */
+ * warning. The cases of a dispatch that failed (the f16 shader that did not compile) share its error: their rows say
+ * "not run" and a line below the table says the error once, so that one failure is one warning and does not push the
+ * others out of a short report. */
 export function nanTable(s: Step<NanFound> | undefined): string[] {
   const head = "**NaN and infinities** (T263): each case once on this device, a thread a case, what it made read back as its bits. " +
     "The engine sees a value that is no finite number by its bits, never by comparing floats (WGSL lets a device assume there is none), " +
@@ -112,22 +121,34 @@ export function nanTable(s: Step<NanFound> | undefined): string[] {
     "a mark that does not hold here says so in its row, and is among the warnings. The rows no mark stands on are there for what this device does: " +
     "a device may give either there (max() of a NaN, clamp(), x != x), and they are no warning.";
   if (!s?.result) return [head, "", unmeasured(s?.error)];
-  const lines = [head, "", "| case | carries where it makes | it made | what stands on it |", "|---|---|---|---|"];
+  const lines = [head, "", "| case | should make | it made | what stands on it |", "|---|---|---|---|"];
+  const failed = new Map<string, string[]>();
+  for (const { name, error } of s.result.cases) if (error) failed.set(error, [...(failed.get(error) ?? []), name]);
   for (const read of s.result.cases.map(readOf)) {
     const { got, made, stored, carries, wants, relied } = read;
-    const cell = got.none ?? (got.error ? `failed: ${got.error}` : `${made}${stored ? ` (stored as ${stored})` : ""}`);
-    const mark = made === undefined ? (relied ?? "") : relied ? (carries ? relied : `failed: ${relied}, not here`) : carries ? "nothing: as IEEE 754 has it" : "nothing";
+    const shared = got.error !== undefined && failed.get(got.error)!.length > 1;
+    const cell = got.none ?? (got.error ? (shared ? "not run (below)" : `failed: ${got.error}`) : `${made}${stored ? ` (stored as ${stored})` : ""}`);
+    const mark = made === undefined ? (relied ?? "") : relied ? (carries ? relied : `failed: ${relied} does not hold here`) : carries ? "nothing: as IEEE 754 has it" : "nothing";
     lines.push(`| ${tableCell(got.name)} | ${wants.join(" or ")} | ${tableCell(cell)} | ${tableCell(mark)} |`);
   }
+  for (const [error, names] of failed) if (names.length > 1)
+    lines.push("", `The ${names.length} cases from ${names[0]} to ${names.at(-1)} failed: ${tableCell(error)}`);
   return lines;
 }
 
-/** The summary's line: how many of the cases a mark stands on carried, and those that did not; undefined where none ran. */
+/** The summary's line where something did not come out: how many of the cases a mark stands on carried, and those that
+ * did not; "not run" where the step ran and no case did (each failed). undefined where all the marks held (the table of
+ * the whole report says so: T263's review, the line took the room of the WRONG warnings of a short report with many of
+ * them, tests/bench/warnings.ts) and where the step did not run. */
 export function nanSummary(s: Step<NanFound> | undefined): string | undefined {
   const reads = (s?.result?.cases ?? []).map(readOf).filter((read) => read.made !== undefined);
-  if (!reads.length) return undefined;
+  if (!reads.length) {
+    const error = s?.error ?? s?.result?.cases.find((one) => one.error)?.error;
+    return error === undefined ? undefined : `GPU, NaN and infinities: not run (${tableCell(error)})`;
+  }
   const relied = reads.filter((read) => read.relied), broken = nanBroken(s!.result);
+  if (!broken.length) return undefined;
   const others = reads.filter((read) => !read.relied);
-  return `GPU, NaN and infinities: ${broken.length ? `${relied.length - broken.length} of the ${relied.length} cases the engine stands on carried, failed: ${broken.join(", ")}`
-    : `the ${relied.length} cases the engine stands on all carried`}; of the ${others.length} others ${others.filter((read) => read.carries).length} as IEEE 754 has them`;
+  return `GPU, NaN and infinities: ${relied.length - broken.length} of the ${relied.length} cases the engine stands on carried, failed: ${broken.join(", ")}; ` +
+    `of the ${others.length} others, ${others.filter((read) => read.carries).length} made what IEEE 754 makes`;
 }

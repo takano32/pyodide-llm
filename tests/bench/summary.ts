@@ -4,7 +4,8 @@
 import assert from "node:assert/strict";
 import { PASTE, REPORT_LIMIT, TOO_LONG, benchMarkdown, cpuBaseline, cpuSummary, cpuTable, deviceSummary, environmentOf, gpuSummary, lineSummary,
          loginUrl, parseReport, reportBody, shortReport, storageSummary, generateTable, layerTable, matVecTable, pathTable, reportTooLong, reportUrl,
-         reportsTable, tokenTable } from "../../src/bench.ts";
+         reportsTable, tokenTable, nanTable, NAN_READINGS, warnings } from "../../src/bench.ts";
+import { NAN_CASES } from "../../src/runtime/shaders.ts";
 import { rows, environment, everything, long } from "./rounds.ts";
 import { stepsStep } from "./layersteps.ts";
 import { real } from "./path.ts";
@@ -42,10 +43,21 @@ const PROMPT_SHADERS = ["batched (T135)", "llama.cpp tiles 32×32, f16", "llama.
 const aPrompt = { name: "a prompt all at once", result: { GB: 0.14, weights: 121.6e6, rows: [...PROMPT_SHADERS.flatMap((shader, i) => [1, 16, 64].map((tokens, j) =>
   ({ shader, packed: shader.startsWith("ORT"), tokens, ms: 12.3 + i * 7 + j * 11, msPerToken: 3.21 - j * 0.9 - i * 0.1, GFLOPS: 34 + i * 20 + j * 40 }))),
   { shader: "batched (T135), again at the end", again: true, tokens: 64, ms: 101.2, msPerToken: 0.5, GFLOPS: 154 }] } };
+// T263's review: the step "nan" as a device answers it, the first `broken` of the cases the engine stands on not carried
+// (made 0), the others each the first of what it should make, as the bits of its kind
+function nanOf(broken) {
+  const WORDS = { float: { NaN: 0x7fc00000, "+Inf": 0x7f800000, "−Inf": 0xff800000, 0: 0 }, half: { NaN: 0x7e00, "+Inf": 0x7c00, "−Inf": 0xfc00 }, flag: { yes: 1 } };
+  const notCarried = NAN_CASES.filter(({ name }) => NAN_READINGS[name].relied).slice(0, broken).map(({ name }) => name);
+  return { name: "NaN and infinities", result: { cases: NAN_CASES.map(({ name, kind }) => {
+    const got = notCarried.includes(name) ? 0 : WORDS[kind][NAN_READINGS[name].wants[0]];
+    assert.ok(got !== undefined, `a word of ${name}`);
+    return { name, kind, got, ...(kind === "float" ? { stored: got } : {}) };
+  }) } };
+}
 // T643.12: the GPU section's steps as the page keeps them, by the step's key (src/bench/gpusection.ts's GpuFound)
 const aFound = { info: { name: "the adapter", result: { adapter: "arm · valhall", fallback: false, packed: true, features: ["shader-f16", "subgroups"], subgroupSizes: [16, 16] } },
   check: { name: "the shaders against JavaScript", result: aCheck }, bandwidth: aBandwidths, token: aTokens, layer: aLayer, generate: aGenerate,
-  ceilings: { name: "the device's ceilings", result: aCeilings }, prompt: aPrompt };
+  ceilings: { name: "the device's ceilings", result: aCeilings }, prompt: aPrompt, nan: nanOf(0) };
 // the same steps with another check's verdicts
 const checkedBy = (found, result) => ({ ...found, check: { ...found.check, result } });
 const aStorage = { mib: 256, pieces: 32, sequential: { seconds: 0.95 }, scattered: { seconds: 1.15 }, scatteredFlushEach: { seconds: 1.64 }, read: { seconds: 0.12 } };
@@ -54,11 +66,22 @@ const aLine = { site: { bytes: 8.4e6, firstByteMs: 162, MBps: 12.7 }, hf: { byte
 const aBaseline = cpuBaseline({ status: "ok", data: aCpu });
 const aHead = [benchMarkdown(rows, android), pathTable(real, "tiny-lm 29M")].join("\n\n");
 const aWhole = [aHead, "#### CPU", ...cpuTable(aCpu), "#### GPU", ...matVecTable(aBandwidths, aCheck, aCeilings), ...tokenTable(aTokens, aBaseline),
-  ...layerTable(aLayer, aCheck, aCeilings), ...generateTable(aGenerate, aCheck)].join("\n");
+  ...layerTable(aLayer, aCheck, aCeilings), ...generateTable(aGenerate, aCheck), ...nanTable(aFound.nan)].join("\n");
 const aLines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(aFound, aBaseline), ...storageSummary(aStorage), ...lineSummary(aLine)];
 const aSummary = shortReport(aHead, aLines);
 assert.ok(reportTooLong(aWhole, android), "a GPU's whole report is too long for the link");
 assert.ok(loginUrl(aWhole, android, aSummary).length <= REPORT_LIMIT, `${loginUrl(aWhole, android, aSummary).length}`);
+// T263's review: three of the NaN cases not carried, their rows among the warnings and their line in the summary
+{
+  const found = { ...aFound, nan: nanOf(3) }, table = nanTable(found.nan), whole = [aWhole, ...table].join("\n");
+  const warned = warnings([{ title: "GPU", status: "ok", markdown: table.join("\n") }]);
+  const lines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(found, aBaseline), ...storageSummary(aStorage), ...lineSummary(aLine)];
+  assert.equal(warned.length, 3, warned.join("\n"));
+  assert.ok(lines.some((line) => line.startsWith("GPU, NaN and infinities: 27 of the 30 cases the engine stands on carried, failed: ")), lines.join("\n"));
+  const summary = shortReport(aHead, lines, warned, android);
+  assert.ok(warned.every((line) => summary.includes(line)), summary);
+  assert.ok(loginUrl(whole, android, summary).length <= REPORT_LIMIT, `${loginUrl(whole, android, summary).length}`);
+}
 const aBody = new URL(reportUrl(aWhole, android, aSummary)).searchParams.get("body");
 assert.ok(aBody.endsWith(`#### Summary\n\n${aLines.map((line) => `- ${line}`).join("\n")}\n\n${PASTE}`), aBody);
 assert.ok(aBody.includes("**Device**: (") && aBody.includes(aHead), "the questions and the head as they are");
