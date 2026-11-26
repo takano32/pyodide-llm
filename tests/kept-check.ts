@@ -112,6 +112,18 @@ const readBack = async (found) => {
   await kept.forget(list[0]);
   assert.equal(cache.map.size, 0);
 }
+// T525: what the page asks before it loads a model, whether the origin private file system opens at all: yes where it
+// does, no where getDirectory() is refused or the browser has none (the memory warning then counts what the memory holds)
+{
+  browser();
+  assert.equal(await kept.opfsOpens(), true, "it opens");
+  globalThis.navigator.storage.getDirectory = async () => { throw new Error("SecurityError"); };
+  assert.equal(await kept.opfsOpens(), false, "a refusal is no");
+  Object.defineProperty(globalThis, "navigator", { value: { storage: {} }, configurable: true });
+  assert.equal(await kept.opfsOpens(), false, "none is no");
+  Object.defineProperty(globalThis, "navigator", { value: {}, configurable: true });
+  assert.equal(await kept.opfsOpens(), false, "no storage at all is no");
+}
 // T641.7: OPFS with sync access handles whose folder will not open (storage turned off): the Cache API keeps it; with
 // neither, keep() says so and keeps nothing
 {
