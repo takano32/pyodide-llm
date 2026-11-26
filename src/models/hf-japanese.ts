@@ -39,19 +39,19 @@ export const HF_JAPANESE: Entry[] = [
     hf: hf("llm-jp/llm-jp-3-440m-instruct3", "a308f143bd5824c4033b3a2efaa1c00afbb3aa9e"), download: 894519624, conversion: {}, options: llmJp,
     generation: JAPANESE_SAMPLING, template: LLM_JP_INSTRUCT, ...ASKED_JAPANESE },
   // sarashina2.2 (T79): the instruct one is published as a single shard with an index (T78)
-  { group: "hf", id: "hf-sarashina2.2-0.5b", name: "SB Intuitions sarashina2.2 0.5B", note: "日本語 / English · fetches 845 MB (GGUF) → int8 0.9 GB", japanese: true, converted: 0.9e9,
+  { group: "hf", id: "hf-sarashina2.2-0.5b", name: "SB Intuitions sarashina2.2 0.5B", note: "日本語 / English · fetches 845 MB (GGUF) → int8 892 MB", japanese: true, converted: 892e6,
     ...ggufOf("mradermacher/sarashina2.2-0.5b-GGUF", "2aed15b94f8c25b7582369f62d9801f3524e4721", "sarashina2.2-0.5b.Q8_0.gguf",
     "sbintuitions/sarashina2.2-0.5b", "5fb086c49f49824cfc93f09cc4ed5cd5917bef3d", "tokenizer.model"),
     download: 845360480, conversion: {}, options: {}, generation: JAPANESE_SAMPLING,
     ...CONTINUES_JAPANESE },
-  { group: "hf", id: "hf-sarashina2.2-0.5b-instruct", name: "SB Intuitions sarashina2.2 0.5B Instruct", note: "answers instructions · 日本語 · fetches 845 MB (GGUF) → int8 0.9 GB", japanese: true, converted: 0.9e9,
+  { group: "hf", id: "hf-sarashina2.2-0.5b-instruct", name: "SB Intuitions sarashina2.2 0.5B Instruct", note: "answers instructions · 日本語 · fetches 845 MB (GGUF) → int8 892 MB", japanese: true, converted: 892e6,
     ...ggufOf("mmnga/sarashina2.2-0.5b-instruct-v0.1-gguf", "5c71186a7a57b8c0325dec70ba2f295303effcd8", "sarashina2.2-0.5b-instruct-v0.1-Q8_0.gguf",
     "sbintuitions/sarashina2.2-0.5b-instruct-v0.1", "e4b9aacc3f644893d0179847946ef6c58d868f29", "tokenizer.model"),
     download: 845363072, conversion: {}, options: sarashina, generation: JAPANESE_SAMPLING, template: SARASHINA,
     ...ASKED_JAPANESE },
   // T81: a translator from sarashina2.2, Japanese to English and back, asked in its own words and greedy, as its
   // model card runs it (no generation_config: transformers' defaults; a repetition penalty bends a translation)
-  { group: "hf", id: "hf-cat-translate-0.8b", name: "CyberAgent CAT-Translate 0.8B", note: "translates 日本語 ⇄ English · fetches 845 MB (GGUF) → int8 0.9 GB", japanese: true, converted: 0.9e9,
+  { group: "hf", id: "hf-cat-translate-0.8b", name: "CyberAgent CAT-Translate 0.8B", note: "translates 日本語 ⇄ English · fetches 845 MB (GGUF) → int8 892 MB", japanese: true, converted: 892e6,
     ...ggufOf("mmnga-o/CAT-Translate-0.8b-gguf", "c770a1944b55223ccbe766c770882c30c9866445", "CAT-Translate-0.8b-Q8_0.gguf",
     "cyberagent/CAT-Translate-0.8b", "b555f93ef67846b6ed2773e0d2f16ceb0d30adb9", "tokenizer.model"), download: 845363136,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
