@@ -91,6 +91,9 @@ page_modules() {
   # T679: which run of deploy.yml `node tests/ci.ts deploy` waits for (tests/ci-runs.ts: the push's before a dispatch's,
   # the run the job "again" started when main moved on or the call came late), on made-up lists of runs (under a second)
   node tests/ci-check.ts
+  # T690's review: the wait of tests/ci.ts as a process, with a `gh` of its own that is 404 for a run just dispatched (about 6 s;
+  # nothing leaves the machine)
+  node tests/ci-wait-check.ts
   # T368.1: the type check of what a browser runs (tsc --noEmit on three programs: the pages' scripts, the runtime's
   # TypeScript, the Service Worker as the JavaScript it is), that a type's import is said as one, and the count of the
   # anys that are written (T473: no more than there are now); T368.8: and that a name a file of the runtime uses without
