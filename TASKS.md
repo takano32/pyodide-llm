@@ -94,7 +94,7 @@
 - T691 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面の残り — 未着手
 - T693 [性能][CPU] Q3_K・Q5_K・Q6_K の塊のカーネル — 未着手
 - T694 [バグ][変換] Gemma 4 31B の GGUF を変換器が文でなく TypeError で落とす — 未着手
-- T693 [バグ][その他] 0.15 Mbps の fifo で「the runtime」の静けさが数えられずフォールバックする — 未着手
+- T695 [バグ][その他] 0.15 Mbps の fifo で「the runtime」の静けさが数えられずフォールバックする — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -923,7 +923,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T694 [バグ][変換] Gemma 4 31B の GGUF を変換器が文でなく TypeError で落とす — 状態: 未着手（2026-11-27、T505.4 で見つけた。規模 小）
 - unsloth/gemma-4-31B-it-GGUF の GGUF（Q8_0・Q4_K_M など、頭だけを読んだ）を GGUF だけで開くと、`convert/config.py` の `check_config()` が「TypeError: unsupported operand type(s) for %: 'int' and 'list'」で落ちる（`n_heads % n_kv_heads`: 層ごとの `head_count_kv` が配列）。ページでは訪問者に例外の型の文が出る見込み（未確認）。直し: 読めるなら読む（Gemma 4 の層ごとの head は E2B・E4B で読んでいる）、読めなければ今ある文で断る。31B は int8 で 16 GiB を越えるので、読めれば T505.4 の道（塊のまま）に入る。
 
-### T693 [バグ][その他] 0.15 Mbps の fifo で「the runtime」の静けさが数えられずフォールバックする — 状態: 未着手（2026-11-27、T692 のレビューから。規模 小、急がない）
+### T695 [バグ][その他] 0.15 Mbps の fifo で「the runtime」の静けさが数えられずフォールバックする — 状態: 未着手（2026-11-27、T692 のレビューから。規模 小、急がない）
 - `pyodide.asm.mjs` の import は Worker の `fetch` を通らず、`PerformanceObserver` が終わりに 1 つ数えるだけなので、本文が届く間の静けさが数えられない（T692 の前後とも FAILED、準備完了はするが静けさでのフォールバック）。
 - 案: `prefetchNumpy` と同じ形で、「the loader」の段のうちに数える `fetch` で `pyodide.asm.mjs` を先に取る（HTTP キャッシュが import に当たる）。ファイル名は `pyodide.mjs` の中に決め打ちで版で変わりうる。確かめは `slow_in_browser.sh` の fifo 1 本。覆す条件: 先取りしても静けさが消えない・先取りが本体の取得と二重になって遅い回線で損になる。
 
