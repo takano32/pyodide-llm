@@ -9,7 +9,10 @@
 // Which requests a conversion then makes, and in which order, is the conduct's to say (src/python/convert/conduct.py):
 // what is decided here is the one name it is handed, hf.weights.
 import type { Model, Unlisted } from "./model.ts";
+import type { Dtype } from "../runtime/contracts/form.ts";
 import { PYTHON_FAMILIES } from "../runtime/built/facts/families.ts";
+import { PYTHON_BYTES } from "../runtime/built/facts/bytes.ts";
+import { PYTHON_WEIGHTS } from "../runtime/built/facts/weights.ts";
 
 /** T309: titles as the page lists them, "A, B or C" */
 export function anyOf(titles: readonly string[]) {
@@ -63,14 +66,69 @@ export type Listed = { path: string; size?: number };
 // quantization was made with (imatrix.gguf: a file named for it, and not a model whose name ends in it).
 const opens = (path: string) => /\.gguf$/.test(path) && !/-\d{5}-of-\d{5}\.gguf$/.test(path) && !/mmproj/i.test(path) && !/^imatrix/i.test(path);
 /** The GGUF to take of a repository's files: the first in the order of QUANTIZATIONS (of two of one place, the first
- * by its name), or undefined where it has none this page can read. */
+ * by its name), or undefined where it has none this page can read. T505.4: of a model too large for a page as int8
+ * (tooWide()), the first in that order that fits one with llama.cpp's blocks kept (keptBytes()), where there is one. */
 export function bestGguf(files: Listed[]) {
   const ranked = files.filter(({ path }) => opens(path)).map((file) => ({ file, place: quantization(file.path) }));
   ranked.sort((a, b) => a.place - b.place || (a.file.path < b.file.path ? -1 : a.file.path > b.file.path ? 1 : 0));
-  return ranked[0]?.file;
+  const fitting = tooWide(files) ? ranked.find(({ file }) => fitsKept(file)) : undefined;
+  return (fitting ?? ranked[0])?.file;
 }
 
-type Entry = { name: string; note?: string; download?: number; hf: { repo?: string; revision?: string; weights?: string } };
+// ---- T505.4: a GGUF too large for a page as int8, opened with llama.cpp's blocks kept as they are
+// (conversion.blocks, as Underdog Saluki 27B's and the list's 14B GGUFs: the rows of the types the page has kernels of
+// stay the file's bytes, the rest is widened to int8). Which, the page says before it fetches anything: from the sizes
+// of the repository's files alone. The worker refuses a model that does not fit after all, in the words it has
+// (weights.ts: "This model is too large for a web page ..."), once the file's head is read.
+/** The most a page's memory holds: a 64-bit WebAssembly memory's maximum, 16 GiB (forward/memory.ts's pastWide(),
+ * which tests/repository-check.ts holds this to) */
+export const WIDE_BYTES = 16 * 2 ** 30;
+/** What a model needs beside its weights, at most, as counted here (the worker counts it to the byte once it knows the
+ * model): the keys and values of 4096 positions, as float16 on a 64-bit memory (Qwen2.5 14B's 48 layers: 0.8 GB;
+ * 32B's 64: 1.1 GB), the activations and the rest. A model within this of WIDE_BYTES is held too large. */
+export const BESIDE_WEIGHTS = 2 * 2 ** 30;
+// The bytes a weight of the model takes in a file of each quantization, by which a file says how many weights the
+// model has (the first of these a repository has, in this order): the types (F32, F16, BF16, Q8_0: 34 bytes for 32,
+// Q6_K: 210 for 256), and llama.cpp's mixes as measured: the least of their files' (T505.4, the heads of bartowski's
+// Qwen2.5 14B and 32B Instruct and unsloth's Qwen3.5 27B and Mistral Small 3.2 24B: docs/notes/t505.4-gguf-blocks-2026-11-27.md),
+// which says the most weights (a model near the line is held too large: kept as blocks, it fits).
+const BYTES_A_WEIGHT: Record<string, number> = {
+  Q8_0: 34 / 32, F16: 2, BF16: 2, F32: 4, Q6_K: 210 / 256, Q5_K_M: 0.711, Q4_K_M: 0.606, Q4_K_S: 0.573, IQ4_XS: 0.540,
+};
+// A quantization whose files are mostly of the types the page keeps as blocks (Q2_K, Q4_K, IQ4_XS and the IQ1 to IQ3
+// types: the blocks of jobs.ts's PACKED): the checkpoint of a conversion that keeps them, to the file's bytes (the
+// rows of other types widened to int8: the Q6_K of a Q4_K_M, the Q3_K of a Q2_K, unsloth's Q4_K_XL's Q5_K and Q6_K).
+// As measured on the same files: the most of them (a file held to fit does). A quantization not here is not taken for
+// a model too large as int8: Q6_K, Q5_K and Q3_K have no kernel (their files are widened whole), and Q4_K, Q4_K_L,
+// IQ3_S and Q2_K_S were not measured.
+const KEPT: Record<string, number> = {
+  Q4_K_M: 1.29, Q4_K_XL: 1.77, Q4_K_S: 1.30, IQ4_XS: 1.08, IQ3_M: 1.04, IQ3_XS: 1.04, IQ3_XXS: 1.17,
+  Q2_K_L: 1.61, Q2_K_XL: 1.58, Q2_K: 1.63, IQ2_M: 1.22, IQ2_S: 1.04, IQ2_XS: 1.04, IQ2_XXS: 1.18, IQ1_M: 1.13, IQ1_S: 1.14,
+};
+/** The quantization a name says, by its spelling as QUANTIZATIONS has it first (FP16 is F16), or undefined */
+const spelled = (name: string) => QUANTIZATIONS[quantization(name)]?.[0];
+/** The weights of the model of a repository's files, about: from the first of them whose quantization says how many
+ * bytes a weight takes, or undefined where none does */
+export function weightsOf(files: Listed[]) {
+  const sized = files.filter(({ path, size }) => opens(path) && Number.isFinite(size) && BYTES_A_WEIGHT[spelled(path)!]);
+  sized.sort((a, b) => quantization(a.path) - quantization(b.path));
+  return sized.length ? sized[0].size! / BYTES_A_WEIGHT[spelled(sized[0].path)!] : undefined;
+}
+/** Whether the model of a repository's files is too large for a page as int8 (the bytes of its weights as the converter
+ * writes them, PYTHON_BYTES's int8, with BESIDE_WEIGHTS, past WIDE_BYTES). Not where nothing says how many weights. */
+export function tooWide(files: Listed[]) {
+  const weights = weightsOf(files);
+  return weights !== undefined && weights * PYTHON_BYTES.int8 / PYTHON_WEIGHTS + BESIDE_WEIGHTS > WIDE_BYTES;
+}
+/** The checkpoint of a GGUF with its blocks kept, about (KEPT), or undefined for one that is not kept so */
+export const keptBytes = (file: Listed) => (KEPT[spelled(file.path)!] && Number.isFinite(file.size) ? file.size! * KEPT[spelled(file.path)!] : undefined);
+const fitsKept = (file: Listed) => {
+  const bytes = keptBytes(file);
+  return bytes !== undefined && bytes + BESIDE_WEIGHTS <= WIDE_BYTES;
+};
+
+type Entry = { name: string; note?: string; download?: number; hf: { repo?: string; revision?: string; weights?: string };
+  conversion?: { dtype?: Dtype; blocks?: boolean } };
 /** A model as one of a repository nobody listed, where it is one (and not a file of the disk, or of the list). */
 export const unlisted = (entry: Model | undefined) => ((entry as Partial<Unlisted> | undefined)?.hf?.repo && entry!.id === "local" ? (entry as Unlisted) : undefined);
 /** Whether a model is one nobody named a file of: its conversion asks for model.safetensors. */
@@ -94,7 +152,9 @@ export function settled<Of extends Entry>(entry: Of, files: Listed[]): Of {
     throw new Error(`${entry.hf.repo} has no model.safetensors and no GGUF file this page can read.`);
   }
   const fetched = /\.gguf$/.test(file.path) && Number.isFinite(file.size) ? { download: file.size } : {};
-  return { ...entry, ...fetched, note: noteOf(entry.hf.revision!, file.path), hf: { ...entry.hf, weights: file.path } };
+  // T505.4: a model too large as int8 keeps the blocks of its GGUF where it has them (the one taken, or named)
+  const kept = /\.gguf$/.test(file.path) && keptBytes(file) !== undefined && tooWide(top) ? { conversion: { ...entry.conversion, dtype: "int8" as const, blocks: true } } : {};
+  return { ...entry, ...fetched, ...kept, note: noteOf(entry.hf.revision!, file.path), hf: { ...entry.hf, weights: file.path } };
 }
 
 /** The files at the top of a repository at a revision, as huggingface.co lists them, or undefined where it does not say

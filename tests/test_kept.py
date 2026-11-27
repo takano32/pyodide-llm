@@ -282,6 +282,22 @@ def test_the_gguf_alone_and_the_conduct_of_a_conversion_keep_them_too(saluki, tm
     assert "kinds" not in plain.options and bytes(plain.checkpoint) == bytes(saluki.converted(blocks=False).checkpoint)
 
 
+def test_a_gguf_alone_of_a_repository_nobody_listed_keeps_them(saluki, tmp_path):
+    """T505.4: the request the page makes of a repository nobody listed whose model is too large as int8 (?hf=, the
+    sheet: src/page/repository.ts's settled()): the GGUF named as the weights, config.json named and not there, nothing
+    else, and blocks=True. The blocks stay as Conversion.from_gguf() keeps them; without blocks, all is widened."""
+    (tmp_path / "model.gguf").write_bytes(saluki.file)
+    hf = {"weights": "model.gguf", "config": "config.json"}
+    _, answerer = listed(tmp_path / "model.gguf")
+    conducted = converted(answerer, hf, dtype="int8", max_seq_len=1 << 20, blocks=True)
+    alone = Conversion.from_gguf(saluki.file, dtype="int8", max_seq_len=1 << 20, blocks=True)
+    alone.feed(saluki.file[alone.base:])
+    alone.finish()
+    assert conducted.options["kinds"] and bytes(conducted.checkpoint) == bytes(alone.checkpoint) and conducted.options == alone.options
+    plain = converted(answerer, hf, dtype="int8", max_seq_len=1 << 20)
+    assert "kinds" not in plain.options and len(plain.checkpoint) > len(conducted.checkpoint)
+
+
 # ---- what is kept and what is not
 def test_a_conversion_that_was_not_asked_keeps_nothing_and_one_with_no_blocks_is_as_it_was():
     """blocks=True of a Q8_0 GGUF, and of a safetensors file: the conversion of today, to the byte and the option."""

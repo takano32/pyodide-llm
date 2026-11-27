@@ -14,7 +14,9 @@
 // whether huggingface.co lets a page read its list (CORS).
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { PAGES, QUANTIZATIONS, SAFETENSORS, bestGguf, filesOf, looked, noteOf, quantization, settled, unlisted, unnamed } from "../src/page/repository.ts";
+import { BESIDE_WEIGHTS, PAGES, QUANTIZATIONS, SAFETENSORS, WIDE_BYTES, bestGguf, filesOf, keptBytes, looked, noteOf, quantization, settled, tooWide, unlisted, unnamed, weightsOf } from "../src/page/repository.ts";
+import { pastWide } from "../src/runtime/forward/memory.ts";
+import { CONTROL_BYTES } from "../src/runtime/jobs.ts";
 import { keptName, keptNames } from "../src/runtime/kept.ts";
 // (the page's module reads its address where it is loaded: there is none here)
 globalThis.location ??= { search: "" };
@@ -226,6 +228,51 @@ assert.equal(unlisted({ id: "tiny-lm", name: "x", hf: { repo: "a/b" } }), undefi
 assert.equal(unlisted({ id: "local", name: "x", hf: { files: [] } }), undefined, "a folder of the disk is taken for a repository");
 assert.equal(unlisted(undefined), undefined);
 console.log("ok: a file is named in an address by names with / between them, none of them dots alone");
+
+// ---- T505.4: a model too large for a page as int8 keeps a GGUF's blocks. The sizes are real files' (huggingface.co's
+// lists, 2026-11-27): bartowski's Qwen2.5 14B and 32B Instruct, unsloth's Qwen3.5 27B, and a 12B's Q8_0
+{
+  assert.equal(WIDE_BYTES, 16 * 2 ** 30);
+  assert.ok(!pastWide(WIDE_BYTES - CONTROL_BYTES, 0) && pastWide(WIDE_BYTES - CONTROL_BYTES + 1, 0), "WIDE_BYTES is not the most a page's memory holds (forward/memory.ts's pastWide())");
+  const of = (stem, sizes) => Object.entries(sizes).map(([word, size]) => ({ path: `${stem}-${word}.gguf`, size }));
+  const q14 = of("Qwen2.5-14B-Instruct", { Q8_0: 15701598336, Q6_K: 12124684416, Q5_K_M: 10508873856, Q4_K_M: 8988110976, Q4_K_S: 8573431936,
+    IQ4_XS: 8119840896, Q3_K_M: 7339204736, IQ3_M: 6916538496, Q2_K: 5770498176 });
+  const q32 = of("Qwen2.5-32B-Instruct", { Q8_0: 34820885376, Q6_K: 26886155136, Q4_K_M: 19851336576, Q4_K_S: 18784410496, IQ4_XS: 17693154176,
+    Q3_K_L: 17247079296, IQ3_M: 14810123136, IQ3_XS: 13705513856, Q2_K: 12313099136, IQ2_M: 11264441216, IQ2_XXS: 9028250496 });
+  const q27 = of("Qwen3.5-27B", { Q8_0: 28595763104, Q6_K: 22500000000, "UD-Q4_K_XL": 17621125024, Q4_K_M: 16740812704, IQ4_XS: 14977484704,
+    Q3_K_S: 12289423264, "UD-IQ3_XXS": 11506493344, "UD-Q2_K_XL": 11213752224, "UD-IQ2_M": 10188072864 });
+  const nemo = of("Mistral-Nemo-12B", { Q8_0: 13022373632, Q6_K: 10060000000, Q4_K_M: 7477000000 });
+  assert.ok(tooWide(q14) && tooWide(q32) && tooWide(q27) && !tooWide(nemo), "which of these models are too large as int8 changed");
+  // (the weights said by the first file that says them: Q8_0's 34 bytes for 32; 14,770,033,664 in the file)
+  assert.ok(Math.abs(weightsOf(q14) / 14770033664 - 1) < 0.01, `the weights of a 14B are read as ${weightsOf(q14)}`);
+  assert.ok(Math.abs(weightsOf(q14.filter(({ path }) => !/Q8_0/.test(path))) / 14770033664 - 1) < 0.01, "the weights of a 14B without its Q8_0 (from its Q6_K)");
+  assert.equal(weightsOf(of("m", { Q3_K_M: 7e9, IQ3_M: 6e9 })), undefined, "a repository of files that do not say their weights' bytes is weighed");
+  assert.ok(!tooWide(of("m", { Q3_K_M: 70e9 })), "a model whose weights nothing says is held too large");
+  const takes = { "Qwen2.5-14B-Instruct-Q4_K_M.gguf": q14, "Qwen2.5-32B-Instruct-IQ3_XS.gguf": q32, "Qwen3.5-27B-UD-IQ3_XXS.gguf": q27 };
+  for (const [file, files] of Object.entries(takes)) {
+    assert.equal(bestGguf(files)?.path, file, `of a model too large as int8, ${file} is not taken (the best that fits with its blocks kept)`);
+    const found = settled(pinned, files);
+    assert.equal(found.hf.weights, file);
+    assert.deepEqual(found.conversion, { dtype: "int8", blocks: true }, `${file} is not converted with its blocks kept`);
+    assert.ok(keptBytes(files.find(({ path }) => path === file)) + BESIDE_WEIGHTS <= WIDE_BYTES);
+    assert.equal(decodeURIComponent(keptName(found)), `owner/model@${REVISION}/${file}:int8:4096:blocks`);
+  }
+  // a model that fits as int8 is as it was: its Q8_0, widened
+  assert.equal(bestGguf(nemo)?.path, "Mistral-Nemo-12B-Q8_0.gguf");
+  assert.deepEqual(settled(pinned, nemo).conversion, {}, "a model that fits as int8 keeps its blocks");
+  // a file named: its blocks kept where the model is too large and the file is of the kept types, else as it was
+  const named = (file, files) => settled(hfEntry("owner/model", "main", { file }), files).conversion;
+  assert.deepEqual(named("Qwen2.5-14B-Instruct-Q4_K_M.gguf", q14), { dtype: "int8", blocks: true });
+  assert.deepEqual(named("Qwen2.5-14B-Instruct-Q8_0.gguf", q14), {}, "a Q8_0 (no blocks kept) of a model too large is kept as blocks");
+  assert.deepEqual(named("Qwen2.5-14B-Instruct-Q3_K_M.gguf", q14), {}, "a Q3_K_M (no kernel of Q3_K) is kept as blocks");
+  assert.deepEqual(named("Mistral-Nemo-12B-Q4_K_M.gguf", nemo), {}, "the Q4_K_M of a model that fits as int8 is kept as blocks");
+  assert.deepEqual(named("Qwen2.5-14B-Instruct-Q4_K_M.gguf", []), {}, "a file the list does not have is kept as blocks");
+  // too large, and nothing that fits with its blocks kept: the best as before (the worker refuses it, in its words)
+  const big = of("Qwen2.5-72B", { Q8_0: 77e9, Q4_K_M: 47e9, IQ2_XXS: 25e9 });
+  assert.equal(bestGguf(big)?.path, "Qwen2.5-72B-Q8_0.gguf");
+  assert.deepEqual(settled(pinned, big).conversion, {});
+  console.log("ok: a model too large as int8 takes the best GGUF that fits with its blocks kept, and keeps them (kept under :blocks); one that fits is as it was");
+}
 
 // ---- what a conversion is kept under (src/runtime/kept.ts): a repository nobody listed, by the file it was opened by,
 // and by nothing more where that is the model.safetensors it always was; a model of the list as it always was (T326:

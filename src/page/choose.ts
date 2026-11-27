@@ -136,10 +136,12 @@ fileField.pattern = FILE.source;
 /** T505.3: the repository the URL names (?hf=) with no file of it is looked at before its load: one without
  * safetensors is opened by the best GGUF it has, and the URL says which from then on. Whether the page may go on to
  * load its model: not where the repository has nothing this page opens, which is said. (A model chosen while this
- * looked has started its own load, and wins.) */
+ * looked has started its own load, and wins.) T505.4: one that names a GGUF (&file=, which the URL says once a GGUF
+ * was taken) is looked at too: whether its model is too large as int8 is said by the sizes of the repository's files,
+ * and such a one keeps the GGUF's blocks (repository.ts's settled()). */
 export async function urlLooked() {
   const named = unlisted(fromUrl);
-  if (!named || model !== named || !unnamed(named)) return true;
+  if (!named || model !== named || !(unnamed(named) || /\.gguf$/.test(named.hf.weights))) return true;
   let entry: Unlisted;
   try {
     entry = await looked(named);
