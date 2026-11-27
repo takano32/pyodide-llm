@@ -80,7 +80,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 **A-6 小さいモデル（〜0.8 GB）（T509・T261.4.1・T260・T236・T229・T245 (c)・T226・T251 (b)・T253 (b)）**
 1. Gemma 3 270M `頭?model=hf-gemma-3-270m`: 短い問いを 1 つ送り最初のトークンまでの秒、続けて 2 つ目の問いの秒（T509）。答えの下の行が「… temp 0.7」のとき（種が出るのは温度のあるときだけ: 出なければ `頭?model=hf-gemma-3-270m&temperature=0.7`）、種のボタンを押して内訳が開かないか・要約を押して開くか・種が要約の下の行に回って読めるか（T372）。長い問い L を 2 回（T261.4.1: CPU が勝ってよい）。[状]・[答]・[コ]（`gpu: a block of 64 tokens: … ms on the GPU, … ms on the CPU`）。
 2. Gemma 3 1B `頭?model=hf-gemma-3-1b`: 長い問い L を 2 回。[状]・[答]・[コ]（T261.4.1）。
-3. LFM2.5 350M `頭?model=hf-lfm2.5-350m`: 短い問い J と流行りの問い。[状]・[答]・[コ]（`threads:` の本数: T260）。
+3. LFM2.5 350M `頭?model=hf-lfm2.5-350m`: 短い問い J と流行りの問い。[状]・[答]・[コ]（`threads:` の本数: T260）。長い問い L も 1 回、[状] の GPU と CPU の言い方が前と同じか（T314: 先頭の位置を丸めない）。
 4. Qwen3.5 0.8B `頭?model=hf-qwen3.5-0.8b`: 日本語で 2 つ（J と流行りの問い）。[状]・[答]・[コ]（`threads:`）。同じ 2 つを `頭?model=hf-qwen3.5-0.8b&without=relaxed`（8 ビット）でも答えさせ、崩れや繰り返しが片方だけに出るか読み比べ（T236・T229・T245 (c)）。
 5. Qwen3.5 0.8B の考える形 `頭?model=hf-qwen3.5-0.8b-thinking`: 1 つ聞いて、1 分たっても `</think>` が出なければ停止を押す。止まるか・画面が固まらないか・その間の tok/s（T236）。
 6. Qwen3 0.6B `頭?model=hf-qwen3-0.6b`（または Qwen2.5 0.5B `頭?model=hf-qwen2.5-0.5b-instruct`）: 1 つ。[状]（答えが GPU か CPU か: T226）。
@@ -205,7 +205,7 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 1. rinna japanese-gpt2 xsmall `頭?model=hf-japanese-gpt2-xsmall` と medium `頭?model=hf-japanese-gpt2-medium`: 日本語を書くか（T249 (c)）。
 2. GPT-2 medium `頭?model=hf-gpt2-medium`・DistilGPT2 `頭?model=hf-distilgpt2`・SmolLM2 135M `頭?model=hf-smollm2-135m-instruct`: 開いて書くか（T251 (c)）。
 3. MiniCPM5 1B `頭?model=hf-minicpm5-1b`: 開けるか（T253 (c)）。
-4. LFM2.5 350M `頭?model=hf-lfm2.5-350m`: 開くか・読めるか（T260）。
+4. LFM2.5 350M `頭?model=hf-lfm2.5-350m`: 開くか・読めるか（T260）。英語と日本語で 1 つずつ、8 ビットの道で崩れや繰り返しが無いか（T314）。
 5. Qwen3.5 0.8B `頭?model=hf-qwen3.5-0.8b` と 2B `頭?model=hf-qwen3.5-2b`: 開けるか・メモリの警告（T229・T247）。
 6. Ternary Bonsai 1.7B `頭?model=hf-ternary-bonsai-1.7b`: 開けるか、[状]（relaxed SIMD の有無と、GPU か CPU か）（T230 (a)(d)・T232 (e)）。
 - どれも [状]・[答]・[目]。
@@ -300,6 +300,7 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 | T232（3 値を GPU に）(a)〜(h) | A-7 の 1、B-4 の 5・B-5 の 6（c）、F-3 の 2（d）、D-4 の 6（e） |
 | T253・T254 のレビュー (a)(b)(c) | B-5 の 3・B-6 の 4（a）、A-6 の 8・A-8 の 8（b）、D-4 の 3・D-5 の 2（c） |
 | T260 のレビュー（LFM2.5） | A-6 の 3、B-4 の 2、D-4 の 4 |
+| T314 から（先頭の位置を丸めない） | A-6 の 3、D-4 の 4 |
 | T251・T252 のレビュー (a)(b)(c) | B-5 の 4・B-6 の 3（a）、A-6 の 7・A-7 の 5（b）、D-4 の 2・D-5 の 2（c） |
 | T255 のレビュー（SmolLM3） | B-5 の 5、A-8 の 8 |
 | T261.4.1（Gemma 3 の GPU） | A-6 の 1・2、B-4 の 3 |
