@@ -266,8 +266,10 @@ def test_the_tables_the_engine_makes_are_what_the_facts_of_rope_say(arch):
         # no turn: tables of zeros that nothing reads, whatever the file's dtype
         assert all(not table.any() and table.shape == (48, 8) for dtype in ("float32", "int8") for table in make(dtype))
         return
-    assert make("float32") is None  # the file has them
+    assert rope_tables(arch, 48, 16, 16, "float32") is None  # the file has them, and the options say no scaling
     cos, sin = make("int8")
+    # (T454: where the options say one, a float32 file's tables are the options' too, those of every other dtype)
+    assert all(np.array_equal(a, b) for a, b in zip(make("float32"), (cos, sin)))
     magnitude = 1.5 if FACTS[arch]["yarn_magnitude"] else 1.0
     if FACTS[arch]["rope"] == PARTLY:
         # (T258: a Phi-3's tables carry the magnitude as a Llama's do, the others' none)
@@ -278,6 +280,35 @@ def test_the_tables_the_engine_makes_are_what_the_facts_of_rope_say(arch):
     else:
         assert np.array_equal(cos, (np.cos(angles) * magnitude).astype(np.float32))
         assert np.array_equal(sin, (np.sin(angles) * magnitude).astype(np.float32))
+
+
+# T454: the scalings a float32 file's engine reads from its options, of each kind rope_frequencies() knows (longrope's
+# short factors of a Phi-3's 4 turned values, and its attention factor)
+SCALINGS = {
+    "linear": ("llama", {"rope_type": "linear", "factor": 4.0}),
+    "llama3": ("llama", {"rope_type": "llama3", "factor": 8.0, "low_freq_factor": 1.0, "high_freq_factor": 4.0,
+                         "original_max_position_embeddings": 12}),
+    "yarn": ("llama", {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 12}),
+    "longrope": ("phi3", {"rope_type": "longrope", "short_factor": [1.5, 3.0], "attention_factor": 1.2,
+                          "original_max_position_embeddings": 48}),
+}
+
+
+@pytest.mark.parametrize("kind", list(SCALINGS))
+def test_a_float32_file_turns_by_the_scaling_its_options_say(kind):
+    """T454 (the owner, 2026-11-26): a float32 file holds RoPE tables of its own, and its engine read them whatever
+    rope_scaling the options said. It makes them of the options now wherever they say a scaling, as it does of a file
+    without (int8): the same tables to the bit, which the model turns by; options that say none read the file's."""
+    arch, scaling = SCALINGS[kind]
+    scaled, unscaled = model(arch, rope_scaling=scaling), model(arch)
+    rotary = OPTIONS.get(arch, {}).get("rotary", scaled.head_size)
+    cos, sin = rope_tables(arch, scaled.seq_len, scaled.head_size, rotary, "int8", 10000.0, scaling)
+    assert np.array_equal(scaled.freq_cis_real, cos) and np.array_equal(scaled.freq_cis_imag, sin)
+    assert not np.allclose(scaled.freq_cis_real, unscaled.freq_cis_real, atol=1e-3)
+    if kind in ("yarn", "longrope"):
+        assert scaled.rope_magnitude > 1.1 and scaled.freq_cis_real[0, 0] == np.float32(scaled.rope_magnitude)
+    ours, theirs = [[each.forward(token, pos) for pos, token in enumerate((1, 7, 9))] for each in (scaled, unscaled)]
+    assert np.isfinite(ours[2]).all() and not np.allclose(ours[2], theirs[2], atol=1e-5)
 
 
 @every

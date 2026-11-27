@@ -256,8 +256,8 @@ class Llama:
         layer of a stack one, and llama.cpp's blocks (engine/dtypes.py's BLOCKS) are kinds: NumPy reads them by the
         converter's readers, and forward.ts (external) multiplies by them as they are (T363.5).
         tiled (T363): wout's columns are in llama.cpp's order of the value heads (FORM's), as a GGUF's blocks have them.
-        rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
-        rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
+        rope_scaling: config.json's, for the RoPE tables the engine makes (int8, float16; T454: a float32 file's too,
+        whose own are then not read: engine/tensors.py's rope_tables()); see rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3). lowercase (T265), prefixed (T308) and spaced (T400): the tokenizer's, see Tokenizer.
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
         kernels is the path of simdkernel.so: the sampling runs on it (penalize, sample). The forward pass on the

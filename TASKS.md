@@ -29,7 +29,7 @@
 - T408 [計測][変換] arm64 のランナーで、段取りを通す道具の変換が 1〜2% 遅く出る run がある訳 — 未着手
 - T410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 未着手
 - T416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
-- T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
+- T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 反映済み
 - T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 端末の数字待ち
 - T280 [運用][Bonsai] 27B の 7.7 GB の保存が断られる端末での見せ方 — 端末の数字待ち
 - T281 [追加][Bonsai] 27B の文脈の長さ — 未着手
@@ -405,9 +405,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **難しい所（見立て）**: (1) **読み手が 10 種類要る。** K 量子化（Q2_K・Q4_K）は 16 個か 32 個の塊ごとの尺度つきの整数、i 量子化（IQ…）は符号表（256〜2048 語の表）を引く形で、llama.cpp の `ggml-quants.c`（MIT）の表を写すことになる（許諾文を残す。方針 10）。(2) **int8 に広げると載らない。** 27B の int8 は約 27 GB で、ブラウザの 1 ページの上限 16 GiB を越える。Bonsai 2 27B と同じく、**ファイルの詰め方のまま持って（約 7.9 GB）、掛けるときに読む新しい dtype とカーネル**が要る。型が 10 種類あるので、行ごとに int8 と尺度へ広げてから今のカーネルに渡す形にするか、型ごとのカーネルにするかを測って決める。(3) **原本との突き合わせができない。** 重みは原本の単純な量子化ではない（GSQ-RCO と Underdog の手入れ）ので、`gguf_check.py tensors` の線には入らない見込み（Bonsai と同じく `rebuilt: true`）。参照は素の llama.cpp の logits にする。(4) 速さは Bonsai 2 27B（本番で 1.1〜2.2 tok/s）より遅い見込み（符号表を引く分。未計測）。
 - **勧める順**: T361 → T362 → T363 → T364。**リファクタリングの組（T346〜T357・T359）が済んでから**（変換器とエンジンの形を替えている最中に dtype を足すと両方が難しくなる）。T361 の調べだけは先にやってもぶつからない。規模は全部で 大が 2 つぶんほど。**副産物**: K 量子化と i 量子化が読めれば、Q4_K_M などの広く配られている GGUF が `?hf=` で開ける道ができる（載る大きさのものに限る）。
 
-### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-11-26、持ち主の決め: float32 でも `rope_scaling` が効くように実装し、RoPE の表の出どころを抽象化する）。前の状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
+### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 反映済み（2026-11-27、本線に入れてデプロイした。レビュー前、Opus medium）。前の状態: 未着手（2026-11-26、持ち主の決め: float32 でも `rope_scaling` が効くように実装し、RoPE の表の出どころを抽象化する）。その前: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
 - **持ち主の決め（2026-11-26、選択肢で）**: 持ち主「追加実装して対応しない？抽象化してほしい」: 断る・無視するのでなく、float32 でも `rope_scaling` が効くように実装する。RoPE の表の出どころ（ファイルの表・options から作る表）を 1 つの部品に抽象化する（順の 5 の頭）。
+- **入れた形（2026-11-27）**: コミット 2 つ（分けるだけの回と形を替える回）。(1) `engine/tensors.py` の `rope_tables(arch, seq_len, head_size, rotary, dtype, theta, scaling)` が表の出どころの 1 か所: 呼ぶ側が作っていた frequencies の閉包と倍率を中に入れた（作る表は同じ）。(2) ファイルの行を読むのは float32 で options の `rope_scaling` が None のときだけにした。**食い違うときの決まり（取りまとめ役の決め）**: options が縮めを言えば（`{}` も）options を勝たせる。ファイルの表は変換器が config.json から作った写しで、変換の options も同じ縮めを持つ（Ternary Bonsai の 3 つの形で、変換の yarn から作った表とファイルの表がビット単位で同じ: `test_gguf.py`）。食い違うのは一覧の項目が上に重ねたときだけで、そのときは int8 と同じく項目の言う RoPE で回る。`fixed_outputs.py` の `with_the_entrys_rope()` は要らなくなったので外した。変換器の出すものは変わらない（`CONVERTER` は上げない）。
+- **ページの forward**: 作った表は計画の `derived` で届き、`forward/tensors.ts` はファイルの行より先に読む（直しは要らなかった）。`footprint()` は float32 で `rope_scaling` があれば表の分（文脈 × head × 4 バイト）を数える（`Footprint` に `rope_scaling` を足した。写しの規則で、Python の `rope_tables()` を指すコメントつき）。`tests/plans.ts` の作り物の `derived` も同じ規則（形に `scaling`）。
+- **試験と壊し方**: pytest `test_a_float32_file_turns_by_the_scaling_its_options_say`（linear・llama3・yarn・longrope の短い因子と attention factor: float32 の表が int8 の作り方とビット単位で同じ、縮めなしの表と logits が違う）、`test_the_tables_the_engine_makes_are_what_the_facts_of_rope_say`（float32 も yarn で int8 と同じ表）、`test_gguf.py` の `test_a_float32_engine_turns_by_the_rope_its_options_say`。`memory-check` に「float32、options の yarn」の形、`forward-check` に stories260K に linear の縮めを言わせた項（ページの forward と NumPy で最尤 100%）、smoke に Pyodide の中で float32 の stories260K の表が options の yarn から作られること。壊し方 3 つ: 出どころを常にファイルに（float32 なら None）→ pytest 18 件落ちる。`footprint()` の数えを外す → `memory-check` が落ちる（0.47 MiB）。計画が float32 の作った表を渡さない → `forward-check` の新しい項が最尤 43% で落ちる。
+- **網**（`node tests/unchanged.ts python calls`、origin/main 64dff313 と）: `calls` は同じ（180）。`python` の違いは予定どおり: 名前を替えた試験 3 つ（gone と new）、新しい試験 4 つ、違うのは `test_a_model_has_its_architectures_facts_from_the_time_it_is_made[plamo3]` の logits だけ（作り物の float32 の PLaMo 3 は options が yarn を言い、前はファイルの素の表で回っていた: 今は options の yarn で）。CI は省いた。訳: 触ったのは Python のエンジンと CPU の forward に渡る表と見積もりで、pytest・smoke（Pyodide）・forward-check・memory-check・網・軽い組が手元で全部踏む（WebGPU の道は CPU の作った表の行を受けるだけで変わらない）。
 
 ### T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 状態: 端末の数字待ち（2026-11-26、持ち主の決めの順で）。前の状態: 未着手（2026-10-02 の洗い出しで採番。端末の数字が要る。規模 小）
 - 3 値にして 484 MB になったので大きさは入る見込み。変換の間のメモリの峰、警告の出方、note の「desktop only」を外せるか。

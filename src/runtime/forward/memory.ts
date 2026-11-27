@@ -42,6 +42,8 @@ export type Footprint = {
   kv_shared?: Form["kv_shared"];
   // T329.2: the width of every layer's input of a table of its own (0: none)
   per_layer?: Form["per_layer"];
+  // T454: the options' RoPE scaling, of which the engine makes a float32 file's tables too where they say one
+  rope_scaling?: Record<string, unknown> | null;
 } & Stateful;
 // T510.1: what a model's options say of its local layers (Python's engine/layout.py's local_layers(): which they are,
 // and how many of the last positions they attend)
@@ -175,7 +177,10 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // headSize / 2 float32; a model without RoPE has them too, of zeros, at any dtype; T130's review)
   if (packing && positions) bytes += seqLen * dim * 4;
   // (T331: of the widest heads: a Gemma 4's tables are its full-attention layers', whose heads are the wide ones)
-  if (packing || !rope) bytes += seqLen * Math.max(headSize, options.wide?.head_dim ?? 0) * 4;
+  // (T454: and a float32 file's where the options say a scaling, {} too: Python's engine/tensors.py's rope_tables()
+  // makes them over the file's, which are then read by nobody; a float16 file's are in what it widens)
+  const scaled = dtype === "float32" && options.rope_scaling !== undefined && options.rope_scaling !== null;
+  if (packing || !rope || scaled) bytes += seqLen * Math.max(headSize, options.wide?.head_dim ?? 0) * 4;
   // T261: and the two tables of a model's local layers, which no file has (T510: not where the options say there are
   // none (null); but a form alone, which is all a conversion's sink.open() has, says nothing of local layers, and the
   // tables are counted then, as the keys and values of every layer of every position are (a Gemma 2's, whose window

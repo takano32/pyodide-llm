@@ -66,7 +66,8 @@ def read_rows(checkpoint, rows, dtype, shared_weights, external):
         held = dict(outside(rows, dtype))
     else:
         check_suited(rows, dtype)
-        # the RoPE tables are the file's in float32 alone (rope_tables() makes the others).
+        # the RoPE tables are the file's in float32 alone (rope_tables() makes the others, and a float32 file's too
+        # where the options say a scaling: T454).
         # With a separate classifier the embedding table is only ever read one row at a time, so an int8
         # or float16 table stays as it is and Llama.embedding() widens the row it needs. (Codebooks stay bytes.)
         # (T329: and a table every layer reads a row of, which multiplies nothing)
@@ -82,16 +83,20 @@ def read_rows(checkpoint, rows, dtype, shared_weights, external):
 def rope_tables(arch, seq_len, head_size, rotary, dtype, theta=10000.0, scaling=None):
     """The RoPE tables (cos, sin) of a model as its options say them, or None where they are the file's rows
     (freq_cis_real, freq_cis_imag): the one place that says where a model's tables come from (T454). The options'
-    are made of theta (rope_theta) and scaling (rope_scaling: rope_frequencies() and rope_magnitude()); a float32 file
-    has rows of its own, and half precision is too coarse for the rotation angles, and a quantized file leaves the
-    tables out. rotary: how many values of a head are turned. arch: the architecture's name, whose facts
-    (engine/layout.py's Layout) say which tables these are."""
+    are made of theta (rope_theta) and scaling (rope_scaling: rope_frequencies() and rope_magnitude()). Only a float32
+    file has rows of its own to read (half precision is too coarse for the rotation angles, and a quantized file leaves
+    the tables out), and they are read only where the options say no scaling (None): wherever the options say one,
+    {} too (a plain RoPE), the tables are the options', over the file's. The file's are the converter's copy of
+    config.json's rope_scaling, which its options carry as well (convert/beginning.py), the same to the bit; where the
+    two differ, an entry's options laid over the conversion's (src/models/: the Ternary Bonsai's {}), the options say
+    what the model is turned by, as they do of every other dtype. rotary: how many values of a head are turned. arch:
+    the architecture's name, whose facts (engine/layout.py's Layout) say which tables these are."""
     layout = layout_of(arch)
     if layout.rope is None:
         # no rotation: the position is a row of a learned table, added to the embedding
         zeros = np.zeros((seq_len, head_size // 2), dtype=np.float32)
         return zeros, zeros
-    if dtype == "float32":
+    if dtype == "float32" and scaling is None:
         return None
     frequencies = lambda width: rope_frequencies(width, theta, scaling)
     if layout.rope == PROPORTIONAL:

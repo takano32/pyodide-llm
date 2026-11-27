@@ -313,9 +313,11 @@ const returned = (fn) => {
     // GPT-2's and a GPT-NeoX's. T487: after architectures.ts's line, which says which side to put right, and saying it too)
     if (Object.hasOwn(SECOND, name)) assert.deepEqual([said.rope, plan.layer_norm, plan.gated_ffn], SECOND[name], `${which}: RoPE, the kind of the norms and of the FFN ` +
       "are not this check's second copy of them (SECOND). engine/layout.py's LAYOUTS is the owner: where it was changed on purpose, put SECOND right");
-    // (and what footprint() makes of rope: a float32 file of a model with RoPE has the tables, and Python makes them otherwise)
+    // (and what footprint() makes of rope: a float32 file of a model with RoPE has the tables, and Python makes them otherwise;
+    // T454: and of a float32 file too where the options say a scaling, over the file's, which are then read by nobody)
+    const scaled = cases[index].more.rope_scaling !== undefined && cases[index].more.rope_scaling !== null;
     assert.equal("freq_cis_real" in plan.tensors, said.rope && dtype === "float32", `${which}: the RoPE tables are the file's`);
-    assert.equal("freq_cis_real" in plan.derived, !(said.rope && dtype === "float32"), `${which}: the RoPE tables are Python's`);
+    assert.equal("freq_cis_real" in plan.derived, !(said.rope && dtype === "float32") || scaled, `${which}: the RoPE tables are Python's`);
     lines.add(plan.arch);
   });
   assert.deepEqual(sorted(lines), sorted(Object.keys(ARCHITECTURES)), "every line of forward/architectures.ts is held to a plan of Python's (a new architecture is a family of this check's too)");

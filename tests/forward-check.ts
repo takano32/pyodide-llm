@@ -437,8 +437,11 @@ for (const [name, dim, heads, kvHeads] of [["made-up, grouped-query", 512, 16, 8
     `${close ? "" : " — FAILED"}`);
   failed ||= !close;
 }
-for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"]) {
-  const entry = modelOf(id);
+// T454: and a float32 file whose options say a RoPE scaling (stories260K's, a linear one), whose tables the engine
+// makes of the options over the file's: forward.js is to read the plan's tables, not the file's rows
+const scaledRope = (entry) => ({ ...entry, name: `${entry.name}, a linear RoPE scaling said by its options`,
+  options: { ...entry.options, rope_scaling: { rope_type: "linear", factor: 4 } } });
+for (const entry of ids.length ? ids.map(modelOf) : [...["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"].map(modelOf), scaledRope(modelOf("stories260K"))]) {
   py.FS.writeFile("model.bin", fs.readFileSync(file(entry.checkpoint)));
   py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
   py.globals.set("OPTIONS", py.toPy({ ...entry.options, disable: without, ...(halfKeys ? { half_keys: true } : {}) }));

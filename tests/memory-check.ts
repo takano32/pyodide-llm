@@ -220,6 +220,10 @@ function halfToFloat(h) {
     // T232: and a ternary Llama in a rotated basis, which no model of the list is: what the GPU still refuses once it takes
     // ternary weights, without the linear-attention layers that come first
     ...big("ternary llama in a rotated basis", [256, 512, 8, 8, 2, 20000, 4096], { rotated: ROTATED_SMALL }, ["ternary"]),
+    // T454: a float32 file whose options say a RoPE scaling: the engine makes its tables of them (two of 4096 × 32
+    // float32, 1 MiB) and does not read the file's
+    ...big("llama, float32, yarn said by the options", [256, 512, 8, 8, 8, -20000, 4096], {}, ["float32"])
+      .map((shape) => ({ ...shape, scaling: { rope_type: "yarn", factor: 4, original_max_position_embeddings: 1024 } })),
   ];
   // the float32 vectors of the linear layers of a hybrid model, whose relaxed corrections (a ninth of a float32's bytes) footprint() counts
   const hybridOver = (p) => {
@@ -235,7 +239,7 @@ function halfToFloat(h) {
     for (const relaxed of [true, false]) {
       for (const shared of [true, false]) {
         // (the worker's options: whether the int8 kernels run is footprint()'s to say)
-        const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: quantized, outliers: 8, gpu: false, shared };
+        const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: quantized, outliers: 8, gpu: false, shared, rope_scaling: p.scaling };
         const base = shared ? CONTROL_BYTES : 64, bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
         const memory = plainMemory(p, base);
         const engine = engineOn(p, planOf(p, { relaxed, outliers: 8 }), { base, memory, halfKeys });

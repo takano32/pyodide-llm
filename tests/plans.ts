@@ -28,20 +28,22 @@ def keeps_int8(header, form, dtype):
     return dtype in ("int8", *L.PACKED) and all(n % 32 == 0 for n in (dim, heads * head, kv_heads * head, hidden)) \
         and (linear is None or L.linear_widths(linear)[2] % 32 == 0)
 
-def plan_of(header, form, dtype):
+def plan_of(header, form, dtype, scaling=None):
     # where every tensor is: external_tensors(), the rows of engine/layout.py placed (T359)
     tensors = L.external_tensors(header, dtype, form)
     head_size = form["head_dim"] or header[0] // header[3]
     # (T331.2: the model's tables are of its widest heads: a Gemma 4's full-attention layers')
     wide = form.get("wide") or {}
     table = header[6] * (max(head_size, wide.get("head_dim", 0)) // 2) * 4
-    derived = {"freq_cis_real": table, "freq_cis_imag": table} if form["arch"] == "gpt2" or dtype != "float32" else {}
+    # (T454: a float32 file's too where the options say a scaling: engine/tensors.py's rope_tables())
+    made = form["arch"] == "gpt2" or dtype != "float32" or scaling is not None
+    derived = {"freq_cis_real": table, "freq_cis_imag": table} if made else {}
     if local_of(header, form):
         # (T261: the tables of the local layers, which no file has)
         local = header[6] * (head_size // 2) * 4
         derived.update({"local_cis_real": local, "local_cis_imag": local})
     # (the tensors by name: the order of a dict is not what the plan says, and tests/unchanged-calls.ts hashes this whole)
-    return {"header": header, "form": form, "dtype": dtype, "size": llama2_convert.checkpoint_size(header, dtype, form),
+    return {"header": header, "form": form, "dtype": dtype, **({"scaling": scaling} if scaling is not None else {}), "size": llama2_convert.checkpoint_size(header, dtype, form),
             "tensors": dict(sorted(tensors.items())), "derived": derived, "keep_int8": bool(keeps_int8(header, form, dtype)), "head_size": head_size}
 
 def local_of(header, form):
@@ -66,10 +68,10 @@ def engines_plan(header, form, dtype):
                           local_tables=tables, **({"local": local} if local else {}))
     return {**plan, "derived": {}}
 
-def both(header, form, dtype):
+def both(header, form, dtype, scaling=None):
     # (T510.1: and the local layers among the options footprint() is asked with, as a model's options carry them)
     local = local_of(header, form)
-    return {**plan_of(header, form, dtype), "plan": engines_plan(header, form, dtype),
+    return {**plan_of(header, form, dtype, scaling), "plan": engines_plan(header, form, dtype),
             **({"form": {**form, "local": {"layers": local["layers"], "window": local["window"]}}} if local else {})}
 
 print(json.dumps([both(**s) for s in json.loads(sys.stdin.read())]))

@@ -1257,6 +1257,27 @@ specials = ("</s>",)
   const longrope = made({ rope_scaling: { rope_type: "longrope", short_factor: Array.from({ length: pairs }, (_, at) => 1 + at / 8),
     attention_factor: 1.25, original_max_position_embeddings: 4096 } });
   assert.ok(longrope[0] === 1.25 && longrope[1] !== plain[1], "longrope in the options did not scale the tables");
+  // T454: and a float32 file (stories260K's), which has tables of its own: the options' yarn makes them, over the file's,
+  // the tables engine/tensors.py's rope_tables() makes of an int8 file to the bit; options that say none read the file's
+  const tables = (options) => {
+    const llama = pyodide.pyimport("llama2_numpy").Llama.callKwargs(pyodide.runPython('read("stories260K.bin")'), pyodide.runPython('read("tok512.bin")'),
+      { dtype: "float32", ...options });
+    pyodide.globals.set("MADE", llama);
+    const said = JSON.parse(pyodide.runPython(`import json, hashlib
+from engine.tensors import rope_tables
+made = rope_tables("llama", MADE.seq_len, MADE.head_size, MADE.head_size, "int8", MADE_THETA, MADE_SCALING)
+json.dumps([hashlib.sha256(MADE.freq_cis_real.tobytes() + MADE.freq_cis_imag.tobytes()).hexdigest(),
+            hashlib.sha256(made[0].tobytes() + made[1].tobytes()).hexdigest()])`));
+    pyodide.runPython("del MADE");
+    llama.destroy();
+    return said;
+  };
+  pyodide.globals.set("MADE_THETA", 10000.0);
+  pyodide.globals.set("MADE_SCALING", pyodide.toPy(yarn));
+  const [file, made32] = [tables({}), tables({ rope_scaling: yarn })];
+  pyodide.runPython("del MADE_THETA, MADE_SCALING");
+  assert.ok(made32[0] === made32[1] && made32[0] !== file[0], "a float32 file's engine did not make its tables of the options' yarn");
+  console.log("T235, T454: the options' RoPE scaling handed from JavaScript makes the tables (of a float32 file too)");
 }
 // T397: the converter reads a chat template with jinja2, which Pyodide has once the package is loaded, as the worker
 // loads it before a conversion (worker/pyodide.ts's templatePackage()). T640.14: without it, a template read raises
