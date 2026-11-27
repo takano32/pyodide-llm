@@ -481,18 +481,33 @@ def translate_document(model, text, target, source=None, form=None, context=None
 
 
 # T669: the page's target "automatic": Japanese into English, anything else into Japanese (the owner, 2026-11-26), a
-# text Japanese where it has a kana (hiragana, katakana and its extensions, the half-width katakana: AGENTS.md's 「答えが
+# text Japanese where it has a kana and the kana and kanji are a tenth of its letters (hiragana, katakana and its extensions, the half-width katakana: AGENTS.md's 「答えが
 # 日本語かは、かなで数える」, kanji alone are Chinese as much)
 AUTOMATIC = "auto"
 KANA = ((0x3041, 0x30FF), (0x31F0, 0x31FF), (0xFF66, 0xFF9F))
+KANJI = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF), (0x20000, 0x3FFFF))
+# a text is Japanese where its kana and kanji are at least this share of its letters (tanakh/plamo-translate-desktop's
+# design.md, 9: one kana used to be enough, which sent an English text that quotes a Japanese word into English)
+JAPANESE_SHARE = 0.1
 # what the page is told as a translation goes, besides its text: a chunk begins (its index and the number of them), the
 # last characters written are taken back (code points, as Python counts them: Withdrawn's), a cut's mark goes here (why)
 CHUNK, WITHDRAWN, CUT = "chunk", "withdrawn", "cut"
 
 
 def japanese(text):
-    """whether a text is Japanese: it has a kana"""
-    return any(low <= ord(char) <= high for char in text for low, high in KANA)
+    """whether a text is Japanese: it has a kana, and its kana and kanji are a tenth of its letters or more (kanji alone
+    could be Chinese; a letter is what str.isalpha() says, so the middle dot ・ and the combining marks are none)"""
+    kana = kanji = letters = 0
+    for char in text:
+        if not char.isalpha():
+            continue
+        letters += 1
+        code = ord(char)
+        if any(low <= code <= high for low, high in KANA):
+            kana += 1
+        elif any(low <= code <= high for low, high in KANJI):
+            kanji += 1
+    return kana > 0 and (kana + kanji) >= JAPANESE_SHARE * letters
 
 
 def automatic_target(text):

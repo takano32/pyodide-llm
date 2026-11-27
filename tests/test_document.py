@@ -309,8 +309,16 @@ def test_the_automatic_target_is_english_for_a_text_with_a_kana_and_japanese_for
     anything else (kanji alone too, Chinese as much) into Japanese"""
     for text in ("今日はいい天気", "テスト", "ｶﾀｶﾅ", "a ㇰ b"):
         assert automatic_target(text) == "en", text
-    for text in ("The weather", "天気", "Le temps", "날씨", "", "𠮷"):
+    for text in ("The weather", "天気", "Le temps", "날씨", "", "𠮷", "・"):
         assert automatic_target(text) == "ja", text
+
+
+def test_the_automatic_target_is_japanese_for_a_text_that_only_quotes_a_japanese_word():
+    """T669 (the review): tanakh's rule, which tightened one kana to a tenth of the letters (the project's English README
+    that quotes a Japanese word went into English: no translation)"""
+    quoting = "The README says こんにちは once, and the rest of the text is English: " + "word " * 40
+    assert automatic_target(quoting) == "ja"
+    assert automatic_target("今日は天気がいいので、English も少し混ぜて、散歩に行こう。") == "en"
 
 
 def test_the_page_is_told_the_chunks_what_is_taken_back_and_the_cuts(made):
