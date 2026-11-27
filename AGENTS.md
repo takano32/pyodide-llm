@@ -202,6 +202,7 @@
 |---|---|
 | `worker/runtime.ts` | 訪問で 1 回決まるもの（Pyodide・エンジンの Python・カーネル・forward・URL の旗・アダプタ） |
 | `worker/request.ts` | ページがいまの読み込みに頼んだもの（何も import しない） |
+| `worker/pyodide.ts` | これまでに届いたモデルの部品のバイト数 `modelBytes`（Pyodide の読み込みの静けさに数える。外は `sources.ts` の `download()` が出来事 `modelPartArrived(bytes)` で言い、読むのは `pyodide.ts` の中だけ: T298） |
 | `worker/loaded.ts` | 読み込んだモデルとエンジン（`adopted()`・`letGo()`） |
 | `worker/pool.ts`・`worker/alone.ts`・`worker/weights.ts` | 使い回すメモリといまのモデルのメモリ（`pooled()`・`weightsInPython()`）/ GPU だけのモデル・CPU に戻したモデル・読み込み中のモデルの鍵（`aloneBegan()`）/ 層ごとの埋め込みの表を読むファイル（`rowsNow`）・表をメモリに持つモデル・塊を広げる読み込み。向きは weights → alone → pool |
 | `forward/threads.ts`・`forward/gpuside.ts` | スレッドと本数の検索 / GPU の Worker・どちらに回すか・測り直し |
