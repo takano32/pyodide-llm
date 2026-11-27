@@ -203,7 +203,8 @@ for (const entry of MODELS.filter((entry) => LICENSES[sourceOf(entry)!] === "PLa
 // list's, the BOS and the stops its own); the ids it had before are read as it (FORMER_IDS), and are no entry's
 {
   const translators = MODELS.filter((entry) => entry.pfml);
-  assert.deepEqual(translators.map(({ id }) => id).sort(), ["hf-plamo-3-translate-0.8b", "hf-plamo-3-translate-2b", "hf-plamo-3-translate-8b"], "the entries of PFML3's request");
+  assert.deepEqual(translators.map(({ id }) => id).sort(), ["hf-plamo-3-translate-0.8b", "hf-plamo-3-translate-0.8b-q2", "hf-plamo-3-translate-2b",
+    "hf-plamo-3-translate-2b-q2", "hf-plamo-3-translate-8b"], "the entries of PFML3's request (T671: and the Q2_K of the two smaller)");
   for (const entry of translators) {
     assert.ok(entry.template === undefined && entry.options.bos === 1 && entry.hf?.vocabulary?.tokenizer === "tokenizer.jsonl", `${entry.id}: no template, PLaMo's BOS and tokenizer`);
     assert.ok(!entry.shares, `${entry.id}: one entry, its conversion shared with none`);
