@@ -338,8 +338,9 @@ const ok = (line) => {
   assert.equal(ended?.error.message,
     'Pyodide 314.0.7: "the runtime" stopped as soon as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived');
   assert.equal(ended.error.kind, "runtime");
-  const broke = await failure(run("pyodideSteps")("314.0.7", async () => { throw new TypeError("Importing a module script failed."); }));
-  assert.equal(String(broke?.error), "TypeError: Importing a module script failed.");
+  // (T692: a TypeError of the import is the line's, tests/worker-check.ts; a file that came and does not parse is not)
+  const broke = await failure(run("pyodideSteps")("314.0.7", async () => { throw new SyntaxError("Unexpected token '<'"); }));
+  assert.equal(String(broke?.error), "SyntaxError: Unexpected token '<'");
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
   ok("a runtime of Pyodide's that stopped as soon as it started is told as a step that stopped");
 }

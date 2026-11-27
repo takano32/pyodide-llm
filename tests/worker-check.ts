@@ -564,6 +564,25 @@ const ok = (line) => {
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
   ok("the model's bytes are a sign of life while Pyodide loads, and a model that stops too is no sign");
 
+  // T692: a module of Pyodide's whose import rejects with a TypeError (its file did not come: "Failed to fetch dynamically
+  // imported module" on a slow line, tests/slow_in_browser.sh) ends its step as one that stopped, of the kind "runtime":
+  // the page tries once without the service worker. Only the steps that import: a TypeError of NumPy's stays itself
+  {
+    fresh(() => new Response("", { status: 404 }));
+    const notFetched = () => Promise.reject(new TypeError("Failed to fetch dynamically imported module: https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs"));
+    for (const [name, importer] of [["the loader", notFetched], ["the runtime", async () => ({ loadPyodide: notFetched })]]) {
+      const failed = await failure(run("pyodideSteps")("314.0.7", importer));
+      assert.equal(failed?.error.kind, "runtime", `${name}: an import that did not come is no fallback: ${failed?.error}`);
+      assert.match(failed.error.message, new RegExp(`^Pyodide 314\\.0\\.7: "${name}" could not fetch a module of its own \\(TypeError: Failed to fetch dynamically imported module`));
+      assert.equal(failed.error.cause?.name, "TypeError", `${name}: what was caught is not kept as the cause`);
+    }
+    const numpy = await failure(run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: async () => ({ loadPackage: notFetched, version: "314.0.7" }) })));
+    assert.equal(numpy?.error.name, "TypeError", `NumPy's step: ${numpy?.error}`);
+    assert.equal(numpy.error.kind, undefined);
+    assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
+  }
+  ok("an import of Pyodide's that did not come is a runtime that did not load (the page falls back), and NumPy's TypeError is not");
+
   // (3) T397: templatePackage(), jinja2 for the converter's reading of chat templates. Pyodide's own package by its
   // name (no version here), with the integrity check loadPackage has by default. T640.14 (the owner: as the other
   // packages): waited for as NumPy is, a step of Pyodide's: one that does not come fails the conversion as NumPy's

@@ -150,9 +150,16 @@ function watchArrivals() {
 // A step of Pyodide's loading, named: it says its name in the status line (said), and ends in an error of the kind
 // "runtime" (the page may try again without the service worker, isolation made this hang on iOS) where nothing has
 // arrived for QUIET_SECONDS, rather than never. T640.14: jinja2's load, when a conversion first needs it, is one too.
+// T692: a step that imports a module of Pyodide's (imports: "the loader", pyodide.mjs, and "the runtime", whose
+// loadPyodide() imports pyodide.asm.mjs) ends in the same kind where it rejects with a TypeError: a dynamic import whose
+// file did not come is one ("Failed to fetch dynamically imported module": a slow line whose TLS handshake jsDelivr
+// closed while it waited behind the model, tests/slow_in_browser.sh, T298), where a file that came and does not parse
+// is a SyntaxError. Told apart by the step and the error's name, never by its words. Not tried again here: the page's
+// one try without the service worker is the try (an import that failed stays failed under its URL in the module map,
+// and the import inside loadPyodide() is not this worker's to repeat).
 function stepOf(version: string, watch: Watch, said = true) {
-  const stop = (name: string, why: string) => new Failure("runtime", `Pyodide ${version}: "${name}" ${why}`);
-  return async <T>(name: string, promise: Promise<T>) => {
+  const stop = (name: string, why: string, cause?: unknown) => new Failure("runtime", `Pyodide ${version}: "${name}" ${why}`, { cause });
+  return async <T>(name: string, promise: Promise<T>, imports = false) => {
     if (said) postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` } satisfies Status);
     const quiet = watch.quiet(QUIET_SECONDS);
     const stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
@@ -163,6 +170,9 @@ function stepOf(version: string, watch: Watch, said = true) {
       // Python then ends as it starts: the promise rejects with Emscripten's ExitStatus, which is no Error and said
       // "[object Object]" (bench.yml's Windows WebKit, 2026-10-01: its fetches of jsDelivr failed together now and then).
       // Told as a step of Pyodide's that stopped, as one whose file never came is
+      if (imports && isError(error) && error.name === "TypeError") {
+        throw stop(name, `could not fetch a module of its own (${told(error)})`, error);
+      }
       if (isError(error)) throw error;
       throw stop(name, `stopped as soon as it started (${told(error)}): one of its files may not have arrived`);
     } finally {
@@ -187,8 +197,8 @@ export async function pyodideSteps(version: string, importer: (url: string) => P
   try {
     // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
     const numpy = prefetchNumpy(base);
-    const { loadPyodide } = await step("the loader", importer(`${base}pyodide.mjs`));
-    const loaded = await step("the runtime", loadPyodide());
+    const { loadPyodide } = await step("the loader", importer(`${base}pyodide.mjs`), true);
+    const loaded = await step("the runtime", loadPyodide(), true);
     // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice. One
     // that stopped is not waited for past a quiet spell (T118): loadPackage then fetches the wheel itself
     const quiet = watch.quiet(QUIET_SECONDS);

@@ -10,7 +10,8 @@
 //
 //   slow   the whole line at --rate (default 50000: 0.4 Mbps). Pyodide's 9 MB take minutes; the load must end
 //          ready, without falling back to no service worker (before T118 a step was given up after 60 to 90
-//          seconds however much was still arriving, and the page fell back, then failed again)
+//          seconds however much was still arriving, and the page fell back, then failed again). T692: ready after a
+//          fallback for an import of Pyodide's that did not come (no stillness said) is ok too, and says so
 //   stall  cdn.jsdelivr.net stops sending after 200 kB. The load must end in an error that says so, after one
 //          fallback, and not hang
 //
@@ -208,6 +209,11 @@ if (pyodideLines.length) console.log(`console: ${pyodideLines.join(" / ")}`);
 await closed(() => browser.close());  // (T141, T391.6: never waited on for long)
 proxy.close();
 await served?.close();
-const ok = scenario === "slow" ? outcome.ready && !state.fellBack : Boolean(outcome.error) && state.fellBack && !/the test:/.test(outcome.error);
-console.log(ok ? "ok" : "FAILED");
+// T692: on a slow line, a fallback is the check's failure where the worker took the line for one that stopped (its 30
+// seconds of stillness, what T118 and T298 are about). One after an import whose file did not come (a TLS handshake
+// that jsDelivr closed while it waited behind the model: the line broke, it was not slow) is the page doing what it
+// should, and ready after it is ok, said as such. Read from the worker's error in the page's console
+const stilled = console_.some((line) => /got nothing from the network for|did not answer in \d+ seconds/.test(line));
+const ok = scenario === "slow" ? outcome.ready && (!state.fellBack || !stilled) : Boolean(outcome.error) && state.fellBack && !/the test:/.test(outcome.error);
+console.log(ok ? (scenario === "slow" && state.fellBack ? "ok (ready after a fallback for an import that did not come)" : "ok") : "FAILED");
 await leave(ok ? 0 : 1);
