@@ -90,7 +90,7 @@
 - T687 [性能][CPU] arm64 の Firefox のための 3 値の表の形 — 未着手
 - T691 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面の残り — 未着手
 - T693 [性能][CPU] Q3_K・Q5_K・Q6_K の塊のカーネル — 未着手
-- T694 [バグ][変換] Gemma 4 31B の GGUF を変換器が文でなく TypeError で落とす — 未着手
+- T694 [バグ][変換] Gemma 4 31B の GGUF を変換器が文でなく TypeError で落とす — 反映済み
 - T695 [バグ][その他] 0.15 Mbps の fifo で「the runtime」の静けさが数えられずフォールバックする — 未着手
 - T696 [描画][モデル] 翻訳の用語集が長いときの控えめな警告 — 未着手
 <!-- 目次ここまで -->
@@ -882,8 +882,11 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **T671 の残りがこれを待つ**: PFN の PLaMo 3 Translate の Q3_K_M（0.8B・2B）と 31B の Q2_K。今は Q3_K・Q5_K・Q6_K の行が int8 に広がり、Q3_K_M は Q4_K_M より大きく、31B の Q2_K はチェックポイントだけで 19.07 GiB（T671 の数）。足したら `tests/quant_sizes.py` で数え直して一覧に。
 - T505.4 で数えたもの（docs/notes/t505.4-gguf-blocks-2026-11-27.md）: huggingface.co の GGUF の上位 500 のうち、密な形で int8 が 16 GiB を越えるのは 52。いまの型（`BLOCKS` の 10）で塊のまま入るファイルを選べるのが 34、選べないのが 18。Q3_K・Q5_K・Q6_K を塊のまま持てれば（見積もり: ファイルの 1.06 倍）選べないものは 10 に、14B は Q4_K_M の代わりに Q6_K、27B の多くは IQ3_M・IQ3_XXS の代わりに Q3_K_M を選べる。Q4_K_M の塊のまま持った大きさも 1.20〜1.28 倍 → 1.0 倍の近くに。
 - 費用: (1) カーネル（`kernels/blocks/types.ts` に型 3 つ、型の番号で分ける並び 4 か所、`blocks-check`・`blocks-model.ts` の `TYPES`、`kernels-in-browser.ts`）。**Q6_K は重み 16 個の単位の尺度が符号つきの int8 で、32 個の群の整数の和が float32 で厳密な範囲（2^24）を越える（32 × 63 × 127 × 128）**: 今の「群の和を float32 で厳密に」の形のまま入らない。**（T505.4 のレビュー: この式は Q6_K の単位（16 個の群、尺度は符号つき 8 ビット）の数ではない。16 × 32 × 127 × 127 = 8.3M で 2^24 の内なので、「厳密に入らない」かは着手するとき数え直す）** (2) Python の `BLOCKS` に足すと、一覧の `blocks: true` の項目（Qwen3 14B・llm-jp-3.1 13B など）の Q6_K の行が塊のまま残り、チェックポイントが変わる: `CONVERTER` を上げる（訪問者の取り直し）、`loaded` と note の数、`tests/quant_sizes.py` で数え直す。(3) GPU の `SUPERBLOCKS` に足すか（足すと塊のモデルの端末の鍵が 1 回動く。足さないと、いま GPU に置ける Q4_K の束のモデルが Q6_K の行のために CPU に残る: 先に数える）。(4) ページの `KEPT` と `BYTES_A_WEIGHT` を測り直す。検証手順 5・6（27B と Saluki）。
-### T694 [バグ][変換] Gemma 4 31B の GGUF を変換器が文でなく TypeError で落とす — 状態: 未着手（2026-11-27、T505.4 で見つけた。規模 小）
+### T694 [バグ][変換] Gemma 4 31B の GGUF を変換器が文でなく TypeError で落とす — 状態: 反映済み（2026-11-27、T505.4 で見つけた。規模 小）
 - unsloth/gemma-4-31B-it-GGUF の GGUF（Q8_0・Q4_K_M など、頭だけを読んだ）を GGUF だけで開くと、`convert/config.py` の `check_config()` が「TypeError: unsupported operand type(s) for %: 'int' and 'list'」で落ちる（`n_heads % n_kv_heads`: 層ごとの `head_count_kv` が配列）。ページでは訪問者に例外の型の文が出る見込み（未確認）。直し: 読めるなら読む（Gemma 4 の層ごとの head は E2B・E4B で読んでいる）、読めなければ今ある文で断る。31B は int8 で 16 GiB を越えるので、読めれば T505.4 の道（塊のまま）に入る。
+- **断った（2026-11-27）**: 31B の形は E2B・E4B の事実で書けない。原本 google/gemma-4-31B-it（ゲートなし）の config.json は `num_key_value_heads` 16・`num_global_key_value_heads` 4・`attention_k_eq_v: true`（全位置の層は v を持たず k を v に使う）・`hidden_size_per_layer_input` 0・`num_kv_shared_layers` 0・窓 1024・60 層（6 層ごとに全位置）。unsloth の Q4_K_M の頭（24 MB だけ取った）も `head_count_kv` が窓の層 16・全位置の層 4 の配列で、全位置の層に `attn_v` が無い。読むには層の種類ごとの鍵と値の head の数と k = v が要り、`LAYOUTS` の gemma4 では足りない（エンジン・forward・GPU に新しい事実: 別のタスクの規模）。だから断る: `gemma4_gguf_heads()` が配列を種類ごとに 1 つの数に読み、config.json の名前（`num_global_key_value_heads`・`attention_k_eq_v`）にして、`gemma4_check()` の今ある文「This model cannot be converted: its layers are not the ones of a Gemma 4 E2B or E4B.」（`ValueError`）で断る。すべての層が同じ数の配列はその数として読む（バイト単位で同じ変換）。種類の中で揃わない配列と、正の整数でない数は `check_config()` が head の文で断る（ほかの家族の GGUF が配列を書いても TypeError にならない）。
+  - 試験: `test_gemma4.py` の 3 つ（同じ数の配列 = 1 つの数の変換、31B の形の作り物の GGUF が文で断られる、揃わない配列は head の文、`gemma4_gguf_heads()` の名前）。壊し方: `gemma4_gguf_heads()` の呼びを外すと 2 つが落ちた。実物の頭で `Conversion.from_gguf()` が TypeError から上の ValueError に変わった。`conversions_compare.py`: 214 項目すべて同じ（`CONVERTER` 不変）。参照 `reference_qwen35.sh --only=real`: run 45954711453 で通った。CI を回したのはこの 1 本だけ。デプロイ run 45968540830、本番の e2e（stories260K、Chromium）は通った。訳: 変換器の直しは pytest と conversions_compare で見られる。31B を読まないので `gguf.yml` とページの道は回していない。
+  - 気づき（採番しない）: 原本の config.json では `use_bidirectional_attention: "vision"`（画像だけ双方向）が先に「it attends in both directions」で断られる。文はやや外れているが、どちらにしても読めない。31B を読む回が来たら直す。
 
 ### T695 [バグ][その他] 0.15 Mbps の fifo で「the runtime」の静けさが数えられずフォールバックする — 状態: 未着手（2026-11-27、T692 のレビューから。規模 小、急がない）
 - `pyodide.asm.mjs` の import は Worker の `fetch` を通らず、`PerformanceObserver` が終わりに 1 つ数えるだけなので、本文が届く間の静けさが数えられない（T692 の前後とも FAILED、準備完了はするが静けさでのフォールバック）。
