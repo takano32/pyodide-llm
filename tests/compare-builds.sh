@@ -17,6 +17,8 @@
 #                                                 --prompt: the blocks of forwardMany, which no one-token run treads),
 #                                                 and models given by their files as well (<out>.bin, .tokenizer.bin,
 #                                                 .json: tests/make_ternary.py), which compare-engines does not take.
+#   CHANGED=1 …                                   T314: the two builds compute other numbers by design (both tools'
+#                                                 --changed: not held to each other's, and said).
 #
 # CI's (the speed of a development machine decides nothing): tests.yml's extra=, on x86-64 and runner=ubuntu-24.04-arm,
 # after the suite (the models, the kernels and dist/ are there then). Both sides read this tree's Python and kernels:
@@ -37,16 +39,17 @@ name() { basename "$(ls "$1"/_astro/forward.*.js)"; }
 echo "compare-builds: forward as built: $ref $(name "$other/dist") ($(sha256sum "$other"/dist/_astro/forward.*.js | cut -c1-12)), this tree $(name dist) ($(sha256sum dist/_astro/forward.*.js | cut -c1-12)), this tree again $(name "$again") ($(sha256sum "$again"/_astro/forward.*.js | cut -c1-12))"
 [ -z "${PROMPT:-}" ] || [ -n "${THREADS:-}" ] || { echo "compare-builds: PROMPT=1 times the prompts with software threads: THREADS=2,4"; exit 1; }
 prompt=(); [ -z "${PROMPT:-}" ] || prompt=(--prompt)
+changed=(); [ -z "${CHANGED:-}" ] || changed=(--changed)
 for time in $(seq 1 "$times"); do
   if [ -z "${PROMPT:-}" ]; then
     echo "compare-builds: $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
-    node tests/compare-engines.ts "$@" --rounds "$rounds" --bundle-old "$other/dist" --bundle dist
+    node tests/compare-engines.ts "$@" "${changed[@]}" --rounds "$rounds" --bundle-old "$other/dist" --bundle dist
     echo "compare-builds: the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
-    node tests/compare-engines.ts "$@" --rounds "$rounds" --bundle-old "$again" --bundle dist
+    node tests/compare-engines.ts "$@" "${changed[@]}" --rounds "$rounds" --bundle-old "$again" --bundle dist
   fi
   [ -n "${THREADS:-}" ] || continue
   echo "compare-builds: with $THREADS software threads${PROMPT:+, prompts}, $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
-  node tests/threads-compare.ts "$@" "${prompt[@]}" --rounds "$rounds" --threads "$THREADS" --old "$other/dist" --new dist
+  node tests/threads-compare.ts "$@" "${prompt[@]}" "${changed[@]}" --rounds "$rounds" --threads "$THREADS" --old "$other/dist" --new dist
   echo "compare-builds: with $THREADS software threads${PROMPT:+, prompts}, the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
-  node tests/threads-compare.ts "$@" "${prompt[@]}" --rounds "$rounds" --threads "$THREADS" --old "$again" --new dist
+  node tests/threads-compare.ts "$@" "${prompt[@]}" "${changed[@]}" --rounds "$rounds" --threads "$THREADS" --old "$again" --new dist
 done

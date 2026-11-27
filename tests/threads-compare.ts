@@ -15,9 +15,12 @@
 // as well. A model is an id of the list, or the files of one (<out>.bin, .tokenizer.bin, .json: tests/make_ternary.py,
 // tests/perplexity_prepare.py, quantize.py with that .json beside it): the ternary and six-bit dtypes have no model of
 // the site's own.
+// T314: --changed, the two compute other numbers by design (a change of the arithmetic, T314's first position): their
+// logits are not held to each other's, the largest difference is said, and the tokens with logits are timed from
+// position 1 (the first position's own path is a prompt's head, which --prompt times from position 0 as ever).
 //
 //   node tests/threads-compare.ts [models = tiny-lm llm-jp-3-150m] --old <a dist> [--new <a dist> = dist]
-//                                  [--threads 2,4] [--rounds 21] [--positions 128] [--prompt]
+//                                  [--threads 2,4] [--rounds 21] [--positions 128] [--prompt] [--changed]
 //
 // tests/compare-builds.sh runs it after compare-engines where THREADS is set (THREADS=2,4), the control beside it.
 // The speed of a development machine decides nothing: CI's runners, x86-64 and arm64, the CPU's name with the numbers.
@@ -44,13 +47,15 @@ if (isMainThread) {
   if (!dists.old) throw new Error("threads-compare: --old <the dist of the build to compare with>");
   const counts = option("--threads", "2,4").split(",").map(Number);
   const rounds = Number(option("--rounds", 21)), positions = Number(option("--positions", 128)), prompt = args.includes("--prompt");
-  const flags = ["--prompt"];
+  const changed = args.includes("--changed");
+  const flags = ["--prompt", "--changed"];
   const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1]?.startsWith("--") && !flags.includes(args[i - 1])));
   const files = Object.fromEntries(Object.entries(dists).map(([side, dist]) => [side, { forward: String(builtModule("forward", dist)), helper: String(builtModule("helper", dist)) }]));
   const here = (url) => new URL(url).pathname.replace(root, "");
   console.log(`threads-compare: ${here(files.old.forward)} with ${here(files.old.helper)} (old) against ${here(files.new.forward)} with ${here(files.new.helper)} (new); ` +
     `${os.cpus()[0]?.model ?? "?"} (${process.arch}, ${os.cpus().length} logical cores), Node ${process.version}, load ${os.loadavg().map((l) => l.toFixed(2)).join(" ")}`);
-  console.log(`threads-compare: ${prompt ? `a prompt of ${positions} tokens` : `${positions} tokens with logits`} a run, ${rounds} rounds after a warm-up (old new new old, then new old old new), a memory and its threads a side`);
+  console.log(`threads-compare: ${prompt ? `a prompt of ${positions} tokens` : `${positions} tokens with logits`} a run, ${rounds} rounds after a warm-up (old new new old, then new old old new), a memory and its threads a side` +
+    `${changed ? `; the two compute other numbers by design (--changed)${prompt ? "" : ": the tokens timed from position 1"}` : ""}`);
   const { pyodide: py } = await pyodideWithEngine();
   const rows = [];
   let failed = false;
@@ -68,7 +73,7 @@ if (isMainThread) {
       start: (p) => { plan = p.toJs({ dict_converter: Object.fromEntries }); return { backend: "", bind() {}, forward() {}, release() {} }; } });
     py.globals.set("OPTIONS", py.toPy(entry.options ?? {}));
     py.runPython(`from llama2_numpy import Llama\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
-    const worker = new Worker(new URL(import.meta.url), { workerData: { files, checkpoint, plan, counts, rounds, positions, prompt } });
+    const worker = new Worker(new URL(import.meta.url), { workerData: { files, checkpoint, plan, counts, rounds, positions, prompt, changed } });
     const result = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
     await worker.terminate();
     if (result.differ) {
@@ -76,7 +81,7 @@ if (isMainThread) {
       console.log(`${id}: FAILED: ${result.differ}`);
       continue;
     }
-    console.log(`${id}: ${result.backend}; the same logits to the bit from both with ${counts.join(", ")} threads`);
+    console.log(`${id}: ${result.backend}; ${result.apart === undefined ? "the same logits to the bit" : result.apart === 0 ? "the same logits to the bit (--changed)" : `logits up to ${result.apart.toExponential(2)} apart (--changed)`} from both with ${counts.join(", ")} threads`);
     for (const n of counts) {
       const { old, new: fresh, twice } = result.speeds[n];
       const paired = [];
@@ -94,7 +99,7 @@ if (isMainThread) {
   console.log(`threads-compare: load after ${os.loadavg().map((l) => l.toFixed(2)).join(" ")}${failed ? "; FAILED" : ""}`);
   await leave(failed ? 1 : 0);
 } else if (workerData?.files) {
-  const { files, checkpoint, plan, counts, rounds, positions, prompt } = workerData;
+  const { files, checkpoint, plan, counts, rounds, positions, prompt, changed } = workerData;
   const engines = {};
   for (const [side, { forward, helper }] of Object.entries(files)) {
     const { compileKernels, createForward, weightsMemory } = await import(forward);
@@ -135,22 +140,30 @@ if (isMainThread) {
     }
     return seen;
   };
+  // (T314, --changed: the tokens with logits from position 1, the first run before the clock)
+  const from = changed && !prompt ? 1 : 0;
   const run = (engine) => {
     for (let pos = 0; pos < 8; pos++) engine.forward(1, pos, true);  // the threads wake up
+    if (from) engine.forward(1, 0, true);
     const began = performance.now();
     if (prompt) fed(engine, positions);
-    else for (let pos = 0; pos < positions; pos++) engine.forward(1, pos, true);
-    return (positions * 1000) / (performance.now() - began);
+    else for (let pos = from; pos < positions; pos++) engine.forward(1, pos, true);
+    return ((positions - from) * 1000) / (performance.now() - began);
   };
   const speeds = {};
-  let differ = "";
+  let differ = "", apart;
   for (const n of counts) {
     for (const [side, engine] of Object.entries(engines)) {
       const got = await engine.setThreads(n);
       if (got !== n) differ ||= `${side} runs on ${got} threads where ${n} were asked for`;
     }
     const [a, b] = [greedy(engines.old), greedy(engines.new)];
-    if (!a.every((row, i) => row.every((v, j) => Object.is(v, b[i][j])))) differ ||= `the two compute other logits with ${n} threads`;
+    if (changed) {
+      // (the greedy tokens may part, and then the rows are of other tokens: the largest of what both computed)
+      apart = Math.max(apart ?? 0, ...a.map((row, i) => row.reduce((most, v, j) => Math.max(most, Math.abs(v - b[i][j])), 0)));
+    } else if (!a.every((row, i) => row.every((v, j) => Object.is(v, b[i][j])))) {
+      differ ||= `the two compute other logits with ${n} threads`;
+    }
     if (differ) break;
     const all = { old: [], new: [], twice: [] };
     for (let round = 0; round <= rounds; round++) {  // (the first is a warm-up)
@@ -166,5 +179,5 @@ if (isMainThread) {
   }
   const backend = engines.new.backend;
   for (const engine of Object.values(engines)) engine.stopThreads();
-  parentPort.postMessage(differ ? { differ } : { speeds, backend });
+  parentPort.postMessage(differ ? { differ } : { speeds, backend, apart });
 }

@@ -10,10 +10,12 @@
 // around: a round is old new new old, the next new old old new. Each side is measured twice a round, so the two of one
 // side say how far a measurement moves by itself: read the ratio against that.
 //
-// Before timing, the two must write the same text from the same seed (exit 1 otherwise).
+// Before timing, the two must write the same text from the same seed (exit 1 otherwise). T314: --changed, the two
+// compute other numbers by design (a change of the arithmetic, T314's first position): their texts may part, which is
+// said, and the seed is one from which both write the whole run.
 //
 //   node tests/compare-engines.ts [model ids of src/models.ts = tiny-lm llm-jp-3-150m] [--ref origin/main]
-//                                  [--rounds 5] [--tokens 128] [--greedy] [--bundle [<dist>]] [--bundle-old <dist>]
+//                                  [--rounds 5] [--tokens 128] [--greedy] [--bundle [<dist>]] [--bundle-old <dist>] [--changed]
 // --greedy: temperature 0 (the forward pass and the least of a sampler), not the entry's own sampling.
 // T510.1: a model may also be a converted one's <out> of tests/perplexity_prepare.py (<out>.bin, <out>.tokenizer.bin,
 //   <out>.json: a model of ?hf= after tests/page_gemma3.sh's conversion, a made-up one of tests/make_*.py), written
@@ -37,7 +39,7 @@ const args = process.argv.slice(2);
 const VALUED = ["--ref", "--rounds", "--tokens", "--bundle-old"];
 const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
 const ref = option("--ref", "origin/main"), rounds = Number(option("--rounds", 5)), tokens = Number(option("--tokens", 128));
-const greedy = args.includes("--greedy");
+const greedy = args.includes("--greedy"), changed = args.includes("--changed");
 // (--bundle's own folder is the word after it, where that is a folder with a build in it and not a model's id)
 const bundleAt = args.indexOf("--bundle"), bundleOld = option("--bundle-old");
 const bundleDist = bundleAt >= 0 && args[bundleAt + 1] && fs.existsSync(`${args[bundleAt + 1]}/_astro`) ? args[bundleAt + 1] : undefined;
@@ -94,7 +96,7 @@ assert ENGINES["old"].__file__.startswith("/trees/old/") and ENGINES["new"].__fi
 assert ENGINES["old"].Llama is not ENGINES["new"].Llama and ENGINES["old"].Tokenizer is not ENGINES["new"].Tokenizer, "the two trees share a module"
 OUTSIDE = {"old": outside_old, "new": outside_new}
 
-def compare(checkpoint, tokenizer, options, prompt, settings, tokens, rounds):
+def compare(checkpoint, tokenizer, options, prompt, settings, tokens, rounds, changed=False):
     tokenizer = open(tokenizer, "rb").read()
     llamas = {which: ENGINES[which].Llama(None, tokenizer, kernels="simdkernel.so", external=OUTSIDE[which](checkpoint), **options)
               for which in ("old", "new")}
@@ -106,13 +108,16 @@ def compare(checkpoint, tokenizer, options, prompt, settings, tokens, rounds):
         text = "".join(llama.generate(prompt, steps=steps, seed=seed, **settings))
         return text, dict(llama.stats)
 
-    # the same text from the same seed, and a seed that writes the whole run (no stop token on the way)
-    seed = None
+    # the same text from the same seed, and a seed that writes the whole run (no stop token on the way). T314: with
+    # changed, the texts may part, and the seed is one both write the whole run from
+    seed, alike = None, True
     for candidate in range(1, 40):
         texts = {which: run(which, candidate) for which in ("old", "new")}
         if texts["old"][0] != texts["new"][0]:
-            return {"differ": [candidate, texts["old"][0], texts["new"][0]]}
-        if seed is None and texts["new"][1]["sampled"] == tokens + 1:
+            if not changed:
+                return {"differ": [candidate, texts["old"][0], texts["new"][0]]}
+            alike = False
+        if seed is None and all(texts[which][1]["sampled"] == tokens + 1 for which in (("old", "new") if changed else ("new",))):
             seed = candidate
         if seed is not None and candidate >= 3:
             break
@@ -133,7 +138,7 @@ def compare(checkpoint, tokenizer, options, prompt, settings, tokens, rounds):
         llama.release()
     del llamas
     gc.collect()
-    return {"old": speeds["old"], "new": speeds["new"], "twice": twice, "seed": seed, "prompt": prompt_tokens, "backend": backend}
+    return {"old": speeds["old"], "new": speeds["new"], "twice": twice, "seed": seed, "prompt": prompt_tokens, "backend": backend, "alike": alike}
 `);
 
 const cpu = os.cpus()[0]?.model ?? "?";
@@ -141,7 +146,7 @@ const here = (url) => url.pathname.slice(url.pathname.startsWith(root) ? root.le
 console.log(`compare-engines: ${bundle ? `the working tree's Python on both sides; forward.js: ${here(forwards.old)} (old) against ${here(forwards.new)} (new)${forwards.old.href === forwards.new.href ? ": the same file, a control" : ""}` : `${ref} (${commit.slice(0, 7)}, old) against the working tree (new)`}; ${cpu} (${process.arch}, ${os.cpus().length} logical cores), ` +
   `Node ${process.version}, load ${os.loadavg().map((l) => l.toFixed(2)).join(" ")}`);
 console.log(`compare-engines: ${tokens} sampled tokens a run, ${rounds} rounds after a warm-up (old new new old, then new old old new), ` +
-  `${greedy ? "greedy" : "each entry's own sampling"}; tok/s of the sampled tokens, as the page says them`);
+  `${greedy ? "greedy" : "each entry's own sampling"}; tok/s of the sampled tokens, as the page says them${changed ? "; the two compute other numbers by design (--changed)" : ""}`);
 const median = (values) => { const s = [...values].sort((a, b) => a - b); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
 const range = (values, digits = 1) => `${Math.min(...values).toFixed(digits)}–${Math.max(...values).toFixed(digits)}`;
 // T510.1: a converted model's files as an entry of the list (its paths whole; no stop tokens)
@@ -162,7 +167,7 @@ for (const id of models) {
   delete settings.steps;
   py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
   const result = py.globals.get("compare").callKwargs(file(entry.checkpoint), "tokenizer.bin", py.toPy(entry.options ?? {}), entry.prompt,
-    py.toPy(settings), tokens, rounds, {}).toJs({ dict_converter: Object.fromEntries });
+    py.toPy(settings), tokens, rounds, { changed }).toJs({ dict_converter: Object.fromEntries });
   if (result.differ) {
     failed = true;
     console.log(`${id}: FAILED: the two write another text from seed ${result.differ[0]}:\n  old: ${JSON.stringify(result.differ[1])}\n  new: ${JSON.stringify(result.differ[2])}`);
@@ -175,7 +180,7 @@ for (const id of models) {
   const noise = median(result.twice);
   rows.push(`| ${entry.name} | ${median(result.old).toFixed(1)} | ${range(result.old)} | ${median(result.new).toFixed(1)} | ${range(result.new)} | ` +
     `${ratio.toFixed(3)} | ${median(paired).toFixed(3)} | ${range(paired, 3)} | ${noise.toFixed(3)} | ${Math.max(...result.twice).toFixed(3)} |`);
-  console.log(`${id}: ${result.backend}; seed ${result.seed}, a prompt of ${result.prompt} tokens; the same text from both; ` +
+  console.log(`${id}: ${result.backend}; seed ${result.seed}, a prompt of ${result.prompt} tokens; ${result.alike ? "the same text from both" : "other texts from the two (--changed)"}; ` +
     `old ${result.old.map((s) => s.toFixed(1)).join(" ")}; new ${result.new.map((s) => s.toFixed(1)).join(" ")}`);
 }
 console.log("tok/s: the medians of the rounds' runs and their range; new ÷ old of the medians, and round by round (median, range);");
