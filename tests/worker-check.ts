@@ -573,7 +573,7 @@ const ok = (line) => {
     for (const [name, importer] of [["the loader", notFetched], ["the runtime", async () => ({ loadPyodide: notFetched })]]) {
       const failed = await failure(run("pyodideSteps")("314.0.7", importer));
       assert.equal(failed?.error.kind, "runtime", `${name}: an import that did not come is no fallback: ${failed?.error}`);
-      assert.match(failed.error.message, new RegExp(`^Pyodide 314\\.0\\.7: "${name}" could not fetch a module of its own \\(TypeError: Failed to fetch dynamically imported module`));
+      assert.match(failed.error.message, new RegExp(`^Pyodide 314\\.0\\.7: "${name}" stopped \\(TypeError: Failed to fetch dynamically imported module.*\\): a module of its own may not have arrived$`));  // (tests/slow-check.ts reads this sentence on the page's console)
       assert.equal(failed.error.cause?.name, "TypeError", `${name}: what was caught is not kept as the cause`);
     }
     const numpy = await failure(run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: async () => ({ loadPackage: notFetched, version: "314.0.7" }) })));

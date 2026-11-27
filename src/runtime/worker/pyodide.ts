@@ -154,9 +154,11 @@ function watchArrivals() {
 // loadPyodide() imports pyodide.asm.mjs) ends in the same kind where it rejects with a TypeError: a dynamic import whose
 // file did not come is one ("Failed to fetch dynamically imported module": a slow line whose TLS handshake jsDelivr
 // closed while it waited behind the model, tests/slow_in_browser.sh, T298), where a file that came and does not parse
-// is a SyntaxError. Told apart by the step and the error's name, never by its words. Not tried again here: the page's
-// one try without the service worker is the try (an import that failed stays failed under its URL in the module map,
-// and the import inside loadPyodide() is not this worker's to repeat).
+// is a SyntaxError. Told apart by the step and the error's name, never by its words. (Said as "may not have arrived": a
+// TypeError of loadPyodide() that is no line's, a browser without a feature it uses, is also taken; the page's one try is
+// then the cost, and the sentence does not claim a file.) Not tried again here: the page's one try without the service
+// worker is the try (an import that failed stays failed under its URL in the module map, and the import inside
+// loadPyodide() is not this worker's to repeat).
 function stepOf(version: string, watch: Watch, said = true) {
   const stop = (name: string, why: string, cause?: unknown) => new Failure("runtime", `Pyodide ${version}: "${name}" ${why}`, { cause });
   return async <T>(name: string, promise: Promise<T>, imports = false) => {
@@ -171,7 +173,7 @@ function stepOf(version: string, watch: Watch, said = true) {
       // "[object Object]" (bench.yml's Windows WebKit, 2026-10-01: its fetches of jsDelivr failed together now and then).
       // Told as a step of Pyodide's that stopped, as one whose file never came is
       if (imports && isError(error) && error.name === "TypeError") {
-        throw stop(name, `could not fetch a module of its own (${told(error)})`, error);
+        throw stop(name, `stopped (${told(error)}): a module of its own may not have arrived`, error);
       }
       if (isError(error)) throw error;
       throw stop(name, `stopped as soon as it started (${told(error)}): one of its files may not have arrived`);
