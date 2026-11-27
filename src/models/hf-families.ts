@@ -13,6 +13,11 @@ import {
 import { binaryBonsai, gemma2Jpn, gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
 
+// T281: the context of Qwen/Qwen3.8-27B and of prism-ml/Bonsai-27B-unpacked of their revisions below, their config.json's
+// text_config.max_position_embeddings (both 262,144, read 2026-11-27): the 27Bs' own (conversion.longest), which a
+// ?context= is held to where what was kept before T326 does not say it (kept.ts's contextRead())
+const QWEN38_27B_CONTEXT = 262144;
+
 export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-qwen3-4b", "Alibaba Qwen3 4B",
     ggufOf("Qwen/Qwen3-4B-GGUF", "bc640142c66e1fdd12af0bd68f40445458f3869b", "Qwen3-4B-Q8_0.gguf",
@@ -224,7 +229,7 @@ export const HF_FAMILIES: Entry[] = [
     ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
     "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.2 GB",
-    { converted: 7.2e9, options: qwen35, weights: "ternary", rebuilt: true, needs: 16 }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
+    { converted: 7.2e9, options: qwen35, weights: "ternary", rebuilt: true, needs: 16, conversion: { longest: QWEN38_27B_CONTEXT } }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
   // T286.5: Prism ML's 1-bit Bonsai 27B, a Qwen3.6 27B (a Qwen3.5 in its form, as Bonsai 2's) with every weight a
   // sign times a scale of its 128 (Q1_0, the embedding and the classifier too): 3.8 GB to fetch, kept binary as the
   // smaller 1-bit Bonsai are (T634.2: 3.88 GB, ternary's 7.24 before; with its forward pass at 4096 positions 4.18 GiB,
@@ -236,7 +241,7 @@ export const HF_FAMILIES: Entry[] = [
     ggufOf("prism-ml/Bonsai-27B-gguf", "f10afb355f104535e3e3e98cf7ab7795c72bd292", "Bonsai-27B-Q1_0.gguf",
       "prism-ml/Bonsai-27B-unpacked", "d619b27283ac02b4199ced97a89419529dc0bfac"), 3803452480,
     "1-bit weights · fetches 3.8 GB (GGUF) → 1-bit 3.9 GB",
-    { converted: 3.9e9, options: qwen35, weights: "binary", wide: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_27B_SAMPLING),
+    { converted: 3.9e9, options: qwen35, weights: "binary", wide: true, conversion: { longest: QWEN38_27B_CONTEXT } }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_27B_SAMPLING),
   // T364.3: Conway Research's Underdog Saluki 27B, the same Qwen3.8 27B at 2.3 bits a weight: a GGUF of llama.cpp's
   // K- and i-quantized blocks, ten types of them, a type to a matrix or to a layer of one (T361). Kept as the file
   // has them (conversion.blocks, T363: 7.96 GB, where int8 would be 30 GB) and multiplied by kernels of their own, on
@@ -252,7 +257,7 @@ export const HF_FAMILIES: Entry[] = [
     ggufOf("ConwayResearch/Underdog-Saluki-27B-1.0", "1336c0b5d74dfe6ad7f793577092f5effd9f97c6", "Underdog-Saluki-27B-1.0-IQ2-mix.gguf",
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 7898369152,
     "2.3-bit weights · fetches 7.9 GB (GGUF), kept as it is: 8.0 GB · about a word a second or less",
-    { options: qwen35, conversion: { dtype: "int8", blocks: true }, loaded: 7956712492, rebuilt: true },
+    { options: qwen35, conversion: { dtype: "int8", blocks: true, longest: QWEN38_27B_CONTEXT }, loaded: 7956712492, rebuilt: true },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, SALUKI_SAMPLING),
   // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
   // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (the Granite's

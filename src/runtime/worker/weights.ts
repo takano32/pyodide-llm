@@ -268,28 +268,68 @@ export function ownStops(options: Options, model: OwnStops): Options {
 // (T145: a conversion that failed after sink.open() left a Python buffer of the model's size behind with
 // ?without=kernels). Out of convert() so that tests/worker-sink-check.ts can follow sink.open() to footprint().
 // (T681: model, the entry converted, whose own stop tokens win over the converter's: ownStops())
-export function checkpointSink(keep?: Keeper, model: OwnStops = {}) {
+// (T281: asked, the context the load asked for, kept.ts's contextOf(): where the memory holds fewer positions than the
+// converter's header says, contextFitted(), the header's seq_len is written as that as it passes, here and in the file
+// kept as it comes. The converter's own header stays: a quantized file is the same at any context but for it)
+export function checkpointSink(keep?: Keeper, model: OwnStops = {}, asked?: number) {
   const into = {
     weights: undefined, bytes: 0,
     release() {
       into.weights?.destroy();
       into.weights = undefined;
     },
-  } as { weights: Weights | undefined; bytes: number; release(): void; sink: Sink };
+  } as { weights: Weights | undefined; bytes: number; release(): void; sink: Sink; context?: number };
   into.sink = {
     // form: what lays out the checkpoint and sizes the forward pass besides the header (llama2_numpy.FORM, T115, T144)
     open(bytes, header, dtype, form) {
       into.release();  // an earlier try (another tokenizer) that got this far
-      into.weights = weightsBuffer(bytes, header.toJs(), ownStops({ dtype, ...form.toJs({ dict_converter: Object.fromEntries }) }, model), keep);
+      const ints: Header = [...header.toJs()], options = ownStops({ dtype, ...form.toJs({ dict_converter: Object.fromEntries }) }, model);
+      const context = contextFitted(ints, bytes, options, asked);
+      into.context = context < ints[6] ? context : undefined;
+      ints[6] = context;
+      into.weights = weightsBuffer(bytes, ints, options, keep);
       header.destroy();
       form.destroy();
       into.bytes = bytes;
     },
     write(offset, array) {
       const view = array.getBuffer("u8");
-      into.weights!.write(offset, view.data);
+      let data = view.data;
+      // (T281: the header's seq_len, bytes 24 to 28 of the checkpoint, in a copy: the converter's bytes stay its own)
+      if (into.context !== undefined && offset < SEQ_LEN_END && offset + data.length > SEQ_LEN_AT) {
+        data = data.slice();
+        const said = [into.context & 255, (into.context >> 8) & 255, (into.context >> 16) & 255, into.context >>> 24];
+        said.forEach((byte, i) => {
+          if (SEQ_LEN_AT + i >= offset && SEQ_LEN_AT + i < offset + data.length) data[SEQ_LEN_AT + i - offset] = byte;
+        });
+      }
+      into.weights!.write(offset, data);
       view.release();
     },
   };
   return into;
+}
+// (the header's seq_len: its seventh int32)
+const SEQ_LEN_AT = 24, SEQ_LEN_END = 28;
+// T281: the page's most of before (kept.ts's BEFORE, which this module does not import: it is the page's too), which a
+// context is never cut below for the memory: a model whose forward pass does not fit there is refused as before
+const PAGE_CONTEXT = 4096;
+/** T281: the context a checkpoint is placed at: its header's (seq_len), or fewer positions where it and its forward
+ * pass would not fit the most memory a page has here, a 64-bit memory's 16 GiB where the browser has one (else a 32-bit
+ * one's 4 GiB): the longest that fits, not below PAGE_CONTEXT (forward/memory.ts's longestFitting(); only a ?context=
+ * asks past it). A file laid out by its context (a float one's RoPE tables, a table of learned positions) stays at its
+ * own. Said in a line where a context was asked past PAGE_CONTEXT (asked, kept.ts's contextOf()) and is cut: by the
+ * model's own (the header says less), with why where there is one (cut), or by the memory. Only on forward.ts's
+ * kernels: NumPy's weights are Python's, as large at any context. */
+export function contextFitted(header: Header, size: number, options: Options, asked?: number, cut?: string) {
+  const own = header[6];
+  const fitted = forwardModule && jsKernels && !switchesNow().includes("kernels")
+    ? forwardModule.longestFitting(header, size, forwardOptions(header, options, sharedWanted()), Boolean(wideKernels?.plain), PAGE_CONTEXT)
+    : own;
+  if (asked !== undefined && asked > PAGE_CONTEXT && fitted < asked) {
+    console.warn(fitted < own
+      ? `context: ${own} positions of this model would not fit the ${wideKernels?.plain ? "16 GiB of a 64-bit" : "4 GiB of a 32-bit"} memory a page has here: it is read at ${fitted}`
+      : `context: ${asked} positions were asked for: this model is read at ${own} at the most (${cut ?? "its own context"})`);
+  }
+  return fitted;
 }

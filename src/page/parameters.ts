@@ -13,14 +13,15 @@ import { unlisted, unnamed } from "./repository.ts";
 
 // What each name is for. "model": it names the model the page has (address.ts's named() reads them, addressOf()
 // writes them, and only them, for the model chosen). "engine": how the model runs (settings.ts's switches and bits,
-// which a reload keeps; remembered.ts's threads). "visit": what this visit does (measure once, the Service Worker of
+// which a reload keeps; remembered.ts's threads; T281, address.ts's weighed(): ?context=, the context a converted
+// model is read at, over its entry's 4096, kept.ts's contextAsked()). "visit": what this visit does (measure once, the Service Worker of
 // isolation.ts, which receiver.ts and remembered.ts hand ?coi= and ?offline=, the tests' GPU of draw.ts). T669,
 // "translation": what a model that translates with PLaMo 3 Translate's request translates into (target.ts: ?target=
 // a code of translating.ts's TARGETS, ?form= polite or plain), over what was chosen before. The
 // generation settings are names too: the keys of Sampled, which fields.ts's LIMITS reads (one row each there).
 export const NAMES = {
   model: "model", hf: "model", revision: "model", file: "model", checkpoint: "model", tokenizer: "model", template: "model", prompt: "model",
-  without: "engine", kernel: "engine", bits: "engine", threads: "engine",
+  without: "engine", kernel: "engine", bits: "engine", threads: "engine", context: "engine",
   bench: "visit", coi: "visit", offline: "visit", gpuTest: "visit",
   target: "translation", form: "translation",
 } as const;

@@ -263,6 +263,26 @@ export const keysInHalf = (header: Header, size: number, options: Footprint = {}
 export const needsWide = (size: number, after: number) => CONTROL_BYTES + size + after > PAGES_32 * PAGE;
 /** T129 (7): whether they pass even a 64-bit memory (16 GiB here, Chrome's): no memory holds such a model. */
 export const pastWide = (size: number, after: number) => CONTROL_BYTES + size + after > PAGES_64 * PAGE;
+/** T281: the longest context of a checkpoint of size bytes, of its header's (seq_len) down to floor and no further, at
+ * which it and its forward pass (footprint(), with options) fit the most memory a page has: a 64-bit memory's where the
+ * browser has one (wide: pastWide()), else a 32-bit one's (needsWide()). floor where even that does not fit (the
+ * worker then refuses the model in the words it always did). A file that is laid out by its context stays at its
+ * header's: a float one (no PACKED line: its RoPE tables), one of an architecture with a learned table of positions. */
+export function longestFitting(header: Header, size: number, options: Footprint, wide: boolean, floor: number) {
+  const own = header[6];
+  if (own <= floor || !packingOf(options.dtype ?? "float32") || architectureOf(options.arch ?? "llama").positions) return own;
+  const past = wide ? pastWide : needsWide;
+  const fits = (context: number) => !past(size, footprint([...header.slice(0, 6), context], size, options));
+  if (fits(own)) return own;
+  // (low fits or is floor, high does not fit)
+  let low = floor, high = own;
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle;
+  }
+  return low;
+}
 /** T133: the dtype of a model converted with none asked for, from its int8 size and what the forward pass puts after
  * it (footprint, as int8): int8 where that fits a 32-bit memory, or where the browser has a 64-bit one (wide: Chrome
  * and Firefox; about a tenth slower, against six bits' half the speed and +1.4 to 1.7% of perplexity, T98); else six

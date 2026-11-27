@@ -163,6 +163,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 1. ★ Underdog Saluki 27B `頭?model=hf-underdog-saluki-27b`: 1 つ。GPU だけに置かれるか、GPU の準備が終わるまでの秒、[状]（「prompts and answers on WebGPU」か）、[答]、[コ]（ステップの ms、「loaded again on the CPU」か「the CPU as /benchmark/ measured it was faster here than this model on the GPU alone」が出て CPU に戻ったか）、[目]（タブが落ちないか）（T547.3）。
 2. Ternary Bonsai 2 27B `頭?model=hf-ternary-bonsai-2-27b`: 流行りの問い。準備完了の秒（取得 5.95 GB）・[状]（GPU だけか: 「prompts and answers on WebGPU」で「N threads」が付かない）・[答]（tok/s と本数）・[コ]（T271.5・T233・T237・T238）。考える形 `頭?model=hf-ternary-bonsai-2-27b-thinking` で 1 つ: 考えが終わるまでのトークン数と時間（T233）。最後にページを読み直し、2 回目の準備完了の秒（保存から開くか: T233 のレビュー (c)）。
 3. PC のメモリが 16 GB 未満なら: 27B を開いてどこで止まるか（準備完了の前にタブが落ちるか、「ran out of memory」が出るか: T233 のレビュー (b)）。16 GB 以上なら手順なし。
+4. 2. の後（27B が保存されてから）: `頭?model=hf-ternary-bonsai-2-27b&context=8192`。取得が始まらずに保存から開くか（準備完了の秒が 2 回目の訪問と同じ桁か）、設定の「Max tokens」をいちばん右にしたときの数が 8192 か、tok/s、[目]（タブが落ちないか: 全体 7.96 GiB の見積もり）。前から（2026-11-27 より前に）保存してある 27B でも同じ（T281・T326 のレビュー）。
 
 **B-9 Gemma（T334.1・T334.2・T334.3）**
 1. ★ Gemma 4 E2B `頭?model=hf-gemma-4-e2b`: A-8 の 1. と 2. と同じ。E4B `頭?model=hf-gemma-4-e4b` も長い問い L で（メモリのある PC で。GPU だけ: [状] は「prompts and answers on WebGPU」で本数が付かない）。[状]・[答]・[コ]（`gpu: a token by … (a step of a run of 1: …)` の ms と、`gpu: both copies would not fit: … on the GPU alone` の行）（T334.3・T682）。**E4B が GPU に載ってステータス行が出るか**（スマホでも開けるなら: 保存が書けない訪問では表を 32 ビットの共有メモリに約 3.2 GB 持つので、予約が通らなければ「This browser gave no shared memory for a model on the GPU alone.」で落ちる見込み。未計測。T682 のレビュー）。
@@ -301,6 +302,7 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 | T233（27B） | B-8 の 2、C-1、A-8 の 9、D-5 の 4 |
 | T233 のレビュー (a)(b)(c) | F-1（a）、B-8 の 3（b: 16 GB 以上の PC なら手順なし）、B-8 の 2（c） |
 | T237・T238（27B の速さ） | B-8 の 2、C-1、A-8 の 9 |
+| T281・T326 のレビュー（27B を `?context=8192` で、取り直しなしに） | B-8 の 4 |
 | T232（3 値を GPU に）(a)〜(h) | A-7 の 1、B-4 の 5・B-5 の 6（c）、F-3 の 2（d）、D-4 の 6（e） |
 | T253・T254 のレビュー (a)(b)(c) | B-5 の 3・B-6 の 4（a）、A-6 の 8・A-8 の 8（b）、D-4 の 3・D-5 の 2（c） |
 | T260 のレビュー（LFM2.5） | A-6 の 3、B-4 の 2、D-4 の 4 |

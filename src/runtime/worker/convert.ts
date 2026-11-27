@@ -8,7 +8,7 @@ import { pyodide, llama2_numpy, pythonKernels, blockKernels } from "./runtime.ts
 import { switchesNow } from "./request.ts";
 import { adopted } from "./loaded.ts";
 import { since, took } from "./clock.ts";
-import { pythonBuffer, automaticBits, weightsBuffer, checkpointSink, ownStops, runsPacked, tableInMemoryFromNow, blocksWidenedNow } from "./weights.ts";
+import { pythonBuffer, automaticBits, weightsBuffer, checkpointSink, contextFitted, ownStops, runsPacked, tableInMemoryFromNow, blocksWidenedNow } from "./weights.ts";
 import { gpuOnlyPossible, gpuOnlyGone, weightsRoom, weightsDrained } from "./alone.ts";
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.ts";
 import { HEADER_BYTES, headerInts } from "./sources.ts";
@@ -71,8 +71,11 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
     return { miss: "what is kept is empty" };
   }
   // (T326: at the context the load asks for: the header's seq_len set to it, before the memory is chosen by the header)
-  keptModule!.contextRead(part.value, manifest, model);
-  const weights = weightsBuffer(manifest.bytes, headerInts(part.value), ownStops(manifest.options, model), undefined, kept.where === "opfs");
+  // (T281: and to fewer where the memory holds no more, contextFitted(), which says why where a ?context= asked more)
+  const read = keptModule!.contextRead(part.value, manifest, model), options = ownStops(manifest.options, model);
+  keptModule!.contextSet(part.value, contextFitted(headerInts(part.value), manifest.bytes, options, keptModule!.contextOf(model),
+    manifest.longest === undefined && read === keptModule!.BEFORE ? "what was kept before says not how long the model's own context is" : undefined));
+  const weights = weightsBuffer(manifest.bytes, headerInts(part.value), options, undefined, kept.where === "opfs");
   if (weights.hole) skipping.range = weights.hole;
   let tokenizer;
   try {
@@ -187,7 +190,10 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     console.warn(`kept: no file to keep this model in as it comes (${told(error)}): it is not kept, and a model's table of every layer's inputs is held in the memory`);
     return undefined;
   }) : undefined;
-  const into = checkpointSink(keep, model), { sink } = into;
+  // (T326: at the context the load asks for, kept.ts's contextOf(): the one place it is chosen. T281: the sink sets the
+  // header to fewer positions where the memory holds no more, weights.ts's contextFitted())
+  const asked = keptModule!.contextOf(model);
+  const into = checkpointSink(keep, model, asked), { sink } = into;
   let keptAsItCame = false;  // keep went to keepConverted, which keeps it or lets it go
   let steps: Conduct | undefined, conversion: Conversion | undefined, quantizeRows: Proxy | undefined, readers: Proxy | undefined, failed;
   // T403: whatever ends the conversion (its end, a file that is not there, the line, a refusal of the converter's, a
@@ -199,8 +205,10 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     // memory): int8 where its forward pass fits a 32-bit memory or the browser has a 64-bit one, six bits where neither
     // (T133), once the header is known
     // (T329.2.2: a table of every layer's inputs not counted where it will stay in the file kept as it comes)
-    // (T326: at the context the load asks for, kept.ts's contextOf(): the one place it is chosen)
-    const converting = { ...model.conversion, max_seq_len: keptModule!.contextOf(model), dtype: model.conversion?.dtype ?? ((header: Parameters<typeof automaticBits>[0], form: Parameters<typeof automaticBits>[1],
+    // (T281: the model's own context, conversion.longest, is the page's to say and not the converter's)
+    const conversionAsked = { ...model.conversion };
+    delete conversionAsked.longest;
+    const converting = { ...conversionAsked, max_seq_len: asked, dtype: model.conversion?.dtype ?? ((header: Parameters<typeof automaticBits>[0], form: Parameters<typeof automaticBits>[1],
       sizes: Parameters<typeof automaticBits>[2]) => automaticBits(header, form, sizes, Boolean(keep))) };
     // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels); and the
     // readers of the types a file stores its tensors in, the same float32 several times faster: whichever of them has

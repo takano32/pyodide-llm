@@ -33,6 +33,8 @@
 //   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
 //                  ready then go into the JSON line too (T99: a model converted from Hugging Face must come from what
 //                  this browser kept, the origin private file system or the Cache API).
+//   E2E_TWICE_QUERY with E2E_TWICE (T281): more of the second visit's URL, such as context=1024 (the context a kept
+//                  conversion is read at, with nothing fetched again). The JSON line has the context of either visit.
 //   E2E_OFFLINE    when set (T111): after the answer (the page as a visitor opens it: keeping copies is the default) the browser goes
 //                  offline, loads the page again and must answer once more (Pyodide, NumPy and the page from the
 //                  service worker's copies, the model from the worker's cache). T441: this tool's own server ends every
@@ -570,7 +572,10 @@ if (process.env.E2E_TWICE && !failures.length) {
     lines: [...document.querySelectorAll("#load-stats > div")].map((row) => row.textContent).filter((text) => /^WebGPU /.test(text)) })).catch(() => ({ kept: {}, lines: [] }));
   const gpuBefore = swiftShader && kind === playwright.chromium ? await gpuLooked() : null;
   const reloaded = Date.now();
-  await page.reload({ waitUntil: "load" });
+  // (T281: E2E_TWICE_QUERY, more of the second visit's URL, such as context=1024: the page opened there in place of the
+  // reload)
+  if (process.env.E2E_TWICE_QUERY) await page.goto(`${visited}&${process.env.E2E_TWICE_QUERY}`, { waitUntil: "load" });
+  else await page.reload({ waitUntil: "load" });
   // the new page's own report of ready: the old page's must not count
   await acrossReload(() => page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 }));
   const ready = await page.evaluate(() => window.__ready ?? null).catch(() => null);
@@ -585,12 +590,12 @@ if (process.env.E2E_TWICE && !failures.length) {
     if (gpuAgain.lines.length && !gpuAgain.lines.every((line) => / \(remembered\) /.test(line))) failures.push(`the second visit's GPU did not take the forms the page kept (${gpuAgain.lines.join("; ")})`);
     if (tokens(gpuAgain) && !Object.values(gpuAgain.kept).some((text) => /"tokenAttention":/.test(text))) failures.push("the second visit's GPU chose a token's attention and the page kept none of it");
   }
-  again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null,
+  again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null, context: ready?.seq_len ?? null,
     miss: ready?.keptMiss ?? null, kept, keptAfter: await listKept(),
     // T111: the worker's own breakdown of the second load (Pyodide, the model), to see what the browser's cache saved
     load: ready?.seconds ?? null };
   const parts = Object.entries(again.load ?? {}).map(([name, value]) => `${name} ${Number(value).toFixed(2)}s`).join(", ");
-  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s (${parts}), ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
+  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s (${parts}), at a context of ${again.context}, ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
   // (T436: the second visit opens the model chosen last, E2E_THEN's last where there is one: that one is to be kept)
   const opened = then.at(-1)?.model ?? id;
   if (/^hf[-:]/.test(opened) && !again.fromCache) failures.push(`${opened} not kept for the second visit: ${(opened === id && reported?.notKept) || ready?.keptMiss || "no reason given"}`);
@@ -624,7 +629,7 @@ if (process.env.E2E_OFFLINE && !failures.length) {
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
 record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Number.isFinite(speed) ? speed : null,
          backend: result.status, meta: result.meta, failures, isolated: result.isolated, load: reported?.seconds ?? null,
-         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null, notKept: reported?.notKept ?? null, again, offline, gpuVerdict,
+         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null, notKept: reported?.notKept ?? null, context: reported?.seq_len ?? null, again, offline, gpuVerdict,
          threadReports: threadReportsSeen,
          threadsNotReached: threadsNotReached ?? null,
          ...(then.length ? { then } : {}) });

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { DEFAULT_MODEL, FORMER_IDS, GROUPS, LICENSES, entryOf, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, UNASKED_BYTES, asksBefore, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
 import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
 import { PYTHON_OVERRIDES } from "../src/runtime/built/facts/overrides.ts";
-import { keptNames } from "../src/runtime/kept.ts";
+import { contextOf, keptNames } from "../src/runtime/kept.ts";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
 import { BUILT } from "../src/models/built.ts";
 import { HF_JAPANESE } from "../src/models/hf-japanese.ts";
@@ -319,7 +319,7 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
   assert.deepEqual(thinks.generation, { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0, top_k: 20, thinking: 4096 - 512 });
   assert.deepEqual(answers.generation, { steps: 0, temperature: 0.0 });
   for (const entry of [thinks, answers]) {
-    assert.deepEqual(entry.conversion, { dtype: "int8", blocks: true }, entry.id);
+    assert.deepEqual(entry.conversion, { dtype: "int8", blocks: true, longest: 262144 }, entry.id);
     assert.deepEqual(entry.options, qwen35, entry.id);
     assert.deepEqual(entry.shares, [thinks.id, answers.id], "one conversion for both forms");
     assert.ok(entry.rebuilt && entry.original === entry.hf.vocabulary.repo && entry.download === 7898369152 && entry.weights === undefined);
@@ -336,7 +336,9 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
   const kept = MODELS.filter((entry) => entry.conversion?.blocks);
   assert.ok(kept.includes(thinks) && kept.includes(answers), "Saluki's two keep their blocks");
   for (const entry of kept) {
-    assert.deepEqual(entry.conversion, { dtype: "int8", blocks: true }, `${entry.id}: its conversion`);
+    const { longest, ...conversion } = entry.conversion;  // (T281: the model's own context, where the entry says it)
+    assert.deepEqual(conversion, { dtype: "int8", blocks: true }, `${entry.id}: its conversion`);
+    assert.ok(longest === undefined || longest > 4096, `${entry.id}: its own context`);
     assert.ok(entry.loaded > 0 && entry.rebuilt && entry.weights === undefined, `${entry.id}: loaded, rebuilt and no weights`);
   }
   // loaded: read before converted, of an entry that says it, and nothing of any other entry changed by it: each still
@@ -541,4 +543,11 @@ for (const id of ["hf-smollm3-3b-thinking", "hf-smollm3-3b"]) {
   assert.deepEqual(said("hf-llm-jp-3-3.7b-instruct3"), [true, true], "4.3 GB: past 4 GiB");
   assert.match(byId("hf-ternary-bonsai-2-27b").note, / · desktop only \(needs 16 GB of memory\) · Chrome and Firefox$/, "T289: the owner's words");
 }
+// T281: the entries that say their model's own context (conversion.longest, which what was kept before T326 is read no
+// longer than where a ?context= asks past 4096): the three 27Bs, Qwen3.8 27B's and Bonsai 27B's 262,144. No entry asks
+// a context of its own past the page's 4096: only a visit's ?context= does
+assert.deepEqual(MODELS.filter((entry) => entry.conversion?.longest).map(({ id, conversion }) => `${id} ${conversion.longest}`).sort(),
+  ["hf-bonsai-27b", "hf-bonsai-27b-thinking", "hf-ternary-bonsai-2-27b", "hf-ternary-bonsai-2-27b-thinking", "hf-underdog-saluki-27b",
+    "hf-underdog-saluki-27b-thinking"].map((id) => `${id} 262144`));
+assert.deepEqual(MODELS.filter((entry) => entry.hf && contextOf(entry) > 4096).map(({ id }) => id), []);
 console.log("ok");

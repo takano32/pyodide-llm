@@ -36,7 +36,8 @@ export type OfTwoUrls = Named & { url: { checkpoint: string; tokenizer: string }
 // A Hugging Face model, converted in the worker. hf: the names of its files, which Python's conduct reads
 // (src/python/convert/conduct.py), and where they are: huggingface.co's repository and revision (vocabulary: another
 // repository for the vocabulary, the config and the template, T136), or files: the Files of a folder of the visitor's
-// disk (T374.2.2). conversion: the dtype asked for (none: the worker chooses, T115) and the context it is cut to; blocks
+// disk (T374.2.2). conversion: the dtype asked for (none: the worker chooses, T115) and the context it is cut to (T281:
+// a visit's ?context= over the entry's), longest (T281): the model's own context where the entry says it; blocks
 // (T363.5): a GGUF's K- and i-quantized tensors are kept as the file has them, llama.cpp's blocks, and not widened.
 // shares: the other ids of the list that are the same conversion (kept.ts). T684, vocabulary.overrides: what an entry
 // of the list sets over that repository's config.json (an entry alone: ?hf= and folders name no vocabulary), its keys
@@ -53,7 +54,7 @@ export type Hf = {
 // (the values of the kinds of OVERRIDES: a whole number above 0, a number above 0, a token's id or ids)
 type Overridden = { count: number; number: number; tokens: number | number[] };
 export type ConfigOverrides = { -readonly [Key in keyof typeof PYTHON_OVERRIDES]?: Overridden[(typeof PYTHON_OVERRIDES)[Key]] };
-export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_seq_len?: number; blocks?: boolean }; shares?: string[]; file?: undefined; url?: undefined; translation?: undefined };
+export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_seq_len?: number; blocks?: boolean; longest?: number }; shares?: string[]; file?: undefined; url?: undefined; translation?: undefined };
 // T648.4: a translation model of this site (Firefox Translations', `make models`), which answers a text with its
 // translation: under models/translations/<folder>/, its model's file in parts of 8 MiB (bytes: their size together),
 // the sentencepiece models of the source's vocabulary and the target's (one file where the two are one), whole, and

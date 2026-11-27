@@ -1,5 +1,6 @@
 // src/page/address.ts (T355): what the page's address says: which model, how it is weighed (?bits=), whether to measure.
 import { weightsFor } from "../models.ts";
+import { contextAsked } from "../runtime/kept.ts";
 import { REPOSITORY, REVISION, SAFETENSORS, noteOf } from "./repository.ts";
 import type { Model, Unlisted } from "./model.ts";
 import type { Address } from "./parameters.ts";
@@ -15,9 +16,13 @@ export const requested = parameters.get("model");
 export const benchmark = parameters.get("bench");
 // T98: ?bits=6 converts a model of Hugging Face to six bits a weight, ?bits=8 to int8; without it, six bits only
 // where int8 would not fit (weightsFor). What the worker gets is the entry with that in its conversion.
+// T281: and ?context=N, the context a model of Hugging Face is converted and read at (kept.ts's contextAsked(): a
+// whole number of positions), over its entry's: the worker reads it no longer than the model's own and its memory hold
+const contextSaid = contextAsked(parameters.get("context"));
 export const weighed = <Of extends Model>(entry: Of) => {
   const dtype = weightsFor(entry, parameters.get("bits"), (navigator as Navigator & { deviceMemory?: number }).deviceMemory);
-  return dtype ? { ...entry, conversion: { ...entry.conversion, dtype } } : entry;
+  const said = { ...(dtype ? { dtype } : {}), ...(entry.hf && contextSaid !== undefined ? { max_seq_len: contextSaid } : {}) };
+  return Object.keys(said).length ? { ...entry, conversion: { ...entry.conversion, ...said } } : entry;
 };
 // (T505.3) a file of a repository goes into an address too: a name, or names with / between them, none of them dots alone
 // (the hyphens escaped: the sheet's field takes the same source as its pattern, which a browser reads more strictly;

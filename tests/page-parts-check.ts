@@ -801,15 +801,15 @@ console.log(`page-parts-check: fields.ts by itself: the settings a link sets, an
   const { NAMES, MODEL_NAMES, addressWith, addressOf } = await fresh("page/parameters.ts");
   assert.deepEqual(NAMES, {
     model: "model", hf: "model", revision: "model", file: "model", checkpoint: "model", tokenizer: "model", template: "model", prompt: "model",
-    without: "engine", kernel: "engine", bits: "engine", threads: "engine", bench: "visit", coi: "visit", offline: "visit", gpuTest: "visit",
+    without: "engine", kernel: "engine", bits: "engine", threads: "engine", context: "engine", bench: "visit", coi: "visit", offline: "visit", gpuTest: "visit",
     target: "translation", form: "translation",
   }, "the names of the model page's address, and what each is for");
   assert.deepEqual(MODEL_NAMES, ["model", "hf", "revision", "file", "checkpoint", "tokenizer", "template", "prompt"], "the names that name a model");
   const page = "https://takano32.github.io/pyodide-llm/";
   const at = (search) => `${page}${search}`;
-  const everything = "?model=x&hf=o/n&revision=r&file=f.gguf&checkpoint=https%3A%2F%2Fa%2Fm.bin&tokenizer=https%3A%2F%2Fa%2Ft.bin&template=t&prompt=p&kernel=off&seed=7&gpuTest=on";
+  const everything = "?model=x&hf=o/n&revision=r&file=f.gguf&checkpoint=https%3A%2F%2Fa%2Fm.bin&tokenizer=https%3A%2F%2Fa%2Ft.bin&template=t&prompt=p&kernel=off&seed=7&gpuTest=on&context=8192";
   const listed = { id: "tiny-lm", name: "Tiny", prompt: "Once" };
-  assert.equal(addressOf(listed, at(everything)), at("?kernel=off&seed=7&gpuTest=on&model=tiny-lm"),
+  assert.equal(addressOf(listed, at(everything)), at("?kernel=off&seed=7&gpuTest=on&context=8192&model=tiny-lm"),
     "a model of the list: every name of a model goes, the rest stay as they were, and ?model= names it");
   const hf = (weights, revision = "main") => ({ id: "local", name: "o/n", prompt: "", hf: { repo: "o/n", revision, weights, config: "config.json" } });
   assert.equal(addressOf(hf("model.safetensors"), at("?model=tiny-lm&bits=6")), at("?bits=6&hf=o%2Fn"), "a repository's model.safetensors at main: the repository alone");
@@ -818,7 +818,7 @@ console.log(`page-parts-check: fields.ts by itself: the settings a link sets, an
   const urls = { id: "local", name: "m.bin", prompt: "Once upon a time", url: { checkpoint: "https://a/m.bin", tokenizer: "https://a/t.bin" } };
   assert.equal(addressOf(urls, at("?hf=o/n")), at("?checkpoint=https%3A%2F%2Fa%2Fm.bin&tokenizer=https%3A%2F%2Fa%2Ft.bin&prompt=Once+upon+a+time"), "two files somewhere: their addresses");
   const folder = { id: "local", name: "mine", prompt: "x", hf: { files: [], weights: "model.safetensors" } };
-  assert.equal(addressOf(folder, at(everything)), at("?kernel=off&seed=7&gpuTest=on"), "a folder of the disk has no address: no name of a model is left");
+  assert.equal(addressOf(folder, at(everything)), at("?kernel=off&seed=7&gpuTest=on&context=8192"), "a folder of the disk has no address: no name of a model is left");
   assert.equal(addressWith(at("?kernel=off&bench=1&without=relaxed"), { kernel: null, without: "kernels,relaxed", bench: null, model: "tiny-lm" }),
     at("?without=kernels%2Crelaxed&model=tiny-lm"), "a switch of the panel: names taken away, set where they were, added after");
   // the page reads its address through address.ts's parameters (tsc holds it to the table) and writes it through

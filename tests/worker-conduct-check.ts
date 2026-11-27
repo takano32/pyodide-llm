@@ -17,7 +17,7 @@ import { pyProxies } from "./fakes/pyodide.ts";
 import { workerHarness } from "./worker-harness.ts";
 import { runtimeUrl } from "./tree.ts";
 // (T326: kept.ts's own: the context a conversion is made at and a kept one is read at)
-const { contextOf, contextRead } = await import(runtimeUrl("kept.ts"));
+const { BEFORE, contextOf, contextRead, contextSet } = await import(runtimeUrl("kept.ts"));
 
 setTimeout(() => {
   console.error("worker-conduct-check: still waiting after 120 s");
@@ -67,7 +67,7 @@ function world({ gpu = false } = {}) {
     forward: { aloneHolds: () => false, aloneTakes: (dtype) => ["int8", "ternary"].includes(dtype) },
     // the kept models: a file opened to keep a conversion in as it comes has the one handle its file can have (OPFS)
     kept: {
-      openKept: async () => kept.found ?? null, replaced: async () => [], forget: async () => {}, contextOf, contextRead,
+      openKept: async () => kept.found ?? null, replaced: async () => [], forget: async () => {}, BEFORE, contextOf, contextRead, contextSet,
       keep: async (model, manifest) => { kept.keeps.push(manifest); },
       keeper: async () => {
         if (kept.open) {

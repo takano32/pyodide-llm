@@ -425,3 +425,26 @@ function halfToFloat(h) {
   console.log(`ok: a shared memory refused leaves a plain one that holds what the shared one was sized for (${cases} cases of ${listed.length} models, ` +
     `the plain memory's keys and values a type of their own in ${atTheEdge})`);
 }
+// T281: the longest context a checkpoint is placed at where a ?context= asks more than the memory of a page holds
+// (forward/memory.ts's longestFitting(), which the worker's contextFitted() asks): its own where that fits, else the
+// longest that does and no shorter than the floor; a file laid out by its context (a float one, a GPT-2's table of
+// positions) at its own
+{
+  const { longestFitting } = await import(runtimeUrl("forward/memory.ts"));
+  // (a Llama of 27B's shape: 64 layers, a dim of 5120, 8 key heads of 128; int8's 1.0625 bytes a weight)
+  const header = [5120, 17408, 64, 40, 8, 151936, 262144], size = 7.2e9, options = { dtype: "int8", arch: "llama", head_dim: 128 };
+  const at = (context) => [...header.slice(0, 6), context];
+  // (on a 32-bit memory, a checkpoint of a seventh of it: 1 GB)
+  for (const [wide, past, bytes] of [[true, pastWide, size], [false, needsWide, size / 7]]) {
+    const fits = (context) => !past(bytes, footprint(at(context), bytes, options));
+    const fitted = longestFitting(header, bytes, options, wide, 4096);
+    assert.ok(fitted > 4096 && fitted < 262144 && fits(fitted) && !fits(fitted + 1), `${wide ? "64" : "32"}-bit: ${fitted} positions are the longest that fit`);
+    assert.equal(longestFitting(at(fitted), bytes, options, wide, 4096), fitted, "its own where that fits");
+    assert.equal(longestFitting(at(fitted + 1), bytes, options, wide, 4096), fitted, "one more does not");
+  }
+  assert.equal(longestFitting(header, 17e9, options, true, 4096), 4096, "the floor where nothing fits (the worker refuses it as before)");
+  assert.equal(longestFitting(at(2048), 17e9, options, true, 4096), 2048, "a context below the floor is its own");
+  assert.equal(longestFitting(header, size, { ...options, dtype: "float32" }, true, 4096), 262144, "a float file's tables are as long as its context");
+  assert.equal(longestFitting(header, size, { ...options, arch: "gpt2" }, true, 4096), 262144, "so is a table of learned positions");
+  console.log("ok: a context past what the memory of a page holds is cut to the longest that fits, not below 4096; a file laid out by its context stays at it");
+}

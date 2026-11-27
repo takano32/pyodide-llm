@@ -16,7 +16,8 @@ import { workers as workersStandIn } from "./fakes/worker.ts";
 import { python, runtimeUrl } from "./tree.ts";
 const forward = await import(runtimeUrl("forward.js"));
 const { STOPS_MOST } = await import(runtimeUrl("shaders.js"));  // (T681: the GPU sampling's, SAMPLE's)
-const { contextRead } = await import(runtimeUrl("kept.ts"));  // (T326: the header set to the context a load asks for)
+// (T326: the header set to the context a load asks for; T281: and to fewer where the memory holds no more)
+const { BEFORE, contextOf, contextRead, contextSet } = await import(runtimeUrl("kept.ts"));
 import { runWorker } from "./worker-source.ts";
 import { strictly } from "./worker-harness.ts";
 import { contract, differing } from "./contracts.ts";
@@ -268,6 +269,32 @@ await vm.runInContext(strictly("loadBegan({ id: 'another' })"), context);
 into.sink.open(5e9, proxy(QWEN3), "int8", proxy(qwen3));  // (a load after it, of no blocks: the word is not carried over)
 into.release();
 console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
+// T281: a context asked past what the memory of a page holds (?context=): the header the converter hands sink.open() is
+// placed at the longest context that fits (weights.ts's contextFitted(): here a 32-bit memory's, no 64-bit kernels), the
+// memory sized for that, and its seq_len written as that as it passes; the converter's own bytes stay as they were
+{
+  vm.runInContext(strictly("roundBegan([]); blocksWidenedNow(false)"), context);
+  const long = [...QWEN3.slice(0, 6), 262144];
+  counted.length = 0;
+  const into = vm.runInContext(strictly("checkpointSink"), context)(undefined, {}, 262144);
+  into.sink.open(600e6, proxy(long), "int8", proxy(qwen3));
+  const placed = counted[0][0][6];
+  assert.ok(placed > 4096 && placed < 262144, `placed at ${placed} positions`);
+  assert.ok(counted.every(([header]) => header[6] === placed), "the memory sized at that context, every time it was asked");
+  const options = counted[0][2], fits = (at) => !forward.needsWide(600e6, forward.footprint([...long.slice(0, 6), at], 600e6, options));
+  assert.ok(fits(placed) && !fits(placed + 1), "the longest that fits a 32-bit memory");
+  const head = new Uint8Array(new Int32Array([...long, 77]).buffer);
+  for (const [at, end] of [[0, 20], [20, 26], [26, 32]]) into.sink.write(at, { getBuffer: () => ({ data: head.subarray(at, end), release() {} }) });
+  assert.deepEqual([...new Int32Array(vm.runInContext("weightsNow", context).buffer, 0, 8)], [...long.slice(0, 6), placed, 77], "its seq_len written as that, wherever the writes cut it");
+  assert.deepEqual([...new Int32Array(head.buffer)], [...long, 77], "the converter's bytes stay its own");
+  // and a context that fits is placed as it is, and the header written as the converter wrote it
+  counted.length = 0;
+  const fitting = vm.runInContext(strictly("checkpointSink"), context)(undefined, {}, 8192);
+  fitting.sink.open(600e6, proxy([...QWEN3.slice(0, 6), 8192]), "int8", proxy(qwen3));
+  assert.equal(counted[0][0][6], 8192);
+  assert.equal(fitting.context, undefined);
+}
+console.log("ok: a context past what the memory holds is cut to the longest that fits, and the header written so as it passes (T281)");
 
 // T329.2.2: a Gemma 4's table of every layer's inputs stays in the file the checkpoint is kept in. On the first visit
 // sink.open() makes the memory without it (the bytes after it as much lower), every byte goes to the file as it comes,
@@ -349,7 +376,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   const first = new Uint8Array(7000);
   first.set(new Uint8Array(new Int32Array(GEMMA).buffer));
   const skipped = [];
-  context.stand.kept = { contextRead, openKept: async () => ({ manifest: { bytes: size, options: { ...form, dtype: "int8" } }, where: "opfs",
+  context.stand.kept = { BEFORE, contextOf, contextRead, contextSet, openKept: async () => ({ manifest: { bytes: size, options: { ...form, dtype: "int8" } }, where: "opfs",
     async *parts(skipping) {
       skipped.push(skipping.range);
       yield first;
@@ -786,7 +813,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       const PART = 28, head = new Uint8Array(PART);
       head.set(new Uint8Array(new Int32Array(LLAMA3B).buffer));
       let read = 0;
-      gpuContext.stand.kept = { contextRead, openKept: async () => ({ manifest: { bytes: size, options: { ...FORM, dtype: "int8" } }, where: "opfs",
+      gpuContext.stand.kept = { BEFORE, contextOf, contextRead, contextSet, openKept: async () => ({ manifest: { bytes: size, options: { ...FORM, dtype: "int8" } }, where: "opfs",
         async *parts() {
           for (let at = 0; at < size; at += PART) {
             read += 1;

@@ -471,10 +471,31 @@ const readBack = async (found) => {
   assert.equal(read(8192, { longest: 262144 }, model), 4096, "shorter");
   assert.equal(read(4096, { longest: 6000 }, at(8192)), 6000, "no longer than the model's own");
   assert.equal(read(4096, { longest: 4096, options: { dtype: "float32" } }, at(8192, "float32")), 4096, "a file of tables as long as its context: its own");
-  // what was kept before T326 says no longest: its header's own, unless the converter may have cut it at 4096
-  assert.equal(read(4096, {}, at(8192)), 8192, "a quantized file cut at 4096: read at the context asked for");
+  // what was kept before T326 says no longest: its header's own. T281: where the converter may have cut it at 4096 (a
+  // quantized file), the model's own where its entry says it, and else 4096 still (the review of T326: the model's own
+  // may be just that)
+  const own = (context, longest, dtype) => ({ ...model, conversion: { dtype, max_seq_len: context, longest } });
+  assert.equal(read(4096, {}, at(8192)), 4096, "a quantized file cut at 4096, of a model whose own context nothing says: 4096");
+  assert.equal(read(4096, {}, own(8192, 262144)), 8192, "of a model whose entry says its own: the context asked for");
+  assert.equal(read(4096, {}, own(300000, 262144)), 262144, "no longer than that");
+  assert.equal(read(4096, { longest: 6000 }, own(8192, 262144)), 6000, "what is kept says it first");
   assert.equal(read(2048, {}, at(8192)), 2048, "a model of a shorter context: its own");
-  assert.equal(read(4096, { options: { dtype: "float16" } }, at(8192, "float16")), 4096);
+  assert.equal(read(2048, {}, own(8192, 262144)), 2048, "where the header was not cut at 4096, its own still");
+  assert.equal(read(4096, { options: { dtype: "float16" } }, own(8192, 262144, "float16")), 4096, "a float one's tables: its own still");
   assert.equal(read(4096, {}, at(1024)), 1024);
+}
+// T281: a visit's ?context= (contextAsked(), which the page puts in the entry's conversion.max_seq_len), held to the
+// model's own where the entry says it (contextOf())
+{
+  for (const [said, asked] of [["8192", 8192], ["1", 1], [String(2 ** 24), 2 ** 24], [String(2 ** 24 + 1), undefined], ["0", undefined],
+    ["-4096", undefined], ["4096.5", undefined], ["08192", undefined], ["8k", undefined], ["", undefined], [null, undefined], [undefined, undefined],
+    ["99999999999", undefined]]) {
+    assert.equal(kept.contextAsked(said), asked, `?context=${said}`);
+  }
+  assert.equal(kept.contextOf({ conversion: { max_seq_len: 8192 } }), 8192, "the context asked for, past 4096");
+  assert.equal(kept.contextOf({ conversion: { max_seq_len: 300000, longest: 262144 } }), 262144, "no longer than the model's own");
+  assert.equal(kept.contextOf({ conversion: { longest: 2048 } }), 2048, "nor 4096 where its own is less");
+  assert.equal(kept.contextOf({}), kept.BEFORE);
+  assert.equal(kept.keptName({ ...model, conversion: { max_seq_len: 8192, longest: 262144 } }), kept.keptName(model), "nor is it in the name");
 }
 console.log("ok");

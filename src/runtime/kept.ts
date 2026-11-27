@@ -21,18 +21,35 @@ import type { Conversion, Kept, Manifest, Slice } from "./kept/place.ts";
 export type { Conversion, Kept, Manifest, Reader } from "./kept/place.ts";
 export { openRows, opfsOpens };  // (T525: opfsOpens() for the page, src/models/memory.ts's modelBytes())
 // (T368.1, the types. What is read here of a model of the list: where its weights come from and how they are converted.)
-export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number; blocks?: boolean };
+// (T281: conversion.longest, the model's own context where the entry says it: its config.json's max_position_embeddings)
+export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number; blocks?: boolean; longest?: number };
   hf: { repo: string; revision: string; weights?: string; vocabulary?: { repo: string; revision: string; overrides?: ConfigOverrides } } };
 
 // the places in the order they are looked in and kept in: OPFS first, and a name kept in both is OPFS's
 const PLACES = [opfs, cache];
 
 /** T326: the context a load asks of a model: its entry's (conversion.max_seq_len), or the page's most, 4096. The one
- * place it is chosen: a conversion is made at it (worker/convert.ts) and a kept one is read at it (contextRead()). */
-export const contextOf = (model: Pick<Converted, "conversion">) => model.conversion?.max_seq_len ?? 4096;
+ * place it is chosen: a conversion is made at it (worker/convert.ts) and a kept one is read at it (contextRead()).
+ * T281: the page puts a visit's ?context= there (address.ts's weighed(): contextAsked()), over the entry's: an ask of
+ * the visitor's own, which may be past the page's most of every other visit (BEFORE). No longer than the model's own
+ * where the entry says it (conversion.longest); the converter cuts it to the model's own too, a kept conversion is read
+ * no longer than that (contextRead()), and the worker reads none longer than its memory holds (worker/weights.ts's
+ * contextFitted()). */
+export const contextOf = (model: Pick<Converted, "conversion">) =>
+  Math.min(model.conversion?.max_seq_len ?? BEFORE, model.conversion?.longest ?? Infinity);
 // T326: the context every name said before (no entry asked another, and the page asked none), which still names what
-// was kept then
-const BEFORE = 4096;
+// was kept then. T281: the page's most, which only a visit's ?context= asks past
+export const BEFORE = 4096;
+/** T281: the most a visit's ?context= may ask: 2^24 positions (no model of the list has more than 262,144 of its own,
+ * and the memory of a page holds far fewer) */
+export const CONTEXT_MOST = 2 ** 24;
+/** T281: the context a visit's ?context=N asks for: N, a whole number of positions from 1 to CONTEXT_MOST; undefined for
+ * none or for anything else (the entry's own then, as without it) */
+export function contextAsked(said: string | null | undefined) {
+  if (!said || !/^[1-9][0-9]{0,8}$/.test(said)) return undefined;
+  const context = Number(said);
+  return context <= CONTEXT_MOST ? context : undefined;
+}
 // the dtypes of a file that holds no table as long as the context (Python's QUANTIZED: the engine makes the RoPE tables)
 const quantized = (dtype: string) => (PYTHON_QUANTIZED as readonly string[]).includes(dtype);
 
@@ -65,17 +82,23 @@ export function keptName(model: Converted, context = quantized(model.conversion?
 const named = (model: Converted) => [...new Set([keptName(model), keptName(model, BEFORE)])];
 /** T326: the context a kept conversion is read at: the one asked for (contextOf()), no longer than the file may be read
  * at (manifest.longest, the converter's Conversion.longest: the model's own, or the header's own where the file holds
- * tables as long as it). A conversion kept before T326 says none: its header's own, unless that is BEFORE in a
- * quantized file, which the converter may have cut there (the context asked for is then taken for one the model has:
- * no entry asks more than its model's own). first: the kept file's first bytes, whose header's seq_len (its seventh
- * int, bytes 24 to 28) is set to that context here, before anything reads the header. Returns the context. */
+ * tables as long as it). A conversion kept before T326 says none: its header's own. T281: where that is BEFORE in a
+ * quantized file, which the converter may have cut there, the model's own where its entry says it
+ * (conversion.longest), and else BEFORE still, for the model's own may be just that (the review of T326: a ?context=
+ * past it would have read past the model's own). first: the kept file's first bytes, whose header's seq_len (its
+ * seventh int, bytes 24 to 28) is set to that context here, before anything reads the header. Returns the context. */
 export function contextRead(first: Uint8Array, manifest: Manifest, model: Pick<Converted, "conversion">) {
   // (an int32, little-endian, as Int32Array reads the header in every browser)
   const said = first[24] | (first[25] << 8) | (first[26] << 16) | (first[27] << 24);
   const cut = said === BEFORE && quantized(manifest.options.dtype ?? "int8");
-  const context = Math.min(contextOf(model), manifest.longest ?? (cut ? Infinity : said));
-  first.set([context & 255, (context >> 8) & 255, (context >> 16) & 255, context >>> 24], 24);
+  const context = Math.min(contextOf(model), manifest.longest ?? (cut ? model.conversion?.longest ?? said : said));
+  contextSet(first, context);
   return context;
+}
+/** T281: a checkpoint's first bytes (its header) with its seq_len set to context: contextRead()'s, and the worker's
+ * where its memory holds fewer positions (worker/weights.ts's contextFitted()) */
+export function contextSet(first: Uint8Array, context: number) {
+  first.set([context & 255, (context >> 8) & 255, (context >> 16) & 255, context >>> 24], 24);
 }
 /** T116: the version of what llama2_convert.py writes, the checkpoint's bytes and the options the engine gets: a
  * conversion kept by an older converter is converted again, and deleted. T628.4: Python's, the converter's own
