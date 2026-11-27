@@ -279,6 +279,7 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T449](T449.md) [整理][その他] T367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 2026-11-12
 - [T452](T452.md) [バグ][遠隔試験] `tests/page_ternary.sh` が項目の options なしで測る — 2026-10-29
 - [T453](T453.md) [バグ][遠隔試験] `tests/write.mjs` が dtype に依らず「int8 N GB」と書く — 2026-10-11
+- [T454](T454.md) [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 2026-11-27
 - [T455](T455.md) [整理][WebGPU] GPU の側に時計が 2 つある — 2026-10-11
 - [T456](T456.md) [整理][WebGPU] `cpuStepEnded()` は始まりの無い終わりも時間を書く — 2026-10-11
 - [T457](T457.md) [整理][WebGPU] `forward/gpuside.js` を分ける — 2026-11-26
