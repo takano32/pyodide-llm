@@ -6,7 +6,7 @@ import { answerBegan, generating } from "./answer.ts";
 import { settings } from "./settings.ts";
 import { message, showRun } from "./draw.ts";
 import { opensThought } from "./thought.ts";
-import { targetAsked } from "./target.ts";
+import { translationAsked } from "./target.ts";
 import { worker } from "./receiver.ts";
 
 // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key
@@ -44,7 +44,7 @@ $("composer").onsubmit = (event) => {
   // what src/models.ts says for this model, or what its own chat_template gave (T73). T669: a model that translates
   // with PLaMo 3 Translate's request has none: the engine puts the request together of what was typed, in the language
   // of the field above (target.ts), and the translation is drawn as plain text
-  const translate = model.pfml ? targetAsked() : undefined;
+  const translate = model.pfml ? translationAsked() : undefined;
   const template = translate ? undefined : model.template ?? fromTemplate;
   const sent = template ? filled(template, prompt.value) : prompt.value;
   // T556: the answer of such a model is drawn as Markdown, but for its thinking, where the format leaves it in a thought

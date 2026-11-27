@@ -1424,6 +1424,20 @@ json.dumps([MADE.asked[0][0] == pfml_tokens(MADE.tokenizer, "Aa.", "ja", form="p
     throw new Error(`T669: a translation handed from JavaScript: ${JSON.stringify(cpu)} / ${JSON.stringify(gpu)}`);
   }
   console.log("T669: a translation asked from JavaScript tells its chunk, what it takes back (in code points) and its cut");
+  // T670: the page's context (a text) and glossary (an array of [term, translation] arrays: JsProxies in Python, which
+  // page_translation() unwraps) reach the request as pfml_tokens() puts them
+  const model = pyodide.runPython('StandInTranslator([(["X"], None)])');
+  const pieces = pyodide.pyimport("engine.document").page_translation.callKwargs(model, "Aa.",
+    { target: "ja", context: "a manual", glossary: [["PLaMo", "プラモ"], ["cat", "猫"]] });
+  for (let next = pieces.next(); !next.done; next = pieces.next()) next.value?.destroy?.();
+  pieces.destroy();
+  pyodide.globals.set("MADE", model);
+  const glossed = pyodide.runPython(`MADE.asked[0][0] == pfml_tokens(MADE.tokenizer, "Aa.", "ja", context="a manual",
+                                                                    glossary=[("PLaMo", "プラモ"), ("cat", "猫")])`);
+  pyodide.runPython("del MADE");
+  model.destroy();
+  if (glossed !== true) throw new Error("T670: the context and the glossary handed from JavaScript are not the request's");
+  console.log("T670: a translation asked from JavaScript with a context and a glossary asks with them");
 }
 console.log(`Pyodide ${version}, ${report} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
 console.log("ok");

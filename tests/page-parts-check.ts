@@ -729,6 +729,36 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   assert.equal(answerMeta(done, {}, "PLaMo").summary, "PLaMo · 60 tokens · 50.0 tok/s · greedy · 5 parts · 1 sentence cut", "under the translation, after the settings");
   cases += 12;
 }
+{
+  // T670: translating.ts's glossary (a line a pair, by any of the four separators, comments and empty lines none, the
+  // lines not read said by their numbers), the fold's words, and what a translation is asked with besides its target
+  const { GLOSSARY_SEPARATORS, glossaryOf, unreadSaid, moreSaid, extrasAsked } = await fresh("page/translating.ts");
+  assert.deepEqual(GLOSSARY_SEPARATORS, ["\t", "=>", "→", "="], "tanakh's separators: a tab, =>, → and =");
+  const text = ["PLaMo = プラモ", "  Tokyo\t東京  ", "cat => 猫", "dog → 犬", "", "   ", "# a comment = not a pair", "  #indented", "a=b=c",
+    "x => y = z", "no separator", " = nothing before", "nothing after =>", "C# = シーシャープ", "\r"].join("\n");
+  const { pairs, unread } = glossaryOf(text);
+  assert.deepEqual(pairs, [["PLaMo", "プラモ"], ["Tokyo", "東京"], ["cat", "猫"], ["dog", "犬"], ["a", "b=c"], ["x", "y = z"], ["C#", "シーシャープ"]],
+    "each separator, the sides trimmed, the first separator of a line (=> before = at one place), a # inside a term kept");
+  assert.deepEqual(unread, [11, 12, 13], "the lines with no separator or an empty side, by their numbers from 1");
+  assert.deepEqual(glossaryOf("a = b\r\nc = d\re = f"), { pairs: [["a", "b"], ["c", "d"], ["e", "f"]], unread: [] }, "any line break");
+  assert.deepEqual(glossaryOf(""), { pairs: [], unread: [] }, "nothing typed: no pair");
+  assert.deepEqual([unreadSaid([]), unreadSaid([3]), unreadSaid([3, 5]), unreadSaid([1, 2, 4])],
+    ["", "Line 3 is not read: write a term, then = and its translation.", "Lines 3 and 5 are not read: write a term, then = and its translation.",
+      "Lines 1, 2 and 4 are not read: write a term, then = and its translation."], "the lines not read, by their numbers");
+  assert.deepEqual([moreSaid("", 0), moreSaid("  ", 1), moreSaid("x", 0), moreSaid("x", 3)],
+    ["Context and glossary", "Context and glossary (1 term)", "Context and glossary (context)", "Context and glossary (context, 3 terms)"], "the fold says what it holds");
+  assert.deepEqual([extrasAsked("", ""), extrasAsked(" \n ", "# only\nno pair"), extrasAsked(" a camera's manual ", "a = b\nbad")],
+    [{}, {}, { context: " a camera's manual ", glossary: [["a", "b"]] }], "a context with more than whitespace, as typed; the glossary's pairs where it has any");
+  // what is kept (target.ts): the target and the form under "translate" (translateAsked() has nothing else: above), the
+  // glossary as typed under "glossary", and never the context
+  const fs = await import("node:fs");
+  const target = fs.readFileSync(fileURLToPath(new URL("../src/page/target.ts", import.meta.url)), "utf8")
+    .split("\n").filter((line) => !/^\s*(\/\/|\/\*\*|\*)/.test(line)).join("\n");  // (its code: no comment)
+  assert.deepEqual([...target.matchAll(/\bkeep\(([^;]*)\);/g)].map(([, said]) => said),
+    ['"translate", JSON.stringify(targetAsked())', '"glossary", glossary.value || null'], "target.ts keeps the target, the form and the glossary alone");
+  assert.deepEqual([...target.matchAll(/\brecall\("(\w+)"/g)].map(([, name]) => name), ["translate", "glossary"], "and reads back those");
+  cases += 9;
+}
 console.log(`page-parts-check: folder.ts by itself: the models of a folder, of llama2.c's form and of Hugging Face's`);
 {
   // T643.7: fields.ts, the generation settings' tables: what a link sets of them (each setting the worker is sent:

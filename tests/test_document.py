@@ -367,3 +367,20 @@ def test_a_translation_stopped_on_the_way_leaves_the_stats_of_its_runs(made):
     assert [next(pieces) for _ in range(5)] == [(CHUNK, 0, 2), "A", "\n\n", (CHUNK, 1, 2), "B"]
     pieces.close()
     assert (model.stats["chunks"], model.stats["sampled"], model.stats["tokens_per_second"]) == (2, 2, 2.0)
+
+
+def test_every_chunk_is_asked_with_the_pages_context_and_glossary(made):
+    """T670: the page's context and glossary reach every chunk's request as pfml_pieces() puts them (the template's
+    order: context, the pairs, glossary, input), the glossary's pairs as the page's arrays come (lists)"""
+    tokenizer, _ = made
+    model = Translator(tokenizer, [(["A"], True), (["B"], True)])
+    pieces = list(page_translation(model, "aaaa\n\nbbbb", "ja", chunk_tokens=4, context="ctx", glossary=[["a", "b"], ["c", "d"]]))
+    assert pieces == [(CHUNK, 0, 2), "A", "\n\n", (CHUNK, 1, 2), "B"]
+    glossary = [("a", "b"), ("c", "d")]
+    assert [request for request, *_ in model.asked] == [
+        pfml_tokens(tokenizer, "aaaa", "ja", context="ctx", glossary=glossary),
+        pfml_tokens(tokenizer, "bbbb", "ja", context="ctx", glossary=glossary, history=[("aaaa", "A")])]
+    # (none said: none in the request, as before)
+    model = Translator(tokenizer, [(["A"], True)])
+    list(page_translation(model, "aaaa", "ja", glossary=None))
+    assert model.asked[0][0] == pfml_tokens(tokenizer, "aaaa", "ja")

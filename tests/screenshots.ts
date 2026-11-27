@@ -178,6 +178,12 @@ for (const [width, viewport] of Object.entries(widths)) {
   await acrossReload(() => page.waitForFunction(() => document.getElementById("translate")?.hidden === false, null, { timeout: 600000 }));
   await page.waitForTimeout(300);
   await shot(page, "translate", width);
+  // T670: and the fold below them open, a context and a glossary with a line it does not read
+  await page.click("#translate-more");
+  await page.fill("#context", "A diary.");
+  await page.fill("#glossary", "# fruits\napple = 林檎\nbanana => 甘蕉\nnot a pair");
+  await page.waitForTimeout(300);
+  await shot(page, "translate-glossary", width);
 
   // T119 (2): a gated repository, in words
   await closed(() => context.close());

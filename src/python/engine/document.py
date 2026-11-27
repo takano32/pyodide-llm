@@ -48,6 +48,7 @@ the model's tokenizer's, read literally (a mark typed in the text is its charact
 import time
 
 from engine.pfml import FORMED, pfml_tokens
+from engine.proxy import plain
 from engine.tokenizer import WHITE_SPACE
 
 # T666: the most tokens of a chunk and of the history: a sixth and a third of what a context of 4096 leaves, as
@@ -515,19 +516,22 @@ def automatic_target(text):
     return "en" if japanese(text) else FORMED
 
 
-def page_translation(model, text, target=AUTOMATIC, form=None, alone=False, **settings):
+def page_translation(model, text, target=AUTOMATIC, form=None, alone=False, context=None, glossary=(), **settings):
     """T669: the translation the page asks for (worker.ts's generate()), translate_document()'s as the worker hands it on:
     each text as it is, and the rest as tuples, (CHUNK, index, count) before a chunk, (WITHDRAWN, characters) and (CUT,
     reason). target: a code of pfml.py's LANGUAGES (or easy Japanese), or AUTOMATIC (automatic_target(), the form then
     said only where that is Japanese); form: pfml_pieces()'s; the source's language is the model's to tell. alone: the
     model is on the GPU alone, which has no CPU to draw a step with DRY's penalty (the GPU's sampling has none): the try
     with it before a cut is left out, and what still runs away is cut as it ran (the owner, 2026-11-26).
-    settings: generate()'s sampling."""
+    T670: context and glossary are pfml_pieces()'s, every chunk's request the same (the page's fields: a text, and
+    [term, translation] pairs that src/page/translating.ts's glossaryOf() read; a page's array is unwrapped here,
+    engine/proxy.py). settings: generate()'s sampling."""
+    glossary = [tuple(plain(pair)) for pair in plain(glossary) or ()]
     if target == AUTOMATIC:
         target = automatic_target(text)
         form = form if target == FORMED else None
     told = []
-    pieces = translate_document(model, text, target, form=form, told=lambda index, count, _: told.append((CHUNK, index, count)),
+    pieces = translate_document(model, text, target, form=form, context=context, glossary=glossary, told=lambda index, count, _: told.append((CHUNK, index, count)),
                                 penalized=None if alone else PENALIZED, **settings)
     try:
         for piece in pieces:

@@ -99,8 +99,10 @@ export type Sampled = {
 
 // T669: what a translation by PLaMo 3 Translate is asked with (engine/document.py's page_translation()): the language to
 // translate into (a code of engine/pfml.py's LANGUAGES, its easy Japanese, or "auto": Japanese into English, any other
-// into Japanese) and the form of a translation into Japanese (none: the model's own)
-export type Translate = { target: string; form?: string };
+// into Japanese) and the form of a translation into Japanese (none: the model's own). T670: a context (a text about the
+// whole, every chunk's) and a glossary ([term, translation] pairs: src/page/translating.ts's glossaryOf()), each where
+// the page's field has one
+export type Translate = { target: string; form?: string; context?: string; glossary?: [string, string][] };
 
 // T45: a round of ?bench=1 (src/bench/rounds.ts): the switches it leaves out; skip: the words of its row where the
 // device does not run it (T214)
