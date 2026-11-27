@@ -538,6 +538,9 @@ const ok = (line) => {
       fresh(streaming);
       const load = new AbortController();
       context.download(slowModel, load.signal, 1);
+      // (the part's fetch is asked for before the counting begins, as the worker's order is: a fetch asked for after it
+      // would be counted by the watch's own wrapper, and the loader's wait would count the model without modelBytes)
+      await new Promise((resolve) => setImmediate(resolve));
       const began = clock.now();
       const failed = await failure(wait());
       load.abort();
@@ -550,6 +553,7 @@ const ok = (line) => {
     fresh((url, init) => (url.endsWith("/models/m.000") ? new Response(body(0, PART, { signal: init.signal, delay: 5000, stall: true }), { status: 200 }) : "hang"));
     const load = new AbortController();
     context.download(slowModel, load.signal, 1);
+    await new Promise((resolve) => setImmediate(resolve));
     const began = clock.now();
     const failed = await failure(run("pyodideSteps")("314.0.7", () => new Promise(() => {})));
     load.abort();
