@@ -170,6 +170,15 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.waitForTimeout(300);
   await shot(page, "refused", width);
 
+  // T669: PLaMo 3 Translate's fields above the text field, the language and the form of the Japanese (shot as the model
+  // begins to load: its 573 MB come from Hugging Face, which this scene does not wait for)
+  await closed(() => context.close());
+  ({ context, page } = await fresh(viewport));
+  await page.goto(`${site}?model=hf-plamo-3-translate-0.8b&target=ja&form=polite`);
+  await acrossReload(() => page.waitForFunction(() => document.getElementById("translate")?.hidden === false, null, { timeout: 600000 }));
+  await page.waitForTimeout(300);
+  await shot(page, "translate", width);
+
   // T119 (2): a gated repository, in words
   await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
