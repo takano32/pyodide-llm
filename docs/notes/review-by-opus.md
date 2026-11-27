@@ -301,7 +301,7 @@ AGENTS.md の「役割」から参照する。決まりが変わったら（Opus
 - **今ある変換と forward.js の道が変わらないことは、実装の記録の方法で本線の今日の版でも回す**（作り物の変換 92 通り、何もしないカーネルで 192 のエンジンの呼び出し 4,865,892 回）。実装の後に本線へ別の変更が入るので、レビューの時点の版で取り直す。
 - **記録済みの罠を再び踏んだ**: `hf_fetch.py` は段 ② の項目の GGUF を原本のフォルダにリンクするので、原本を同じフォルダに取ると GGUF を読む（hybrid の「原本」が GGUF だった。AGENTS.md の T136 の項）。`models.yml` の `twice` と `then` を 1 回に混ぜると 2 回目の訪問の確かめだけが落ちる。**道具の頼みを書く前に、その道具の落とし穴を AGENTS.md で探す**。
 - **作業の作り**: 隔離した worktree の bash は `for` に `gh`、heredoc つきの `git`、`$(…)` を含む行を断った。スクリプトを Write で書いて `bash` で動かす（T245・T247 の回と同じ）。長い run（約 15 分）を 2 本並べて待つ間に、手元の NumPy で 1 つの入力を見る（BOS のベクトルの構造、head ごとの注意）と、次の run の問いが決まる。
-- **捨てのブランチ**: `t260-review-probe`（**残してある**: `tests/t272_probe.py`（NumPy の写し。実験: all・roles・positions・bos・bosparts・shifts・bits・mitigate・noise・hybrid・weights・heads・knob・lottery・answers・stats ほか）・`t272_ci.sh`・`t260_mutants.py`・`t260_mutants_ci.sh`・`t260_answers_ci.sh`）。T314 を作るときの確かめに使える。
+- **捨てのブランチ**: `t260-review-probe`（2026-11-27 に消した。中身は `tests/t272_probe.py`（NumPy の写し。実験: all・roles・positions・bos・bosparts・shifts・bits・mitigate・noise・hybrid・weights・heads・knob・lottery・answers・stats ほか）・`t272_ci.sh`・`t260_mutants.py`・`t260_mutants_ci.sh`・`t260_answers_ci.sh`）。T314 は実物のカーネルの perplexity で確かめ、本線に入れた後にこのブランチを消した（2026-11-27）。
 
 ## T233 の回（2026-10-02、Sonnet max）で分かったこと
 

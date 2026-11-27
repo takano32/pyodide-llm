@@ -272,7 +272,7 @@
 
 ### 計測の読み方
 
-- **前後は同じプロセスで交互に、順を毎回裏返して**（`compare-engines.ts`、スレッドつきは `THREADS=2,4 bash tests/compare-builds.sh`、プロンプトの塊は `PROMPT=1 THREADS=2,4 bash tests/compare-builds.sh`（`threads-compare.ts --prompt`: 1 トークンの道の道具はプロンプトの塊を踏まない。モデルはファイルでも渡せる: int6 は `quantize.py`、3 値は `tests/make_ternary.py <out> ternary large`）、変換は `tests/abba-convert.sh`）。測る前に 2 つが同じ答えかを見る。**CPU の名前を出して CPU ごとに読む**（GitHub のランナーは回ごとに CPU が違う）。x86-64 と arm64 の両方で。
+- **前後は同じプロセスで交互に、順を毎回裏返して**（`compare-engines.ts`、スレッドつきは `THREADS=2,4 bash tests/compare-builds.sh`、プロンプトの塊は `PROMPT=1 THREADS=2,4 bash tests/compare-builds.sh`（`threads-compare.ts --prompt`: 1 トークンの道の道具はプロンプトの塊を踏まない。モデルはファイルでも渡せる: int6 は `quantize.py`、3 値は `tests/make_ternary.py <out> ternary large`）、変換は `tests/abba-convert.sh`）。測る前に 2 つが同じ答えかを見る（数を変えるつもりの変更は両方の道具の `--changed`、`compare-builds.sh` は `CHANGED=1`: 同じ答えを求めずに差を言って測り、`threads-compare` は logits つきのトークンを位置 1 から測る。T314）。**CPU の名前を出して CPU ごとに読む**（GitHub のランナーは回ごとに CPU が違う）。x86-64 と arm64 の両方で。
 - **対照を並べる**: 同じコードの 2 つのビルドの比が雑音（1.5% 動くことがある）。**1〜2% の差は読まない**。1 回の run の「± の外」で決めない。
 - **疑った費用は、それだけを回して µs で測る**（差の差で測らない）。プロファイラの下の計測は呼び出しの数の違いを大きく見せる（`PROFILE=0`）。
 - 速さは手元の数字で決めない。静かな機械で（`/proc/loadavg`）。ソフトウェアのアダプタ（lavapipe・SwiftShader）の速さでシェーダの費用を決めない。
@@ -426,6 +426,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 全文は [docs/notes/learned/cpu-kernels.md](docs/notes/learned/cpu-kernels.md)。
 
 - **1 トークンの生成は帯域の壁**（`matmul_q8r` が DRAM の読み出しの 97%）。上限のループは `kernels/ceilings*.ts`。 a1-free の V8 の上限は読み出しだけ 11.8 GB/s、持ち主の Android は 1 トークン 1 本 12.9〜18.9 GB/s・4 本 27.6〜28.7（表は `docs/notes/t158-cpu-audit-2026-09-27.md`）。**上限のループは検算で見張る**（戻り値を捨てたループは消える）。**ループの定数は呼び出しから渡す**。
+- **最初の位置は丸めない**（T314）: 位置 0 の 1 トークンは層の int8 の行列を活性値の float32 のまま掛け（`matmul_q8f`、`PACKED.int8.jobs.unrounded`、`engine.ts` の `unrounding`）、位置 0 から始まるブロックは位置 0 だけを先に通して残りを位置 1 から（どの数も 1 トークンずつと同じ）。後ろの全部の位置が読むので、丸めの端数が文の全部を同じ向きに動かしていた（T272）。ほかの詰め方と GPU のブロックの位置 0 は今のまま。費用はプロンプトごとに 1 回（1.2B で CI の 1 本 147 ms・4 本 78 ms）、生成のステップは変わらない。LFM2.5 350M の英語の 7 ビットは原本から +2.8% → +6.3% と悪くなる（前は位置 0 の丸めの引きが当たっていた）: 数は TASKS.md の T314。
 - **カーネルの形の決まり。** (1) x86-64 と arm64 の両方で測り、的の arm で決める（x86 で速い形が arm で 0.55〜0.6 倍のことがある）。(2) 4 つずつの道と残りの道の試験は残りが 0〜3 のどれも通る幅で。(3) ビット単位で同じと言う変更は厳密な比べも回す（`attention-compare.ts --exact`）。
 - **サンプリングの決まり。** kernel（`sample`・`penalize`）・NumPy・JavaScript の模型（`walkLikeCpu`）は同じ形（smoke が見る）。(1) top-p の足切りの線は「いちばん大きい確率」で抑える。(2) **最大の logit が有限でない logits からは引かず、エラーで止める**（kernel は −1、エンジンは `ValueError`（`NOT_FINITE`））。(3) 順は「top-k → top-p → min-p」、presence penalty は書いた語のうち直近 64 語から。**同じ確率の語は添字の小さいほうが先**。greedy は top-k と min-p を見ない。 GPU の SAMPLE にもある。(4) **DRY（T668、`Sampling` の `dry_*`、llama.cpp の名前と既定。倍率 0 で無し）は 2 つの罰の後**、書いた語（プロンプトでない）の直近 `dry_penalty_last_n`（−1 で全部）から。式は `engine/sampler.py` の `dry_penalties()`（kernel `dry`・`dryLikeCpu` も同じ形で、smoke がビット単位で突き合わせる）。区切りは 1 字の ASCII だけで、その字を持つトークン（`Tokenizer.containing()`、`generate()` が DRY のときだけ sampler の `drawing()` の 3 つ目の引数に渡す）。冪は掛け算を重ねる（llama.cpp の `pow()` と float64 の末尾しか違わない）。**カーネルは `Math.log` を使えない**（静的データになり `make kernels` が断る）ので、指数の上限は呼ぶ側の `dry_cap()` が渡す。GPU の SAMPLE には無い（足すと端末の鍵が動く）ので、DRY の生成は CPU のステップ（**GPU だけに置いたモデルには CPU のステップが無い**: `forward()` が `notHere()` を投げ、GPU を止めて worker がモデルを CPU で読み直す。DRY をページから使う回（T669）の前に決める。T668 のレビュー）。ページの欄と URL の名前はまだ無い（T669）。
 - **forward.ts の外の費用**: llm-jp-3 150M で 3.5〜4.1%、tiny-lm で 16〜20%、その多くが `sample`。Python から JS を呼ぶ 1 回は 1.3〜1.7 µs。
@@ -585,7 +586,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **AssemblyScript は、インライン関数に定数で渡した引数の分岐を畳まない**（全部の枝がコンパイルされ、3 分かかり、relaxed を切ったビルドが使わない枝で断られた）。**型引数で渡す**（`f<XXS2>(…)` と `idof<K>()`）。**定数のベクトルを表から使う所ごとに読むと、V8 は毎回ロードする**: よく使う小さな定数はレジスタのベクトルのシフトで作る。
 - **検査の「壊す位置」が、見たい道を本当に踏むかを見る**（壊す値がどれもグループの最大を変えるか前の 12 個にあり、最後の 4 個を見ない誤りが通った）。
 - **CPU の float16 の読みは NaN を有限の数にする**（`halves4`・`half`）。だから forward は GPU の書いた K と V を写す前に指数のビットで見る（`stagingFinite()`、カーネル `finite_f16`）。試験で NaN を見るときは書き戻しの置き場の float16 のビットを読む。
-- **量子化の損は、全部の文が共有する 1 つのベクトルで決まることがある**（T272）。最初のトークン（BOS）の状態は文に依らない定数で、その丸めの誤差は全位置に同じ向きに効く: perplexity は数 % 動くが、KL は小さく、答えの最尤は 99% 一致する。**Wikipedia の perplexity の 1 つの数字を「このモデルの損」と読まない**: (1) グループの始まりをずらした別の引きで広がりを見る、(2) 位置・層・行列・head の順に丸めを 1 つずつ外して絞る、(3) KL と最尤の一致を並べる、(4) ランダムな雑音で再現できるかを見る。
+- **量子化の損は、全部の文が共有する 1 つのベクトルで決まることがある**（T272。T314 から最初の位置は丸めない: 「CPU のカーネル」）。最初のトークン（BOS）の状態は文に依らない定数で、その丸めの誤差は全位置に同じ向きに効く: perplexity は数 % 動くが、KL は小さく、答えの最尤は 99% 一致する。**Wikipedia の perplexity の 1 つの数字を「このモデルの損」と読まない**: (1) グループの始まりをずらした別の引きで広がりを見る、(2) 位置・層・行列・head の順に丸めを 1 つずつ外して絞る、(3) KL と最尤の一致を並べる、(4) ランダムな雑音で再現できるかを見る。
 - **試験の線は、通してはいけない誤りを並べてから決める**（誤りを 1 つずつ入れて同じ参照の数と比べる）。logits だけでなく各層の状態（再帰の状態・畳み込みの行・鍵と値）も比べる。**参照どうしの差も CPU で変わる**ので、線は固定の値でなくその差の倍数に。固定の線は深いモデルで外れる。**試験の道具そのものにも誤りを入れて、落ちるのを見る**。
 - **「止まるスレッド」の試験は、どの段で止まるかを決める**（最初に起こされた段は起動の競争で決まる）。状態を読んで書く段には `tests/threads-late-helper.ts`。
 - **本物の GPU のアダプタが要る分岐は、CI のどの試験も通らない**（「hybrid は GPU に置かない」の行を消しても全部通った）。偽の GPU の Worker の工場を渡して「呼ばれない」を見る（`tests/gpu-hybrid-check.ts`）。

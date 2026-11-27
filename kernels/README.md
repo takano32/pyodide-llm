@@ -84,6 +84,28 @@ next to vocab_size × dim). GPT-2 is back to 36.127 (+0.16% against NumPy); its 
 its median gets it (`OUTLIER_RATIO`; GPT-2 13.9, every other model of the list 1.1-1.9): tiny-lm gains nothing
 from it (+0.31% either way) and would pay about 3% of speed. `simdkernel.so` is 6307 → 6572 bytes.
 
+The first position is not rounded (2026-11-27, T314). A run of position 0 alone multiplies the layers' int8 matrices by
+its activations as they are, float32: `matmul_q8f` (the group's weights widened to float32 in registers, its products of
+four added as a tree, the group's sum times its scale; `tests/int8-check.ts` holds it to that to the bit), a kind of job
+the int8 packing names as its `unrounded` (`src/runtime/jobs.ts`). Every later position reads the first one's keys,
+values and state, and a rounding of its activations moved them all one way: LFM2.5 350M's perplexity on English Wikipedia
+was +8.6% with 8-bit activations, nearly all of it the first position's (T272). A block of a prompt from position 0 takes
+that position alone first and goes on from position 1, so every number is still the one of a token at a time. The other
+packings (six bits, ternary, binary, llama.cpp's blocks) are rounded at position 0 as before, and the GPU's blocks are
+the GPU's. 1500 tokens, against the float32 original, before → after (TASKS.md's T314 has the runs):
+
+| model, text | 7-bit (relaxed SIMD) | 8-bit |
+|---|---:|---:|
+| LFM2.5 350M, English | +2.77% → +6.31% | +8.58% → +4.13% |
+| LFM2.5 350M, Japanese | +2.65% → +1.95% | +3.81% → +0.25% |
+| LFM2.5 1.2B JP, English | +3.87% → +1.11% | +0.94% → −0.00% |
+| LFM2.5 1.2B JP, Japanese | +3.92% → −0.85% | +1.22% → −0.02% |
+
+The 350M's English 7-bit was the lucky one: the rounding of its first position moved it down by more than the 7 bits of
+the later positions cost (+2.55% against its int8 weights in NumPy, which is what the 7 bits cost it now). The first
+position costs a prompt once: 47 ms on one thread and 25 ms on two or four for the 350M (CI's EPYC 7763), 147 ms and 78 to
+82 ms for the 1.2B (an EPYC 9V74); a token of a generation is as fast as before (x86-64 and arm64, within the control).
+
 ## Ternary weights (2026-10-01, T230 and T231)
 
 A ternary model's weights (-1, 0, +1 times one scale a group of 128) are held two bits each, in the order of Prism

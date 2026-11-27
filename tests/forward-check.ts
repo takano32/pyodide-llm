@@ -3,8 +3,8 @@
 //   float32: the kernels add in another order than NumPy, so the last bits differ; the most likely token must be the
 //            same at every position, and no logit may differ by more than 1e-3 (measured 2026-09-25: 1.7e-5 to 3.7e-5;
 //            T660: a made-up model's, more where 4 times NumPy's own jitter is: JITTERS below).
-//   int8: forward.js quantizes the activations too (7 bits with relaxed SIMD), NumPy does not, so the numbers
-//         differ by design. Measured 2026-09-25 on NumPy's greedy text: at 128 positions the most likely token the
+//   int8: forward.js quantizes the activations too (7 bits with relaxed SIMD; T314: but the first position's), NumPy
+//         does not, so the numbers differ by design. Measured 2026-09-25 on NumPy's greedy text: at 128 positions the most likely token the
 //         same at 93.8 to 100% and the perplexity -0.23 to +2.00% apart; at 64 positions llm-jp-3 150M was 87.5% and
 //         +3.42% (fewer positions, more spread). The line: 85% or more and within 5%, at 128 positions (the
 //         default). A real fault (a wrong order, a wrong scale) lands far outside: the agreement near nothing and
