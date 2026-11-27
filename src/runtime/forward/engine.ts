@@ -444,7 +444,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     embed(tokens, pos0);
     if (perLayered) perLayered.inputs(tokens, count);
     // (T673: a token without logits stops at the last layer that leaves something a later position reads)
-    for (let l = 0, through = needLogits ? layers : promptLayers; l < through; l++) {
+    for (let l = 0, stop = needLogits ? layers : promptLayers; l < stop; l++) {
       for (let t = 0; t < count; t++) {
         norm(xb + t * S, x + t * S, attW + l * D, attB + l * D);
         if (parallel) F.copyWithin((before + t * S) / 4, (x + t * S) / 4, (x + t * S) / 4 + dim);  // GPT-NeoX reads this layer's input twice
