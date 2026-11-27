@@ -148,6 +148,9 @@ export const LICENSES: Record<string, string> = {
   "NousResearch/Hermes-3-Llama-3.2-3B": LLAMA_32, "NousResearch/Hermes-3-Llama-3.2-3B-GGUF": LLAMA_32,
   "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": MIT, "mradermacher/DeepSeek-R1-Distill-Qwen-7B-GGUF": MIT,
   "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": MIT_OF_LLAMA_31, "mradermacher/DeepSeek-R1-Distill-Llama-8B-GGUF": MIT_OF_LLAMA_31,
+  // T683: the card's metadata and its License section ("The use of DeepSeek-R1 models is also subject to MIT
+  // License"), and bartowski's card: mit
+  "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B": MIT, "bartowski/deepseek-ai_DeepSeek-R1-0528-Qwen3-8B-GGUF": MIT,
   "meta-llama/Llama-3.1-8B-Instruct": LLAMA_31, "unsloth/Meta-Llama-3.1-8B-Instruct": LLAMA_31,
   "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF": LLAMA_31,
   // T125

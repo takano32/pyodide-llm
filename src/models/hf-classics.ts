@@ -235,6 +235,16 @@ export const HF_CLASSICS: Entry[] = [
       "deepseek-ai/DeepSeek-R1-Distill-Llama-8B", "6a6f4aa4197940add57724a7707d069478df56b1"), download: 8540773376,
     conversion: {}, options: {}, generation: thinking,
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  // T683: DeepSeek-R1-0528's thought taught to Qwen3 8B Base (the owner's choice of 2026-11-26): bartowski's Q8_0 with
+  // the original's vocabulary and config.json. Its yarn's attn_factor (0.878, which takes the magnitude back to 1) the
+  // converter reads as vLLM and SGLang do (T259); the GGUF says none, and takes the original's (attn_factor_taken()).
+  // The converter reads its BOS (<｜begin▁of▁sentence｜>, 151643) and template, which leaves the thought to the model
+  // to open. The card's sampling (0.6, top-p 0.95)
+  { group: "hf", id: "hf-deepseek-r1-0528-qwen3-8b", name: "DeepSeek-R1-0528 Qwen3 8B", note: "thinks before it answers · English · fetches 8.7 GB (GGUF) → int8 9.2 GB", japanese: false, thinks: true, converted: 9.2e9,
+    ...ggufOf("bartowski/deepseek-ai_DeepSeek-R1-0528-Qwen3-8B-GGUF", "75b8e3d4ecafa21b1f9a06209712f726d0ed77bc", "deepseek-ai_DeepSeek-R1-0528-Qwen3-8B-Q8_0.gguf",
+      "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B", "6e8885a6ff5c1dc5201574c8fd700323f23c25fa"), download: 8709517696,
+    conversion: {}, options: {}, generation: thinking,
+    prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
   // Llama 3.1 8B Instruct, as Llama 3.2 above: the original is gated, so the vocabulary and config.json of unsloth's
   // copy. Its template's system turn says "Today Date: 26 Jul 2024" unless a date is passed (Llama 3.2's asks the clock)
   { group: "hf", id: "hf-llama-3.1-8b-instruct", name: "Meta Llama 3.1 8B Instruct", note: "answers instructions · English · fetches 8.5 GB (GGUF) → int8 9.0 GB", japanese: false, converted: 9.0e9,

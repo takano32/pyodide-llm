@@ -83,10 +83,10 @@ The model list has three groups:
   [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project (260K to 42M parameters), in int8 (the small
   ones in float32). They are built into the site when it is deployed.
 - **Unquantized originals** of some of them (float16 or float32), to compare with int8.
-- **From Hugging Face, converted in this browser** (215 entries, from a 16 MB Pythia to 14B models and ternary, 1-bit and
+- **From Hugging Face, converted in this browser** (216 entries, from a 16 MB Pythia to 14B models and ternary, 1-bit and
   2-bit 27B ones: Llama, Mistral, Qwen2.5, Qwen3, Qwen3.5, Granite 4.2, SmolLM3, MiniCPM5, LFM2.5, Gemma, PLaMo 3, Phi,
   BitNet, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from huggingface.co (for
-  194 of them a GGUF: Q8_0, and for the Ternary Bonsai models their ternary files, PQ2_0 or PTQ1_0, for the 1-bit Bonsai
+  195 of them a GGUF: Q8_0, and for the Ternary Bonsai models their ternary files, PQ2_0 or PTQ1_0, for the 1-bit Bonsai
   models Q1_0, and for some of the largest llama.cpp's blocks, Q4_K_M or IQ2, read with the original repository's
   vocabulary and configuration),
   converts them to int8 in your browser (Ternary Bonsai stays in its 2 bits, the 1-bit Bonsai in 1 bit) with the same Python code that

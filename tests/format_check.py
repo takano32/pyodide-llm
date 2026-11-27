@@ -71,7 +71,8 @@ SENTENCEPIECE = {"hf-sarashina2.2-0.5b-instruct", "hf-sarashina2.2-1b-instruct",
 # T610.2: also where the tokenizer_class is GPT2Tokenizer and transformers (5.16.1) builds it out of the vocabulary and the
 # merges with GPT-2's own split, not tokenizer.json's (Phi-4's, as tiktoken's cl100k): "\n\n" before a letter is then two
 # pieces where tokenizer.json, and the page, has one
-TOKENIZERS = {"hf-deepseek-r1-llama-8b", "hf-shisa-v2.1-unphi4-14b"}
+# T683: and DeepSeek-R1-0528-Qwen3-8B's (Qwen3's byte-level vocabulary under DeepSeek's names, LlamaTokenizerFast)
+TOKENIZERS = {"hf-deepseek-r1-llama-8b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-0528-qwen3-8b"}
 # T145: the differences known, each with what it takes out of the comparison (the rest still counts, so a new break
 # in these models shows: two of them were 0/9 whatever else went wrong). One that no prompt needs any more is an error
 # too, to be taken out of here.
