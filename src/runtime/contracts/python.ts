@@ -65,6 +65,14 @@ export type TranslatingModule = Proxy & {
   translation: { callKwargs(model: Bytes, source: Bytes, target: Bytes, language: string, options: { kernels?: string; disable?: string[]; sentences?: (text: string) => string[]; shortlist?: Bytes }): Answering };
 };
 
+// T669: src/python/engine/document.py: page_translation(model, text, **asked), a PLaMo 3 Translate's translation of a
+// text a chunk at a time: a piece of text, or what goes on besides as a tuple (its first, the kind: "chunk" index
+// count, "withdrawn" characters, "cut" reason)
+export type Translated = ["chunk", number, number] | ["withdrawn", number] | ["cut", string];
+export type DocumentModule = Proxy & {
+  page_translation: { callKwargs(model: Answering, text: string, asked: object): Generator<string | List<Translated>> };
+};
+
 // src/python/llama2_numpy.py, the engine's window
 export type EngineWindow = Proxy & {
   // T92: how many channels of the classifier's input go as float32 at most
@@ -113,6 +121,7 @@ export type Pyodide = {
   pyimport(name: "llama2_convert"): ConverterWindow;
   pyimport(name: "convert.conduct"): ConductModule;
   pyimport(name: "engine.translating"): TranslatingModule;
+  pyimport(name: "engine.document"): DocumentModule;
   globals: { get(name: "bytearray"): (size: number) => Bytes };
   toPy(value: unknown): Proxy;
   runPython(code: string): unknown;

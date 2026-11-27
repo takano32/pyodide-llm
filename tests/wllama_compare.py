@@ -60,13 +60,14 @@ MODELS = {
         "theirs": "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
         # (src/models/formats.ts's QWEN3_AT_ONCE after the list's BOS, <|endoftext|>: QWEN3_OWN_BOS)
         "prompt": STORY, "raw": "<|endoftext|><|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"},
-    "hf-plamo-3-translate-2b-ja-en": {
+    "hf-plamo-3-translate-2b": {
         "repo": "pfnet/plamo-3-translate-2b-GGUF", "revision": "232fbd7916519edecddfdae0beae7e76fe70453f",
         "file": "plamo-3-translate-2b-Q4_K_M.gguf", "sha256": "f36d0813dd95573a852ab5d76e374c543632d9e292929e922bcdbf7e53b494e0",
         # tanakh/plamo-translate-desktop's extension (extension/engine.js at 3d69a116) pins a later upload of PFN's, of
         # another sha256 (3,648 bytes more): this compares the list's file, read by both
         "theirs": "https://huggingface.co/pfnet/plamo-3-translate-2b-GGUF/resolve/228a27cc0bb4f111219963848d50a3127c16ca73/plamo-3-translate-2b-Q4_K_M.gguf",
-        # (formats.ts's plamoTranslate("ja", "en"); the BOS (1) is llama.cpp's to add, as the GGUF says)
+        # (the request of Japanese into English, as T649.3's entry wrote it, the source said: the page's own of a
+        # Japanese text says none since T669, engine/pfml.py's; the BOS (1) is llama.cpp's to add, as the GGUF says)
         "prompt": JAPANESE,
         "raw": "<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>{prompt}"
                "<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>"},

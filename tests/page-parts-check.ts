@@ -265,7 +265,10 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   const bubble = {};
   only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1), { generating: true, answer: bubble, written: "", undrawn: 0, drawnAt: undefined }, "the next answer begins with nothing written or drawn");
   assert.equal(a.wrote("z", 0), true, "and its first token is drawn at once");
-  cases += 2;
+  // T669: a translation took characters back: the answer is the text it says now, undrawn
+  a.drew(0);
+  only(a, () => a.rewrote("y"), { written: "y", undrawn: 1 }, "what a translation took back");
+  cases += 3;
 }
 {
   // T556: how an answer is drawn is said as it begins, a copy of what is handed over, and nothing of it stays to the next
@@ -353,6 +356,13 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.equal(opens("", kept(large.id, false)).id, first.id, "a large model that was not kept is not started unasked");
   assert.equal(opens("", kept(large.id, true)).id, large.id, "one that was kept is (index.astro then looks whether it still is)");
   assert.equal(opens("", "not JSON").id, first.id, "something else under the name: the default");
+  // T669: an id the list had (PLaMo 3 Translate's two directions, one entry since) opens the entry it is now, from the
+  // address and remembered, and one that is a large model fetched anew is as unasked as its entry
+  for (const way of ["en-ja", "ja-en"]) {
+    assert.equal(opens(`?model=hf-plamo-3-translate-0.8b-${way}`, kept(third.id)).id, "hf-plamo-3-translate-0.8b", `?model= of the former ${way}`);
+    assert.equal(opens("", kept(`hf-plamo-3-translate-0.8b-${way}`, true)).id, "hf-plamo-3-translate-0.8b", `the former ${way} remembered`);
+  }
+  assert.equal(opens("", kept("hf-plamo-3-translate-2b-ja-en", false)).id, first.id, "the former 2B not kept: not started unasked, as its entry");
   // T508.3: what the page keeps of a model (its threads, its GPU's shaders) is under keptAs(): a model of the list by
   // its id, one of ?hf= by its repository, revision and file (a repository's model.safetensors as it was), a folder's
   // by its name
@@ -553,7 +563,7 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   // added to FromWorker is in neither and fails here: whoever adds it says which it is (an end read as the middle keeps
   // the buttons off for good, and the middle read as an end gives them back while the worker is busy)
   const ENDS = ["bench", "done", "error", "paths", "ready"];
-  const MIDDLE = ["gpu", "gpu-alone", "progress", "status", "threads", "threads-compared", "token", "updated"];
+  const MIDDLE = ["chunk", "cut", "gpu", "gpu-alone", "progress", "status", "threads", "threads-compared", "token", "updated", "withdrawn"];
   assert.deepEqual(ENDS.filter((type) => MIDDLE.includes(type)), [], "no report is both an end of a piece of work and in the middle of one");
   assert.deepEqual([...ENDS, ...MIDDLE].sort(), kinds,
     `every report of contracts/messages.ts's FromWorker (${kinds.join(", ")}) is in ENDS or MIDDLE of this check, and no other`);
@@ -695,6 +705,30 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   }
   cases += 13;
 }
+{
+  // T669: translating.ts, what a model that translates with PLaMo 3 Translate's request is asked, and lines.ts's words of it
+  const { TARGETS, FORMS, formable, translateAsked, withoutLast } = await fresh("page/translating.ts");
+  const { partLine, CUT_MARK, translatedSaid, answerMeta } = await fresh("page/lines.ts");
+  assert.deepEqual(TARGETS.slice(0, 3), [{ code: "auto", said: "Japanese ⇄ English (automatic)" }, { code: "ja", said: "Japanese — 日本語" }, { code: "en", said: "English" }],
+    "the automatic one first, then the card's languages by their English names and their own (one where the two are one)");
+  assert.deepEqual([TARGETS.length, TARGETS.at(-1)], [55, { code: "ja-easy", said: "Easy Japanese — やさしい日本語" }], "the 53 and easy Japanese, last");
+  assert.equal(new Set(TARGETS.map(({ code }) => code)).size, TARGETS.length, "each code once");
+  assert.deepEqual(FORMS.map(({ code }) => code), ["", "polite", "plain"], "no form, polite, plain");
+  assert.deepEqual(["auto", "ja", "en", "ja-easy"].map(formable), [true, true, false, false], "a form into Japanese alone (and the automatic, which may be)");
+  assert.deepEqual([translateAsked("ja", "polite"), translateAsked("auto", "plain"), translateAsked("en", "polite"), translateAsked("ja-easy", "plain")],
+    [{ target: "ja", form: "polite" }, { target: "auto", form: "plain" }, { target: "en" }, { target: "ja-easy" }], "a form only where it may be");
+  assert.deepEqual([translateAsked(undefined, undefined), translateAsked("xx", "polite"), translateAsked("ja", "rude"), translateAsked(null, "")],
+    [{ target: "auto" }, { target: "auto", form: "polite" }, { target: "ja" }, { target: "auto" }], "what the field has not: the automatic one, no form");
+  // (a character past U+FFFF is one of Python's, two of a JavaScript string's)
+  assert.deepEqual([withoutLast("a𠮷b", 1), withoutLast("a𠮷b", 2), withoutLast("a𠮷b", 3), withoutLast("a𠮷", 1), withoutLast("ab", 5), withoutLast("ab", 0)],
+    ["a𠮷", "a", "", "a", "", "ab"], "the last code points taken back, a surrogate pair whole");
+  assert.deepEqual([partLine(1, 5), CUT_MARK], ["Translating part 2 of 5…", " […]"], "the owner's words: a part of how many, the mark of a cut");
+  assert.deepEqual([translatedSaid({}), translatedSaid({ chunks: 1 }), translatedSaid({ chunks: 5, retries: 3, cut: 1 }), translatedSaid({ chunks: 2, retries: 1, cut: 2 })],
+    ["", "", " · 5 parts · 3 parts translated again · 1 sentence cut", " · 2 parts · 1 part translated again · 2 sentences cut"], "a translation's parts, those translated again and the cuts, by their numbers");
+  const done = { tokens: 60, prompt_tokens: 20, sampled: 41, tokens_per_second: 50.04, prompt_tokens_per_second: 200, first_token_seconds: 0.25, seconds: 1.2, threads: 1, chunks: 5, retries: 0, cut: 1 };
+  assert.equal(answerMeta(done, {}, "PLaMo").summary, "PLaMo · 60 tokens · 50.0 tok/s · greedy · 5 parts · 1 sentence cut", "under the translation, after the settings");
+  cases += 12;
+}
 console.log(`page-parts-check: folder.ts by itself: the models of a folder, of llama2.c's form and of Hugging Face's`);
 {
   // T643.7: fields.ts, the generation settings' tables: what a link sets of them (each setting the worker is sent:
@@ -736,6 +770,7 @@ console.log(`page-parts-check: fields.ts by itself: the settings a link sets, an
   assert.deepEqual(NAMES, {
     model: "model", hf: "model", revision: "model", file: "model", checkpoint: "model", tokenizer: "model", template: "model", prompt: "model",
     without: "engine", kernel: "engine", bits: "engine", threads: "engine", bench: "visit", coi: "visit", offline: "visit", gpuTest: "visit",
+    target: "translation", form: "translation",
   }, "the names of the model page's address, and what each is for");
   assert.deepEqual(MODEL_NAMES, ["model", "hf", "revision", "file", "checkpoint", "tokenizer", "template", "prompt"], "the names that name a model");
   const page = "https://takano32.github.io/pyodide-llm/";

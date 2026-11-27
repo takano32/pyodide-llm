@@ -72,6 +72,8 @@ export function aloneBegan(model: Listed) {
 export function onCpuFromNow(model: Listed) {
   cpuOnly.add(modelKey(model));
 }
+/** T669: whether the model loaded now is on the GPU alone (no CPU of its own to draw a step on) */
+export const onGpuAlone = () => gpuOnlyNow !== undefined;
 /** T156: why the GPU stopped under the model on the GPU alone, or undefined (no such model, or its GPU goes on) */
 export const gpuOnlyLost = () => gpuOnlyNow?.lost;
 

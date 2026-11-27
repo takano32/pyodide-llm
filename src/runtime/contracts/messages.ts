@@ -97,6 +97,11 @@ export type Sampled = {
   thinking?: number;
 };
 
+// T669: what a translation by PLaMo 3 Translate is asked with (engine/document.py's page_translation()): the language to
+// translate into (a code of engine/pfml.py's LANGUAGES, its easy Japanese, or "auto": Japanese into English, any other
+// into Japanese) and the form of a translation into Japanese (none: the model's own)
+export type Translate = { target: string; form?: string };
+
 // T45: a round of ?bench=1 (src/bench/rounds.ts): the switches it leaves out; skip: the words of its row where the
 // device does not run it (T214)
 export type Round = { name: string; without: string[]; skip?: string };
@@ -106,7 +111,8 @@ export type ToWorker =
   | ({ type: "init" } & Asked)
   | ({ type: "load" } & Asked)
   // (load: neither is of a load; the worker's receiver reads data.load of whatever failed)
-  | ({ type: "generate"; load?: undefined; prompt: string; echo: boolean } & Sampled)
+  // (T669: translate, the prompt is a text to translate with PFML3, a chunk at a time)
+  | ({ type: "generate"; load?: undefined; prompt: string; echo: boolean; translate?: Translate } & Sampled)
   | { type: "stop"; load?: undefined }
   | { type: "bench"; model: Listed; load: number; rounds: Round[]; prompt: string; steps: number }
   // T184: the model page's own path, timed: prompts of counts tokens, and sampled tokens written
@@ -129,6 +135,11 @@ export type Stats = {
   // and whether its budget closed it
   thought: number | null | undefined;
   thought_cut: boolean;
+  // T669: of a translation (engine/document.py's): its chunks, the translations taken back and translated again, the
+  // pieces cut
+  chunks?: number;
+  retries?: number;
+  cut?: number;
 };
 
 // a row of the rounds: one that ran (its tokens, tok/s, the engine's word of how it ran, the seconds of its load), or
@@ -170,6 +181,12 @@ export type Ready = {
   widened?: Record<string, "kernel" | "NumPy">;
 };
 export type Token = { type: "token"; load?: undefined; text: string };
+// T669: of a translation, as it goes (none ends the worker's work): a chunk of count begins (index from 0); the last
+// characters written are taken back, code points as Python counts them (a character past U+FFFF is one, where a
+// JavaScript string has two units); a translation was cut here (why, engine/document.py's reason, the page does not say)
+export type Chunk = { type: "chunk"; load?: undefined; index: number; count: number };
+export type Withdrawn = { type: "withdrawn"; load?: undefined; characters: number };
+export type CutHere = { type: "cut"; load?: undefined };
 // an answer ended (also one stopped): the threads in use, the prompt's tokens and the steps the GPU took, its note
 export type Done = { type: "done"; load?: undefined; threads: number; gpuTokens: number; gpuSampled: number; gpu: string | undefined } & Stats;
 export type Bench = { type: "bench"; load: number; rows: BenchRow[]; pyodide: string };
@@ -233,7 +250,7 @@ export type GpuAlone = { type: "gpu-alone"; load: number; alone: Alone };
 // worker at most, whatever else is going on, and of no load (the page is of a build the site no longer serves)
 export type Updated = { type: "updated"; load?: undefined };
 
-export type FromWorker = Status | Progress | Ready | Token | Done | Bench | Paths | Failed | Threads | ThreadsCompared | GpuChose | GpuSaid | GpuAlone | Updated;
+export type FromWorker = Status | Progress | Ready | Token | Chunk | Withdrawn | CutHere | Done | Bench | Paths | Failed | Threads | ThreadsCompared | GpuChose | GpuSaid | GpuAlone | Updated;
 
 // The model's worker as a page has it: a Worker that takes ToWorker and reports FromWorker
 export type ModelWorker = Omit<Worker, "postMessage" | "onmessage"> & {

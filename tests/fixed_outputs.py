@@ -25,6 +25,7 @@ from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
 from llama2_numpy import Llama  # noqa: E402
+from engine.document import page_translation  # noqa: E402
 from conducting import Fetched, Mapped, converted as conducted  # noqa: E402
 
 FIXTURES = HERE / "fixtures" / "fixed-outputs.json"
@@ -73,12 +74,12 @@ SAFETENSORS = {"hf-qwen3-0.6b-safetensors": ("hf-qwen3-0.6b", "model.safetensors
                "hf-qwen3.5-0.8b-safetensors": ("hf-qwen3.5-0.8b", "model.safetensors-00001-of-00001.safetensors"),
                "hf-qwen3.5-2b-safetensors": ("hf-qwen3.5-2b", "model.safetensors-00001-of-00001.safetensors"),
                "hf-lfm2.5-350m-safetensors": ("hf-lfm2.5-350m", "model.safetensors"),
-               "hf-plamo-3-translate-0.8b-safetensors": ("hf-plamo-3-translate-0.8b-en-ja", "model.safetensors")}
+               "hf-plamo-3-translate-0.8b-safetensors": ("hf-plamo-3-translate-0.8b", "model.safetensors")}
 MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-japanese-gpt2-small", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3",
           "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-ternary-bonsai-1.7b", "hf-qwen3.5-0.8b",
           "hf-qwen3.5-0.8b-safetensors", "hf-qwen3.5-2b", "hf-qwen3.5-2b-safetensors", "hf-granite-4.2-3b",
           "hf-minicpm5-1b", "hf-lfm2.5-350m", "hf-lfm2.5-350m-safetensors", "hf-gemma-3-270m",
-          "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-safetensors"]
+          "hf-plamo-3-translate-0.8b", "hf-plamo-3-translate-0.8b-safetensors"]
 
 
 def entries():
@@ -118,6 +119,9 @@ def written(entry, conversion, checkpoint):
     # filled() of src/models.ts: {prompt:trim} trims (T138); the prompts here have no spaces to trim
     prompt = template.replace("{prompt:trim}", "{prompt}").replace("{prompt}", entry["prompt"]) if template else entry["prompt"]
     llama = Llama(np.memmap(checkpoint, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None, **options)
+    if entry.get("pfml"):
+        # (T669: an entry that translates with PFML3 is asked as the page asks it, its whole translation)
+        return "".join(piece for piece in page_translation(llama, entry["prompt"], temperature=0.0) if isinstance(piece, str))
     steps = len(llama.tokenizer.encode(prompt, llama.specials)) + NEW_TOKENS
     return "".join(llama.generate(prompt, steps=steps, temperature=0.0, echo=False))
 

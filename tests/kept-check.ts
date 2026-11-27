@@ -269,6 +269,13 @@ const readBack = async (found) => {
   const one = (name) => ({ name, where: "opfs", manifest: { converter: kept.CONVERTER } });
   assert.ok(kept.serves(one(kept.keptName(blocks)), blocks) && !kept.serves(one(kept.keptName(blocks)), { ...model, conversion: { dtype: "int8" } }) &&
     !kept.serves(one(kept.keptName(model)), blocks), "a model's blocks kept serve the one that asks for them, and no other");
+  // T669: PLaMo 3 Translate's one entry a size is kept under the name its two directions were (the name is of the
+  // repositories, revisions and the conversion, not of the id): a visitor's conversion is not made again
+  const { entryOf } = await import("../src/models.ts");
+  assert.equal(decodeURIComponent(kept.keptName(entryOf("hf-plamo-3-translate-0.8b"))),
+    "pfnet/plamo-3-translate-0.8b-GGUF@dbeb0856cb0b004b484f190bb71dd65876297013+pfnet/plamo-3-translate-0.8b@cc8e88169807d5a272e8ff06db12eb0129b67f81:int8:4096:blocks",
+    "the name of the conversions the two entries of T649.3 kept");
+  assert.equal(kept.keptName(entryOf("hf-plamo-3-translate-0.8b-ja-en")), kept.keptName(entryOf("hf-plamo-3-translate-0.8b")));
 }
 // T136's review: a model whose source changed (the 19 of stage 2) keeps its new conversion under a new name. What it
 // was kept as before is replaced: never served, and in the way of the new one where the room is short. Its other

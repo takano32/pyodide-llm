@@ -46,6 +46,17 @@ function listedAs(id: string): Entry {
   return entry;
 }
 
+/** T669: the ids the list had that are another entry's now (an earlier visit's model, a link's ?model=): PLaMo 3
+ * Translate's two directions of each size, one entry since T669 (the owner, 2026-11-26). Its conversion is the same
+ * (keptName() is of its repository and revision, not of its id): nothing is converted again. */
+export const FORMER_IDS: Readonly<Record<string, string>> = Object.fromEntries(["0.8b", "2b", "8b"].flatMap((size) =>
+  ["en-ja", "ja-en"].map((way) => [`hf-plamo-3-translate-${size}-${way}`, `hf-plamo-3-translate-${size}`])));
+/** The entry of the list an id names, or the one a former id of the list is now (FORMER_IDS); none for any other */
+export const entryOf = (id: string | null | undefined) => {
+  const named = id ? FORMER_IDS[id] ?? id : undefined;
+  return MODELS.find((entry) => entry.id === named);
+};
+
 // a source of sources(): a repository, its license (and the notice it asks for), the names of the models taken from it
 type Source = { repo: string; license: string; notice?: string; names: string[] };
 /** The Hugging Face repository a model comes from. */

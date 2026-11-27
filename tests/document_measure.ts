@@ -5,8 +5,8 @@
 // counts them). The measure that
 // tanakh/plamo-translate-desktop chose its sizes by: the chunks that repeat and the paragraphs dropped.
 //
-//   python3 tests/hf_fetch.py hf-plamo-3-translate-0.8b-en-ja <downloads>   (prints <folder>)
-//   python3 tests/perplexity_prepare.py <folder> <out> int8 --blocks --entry hf-plamo-3-translate-0.8b-en-ja
+//   python3 tests/hf_fetch.py hf-plamo-3-translate-0.8b <downloads>   (prints <folder>)
+//   python3 tests/perplexity_prepare.py <folder> <out> int8 --blocks --entry hf-plamo-3-translate-0.8b
 //   node tests/document_measure.ts <out> [chunk/history ...] (e.g. 640/1280 320/1280)
 //
 // CHARACTERS=<n>: how much of the book's text (16000), from the line of FROM ("PREFACE.": the front matter before it is

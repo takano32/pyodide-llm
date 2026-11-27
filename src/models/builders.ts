@@ -1,6 +1,6 @@
 // The entries of the list that come in families: one function a family, which writes its entries from what differs.
 import type { ListOptions } from "./formats.ts";
-import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25, lfm2Old, plamo, plamoTranslate } from "./formats.ts";
+import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25, lfm2Old, plamo } from "./formats.ts";
 import { atOnce, greedy, sampled, thinking } from "./sampling.ts";
 import type { Hf, OfHuggingFace, Sampled, Translation } from "../runtime/contracts/messages.ts";
 import type { Dtype } from "../runtime/contracts/form.ts";
@@ -18,7 +18,8 @@ import { int8Bytes } from "./memory.ts";
 // that table, which loaded leaves out and the memory holds where nothing can be kept, rebuilt: its weights are not the
 // original's; T634.2, wide: its forward pass at the context passes a 32-bit memory where its weights alone do not;
 // T289, needs: the GB of memory its note says it needs, where the page's count is short of what it takes and a device
-// that says 8 GB is not warned),
+// that says 8 GB is not warned; T669, pfml: it translates with PLaMo 3 Translate's request, PFML3, which the engine puts
+// together of what was typed and the language the page's own field says (engine/document.py: no template),
 // the engine's options, the template and the sampling of an answer, the prompt and the placeholder it
 // opens with
 // T643.1: the kinds are types (T648.4: three, with a translation model's; T653: four, with a checkpoint of Hugging Face's at its address), and an entry is one of them: what one kind has, the other says it has not
@@ -32,6 +33,7 @@ type Shared = {
   note: string;
   japanese: boolean;
   thinks?: boolean;
+  pfml?: true;
   wide?: boolean;
   needs?: number;
   options: ListOptions;
@@ -305,7 +307,8 @@ const bonsai = (repo: string, name: string, quantization: string, dtype: Dtype, 
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
 export const hf = (repo: string, revision: string, tokenizer = "tokenizer.json"): Remote["hf"] => ({ repo, revision, weights: "model.safetensors", config: "config.json", tokenizer });
-/** T649.3: PFN's PLaMo 3 Translate in one of its sizes, twice: English into Japanese and Japanese into English (the
+/** T649.3: PFN's PLaMo 3 Translate in one of its sizes (T669, the owner's: once, its request put together by the engine
+ * in the language the page's field says, pfml; T649.3 had two, English into Japanese and Japanese into English; the
  * owner's T649 (1): its maker PFN in front and PLaMo in the name, as the PLaMo Community License asks of a model built
  * with it, and "Built with PLaMo" in the note and on the line of its license in About). T649.4 (the owner's T649 (6)):
  * the weights from PFN's own Q4_K_M GGUF, llama.cpp's blocks kept as they are (conversion.blocks, as Underdog Saluki
@@ -315,22 +318,17 @@ export const hf = (repo: string, revision: string, tokenizer = "tokenizer.json")
  * the ones of 2026-11-06, which changed nothing but the chat template. The vocabulary (its own tokenizer.jsonl, T649.1),
  * config.json and chat template the original's (hf.vocabulary); rebuilt: tests/gguf_check.py tensors holds a Q8_0 to
  * its original within 1e-3, which 4 bits are not (Q4_K 0.07 to 0.08 of it, Q6_K 0.02: TASKS.md's T649.4). The format
- * is the request of its chat template, the BOS (1) in front (formats.ts's plamoTranslate); greedy, as every example of
- * its card translates (do_sample=False, temperature 0). The two share their weights (shares). download: the GGUF's
- * bytes; loaded: the checkpoint's (tests/quant_sizes.py) */
-export function plamo3Translate(size: string, original: string, gguf: string, download: number, loaded: number): Entry[] {
+ * is the request of its chat template, the BOS (1) in front, which engine/pfml.py's pfml_tokens() puts together
+ * (T669: the text read literally, the source's language the model's to tell); greedy, as every example of its card
+ * translates (do_sample=False, temperature 0). download: the GGUF's bytes; loaded: the checkpoint's
+ * (tests/quant_sizes.py). Its prompt is English, which the page's default (Japanese ⇄ English) translates into Japanese */
+export function plamo3Translate(size: string, original: string, gguf: string, download: number, loaded: number): Entry {
   const lower = size.toLowerCase(), repo = `pfnet/plamo-3-translate-${lower}`, id = `hf-plamo-3-translate-${lower}`;
   const said = (bytes: number) => bytes < 1e9 ? `${Math.round(bytes / 1e6)} MB` : `${(bytes / 1e9).toFixed(1)} GB`;
   const note = `日本語, English, translation only, 4-bit weights, fetches ${said(download)} (GGUF), kept mostly as it is: ${said(loaded)}, Built with PLaMo`;
-  const common: Omit<Common, "prompt" | "placeholder"> = { group: "hf",
+  return { group: "hf", id, name: `PFN PLaMo 3 Translate ${size}`, note,
     ...ggufOf(`${repo}-GGUF`, gguf, `plamo-3-translate-${lower}-Q4_K_M.gguf`, repo, original, "tokenizer.jsonl"), download,
-    conversion: { dtype: "int8", blocks: true }, loaded, rebuilt: true, japanese: true, options: plamo, shares: [`${id}-en-ja`, `${id}-ja-en`] };
-  return [
-    { ...common, id: `${id}-en-ja`, name: `PFN PLaMo 3 Translate ${size} English → Japanese`, note, generation: greedy,
-      template: plamoTranslate("en", "ja"), prompt: "The weather is nice today. Let's go for a walk.",
-      placeholder: "Type text to translate into Japanese (e.g. The weather is nice today.)" },
-    { ...common, id: `${id}-ja-en`, name: `PFN PLaMo 3 Translate ${size} Japanese → English`, note, generation: greedy,
-      template: plamoTranslate("ja", "en"), prompt: "今日はいい天気ですね。散歩に行きましょう。",
-      placeholder: "英語に訳す文を入力（例: 今日はいい天気ですね。）" },
-  ];
+    conversion: { dtype: "int8", blocks: true }, loaded, rebuilt: true, japanese: true, options: plamo, pfml: true, generation: greedy,
+    prompt: "The weather is nice today. Let's go for a walk.",
+    placeholder: "Type text to translate (e.g. The weather is nice today. / 今日はいい天気ですね。)" };
 }

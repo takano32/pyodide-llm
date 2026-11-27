@@ -8,14 +8,15 @@ import { benchmark, parameters, weighed } from "./address.ts";
 import { SESSION, keep, offlineKept, recall, remember, rememberAlone, rememberGpu, rememberThreads, rememberUsage } from "./remembered.ts";
 import { arrived, arriving, becameReady, fromTemplate, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
 import { STILL_MS, advanced, leftSaid, secondsLeft } from "./remaining.ts";
-import { answer, drew, idle, shape, undrawn, used, written, wrote } from "./answer.ts";
+import { answer, drew, idle, rewrote, shape, undrawn, used, written, wrote } from "./answer.ts";
+import { withoutLast } from "./translating.ts";
 import { markdownCame, markdownWanted } from "./markdown.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
 import { drawAnswer, message, meta, thoughtSaid, rows, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating, unregistered } from "./isolation.ts";
 import { endsWork, ofThisLoad } from "./heard.ts";
-import { answerMeta, gpuLine, loadLines, progressLine } from "./lines.ts";
+import { CUT_MARK, answerMeta, gpuLine, loadLines, partLine, progressLine } from "./lines.ts";
 import { unstarted } from "../runtime/updated.ts";
 import type { Alone, Bench, Done, Failed, FromWorker, GpuChose, GpuSaid, ModelWorker, Progress, Ready, Threads, ThreadsCompared } from "../runtime/contracts/messages.ts";
 
@@ -189,6 +190,17 @@ const HEARD: Hearing = {
   token: (data) => {
     if (wrote(data.text, performance.now())) drawNow();
     else drawTimer ??= setTimeout(drawNow, 32);
+  },
+  // T669: of a translation, as it goes: the status line says which part of how many (nothing where there is one), what
+  // ran away is taken back (code points: translating.ts) and drawn at once, and a cut is marked in the text
+  chunk: (data) => { if (data.count > 1) statusText.textContent = partLine(data.index, data.count); },
+  withdrawn: (data) => {
+    rewrote(withoutLast(written, data.characters));
+    drawNow();
+  },
+  cut: () => {
+    wrote(CUT_MARK, performance.now());
+    drawNow();
   },
   done: heardDone,
   error: heardError,

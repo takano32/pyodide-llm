@@ -18,8 +18,9 @@ import { since, took } from "./clock.ts";
 import { pythonBuffer } from "./weights.ts";
 import { download, tokenizerAt } from "./sources.ts";
 import { converter } from "./convert.ts";
-import type { OfTranslation, Status } from "../contracts/messages.ts";
-import type { Proxy } from "../contracts/python.ts";
+import { onGpuAlone } from "./alone.ts";
+import type { OfTranslation, Sampled, Status, Translate } from "../contracts/messages.ts";
+import type { Answering, Proxy } from "../contracts/python.ts";
 
 /** The sentences of a text in a language, every character of it in one of them (Intl.Segmenter's; where a browser has
  * none, the text is one) */
@@ -83,4 +84,18 @@ export async function translated(model: OfTranslation, signal: AbortSignal, id: 
     for (const proxy of proxies) proxy.destroy();
   }
   return { overlapped: pyodideAt > started, gpu: "" };
+}
+
+/** T669: a PLaMo 3 Translate's translation of a text as the page asks for it (engine/document.py's page_translation():
+ * a chunk at a time, each a run of its own, so an answer's steps, echo and thought are not the page's to say; the
+ * sampling settings are). A model on the GPU alone is said to be (its DRY's try is left out). A generator of Python's,
+ * which worker.ts's generate() runs. */
+export function translating(model: Answering, text: string, translate: Translate, settings: Sampled & { echo?: boolean }) {
+  const { steps: _steps, echo: _echo, thinking: _thinking, ...sampling } = settings;
+  const document = pyodide.pyimport("engine.document");
+  try {
+    return document.page_translation.callKwargs(model, text, { ...sampling, ...translate, alone: onGpuAlone() });
+  } finally {
+    document.destroy();
+  }
 }

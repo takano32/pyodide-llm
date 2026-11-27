@@ -159,6 +159,13 @@ const ELSEWHERE = { "mozilla/translations": "https://github.com/mozilla/translat
           <button type="submit">Open</button>
         </form>
       </div>
+      <!-- T669: what a model that translates with PLaMo 3 Translate's request translates into, and the form of its
+           Japanese (src/page/target.ts fills them and shows them for such a model alone). No part of the form, as the
+           settings are not. -->
+      <div id="translate" hidden>
+        <select id="target" aria-label="Translate into" title="Translate into"></select>
+        <select id="form" aria-label="The form of the Japanese" title="The form of the Japanese"></select>
+      </div>
       <form id="composer">
         <button id="settings-open" type="button" popovertarget="settings" aria-label="Generation settings" title="Generation settings">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9M15 4.5v5M9 14.5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
@@ -300,6 +307,9 @@ const ELSEWHERE = { "mozilla/translations": "https://github.com/mozilla/translat
   footer { padding: 8px 16px 14px; }
   #status { display: flex; align-items: center; gap: 10px; min-height: 1.4em; font-size: 0.75rem; color: var(--muted); padding: 0 6px 6px; }
   progress { flex: 1; height: 6px; accent-color: var(--accent); }
+  #translate { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 6px; }
+  #translate[hidden], #translate select[hidden] { display: none; }
+  #translate select { min-width: 0; max-width: 100%; font: inherit; font-size: 0.8rem; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; }
   #composer { display: flex; gap: 6px; align-items: flex-end; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 6px; }
   #settings-open { position: relative; display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; }
   #settings-open:hover { color: var(--text); }

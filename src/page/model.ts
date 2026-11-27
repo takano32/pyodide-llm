@@ -19,7 +19,7 @@ type UnreadListed = Omit<Unread, "url">;
 // what a model of a visitor's files or a link has besides the worker's kind of it
 type Made = { note: string; options: Options; generation: Generation; prompt: string; placeholder: string; template?: string; group?: undefined;
   download?: undefined; conversion?: undefined; weights?: undefined; converted?: undefined; loaded?: undefined; wide?: undefined;
-  japanese?: undefined; thinks?: undefined };
+  japanese?: undefined; thinks?: undefined; pfml?: undefined };
 // (T643.17: none of them is in the list's order, so none says whether it writes Japanese)
 type Unsorted = { japanese?: undefined };
 export type Unlisted = Omit<Remote, "download" | "hf" | "japanese"> & Unread & Unsorted & { download?: number; hf: { repo: string; revision: string; weights: string; config: string } };

@@ -1,9 +1,9 @@
 """T665: PLaMo 3 Translate's request as engine/pfml.py puts it together, against the official chat_template.jinja: the
 template rendered by transformers' apply_chat_template (format_check.py's way, with the repository's own tokenizer,
 tokenization_plamo.py's Plamo3Tokenizer) and its ids, for many requests of languages, forms, contexts, glossaries and
-pairs translated before. And the request of the list's entries (formats.ts's plamoTranslate, as the page fills it and
-the engine reads it with the converter's specials) against pfml_tokens() of the same direction, and a mark typed in
-a text read as its characters. Run by hand (the files are PFN's; pytest has a made-up vocabulary, tests/test_pfml.py):
+pairs translated before. And the request the list's entries had until T669 (formats.ts's plamoTranslate, as the page
+filled it and the engine read it with the converter's specials; T669's entries send pfml_tokens()'s own) against
+pfml_tokens() of the same direction, and a mark typed in a text read as its characters. Run by hand (the files are PFN's; pytest has a made-up vocabulary, tests/test_pfml.py):
 
     python tests/pfml_check.py <a folder with chat_template.jinja, tokenizer.jsonl, tokenizer_config.json,
         special_tokens_map.json and tokenization_plamo.py of a pfnet/plamo-3-translate-* revision of 2026-11-07 or

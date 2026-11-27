@@ -83,7 +83,10 @@ console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables
   // the engine's stats, which "done" spreads in: Python's dict (src/python/engine/generation.py)
   const generation = fs.readFileSync(python("engine/generation.py"), "utf8");
   const stats = new Set([.../model\.stats = \{([^}]*)\}/.exec(generation)[1].matchAll(/^\s*"(\w+)":/gm)].map(([, key]) => key));
-  same("contracts/messages.ts's Stats, to the stats of Python's generate()", typed.keysOf("Stats"), stats);
+  // (T669: and those a translation's add, engine/document.py's Document.stats(): its others are generate()'s)
+  const document = /^    def stats\(self, chunks\):[^]*?(?=^    def )/m.exec(fs.readFileSync(python("engine/document.py"), "utf8"))[0];
+  for (const [, key] of document.matchAll(/"(\w+)": /g)) stats.add(key);
+  same("contracts/messages.ts's Stats, to the stats of Python's generate() and a translation's", typed.keysOf("Stats"), stats);
   // the settings of an answer, which "generate" hands to Python as they are: Sampling's fields and generate()'s own
   const sampler = fs.readFileSync(python("engine/sampler.py"), "utf8");
   const sampling = /^class Sampling\b[^]*?(?=^\S)/m.exec(sampler)[0];

@@ -6,6 +6,7 @@ import { answerBegan, generating } from "./answer.ts";
 import { settings } from "./settings.ts";
 import { message, showRun } from "./draw.ts";
 import { opensThought } from "./thought.ts";
+import { targetAsked } from "./target.ts";
 import { worker } from "./receiver.ts";
 
 // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key
@@ -40,8 +41,11 @@ $("composer").onsubmit = (event) => {
   select.disabled = files.disabled = true;
   message("user", prompt.value);
   // an instruction-tuned model gets what was typed inside the form it was trained on; the bubble shows what was typed
-  // what src/models.ts says for this model, or what its own chat_template gave (T73)
-  const template = model.template ?? fromTemplate;
+  // what src/models.ts says for this model, or what its own chat_template gave (T73). T669: a model that translates
+  // with PLaMo 3 Translate's request has none: the engine puts the request together of what was typed, in the language
+  // of the field above (target.ts), and the translation is drawn as plain text
+  const translate = model.pfml ? targetAsked() : undefined;
+  const template = translate ? undefined : model.template ?? fromTemplate;
   const sent = template ? filled(template, prompt.value) : prompt.value;
   // T556: the answer of such a model is drawn as Markdown, but for its thinking, where the format leaves it in a thought
   // (<think>, or harmony's analysis channel: T592.1)
@@ -49,5 +53,5 @@ $("composer").onsubmit = (event) => {
   const how = answerBegan(message("model"), settings, longest, () => crypto.getRandomValues(new Uint32Array(1))[0], drawn);
   if (!how) return;  // (T468.3: one is being written: the guard above keeps from here)
   showRun();
-  worker.postMessage({ type: "generate", prompt: sent, echo: !template, ...how });
+  worker.postMessage({ type: "generate", prompt: sent, echo: !template && !translate, ...how, ...(translate && { translate }) });
 };

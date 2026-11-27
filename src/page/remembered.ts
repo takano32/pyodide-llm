@@ -4,7 +4,7 @@
 // mark in sessionStorage) go through recall() and keep(), the only two that catch: the rest say what is kept, under
 // which name, and the receiver calls them where the worker's reports come. (isolation.ts's marks in sessionStorage are
 // under the try of the Service Worker's registration, whose catch stands for both: the page goes on unisolated.)
-import { MODELS, asksBefore } from "../models.ts";
+import { MODELS, asksBefore, entryOf } from "../models.ts";
 import { CPU_SPEED_KEY, USAGE_KEY, threadsKey as sharedThreadsKey, usedAfter } from "../bench.ts";
 import { fromUrl, parameters, requested } from "./address.ts";
 import { SAFETENSORS } from "./repository.ts";
@@ -92,14 +92,15 @@ export const rememberUsage = (prompt: number, written: number) =>
 // Whoever has chosen a model before starts with it again; a first visit starts with the default (T511.6). What
 // the URL names comes first. A model that would be fetched from Hugging Face anew (more than UNASKED_BYTES, and not kept
 // in this browser when it was last used) is not started unasked.
-// (none kept, no storage (some private modes), or something else wrote there: the default)
+// (none kept, no storage (some private modes), or something else wrote there: the default; T669: an id the list had
+// is the entry it is now)
 function remembered(): typeof MODELS[number] | undefined {
   const { id, kept } = recall("model", parsed, undefined) ?? {};
-  const entry = MODELS.find((candidate) => candidate.id === id);
+  const entry = entryOf(typeof id === "string" ? id : undefined);
   return entry && (!asksBefore(entry) || kept) ? entry : undefined;
 }
 // (no storage here: the next visit opens the default)
 export function remember(entry: Model | undefined, kept = false) {
   keep("model", entry && entry.id !== "local" ? JSON.stringify({ id: entry.id, kept }) : null);
 }
-export const recalled = fromUrl || MODELS.some(({ id }) => id === requested) ? undefined : remembered();
+export const recalled = fromUrl || entryOf(requested) ? undefined : remembered();

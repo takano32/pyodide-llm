@@ -47,7 +47,9 @@ import { failureOf } from "./failure.ts";
 import { since, breathe } from "./worker/clock.ts";
 import { load, threadsNow, heapBytes } from "./worker/load.ts";
 import { timedGeneration, timedPaths } from "./worker/timing.ts";
-import type { Bench, BenchRow, Done, Failed, Listed, Paths, Token, ToWorker } from "./contracts/messages.ts";
+import { translating } from "./worker/translate.ts";
+import type { Bench, BenchRow, Chunk, CutHere, Done, Failed, Listed, Paths, Token, ToWorker, Withdrawn } from "./contracts/messages.ts";
+import type { List, Translated } from "./contracts/python.ts";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared):
 // the AbortController of the load that is going on, and a promise that settles once it has cleaned up
@@ -57,10 +59,20 @@ let generating: Promise<void> | undefined, stopped = false;
 let lastLoad: Extract<ToWorker, { type: "init" | "load" }> | undefined;  // the load message of the model now (T156)
 let pathing = false;  // T184: the benchmark's page path is being timed; see the paths message
 
-async function generate({ type, prompt, ...options }: Extract<ToWorker, { type: "generate" }>) {
+// T669: what a translation tells besides its text (worker/translate.ts's translating()), as the page is told it
+function translationSaid(said: List<Translated>) {
+  const [kind, first, second] = said.toJs();
+  said.destroy();
+  if (kind === "chunk") postMessage({ type: "chunk", index: first as number, count: second as number } satisfies Chunk);
+  else if (kind === "withdrawn") postMessage({ type: "withdrawn", characters: first as number } satisfies Withdrawn);
+  else postMessage({ type: "cut" } satisfies CutHere);
+}
+
+async function generate({ type, prompt, translate, ...options }: Extract<ToWorker, { type: "generate" }>) {
   engineNow()?.newGeneration?.();  // now and then the remembered number of threads is checked again
-  // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text
-  const pieces = llama!.generate.callKwargs(prompt, options);
+  // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text (T669: or,
+  // of a translation, what it tells besides)
+  const pieces = translate ? translating(llama!, prompt, translate, options) : llama!.generate.callKwargs(prompt, options);
   try {
     let breathed = performance.now();
     while (!stopped) {
@@ -68,7 +80,8 @@ async function generate({ type, prompt, ...options }: Extract<ToWorker, { type: 
       if (done) {
         break;
       }
-      postMessage({ type: "token", text: value } satisfies Token);
+      if (typeof value === "string") postMessage({ type: "token", text: value } satisfies Token);
+      else translationSaid(value);
       // by the clock and not by the token: often enough for the button to feel immediate with a model that
       // writes 50 tokens a second, rarely enough not to cost one that writes 900 a measurable tok/s
       if (performance.now() - breathed > 50) {

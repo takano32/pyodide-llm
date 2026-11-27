@@ -48,9 +48,13 @@ def dump(tree, directory, out, only):
                                                **{key: value for key, value in options.items() if key in accepted})
             # (T258: after the BOS, as generate() encodes the prompt, in a tree whose engine knows of it)
             after = {"after": options["bos"]} if "after" in inspect.signature(tokenizer.encode).parameters else {}
-            ids = [[options["bos"]] + tokenizer.encode(check.filled(template, prompt) if template else prompt,
-                                                      tuple(options.get("specials", ())), **after)
-                   for prompt in check.PROMPTS]
+            # (T669: an entry that translates with PFML3 sends its request, in a tree whose format_check says it)
+            if own and entry.get("pfml") and hasattr(check, "translated"):
+                ids = [[options["bos"]] + check.translated(tokenizer, prompt)[-1] for prompt in check.PROMPTS]
+            else:
+                ids = [[options["bos"]] + tokenizer.encode(check.filled(template, prompt) if template else prompt,
+                                                          tuple(options.get("specials", ())), **after)
+                       for prompt in check.PROMPTS]
             sent[name] = {"ids": hashlib.sha256(json.dumps(ids).encode()).hexdigest()[:16], "first": ids[0][:6],
                           "stop_tokens": sorted(set(options["stop_tokens"])), "template": template}
         results[entry["id"]] = {"options": made.options, "sent": sent,

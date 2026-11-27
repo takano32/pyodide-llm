@@ -5,6 +5,7 @@ import { parameters } from "./address.ts";
 import { addressWith } from "./parameters.ts";
 import { type Model, longest, model } from "./model.ts";
 import { type Settings, FIELDS, changedFrom, defaults, linkSettings } from "./fields.ts";
+import { showTarget } from "./target.ts";
 
 // The generation settings. They start as the model's own and go back to them with every change of model, except
 // the seed: "tap the seed of an answer, change the model, send" is how int8 is compared with the original.
@@ -102,5 +103,6 @@ export function show(current: Model) {
   prompt.value = current.prompt;
   fit();
   prompt.placeholder = current.placeholder;
+  showTarget(current);  // (T669: the language a translation goes into, of a model that has the field)
 }
 show(model);

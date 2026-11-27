@@ -9,8 +9,9 @@ import random
 import pytest
 
 from engine import document, generation
-from engine.document import (CHUNK_TOKENS, HISTORY_PAIR, HISTORY_TOKENS, LEAST, LONG, LONGER, LOOP, MORE, ROOM, SHORT,
-                             Cut, Withdrawn, applied, budgets, recent, sentences_of, split, translate_document)
+from engine.document import (AUTOMATIC, CHUNK, CHUNK_TOKENS, CUT, HISTORY_PAIR, HISTORY_TOKENS, LEAST, LONG, LONGER, LOOP,
+                             MORE, PENALIZED, ROOM, SHORT, WITHDRAWN, Cut, Withdrawn, applied, automatic_target, budgets,
+                             page_translation, recent, sentences_of, split, translate_document)
 from engine.pfml import pfml_tokens
 from engine.tokenizer import WHITE_SPACE
 from test_parts import stand_in_model
@@ -179,8 +180,13 @@ def test_the_chunks_are_translated_in_order_with_the_latest_as_their_history(mad
         assert steps == len(request) + 1 + LONGER * count(chunk) + MORE
         assert (echo, settings) == (False, {"temperature": 0.0})
     prompts = sum(len(request) for request, *_ in model.asked)
-    assert model.stats == {"tokens": prompts + 7, "sampled": 10, "prompt_tokens": prompts, "seconds": 4.0, "chunks": 4,
-                           "retries": 1, "cut": 1}
+    stats = model.stats
+    assert {key: stats[key] for key in ("tokens", "sampled", "prompt_tokens", "seconds", "prompt_seconds", "chunks", "retries", "cut")} \
+        == {"tokens": prompts + 7, "sampled": 10, "prompt_tokens": prompts, "seconds": 4.0, "prompt_seconds": 0.0,
+            "chunks": 4, "retries": 1, "cut": 1}
+    # (T669: and the rest of an answer's stats, the page's line reads: the speed of the sums, no thought)
+    assert (stats["tokens_per_second"], stats["prompt_tokens_per_second"], stats["thought"], stats["thought_cut"]) == (2.5, 0.0, None, False)
+    assert 0 <= stats["first_token_seconds"] < 60
 
 
 def test_a_longer_history_takes_more_pairs_the_earliest_first(made):
@@ -296,3 +302,60 @@ def test_generate_takes_the_ids_of_a_request_as_it_takes_their_text():
         model = thinker([], [X, X, X, 0])
         assert "".join(generation.generate(model, prompt, steps=40, echo=False, thinking=2)) == "xx</think>x"
         assert (model.stats["thought"], model.stats["thought_cut"]) == (2, True)
+
+
+def test_the_automatic_target_is_english_for_a_text_with_a_kana_and_japanese_for_any_other():
+    """T669: the page's default (the owner, 2026-11-26): Japanese (a kana: hiragana, katakana, half-width) into English,
+    anything else (kanji alone too, Chinese as much) into Japanese"""
+    for text in ("今日はいい天気", "テスト", "ｶﾀｶﾅ", "a ㇰ b"):
+        assert automatic_target(text) == "en", text
+    for text in ("The weather", "天気", "Le temps", "날씨", "", "𠮷"):
+        assert automatic_target(text) == "ja", text
+
+
+def test_the_page_is_told_the_chunks_what_is_taken_back_and_the_cuts(made):
+    """T669: page_translation() hands on translate_document()'s pieces: each chunk's beginning before its first text,
+    the texts as they are, a Withdrawn's code points and a Cut's reason as tuples (a character past U+FFFF is one)"""
+    tokenizer, _ = made
+    model = Translator(tokenizer, [(["𠮷x"], 2), (["yy"], 1), (["B"], True)])
+    count = lambda said: len(tokenizer.encode(said, literal=True))  # noqa: E731
+    pieces = list(page_translation(model, "Aa.\n\nBb.", "ja", chunk_tokens=max(count("Aa."), count("Bb."))))
+    # (the separator after a chunk is written before the next chunk begins)
+    assert pieces == [(CHUNK, 0, 2), "𠮷x", (WITHDRAWN, 2), "yy", (WITHDRAWN, 1), (CUT, LOOP), "\n\n", (CHUNK, 1, 2), "B"]
+    # the try with DRY's penalty before the cut, as translate_document()'s
+    assert [settings for *_, settings in model.asked] == [{}, PENALIZED, {}]
+
+
+def test_a_model_on_the_gpu_alone_is_cut_without_drys_try(made):
+    """T669 (the owner, 2026-11-26): the GPU's sampling has no DRY, and a model on the GPU alone no CPU to draw with it:
+    no run asks for it, and what runs away is cut as it ran"""
+    tokenizer, _ = made
+    model = Translator(tokenizer, [(["xxxx"], 2)])
+    pieces = list(page_translation(model, "Aa.", "ja", alone=True, temperature=0.0))
+    assert pieces == [(CHUNK, 0, 1), "xxxx", (WITHDRAWN, 2), (CUT, LOOP)]
+    assert [settings for *_, settings in model.asked] == [{"temperature": 0.0}]
+    assert (model.stats["retries"], model.stats["cut"]) == (1, 1)
+
+
+def test_the_automatic_target_says_a_form_only_into_japanese(made):
+    """T669: AUTOMATIC's target by the text, the form the page said kept where that is Japanese and left out where it is
+    English (no form there); a target said is the request's as it is"""
+    tokenizer, _ = made
+    for text, target, form in (("abc", "ja", "polite"), ("あいう", "en", None)):
+        model = Translator(tokenizer, [(["X"], True)])
+        assert list(page_translation(model, text, AUTOMATIC, form="polite")) == [(CHUNK, 0, 1), "X"]
+        assert model.asked[0][0] == pfml_tokens(tokenizer, text, target, form=form)
+    model = Translator(tokenizer, [(["X"], True)])
+    list(page_translation(model, "あいう", "ja-easy"))
+    assert model.asked[0][0] == pfml_tokens(tokenizer, "あいう", "ja-easy")
+
+
+def test_a_translation_stopped_on_the_way_leaves_the_stats_of_its_runs(made):
+    """T669: the page stops a translation by closing it: the stats are those of the runs that ended (the first chunk's,
+    not the second's, which was going on)"""
+    tokenizer, _ = made
+    model = Translator(tokenizer, [(["A"], True), (["B", "C"], True)])
+    pieces = page_translation(model, "aaaa\n\nbbbb", "ja", chunk_tokens=4)
+    assert [next(pieces) for _ in range(5)] == [(CHUNK, 0, 2), "A", "\n\n", (CHUNK, 1, 2), "B"]
+    pieces.close()
+    assert (model.stats["chunks"], model.stats["sampled"], model.stats["tokens_per_second"]) == (2, 2, 2.0)

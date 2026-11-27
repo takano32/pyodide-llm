@@ -34,6 +34,9 @@
 #   overrides      (contracts/messages.ts's ConfigOverrides, T684) convert/conduct.py's OVERRIDES: the keys of the
 #                  vocabulary's config.json an entry of the list may set over it, and the kind of each (a type alone:
 #                  nothing of it is bundled)
+#   translation    (src/page/targets.ts, T669) engine/pfml.py's LANGUAGES (code, English name, own name) in the card's
+#                  order with easy Japanese last, the forms of a translation into Japanese and the language that has
+#                  them, and engine/document.py's AUTOMATIC: what the page offers PLaMo 3 Translate to translate into
 import base64
 import json
 import struct
@@ -48,6 +51,8 @@ from convert.version import CONVERTER  # noqa: E402
 from convert.superblocks import SUPERBLOCKS  # noqa: E402
 from engine import dtypes as D  # noqa: E402
 from engine import layout as L  # noqa: E402
+from engine import pfml  # noqa: E402
+from engine.document import AUTOMATIC  # noqa: E402
 from engine.model import KV_START, OWN  # noqa: E402
 from engine.plan import forward_plan  # noqa: E402
 from engine.tensors import rope_tables  # noqa: E402
@@ -76,7 +81,17 @@ def facts():
     return {"architectures": architectures(), "tokenizers": list(conduct.TOKENIZERS),
             "blocks": {name: [ggml, size] for name, (ggml, size, _) in SUPERBLOCKS.items()},
             "converter": CONVERTER, "madeup": madeup(), "quantized": list(D.QUANTIZED), "bytes": {name: bytes_of(name) for name in D.QUANTIZED},
-            "weights": WEIGHTS, "families": titles(FAMILIES.values()), "overrides": conduct.OVERRIDES}
+            "weights": WEIGHTS, "families": titles(FAMILIES.values()), "overrides": conduct.OVERRIDES,
+            "translation": translation()}
+
+
+# (easy Japanese, which the card does not list, by the names tanakh/plamo-translate-desktop gives it)
+EASY_NAMES = ("Easy Japanese", "やさしい日本語")
+
+
+def translation():
+    return {"languages": [[code, *names] for code, names in pfml.LANGUAGES.items()] + [[pfml.EASY_JAPANESE, *EASY_NAMES]],
+            "forms": list(pfml.FORMS), "formed": pfml.FORMED, "automatic": AUTOMATIC}
 
 
 # /benchmark/'s made-up model: Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and

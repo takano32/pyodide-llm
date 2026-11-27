@@ -61,6 +61,17 @@ export const onGpu = (data: Done) => (!data.gpuTokens ? "" : data.gpuTokens >= d
 export const onGpuSampled = (data: Done) => (!data.gpuSampled ? "" : data.gpuSampled >= data.sampled ? " on WebGPU"
   : ` (${data.gpuSampled} on WebGPU)`);
 
+/** T669: a translation's words (the owner's, 2026-11-26): the status line while a chunk of more than one is
+ * translated, and the mark written in the translation where a piece of it was cut */
+export const partLine = (index: number, count: number) => `Translating part ${index + 1} of ${count}…`;
+export const CUT_MARK = " […]";
+/** T669: what the line under a translation says of it: its parts where there were more than one, the parts taken back
+ * and translated again, the sentences cut (nothing of an answer that is no translation's) */
+export function translatedSaid({ chunks = 0, retries = 0, cut = 0 }: Pick<Done, "chunks" | "retries" | "cut">) {
+  return [chunks > 1 ? `${chunks} parts` : "", retries ? `${retries} part${retries > 1 ? "s" : ""} translated again` : "",
+    cut ? `${cut} sentence${cut > 1 ? "s" : ""} cut` : ""].filter(Boolean).map((said) => ` · ${said}`).join("");
+}
+
 /** The line under an answer: its summary (the model, the tokens, the speed, the threads where more than one, and the
  * settings this very answer was written with), the breakdown's 3 lines under it, and the seed where it sampled (with
  * the seed the same text can be asked for again). tests/e2e.ts reads "tok/s" in the summary and the lines that begin
@@ -68,7 +79,7 @@ export const onGpuSampled = (data: Done) => (!data.gpuSampled ? "" : data.gpuSam
 export function answerMeta(data: Done, used: Sampled, name: string) {
   const how = used.temperature ? `temp ${used.temperature}` : "greedy";
   return {
-    summary: `${name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}`,
+    summary: `${name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}${translatedSaid(data)}`,
     breakdown: [
       `first token ${seconds(data.first_token_seconds)}`,
       `prompt ${data.prompt_tokens} tokens${onGpu(data)} · ${data.prompt_tokens_per_second.toFixed(1)} tok/s`,

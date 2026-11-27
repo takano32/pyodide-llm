@@ -45,7 +45,9 @@ is called once for each chunk (its loop only tells where a translation falls int
 (and a Withdrawn's characters) are of characters as Python counts them, code points (a JavaScript string counts UTF-16
 units: a character past U+FFFF is 2 there), the tokens
 the model's tokenizer's, read literally (a mark typed in the text is its characters, as pfml_tokens() reads it)."""
-from engine.pfml import pfml_tokens
+import time
+
+from engine.pfml import FORMED, pfml_tokens
 from engine.tokenizer import WHITE_SPACE
 
 # T666: the most tokens of a chunk and of the history: a sixth and a third of what a context of 4096 leaves, as
@@ -335,12 +337,16 @@ class Document:
         self.model, self.count, self.history_most = model, count, history_most
         self.request, self.settings, self.penalized = request, settings, penalized
         self.pairs, self.costs = [], []
-        self.sums = {"tokens": 0, "sampled": 0, "prompt_tokens": 0, "seconds": 0.0}
+        self.sums = {"tokens": 0, "sampled": 0, "prompt_tokens": 0, "seconds": 0.0, "prompt_seconds": 0.0}
         self.retries = self.cut = self.written = 0
+        # (T669: when the document began, and when its first text was written)
+        self.began, self.first = time.perf_counter(), None
 
     def out(self, text):
         if text:
             self.written += len(text)
+            if self.first is None:
+                self.first = time.perf_counter()
             yield text
 
     def withdraw(self, start):
@@ -362,7 +368,7 @@ class Document:
             yield from self.out(piece)
         stats = self.model.stats
         for key in self.sums:
-            self.sums[key] += stats[key]
+            self.sums[key] += stats.get(key, 0.0) if key == "prompt_seconds" else stats[key]
         tokens = stats["tokens"] - stats["prompt_tokens"]
         if stats["loop"] is not None:
             reason = LOOP
@@ -373,6 +379,17 @@ class Document:
         else:
             reason = None
         return "".join(written), reason, stats["loop"]
+
+    def stats(self, chunks):
+        """T669: the stats of the whole document as an answer's are (generate()'s keys, which the page reads): the sums
+        over its runs, the speeds of those sums (the tokens drawn over the seconds that drew them, the prompts' over
+        theirs), the seconds to its first text, no thought; and chunks, retries and cut"""
+        sums = self.sums
+        drawing = sums["seconds"] - sums["prompt_seconds"]
+        return {**sums, "tokens_per_second": sums["sampled"] / drawing if drawing > 0 else 0.0,
+                "prompt_tokens_per_second": sums["prompt_tokens"] / sums["prompt_seconds"] if sums["prompt_seconds"] > 0 else 0.0,
+                "first_token_seconds": self.first - self.began if self.first is not None else 0.0,
+                "thought": None, "thought_cut": False, "chunks": chunks, "retries": self.retries, "cut": self.cut}
 
     def remember(self, source, translation):
         translation = translation.strip()
@@ -438,8 +455,9 @@ def translate_document(model, text, target, source=None, form=None, context=None
     its text translated again in smaller pieces (Document.piece()); one that no finer way cuts is cut where it ran
     away and a Cut is yielded, where the page writes its mark (penalized: the sampling settings of one more try before
     that, T668's). applied() puts the pieces together. A translation that ran away is not put in the history.
-    model.stats is left with the sums over the runs (tokens, sampled, prompt_tokens, seconds) and the numbers of chunks
-    (chunks), of translations taken back (retries) and of pieces cut (cut)."""
+    model.stats is left with the sums over the runs (tokens, sampled, prompt_tokens, seconds, prompt_seconds), T669: the
+    rest of an answer's stats made of them (Document.stats()), and the numbers of chunks (chunks), of translations taken
+    back (retries) and of pieces cut (cut), also where it was stopped (closed) on the way."""
     tokenizer = model.tokenizer
 
     def count(said):
@@ -450,10 +468,62 @@ def translate_document(model, text, target, source=None, form=None, context=None
     document = Document(model, count, history_most,
                         {"target": target, "source": source, "form": form, "context": context, "glossary": glossary},
                         settings, penalized)
-    yield from document.out(leading)
-    for index, (chunk, separator) in enumerate(chunks):
-        if told is not None:
-            told(index, len(chunks), chunk)
-        yield from document.piece(index, chunk)
-        yield from document.out(separator)
-    model.stats = {**document.sums, "chunks": len(chunks), "retries": document.retries, "cut": document.cut}
+    try:
+        yield from document.out(leading)
+        for index, (chunk, separator) in enumerate(chunks):
+            if told is not None:
+                told(index, len(chunks), chunk)
+            yield from document.piece(index, chunk)
+            yield from document.out(separator)
+    finally:
+        # (T669: also where the page stopped it: the runs that ended so far)
+        model.stats = document.stats(len(chunks))
+
+
+# T669: the page's target "automatic": Japanese into English, anything else into Japanese (the owner, 2026-11-26), a
+# text Japanese where it has a kana (hiragana, katakana and its extensions, the half-width katakana: AGENTS.md's 「答えが
+# 日本語かは、かなで数える」, kanji alone are Chinese as much)
+AUTOMATIC = "auto"
+KANA = ((0x3041, 0x30FF), (0x31F0, 0x31FF), (0xFF66, 0xFF9F))
+# what the page is told as a translation goes, besides its text: a chunk begins (its index and the number of them), the
+# last characters written are taken back (code points, as Python counts them: Withdrawn's), a cut's mark goes here (why)
+CHUNK, WITHDRAWN, CUT = "chunk", "withdrawn", "cut"
+
+
+def japanese(text):
+    """whether a text is Japanese: it has a kana"""
+    return any(low <= ord(char) <= high for char in text for low, high in KANA)
+
+
+def automatic_target(text):
+    """the language AUTOMATIC translates a text into: English for a Japanese one, Japanese for any other"""
+    return "en" if japanese(text) else FORMED
+
+
+def page_translation(model, text, target=AUTOMATIC, form=None, alone=False, **settings):
+    """T669: the translation the page asks for (worker.ts's generate()), translate_document()'s as the worker hands it on:
+    each text as it is, and the rest as tuples, (CHUNK, index, count) before a chunk, (WITHDRAWN, characters) and (CUT,
+    reason). target: a code of pfml.py's LANGUAGES (or easy Japanese), or AUTOMATIC (automatic_target(), the form then
+    said only where that is Japanese); form: pfml_pieces()'s; the source's language is the model's to tell. alone: the
+    model is on the GPU alone, which has no CPU to draw a step with DRY's penalty (the GPU's sampling has none): the try
+    with it before a cut is left out, and what still runs away is cut as it ran (the owner, 2026-11-26).
+    settings: generate()'s sampling."""
+    if target == AUTOMATIC:
+        target = automatic_target(text)
+        form = form if target == FORMED else None
+    told = []
+    pieces = translate_document(model, text, target, form=form, told=lambda index, count, _: told.append((CHUNK, index, count)),
+                                penalized=None if alone else PENALIZED, **settings)
+    try:
+        for piece in pieces:
+            yield from told
+            told.clear()
+            if isinstance(piece, Withdrawn):
+                yield WITHDRAWN, piece.characters
+            elif isinstance(piece, Cut):
+                yield CUT, piece.reason
+            else:
+                yield piece
+        yield from told
+    finally:
+        pieces.close()

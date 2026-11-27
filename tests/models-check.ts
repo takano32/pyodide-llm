@@ -3,7 +3,7 @@
 //   node tests/models-check.ts
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { DEFAULT_MODEL, GROUPS, LICENSES, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, UNASKED_BYTES, asksBefore, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
+import { DEFAULT_MODEL, FORMER_IDS, GROUPS, LICENSES, entryOf, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, UNASKED_BYTES, asksBefore, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
 import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
 import { PYTHON_OVERRIDES } from "../src/runtime/built/facts/overrides.ts";
 import { keptNames } from "../src/runtime/kept.ts";
@@ -198,6 +198,23 @@ for (const entry of MODELS.filter((entry) => LICENSES[sourceOf(entry)!] === "PLa
   assert.ok(LICENSE_TEXTS[sourceOf(entry)!], entry.id);
   // (T649.4: and the line of the original its vocabulary comes from)
   if (entry.original) assert.ok(NOTICES[entry.original] === "Built with PLaMo" && LICENSE_TEXTS[entry.original], entry.id);
+}
+// T669: PLaMo 3 Translate, one entry a size (the owner, 2026-11-26), its request PFML3's (pfml: no template of the
+// list's, the BOS and the stops its own); the ids it had before are read as it (FORMER_IDS), and are no entry's
+{
+  const translators = MODELS.filter((entry) => entry.pfml);
+  assert.deepEqual(translators.map(({ id }) => id).sort(), ["hf-plamo-3-translate-0.8b", "hf-plamo-3-translate-2b", "hf-plamo-3-translate-8b"], "the entries of PFML3's request");
+  for (const entry of translators) {
+    assert.ok(entry.template === undefined && entry.options.bos === 1 && entry.hf?.vocabulary?.tokenizer === "tokenizer.jsonl", `${entry.id}: no template, PLaMo's BOS and tokenizer`);
+    assert.ok(!entry.shares, `${entry.id}: one entry, its conversion shared with none`);
+  }
+  assert.equal(Object.keys(FORMER_IDS).length, 6, "the two directions of three sizes");
+  for (const [former, now] of Object.entries(FORMER_IDS)) {
+    assert.ok(!MODELS.some(({ id }) => id === former), `${former} is an id of the list again: FORMER_IDS would hide it`);
+    assert.equal(entryOf(former)?.id, now, former);
+    assert.ok(entryOf(former)?.pfml, `${former}: read as PLaMo 3 Translate`);
+  }
+  assert.deepEqual([entryOf("tiny-lm")?.id, entryOf("no-such-model"), entryOf(null), entryOf(undefined)], ["tiny-lm", undefined, undefined, undefined], "an id of the list as it is, none for any other");
 }
 // T656's review: the Gemma Terms of Use want their notice with every Gemma's weights too (as the PLaMo line above:
 // a Gemma added without its NOTICES row went through before)

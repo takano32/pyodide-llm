@@ -1370,5 +1370,60 @@ worst / largest
 `);
   report += `, a model of llama.cpp's blocks within ${far.toExponential(1)} of NumPy's`;
 }
+// T669: a translation as the worker asks for one (worker/translate.ts's translating(): engine/document.py's
+// page_translation() called with a JavaScript object of what the page said, its generator read as worker.ts's
+// generate() reads it: a text, or a tuple of what goes on besides). The model is a stand-in of a PLaMo 3 Translate (its
+// tokenizer's marks and a character a token; a generate() that answers the next of its answers, the first a loop): the
+// request is the automatic target's, the form said reaches it, what ran away is taken back in code points (𠮷 is one)
+// and, on the GPU alone, cut without DRY's try
+{
+  pyodide.runPython(`
+from engine.pfml import mark
+class StandInTokenizer:
+    index = {mark(name).encode(): 1000 + at for at, name in enumerate(("tag", "msg", "key", "val", "index", "item"))}
+    def encode(self, text, literal=False):
+        return [ord(char) for char in text]
+class StandInTranslator:
+    def __init__(self, answers):
+        self.tokenizer, self.seq_len, self.answers, self.asked, self.stats = StandInTokenizer(), 4096, list(answers), [], {}
+    def generate(self, request, steps=256, echo=True, loops=False, **settings):
+        self.asked.append((list(request), settings))
+        pieces, loop = self.answers.pop(0)
+        written = sum(map(len, pieces))
+        self.stats = {"tokens": len(request) + written, "sampled": written + 1, "prompt_tokens": len(request), "seconds": 1.0,
+                      "prompt_seconds": 0.5, "loop": loop}
+        yield from pieces
+`);
+  const read = (alone: boolean) => {
+    const model = pyodide.runPython('StandInTranslator([(["𠮷x"], 1), (["Y"], None)])');
+    const pieces = pyodide.pyimport("engine.document").page_translation.callKwargs(model, "Aa.", { temperature: 0, target: "auto", form: "polite", alone });
+    const said: unknown[] = [];
+    for (let next = pieces.next(); !next.done; next = pieces.next()) {
+      const value = next.value;
+      if (typeof value === "string") said.push(value);
+      else {
+        said.push(value.toJs());
+        value.destroy();
+      }
+    }
+    pieces.destroy();
+    pyodide.globals.set("MADE", model);
+    const asked = JSON.parse(pyodide.runPython(`import json
+from engine.pfml import pfml_tokens
+json.dumps([MADE.asked[0][0] == pfml_tokens(MADE.tokenizer, "Aa.", "ja", form="polite"), [settings for _, settings in MADE.asked],
+            MADE.stats["chunks"], MADE.stats["cut"]])`));
+    pyodide.runPython("del MADE");
+    model.destroy();
+    return { said, asked };
+  };
+  const [cpu, gpu] = [read(false), read(true)];
+  const want = { cpu: [["chunk", 0, 1], "𠮷x", ["withdrawn", 2], "Y"], gpu: [["chunk", 0, 1], "𠮷x", ["withdrawn", 1], ["cut", "loop"]] };
+  if (JSON.stringify(cpu.said) !== JSON.stringify(want.cpu) || JSON.stringify(gpu.said) !== JSON.stringify(want.gpu)
+      || !cpu.asked[0] || cpu.asked[1].length !== 2 || cpu.asked[1][1].dry_multiplier !== 0.8 || cpu.asked[3] !== 0
+      || JSON.stringify(gpu.asked.slice(1)) !== JSON.stringify([[{ temperature: 0 }], 1, 1])) {
+    throw new Error(`T669: a translation handed from JavaScript: ${JSON.stringify(cpu)} / ${JSON.stringify(gpu)}`);
+  }
+  console.log("T669: a translation asked from JavaScript tells its chunk, what it takes back (in code points) and its cut");
+}
 console.log(`Pyodide ${version}, ${report} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
 console.log("ok");

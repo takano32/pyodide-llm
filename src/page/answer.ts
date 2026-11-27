@@ -48,6 +48,11 @@ export function wrote(text: string, now: number) {
   undrawn += 1;
   return drawnAt === undefined || undrawn >= 8 || now - drawnAt >= 32;
 }
+/** T669: what the answer says now is this (a translation took its last characters back: translating.ts's withoutLast()) */
+export function rewrote(text: string) {
+  written = text;
+  undrawn += 1;
+}
 /** What was written so far is drawn, at `now`. */
 export function drew(now: number) {
   undrawn = 0;

@@ -38,6 +38,8 @@ sys.path.insert(0, str(HERE))
 import conducting  # noqa: E402
 import llama2_numpy  # noqa: E402
 from convert.conduct import candidates_of  # noqa: E402
+from engine.document import AUTOMATIC, CHUNK_TOKENS, automatic_target, split  # noqa: E402
+from engine.pfml import pfml_tokens  # noqa: E402
 
 PROMPTS = ["これからの流行りを3つ挙げてください。", "What will be popular next? Name three things.",
            "  leading and trailing spaces  ", "trailing only \n", "改行\nを含む\n\n文", "A", "ＡＢＣ１２３ｶﾀｶﾅ①",
@@ -186,9 +188,8 @@ TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "mediu
                  "hf-underdog-saluki-27b-thinking": {"reasoning_effort": "medium"},
                  # T597.1: the one form of an entry whose card says to answer at once (its name says no form)
                  "hf-spark-x2.5-4b-japanese": {"enable_thinking": False},
-                 # T649.3: PLaMo 3 Translate's request in the direction of each entry, the source's language said
-                 **{f"hf-plamo-3-translate-{size}-{source}-{target}": {"source_lang": source, "target_lang": target}
-                    for size in ("0.8b", "2b", "8b") for source, target in (("en", "ja"), ("ja", "en"))}}
+                 # (T669: PLaMo 3 Translate's entries, whose request is pfml_tokens()'s: sent() and its target_lang)
+                 }
 # T517: the format a model card writes where the repository has no chat template (LINE's japanese-large-lm
 # instruction-sft: the card's pipeline is given f"ユーザー: {input_text}\nシステム: " and adds nothing to it, through the
 # slow T5Tokenizer, which is the real sentencepiece of spiece.model). A second copy of the list's LINE_SFT, on purpose
@@ -254,6 +255,18 @@ ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9
 def entries():
     script = "import('./src/models.ts').then(({ MODELS }) => console.log(JSON.stringify(MODELS.filter((m) => m.hf))))"
     return json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))
+
+
+def translated(tokenizer, prompt, target=AUTOMATIC):
+    """T669: the ids after the BOS that the page sends for a prompt to an entry that translates with PFML3 (its pfml):
+    the request of its first chunk (engine/document.py's page_translation(): the prompts here are one chunk each), in
+    the language the page's default chooses (AUTOMATIC: automatic_target()), the source's unsaid. The chunk is the text
+    without the whitespace around it, which the page writes out as it is (document.py's split()), and the real template
+    is given the chunk too. (the target, the chunk, the ids)"""
+    target = automatic_target(prompt) if target == AUTOMATIC else target
+    _, chunks = split(prompt, CHUNK_TOKENS, lambda said: len(tokenizer.encode(said, literal=True)))
+    chunk = chunks[0][0] if chunks else prompt
+    return target, chunk, pfml_tokens(tokenizer, chunk, target)
 
 
 def gguf(entry):
@@ -374,7 +387,8 @@ def main():
         template = (None if alone else entry.get("template")) or made.options.get("template")
         # (T312: a base model's entry whose format is what was typed, where its tokenizer has its instruct's template.
         # Whether the entry is a base model is not looked at: any entry whose format is "{prompt}" alone reads so)
-        if not template or template == "{prompt}":
+        pfml = entry.get("pfml") and not alone
+        if not pfml and (not template or template == "{prompt}"):
             # (T643.25: the entry's own bos, which nothing else checks, against the real tokenizer's spelling)
             if not alone and "bos" in entry.get("options", {}):
                 spelled = reference_of(folder).convert_ids_to_tokens([options["bos"]])[0]
@@ -400,12 +414,18 @@ def main():
         known = KNOWN.get(entry["id"], {})
         same, explained, diffs, exact, fronts = 0, 0, [], 0, set()
         for prompt in prompts:
-            page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())), options["bos"])
+            says, content = thinking, prompt
+            if pfml:
+                # (T669: the page's request of the chunk and the real template's, told the same target and no source)
+                target, content, ids = translated(tokenizer, prompt)
+                page, says = [options["bos"]] + ids, {**thinking, "target_lang": target}
+            else:
+                page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())), options["bos"])
             messages = ([{"role": "system", "content": SYSTEM[entry["id"]]}] if entry["id"] in SYSTEM else []) \
-                + [{"role": "user", "content": prompt}]
+                + [{"role": "user", "content": content}]
             # (T517: no template to render where the card writes the format: the card's text, through the real sentencepiece)
             text = filled(CARDS[entry["id"]], card_replaced(entry["id"], prompt)) if entry["id"] in CARDS else \
-                reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **thinking)
+                reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **says)
             if entry["id"] in SENTENCEPIECE or entry["id"] in CARDS_SPIECE:
                 model = "spiece.model" if entry["id"] in CARDS_SPIECE else "tokenizer.model"
                 encoded = lambda text: sentencepiece_ids(folder / model, text)
@@ -419,7 +439,7 @@ def main():
             else:
                 # a text of KNOWN's as apply_chat_template(tokenize=True) encodes the text it renders
                 encoded = lambda text: list(reference(text, add_special_tokens=False)["input_ids"])
-                real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
+                real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **says)
                 real = list(real["input_ids"] if hasattr(real, "keys") else real)
             def matches(real, page=page, prompt=prompt):
                 # (T312: the prompts that match only with one more BOS in front, said on the entry's line)
@@ -437,7 +457,7 @@ def main():
             else:
                 diffs.append(f"{prompt!r}\n    page {reference.convert_ids_to_tokens(page)[:60]}"
                              f"\n    real {reference.convert_ids_to_tokens(real)[:60]}")
-        where = "the list" if entry.get("template") and not alone else "the converter"
+        where = "the list" if (entry.get("template") or pfml) and not alone else "the converter"
         verdict = "DIFF" if diffs else "known" if explained else "ok  "
         note = f", {explained} as known: {known['why']}" if explained else ""
         # T264 (T369): what ?hf= sends for a template the converter read is the real ids, none in front, where the
