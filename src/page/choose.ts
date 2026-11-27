@@ -8,7 +8,7 @@ import { looked, unlisted, unnamed } from "./repository.ts";
 import { addressOf } from "./parameters.ts";
 import { gpuFor, threadsFor } from "./remembered.ts";
 import { type Model, type Unlisted, chose, loads, model, opensWith } from "./model.ts";
-import { keepsHere, keptEntries, stillKept } from "./list.ts";
+import { keepsHere, keptAsBlocks, keptEntries, stillKept } from "./list.ts";
 import { show } from "./settings.ts";
 import { message } from "./draw.ts";
 import { root, worker } from "./receiver.ts";
@@ -144,7 +144,8 @@ export async function urlLooked() {
   if (!named || model !== named || !(unnamed(named) || /\.gguf$/.test(named.hf.weights))) return true;
   let entry: Unlisted;
   try {
-    entry = await looked(named);
+    // (T505.4's review: not listed, a GGUF is as this browser kept it: with its blocks, where it did so)
+    entry = await looked(named, fetch, keptAsBlocks);
   } catch (error) {
     if (loads === 1) {
       message("model error", String((error as Error).message ?? error));

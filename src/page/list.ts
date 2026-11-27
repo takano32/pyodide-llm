@@ -6,7 +6,7 @@ import { remember } from "./remembered.ts";
 import { type Model, type Unlisted, model } from "./model.ts";
 import { forget, keptModels, opfsOpens, outdated, serves } from "../runtime/kept.ts";
 import { OTHER, keptOf } from "./choosing.ts";
-import { OTHER_REPOSITORY } from "./repository.ts";
+import { OTHER_REPOSITORY, keptWithBlocks } from "./repository.ts";
 
 // What the worker kept of its conversions (src/runtime/kept.ts: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.
@@ -66,6 +66,12 @@ export async function stillKept(entry: Model) {
   const models = await listed();
   // (T643.1: a model of more than UNASKED_BYTES to fetch is one of Hugging Face: of the list, or of a repository nobody listed)
   return models.some((one) => serves(one, weighed(entry as Remote | Unlisted)));
+}
+
+/** T505.4's review: a model of an address whose repository could not be listed, as this browser kept it (repository.ts's
+ * keptWithBlocks()) */
+export async function keptAsBlocks(entry: Unlisted) {
+  return keptWithBlocks(entry, await listed());
 }
 
 // three groups: what the site was built with, the unquantized originals, and what comes from Hugging Face

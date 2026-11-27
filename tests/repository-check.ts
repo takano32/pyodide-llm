@@ -14,10 +14,10 @@
 // whether huggingface.co lets a page read its list (CORS).
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { BESIDE_WEIGHTS, PAGES, QUANTIZATIONS, SAFETENSORS, WIDE_BYTES, bestGguf, filesOf, keptBytes, looked, noteOf, quantization, settled, tooWide, unlisted, unnamed, weightsOf } from "../src/page/repository.ts";
+import { BESIDE_WEIGHTS, PAGES, QUANTIZATIONS, SAFETENSORS, WIDE_BYTES, bestGguf, filesOf, keptBytes, looked, noteOf, quantization, keptWithBlocks, settled, tooWide, unlisted, unnamed, weightsOf } from "../src/page/repository.ts";
 import { pastWide } from "../src/runtime/forward/memory.ts";
 import { CONTROL_BYTES } from "../src/runtime/jobs.ts";
-import { keptName, keptNames } from "../src/runtime/kept.ts";
+import { CONVERTER, keptName, keptNames } from "../src/runtime/kept.ts";
 // (the page's module reads its address where it is loaded: there is none here)
 globalThis.location ??= { search: "" };
 const { FILE, FILE_MOST, hfEntry } = await import("../src/page/address.ts");
@@ -272,6 +272,34 @@ console.log("ok: a file is named in an address by names with / between them, non
   assert.equal(bestGguf(big)?.path, "Qwen2.5-72B-Q8_0.gguf");
   assert.deepEqual(settled(pinned, big).conversion, {});
   console.log("ok: a model too large as int8 takes the best GGUF that fits with its blocks kept, and keeps them (kept under :blocks); one that fits is as it was");
+  // The review: a revisit (&file=) whose repository cannot be listed (offline, a line that does not answer) is opened as
+  // this browser kept it. Kept with its blocks, the entry has them (the list is what said so, and it is not there); kept
+  // widened, or not kept at all, or kept by an older converter, or a file that is no GGUF, it is as named
+  {
+    const file = "Qwen2.5-14B-Instruct-Q4_K_M.gguf", unseen = hfEntry("owner/model", "main", { file });
+    const withBlocks = settled(unseen, q14), widened = { ...unseen, conversion: { dtype: "int8" as const } };
+    const kept = (entry, converter = CONVERTER) => ({ name: keptName(entry), where: "opfs" as const, manifest: { converter } });
+    const down = async () => { throw new TypeError("Failed to fetch"); };
+    const quiet = console.warn;
+    console.warn = () => {};
+    try {
+      const with_ = (list) => async (entry) => keptWithBlocks(entry, list);
+      assert.deepEqual((await looked(unseen, down, with_([kept(withBlocks)]))).conversion, { dtype: "int8", blocks: true }, "a GGUF kept with its blocks, its list not to be had, is not opened with them");
+      assert.equal(await looked(unseen, down, with_([])), unseen, "a GGUF kept nowhere, its list not to be had, is not opened as named");
+      assert.equal(await looked(unseen, down, with_([kept(withBlocks, CONVERTER - 1)])), unseen, "a conversion of an older converter serves");
+      assert.equal(await looked(unseen, down, with_([kept(widened), kept(withBlocks)])), unseen, "a GGUF kept widened is not opened as it was kept, though its blocks are kept too");
+      const safetensors = hfEntry("owner/model", "main");
+      assert.equal(keptWithBlocks(safetensors, [kept({ ...safetensors, conversion: { dtype: "int8", blocks: true } })]), safetensors, "a file that is no GGUF is opened with blocks");
+      // where the list is had, it says (and what was kept is not asked)
+      let asked = 0;
+      const had = await looked(unseen, async () => new Response(JSON.stringify(q14.map(({ path, size }) => ({ type: "file", path, size })))), async (entry) => (asked++, entry));
+      assert.deepEqual(had.conversion, { dtype: "int8", blocks: true });
+      assert.equal(asked, 0, "what is kept is looked at where the list is had");
+    } finally {
+      console.warn = quiet;
+    }
+    console.log("ok: a GGUF of a repository that cannot be listed is opened with its blocks where this browser kept it so");
+  }
 }
 
 // ---- what a conversion is kept under (src/runtime/kept.ts): a repository nobody listed, by the file it was opened by,

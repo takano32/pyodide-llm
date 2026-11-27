@@ -10,6 +10,7 @@
 // what is decided here is the one name it is handed, hf.weights.
 import type { Model, Unlisted } from "./model.ts";
 import type { Dtype } from "../runtime/contracts/form.ts";
+import { type Kept, serves } from "../runtime/kept.ts";
 import { PYTHON_FAMILIES } from "../runtime/built/facts/families.ts";
 import { PYTHON_BYTES } from "../runtime/built/facts/bytes.ts";
 import { PYTHON_WEIGHTS } from "../runtime/built/facts/weights.ts";
@@ -183,8 +184,18 @@ export async function filesOf(repository: string, revision: string, fetching: ty
     return undefined;
   }
 }
-/** An entry of hfEntry(), looked at: settled() by the files of its repository, or itself where they are not said. */
-export async function looked<Of extends Entry>(entry: Of, fetching: typeof fetch = fetch): Promise<Of> {
+/** An entry of hfEntry(), looked at: settled() by the files of its repository, or, where they are not said, itself, or
+ * what `without` makes of it (T505.4's review: choose.ts's urlLooked() passes keptWithBlocks(), for a revisit offline) */
+export async function looked<Of extends Entry>(entry: Of, fetching: typeof fetch = fetch, without?: (entry: Of) => Promise<Of>): Promise<Of> {
   const files = await filesOf(entry.hf.repo!, entry.hf.revision!, fetching);
-  return files ? settled(entry, files) : entry;
+  return files ? settled(entry, files) : without ? without(entry) : entry;
+}
+/** T505.4's review: a GGUF named by an address (&file=, which the URL says once a GGUF was taken) of a repository that
+ * could not be listed (offline, or a line that does not answer) is as it was kept: with its blocks, where this browser
+ * kept it so (the page cannot say that it is too large for int8 without the list, and such a conversion is kept under
+ * another name than the same file widened: keptName()'s ":blocks"). One kept as it is named, or not kept, is as it is. */
+export function keptWithBlocks(entry: Unlisted, kept: readonly Kept[]): Unlisted {
+  if (!/\.gguf$/.test(entry.hf.weights) || kept.some((one) => serves(one, entry))) return entry;
+  const blocks: Unlisted = { ...entry, conversion: { ...entry.conversion, dtype: "int8", blocks: true } };
+  return kept.some((one) => serves(one, blocks)) ? blocks : entry;
 }
