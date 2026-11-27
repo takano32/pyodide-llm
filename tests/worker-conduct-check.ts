@@ -15,6 +15,9 @@
 import assert from "node:assert/strict";
 import { pyProxies } from "./fakes/pyodide.ts";
 import { workerHarness } from "./worker-harness.ts";
+import { runtimeUrl } from "./tree.ts";
+// (T326: kept.ts's own: the context a conversion is made at and a kept one is read at)
+const { contextOf, contextRead } = await import(runtimeUrl("kept.ts"));
 
 setTimeout(() => {
   console.error("worker-conduct-check: still waiting after 120 s");
@@ -64,7 +67,7 @@ function world({ gpu = false } = {}) {
     forward: { aloneHolds: () => false, aloneTakes: (dtype) => ["int8", "ternary"].includes(dtype) },
     // the kept models: a file opened to keep a conversion in as it comes has the one handle its file can have (OPFS)
     kept: {
-      openKept: async () => kept.found ?? null, replaced: async () => [], forget: async () => {},
+      openKept: async () => kept.found ?? null, replaced: async () => [], forget: async () => {}, contextOf, contextRead,
       keep: async (model, manifest) => { kept.keeps.push(manifest); },
       keeper: async () => {
         if (kept.open) {
@@ -103,7 +106,9 @@ function world({ gpu = false } = {}) {
     get options() { return readable("the options", { dtype: "int8", bos: 1, ...more }); },
     get tokenizer() { return proxy("the tokenizer", { getBuffer: () => ({ data: new Uint8Array(4), release() {} }) }); },
     // (T385: how each type with a kernel's reader was read)
-    get widened() { return readable("the readers", { BF16: "kernel" }); } });
+    get widened() { return readable("the readers", { BF16: "kernel" }); },
+    // (T326: the longest context its checkpoint may be read at, the model's own)
+    get longest() { return 32768; } });
   const convert = (hf, play, { signal = new AbortController().signal, conversion: asked, options } = {}) => {
     body = play;
     proxies.length = 0;
@@ -214,7 +219,8 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.equal(JSON.stringify(w.played.listed), JSON.stringify([{ repo: "owner/model", revision: REVISION, weights: "model.safetensors", tokenizer: "tokenizer.json",
     vocabulary: { repo: "vocabulary/owner", revision: OTHER, tokenizer: "tokenizer.model" } }]));
   assert.ok(!Object.hasOwn(w.played.listed[0], "config"), "a key whose value is undefined was handed to Python");
-  assert.deepEqual(Object.keys(w.played.made[0]).sort(), ["dtype", "quantize_rows", "readers", "sink"]);
+  assert.deepEqual(Object.keys(w.played.made[0]).sort(), ["dtype", "max_seq_len", "quantize_rows", "readers", "sink"]);
+  assert.equal(w.played.made[0].max_seq_len, 4096, "T326: the context asked for, the page's most where the entry asks none");
   assert.equal(typeof w.played.made[0].dtype, "function", "no bits asked for: the worker's choice");
   // the end: the generator closed and let go, the conversion let go, every proxy once
   const [steps] = w.played.steps;
@@ -311,7 +317,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
       const handed = weighed(entry);
       await w.convert(handed.hf, early, { conversion: handed.conversion });
       const make = w.played.made.at(-1);
-      assert.deepEqual([make.blocks, make.dtype, make.max_seq_len], [true, "int8", undefined], `${entry.id}: what the conduct is asked`);
+      assert.deepEqual([make.blocks, make.dtype, make.max_seq_len], [true, "int8", 4096], `${entry.id}: what the conduct is asked`);
     }
     assert.deepEqual(fetched(), [], "with the kernels the visit already has");
   }
@@ -847,6 +853,33 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.deepEqual(JSON.parse(JSON.stringify(w.engines.at(-1).rope_scaling)), yarn, "a kept conversion the list says nothing of keeps its own RoPE");
   w.kept.found = undefined;
   ok("an entry's options (T235: rope_scaling: {}) win over a conversion's, made now and kept before; without them the conversion's own stand");
+}
+
+// ---- T326: a conversion is made at the context the load asks for (kept.ts's contextOf(): the entry's, or the page's
+// most, 4096), and the longest context it may be read at is kept beside it; a kept one is read at the context asked
+// for, its header's seq_len set to it before anything reads the header, and no longer than that longest
+{
+  const w = world();
+  w.fresh(() => notFound());
+  const play = function* (make) {
+    w.opened(make);
+    yield ["done", w.conversion()];
+  };
+  assert.equal(await w.convert(hf(), play), undefined);
+  assert.equal(w.played.made.at(-1).max_seq_len, 4096, "a model that asks no context is converted at 4096");
+  assert.equal(w.kept.keeps.at(-1).longest, 32768, "the conversion's longest is kept beside it");
+  assert.equal(await w.convert(hf(), play, { conversion: { max_seq_len: 8192 } }), undefined);
+  assert.equal(w.played.made.at(-1).max_seq_len, 8192, "and one that asks for 8192 at 8192");
+  const manifest = JSON.parse(JSON.stringify(w.kept.keeps.at(-1)));
+  for (const [asked, read] of [[2048, 2048], [16384, 16384], [65536, 32768], [undefined, 4096]]) {
+    const whole = new Uint8Array(manifest.bytes);
+    whole.set(new Uint8Array(new Int32Array(HEADER).buffer));
+    w.kept.found = { manifest, where: "opfs", async *parts() { yield whole; }, tokenizer: async () => new Uint8Array(4) };
+    assert.equal(await w.convert(hf(), () => assert.fail("a kept conversion was converted again"), asked ? { conversion: { max_seq_len: asked } } : {}), undefined);
+    assert.equal(new Int32Array(whole.buffer, 0, 7)[6], read, `asked for ${asked ?? "none"}, read at ${read}`);
+  }
+  w.kept.found = undefined;
+  ok("a conversion is made at the context asked for and keeps its longest; a kept one is read at the context asked for, up to its longest");
 }
 
 console.log(`worker-conduct-check: ${passed} checks passed`);

@@ -22,6 +22,8 @@ import fs from "node:fs";
 import { loadPyodide } from "pyodide";
 import { placePython, runtimeUrl, treeOf } from "./tree.ts";
 import { workerHarness } from "./worker-harness.ts";
+// (T326: kept.ts's own, the context a conversion is made at)
+const { contextOf } = await import(runtimeUrl("kept.ts"));
 import { openHuggingFace, TOKENIZERS } from "../src/page/folder.ts";
 // (the page's module reads its address where it is loaded: there is none here)
 globalThis.location ??= { search: "" };
@@ -157,7 +159,7 @@ context.stand = {
   // (nothing of the converter's window is called from JavaScript but the kernels' readers, and there are no kernels here)
   converter: {},
   kept: {
-    openKept: async () => null, replaced: async () => [], forget: async () => {}, keeper: async () => undefined,
+    openKept: async () => null, replaced: async () => [], forget: async () => {}, keeper: async () => undefined, contextOf,
     keep: async (model, manifest) => { kept.push(`kept as ${model.conversion.dtype}: ${manifest.repo}@${manifest.revision.slice(0, 7)}, ${manifest.bytes} bytes, options ${JSON.stringify(manifest.options)}`); },
   },
   // (no kernels: the checkpoint's place is a Python bytearray, as with ?without=kernels)

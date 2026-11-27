@@ -16,6 +16,7 @@ import { workers as workersStandIn } from "./fakes/worker.ts";
 import { python, runtimeUrl } from "./tree.ts";
 const forward = await import(runtimeUrl("forward.js"));
 const { STOPS_MOST } = await import(runtimeUrl("shaders.js"));  // (T681: the GPU sampling's, SAMPLE's)
+const { contextRead } = await import(runtimeUrl("kept.ts"));  // (T326: the header set to the context a load asks for)
 import { runWorker } from "./worker-source.ts";
 import { strictly } from "./worker-harness.ts";
 import { contract, differing } from "./contracts.ts";
@@ -348,7 +349,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   const first = new Uint8Array(7000);
   first.set(new Uint8Array(new Int32Array(GEMMA).buffer));
   const skipped = [];
-  context.stand.kept = { openKept: async () => ({ manifest: { bytes: size, options: { ...form, dtype: "int8" } }, where: "opfs",
+  context.stand.kept = { contextRead, openKept: async () => ({ manifest: { bytes: size, options: { ...form, dtype: "int8" } }, where: "opfs",
     async *parts(skipping) {
       skipped.push(skipping.range);
       yield first;
@@ -785,7 +786,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       const PART = 28, head = new Uint8Array(PART);
       head.set(new Uint8Array(new Int32Array(LLAMA3B).buffer));
       let read = 0;
-      gpuContext.stand.kept = { openKept: async () => ({ manifest: { bytes: size, options: { ...FORM, dtype: "int8" } }, where: "opfs",
+      gpuContext.stand.kept = { contextRead, openKept: async () => ({ manifest: { bytes: size, options: { ...FORM, dtype: "int8" } }, where: "opfs",
         async *parts() {
           for (let at = 0; at < size; at += PART) {
             read += 1;

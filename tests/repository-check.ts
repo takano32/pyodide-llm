@@ -228,16 +228,17 @@ assert.equal(unlisted(undefined), undefined);
 console.log("ok: a file is named in an address by names with / between them, none of them dots alone");
 
 // ---- what a conversion is kept under (src/runtime/kept.ts): a repository nobody listed, by the file it was opened by,
-// and by nothing more where that is the model.safetensors it always was; a model of the list as it always was
+// and by nothing more where that is the model.safetensors it always was; a model of the list as it always was (T326:
+// with no context, and then under the name it had before, which said the context)
 {
   const names = (model) => keptNames(model).map(decodeURIComponent);
-  assert.deepEqual(names(pinned), [`owner/model@${REVISION}:int8:4096`, `owner/model@${REVISION}:int6:4096`], "the name ?hf= kept a repository of safetensors under changed: what visitors kept is fetched again");
+  assert.deepEqual(names(pinned), [`owner/model@${REVISION}:int8`, `owner/model@${REVISION}:int8:4096`, `owner/model@${REVISION}:int6`, `owner/model@${REVISION}:int6:4096`], "the name ?hf= kept a repository of safetensors under changed: what visitors kept is fetched again");
   const q8 = settled(pinned, listOf("m-Q8_0.gguf")), q4 = hfEntry("owner/model", REVISION, { file: "m-Q4_K_M.gguf" });
-  assert.deepEqual(names(q8), [`owner/model@${REVISION}/m-Q8_0.gguf:int8:4096`, `owner/model@${REVISION}/m-Q8_0.gguf:int6:4096`]);
+  assert.deepEqual(names(q8), [`owner/model@${REVISION}/m-Q8_0.gguf:int8`, `owner/model@${REVISION}/m-Q8_0.gguf:int8:4096`, `owner/model@${REVISION}/m-Q8_0.gguf:int6`, `owner/model@${REVISION}/m-Q8_0.gguf:int6:4096`]);
   assert.equal(new Set([pinned, q8, q4].map((model) => keptName(model))).size, 3, "two files of one repository share what is kept of one of them");
   // a model of the list names its GGUF too, and is kept as before (T136, T203: its name is its repository's)
   const listed = { id: "hf-some-model", hf: { repo: "owner/model", revision: REVISION, weights: "m-Q8_0.gguf" } };
-  assert.deepEqual(names(listed), [`owner/model@${REVISION}:int8:4096`, `owner/model@${REVISION}:int6:4096`], "a model of the list is kept under another name than it was: every visitor's conversion of it is fetched again");
+  assert.deepEqual(names(listed), [`owner/model@${REVISION}:int8`, `owner/model@${REVISION}:int8:4096`, `owner/model@${REVISION}:int6`, `owner/model@${REVISION}:int6:4096`], "a model of the list is kept under another name than it was: every visitor's conversion of it is fetched again");
   console.log("ok: a conversion of ?hf= is kept by its repository, revision and file; of model.safetensors and of the list, as it always was");
 }
 console.log("repository-check: all checks passed");

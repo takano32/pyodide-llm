@@ -99,7 +99,8 @@ export type ConverterWindow = Proxy & {
 
 // What a conversion ends with (convert/conversion.py's Conversion): the checkpoint went to the sink as it came
 // (T385: widened, how each stored type that has a kernel's reader was read: "kernel" or "NumPy")
-export type Conversion = Proxy & { options: Dict<Options>; tokenizer: Bytes; widened: Dict<Record<string, Widened>> };
+// (T326: longest, the longest context the checkpoint may be read at with its header's seq_len set to it, kept.ts's contextRead())
+export type Conversion = Proxy & { options: Dict<Options>; tokenizer: Bytes; widened: Dict<Record<string, Widened>>; longest: number };
 export type Widened = "kernel" | "NumPy";
 
 // src/python/convert/conduct.py: conduct(hf, **make), a generator of requests (contracts/conduct.ts), each a tuple

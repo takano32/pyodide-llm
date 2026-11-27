@@ -8,8 +8,10 @@ export type Where = "opfs" | "cache";
 export type Kept = { name: string; where: Where; manifest: Manifest };
 // what is written beside a kept model: what the worker says of the conversion (worker/convert.ts: the model's id and
 // name, where it came from, the checkpoint's bytes, the options the engine gets, when), and kept.ts's two: the
-// converter's version and, in the Cache API, the number of parts
-export type Conversion = { id: string; name: string; repo: string; revision: string; bytes: number; options: Options; saved: number };
+// converter's version and, in the Cache API, the number of parts.
+// T326: longest, the longest context the file may be read at with its header's seq_len set to it (the converter's
+// Conversion.longest, kept.ts's contextRead()): none in what was kept before T326
+export type Conversion = { id: string; name: string; repo: string; revision: string; bytes: number; options: Options; saved: number; longest?: number };
 export type Manifest = Conversion & { converter?: number; parts?: number };
 // T329.2.2: what reads bytes of a kept checkpoint at once (a sync access handle's read()), and lets go of it
 export type Reader = { read(bytes: Uint8Array, at: number): number; close(): void };

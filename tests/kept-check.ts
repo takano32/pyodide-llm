@@ -252,28 +252,29 @@ const readBack = async (found) => {
 // another vocabulary is another conversion. Without one, the name is what it always was
 {
   const withVocabulary = { ...model, hf: { ...model.hf, vocabulary: { repo: "c/d", revision: "4567", tokenizer: "tokenizer.model" } } };
-  assert.equal(decodeURIComponent(kept.keptName(model)), "a/b@0123:int8:4096");
-  assert.equal(decodeURIComponent(kept.keptName(withVocabulary)), "a/b@0123+c/d@4567:int8:4096");
+  assert.equal(decodeURIComponent(kept.keptName(model)), "a/b@0123:int8");
+  assert.equal(decodeURIComponent(kept.keptName(withVocabulary)), "a/b@0123+c/d@4567:int8");
   // T684: and what an entry sets over that config.json, by its keys in order; none set is the name of before
   const overriding = (overrides) => ({ ...withVocabulary, hf: { ...withVocabulary.hf, vocabulary: { ...withVocabulary.hf.vocabulary, overrides } } });
   assert.equal(decodeURIComponent(kept.keptName(overriding({ rope_scaling_factor: 1, eos_token_id: [2, 3], max_position_embeddings: 4096 }))),
-    "a/b@0123+c/d@4567{eos_token_id=[2,3],max_position_embeddings=4096,rope_scaling_factor=1}:int8:4096");
+    "a/b@0123+c/d@4567{eos_token_id=[2,3],max_position_embeddings=4096,rope_scaling_factor=1}:int8");
   assert.equal(kept.keptName(overriding({ eos_token_id: 2, rope_scaling_factor: 1 })), kept.keptName(overriding({ rope_scaling_factor: 1, eos_token_id: 2 })));
   assert.notEqual(kept.keptName(overriding({ eos_token_id: 2 })), kept.keptName(overriding({ eos_token_id: 1 })));
   assert.equal(kept.keptName(overriding({})), kept.keptName(withVocabulary));
   // T363.5: a conversion that kept a GGUF's blocks is another than the same file widened, and neither serves the other
   const blocks = { ...model, conversion: { dtype: "int8", blocks: true } };
-  assert.equal(decodeURIComponent(kept.keptName(blocks)), "a/b@0123:int8:4096:blocks");
+  assert.equal(decodeURIComponent(kept.keptName(blocks)), "a/b@0123:int8:blocks");
   assert.equal(kept.keptName({ ...model, conversion: { dtype: "int8", blocks: false } }), kept.keptName({ ...model, conversion: { dtype: "int8" } }));
-  assert.deepEqual(kept.keptNames(blocks).map(decodeURIComponent), ["a/b@0123:int8:4096:blocks"]);
+  assert.deepEqual(kept.keptNames(blocks).map(decodeURIComponent), ["a/b@0123:int8:blocks", "a/b@0123:int8:4096:blocks"]);
   const one = (name) => ({ name, where: "opfs", manifest: { converter: kept.CONVERTER } });
   assert.ok(kept.serves(one(kept.keptName(blocks)), blocks) && !kept.serves(one(kept.keptName(blocks)), { ...model, conversion: { dtype: "int8" } }) &&
     !kept.serves(one(kept.keptName(model)), blocks), "a model's blocks kept serve the one that asks for them, and no other");
   // T669: PLaMo 3 Translate's one entry a size is kept under the name its two directions were (the name is of the
   // repositories, revisions and the conversion, not of the id): a visitor's conversion is not made again
   const { entryOf } = await import("../src/models.ts");
-  assert.equal(decodeURIComponent(kept.keptName(entryOf("hf-plamo-3-translate-0.8b"))),
-    "pfnet/plamo-3-translate-0.8b-GGUF@dbeb0856cb0b004b484f190bb71dd65876297013+pfnet/plamo-3-translate-0.8b@cc8e88169807d5a272e8ff06db12eb0129b67f81:int8:4096:blocks",
+  // (T326: the name of before, which said the context, is one of the names its conversion is read under)
+  assert.ok(kept.keptNames(entryOf("hf-plamo-3-translate-0.8b")).map(decodeURIComponent).includes(
+    "pfnet/plamo-3-translate-0.8b-GGUF@dbeb0856cb0b004b484f190bb71dd65876297013+pfnet/plamo-3-translate-0.8b@cc8e88169807d5a272e8ff06db12eb0129b67f81:int8:4096:blocks"),
     "the name of the conversions the two entries of T649.3 kept");
   assert.equal(kept.keptName(entryOf("hf-plamo-3-translate-0.8b-ja-en")), kept.keptName(entryOf("hf-plamo-3-translate-0.8b")));
 }
@@ -291,7 +292,7 @@ const readBack = async (found) => {
   await keepAs({ ...model, id: "local", hf: { repo: "p/q", revision: "2" } }, "int8");
   await keepAs(moved, "int6");
   const names = (list) => list.map((one) => decodeURIComponent(one.name)).sort();
-  assert.deepEqual(names(await kept.replaced(moved)), ["a/b@0123:int6:4096", "a/b@0123:int8:4096"]);
+  assert.deepEqual(names(await kept.replaced(moved)), ["a/b@0123:int6", "a/b@0123:int8"]);
   assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype: "int8" } })), names(await kept.replaced(moved)),
     "asking for eight bits does not make its own six-bit conversion replaced");
   assert.deepEqual(await kept.replaced({ ...model, id: "local", hf: { repo: "r/s", revision: "3" } }), []);
@@ -309,11 +310,11 @@ const readBack = async (found) => {
   // (and the same source with its blocks kept: its own too, whichever is asked for)
   await kept.keep({ ...moved, conversion: { dtype: "int8", blocks: true } }, manifest, (a, b) => bytes.slice(a, b), vocabulary);
   for (const blocks of [true, false]) {
-    assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype: "int8", blocks } })), ["a/b@0123:int6:4096", "a/b@0123:int8:4096"],
+    assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype: "int8", blocks } })), ["a/b@0123:int6", "a/b@0123:int8"],
       `asking for the blocks ${blocks ? "kept" : "widened"} replaces neither of the two`);
   }
   for (const dtype of [...dtypes, undefined]) {
-    assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype } })), ["a/b@0123:int6:4096", "a/b@0123:int8:4096"],
+    assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype } })), ["a/b@0123:int6", "a/b@0123:int8"],
       `asking for ${dtype ?? "no bits"} replaces what its source kept before, and none of its own other bits ` +
       "(a packing of jobs.ts's PACKED that kept.ts's replaced() does not name is deleted here: add its name there)");
   }
@@ -328,8 +329,8 @@ const readBack = async (found) => {
   await kept.keep({ ...before, conversion: { dtype: "int8" } }, { ...manifest, id: "q-thinking" }, (a, b) => bytes.slice(a, b), vocabulary);
   await kept.keep({ ...model, id: "r", conversion: { dtype: "int8" } }, { ...manifest, id: "r" }, (a, b) => bytes.slice(a, b), vocabulary);
   const names = (list) => list.map((one) => decodeURIComponent(one.name));
-  assert.deepEqual(names(await kept.replaced(after)), ["a/q@1:int8:4096"], "the other form's conversion is replaced");
-  assert.deepEqual(names(await kept.replaced({ ...after, id: "q-thinking" })), ["a/q@1:int8:4096"]);
+  assert.deepEqual(names(await kept.replaced(after)), ["a/q@1:int8"], "the other form's conversion is replaced");
+  assert.deepEqual(names(await kept.replaced({ ...after, id: "q-thinking" })), ["a/q@1:int8"]);
   assert.deepEqual(await kept.replaced({ ...after, shares: undefined }), [], "without shares only its own id's");
 }
 // T649.5: the two entries of shares (a Qwen3's two forms, PLaMo 3 Translate's two ways) are one conversion under one
@@ -423,5 +424,57 @@ const readBack = async (found) => {
   for (let at = 0; at < bytes.length; at += 1 << 20) twice.write(at, bytes.subarray(at, Math.min(at + (1 << 20), bytes.length)));
   assert.equal(twice.whole(), true, "the stretch written again is whole, not counted twice");
   await twice.drop();
+}
+// T326: a quantized conversion is named without its context, which its header is set to as it is read (contextRead()):
+// one conversion serves every context. A float32 or float16 one holds RoPE tables as long as its context, and is named
+// by it. What was kept before under the name of its context (4096) is read under that name: found, served, and not
+// replaced; a new conversion goes under the new name
+{
+  const { root } = browser();
+  const at = (context, dtype) => ({ ...model, conversion: { dtype, max_seq_len: context } });
+  assert.equal(decodeURIComponent(kept.keptName(at(8192, "int8"))), "a/b@0123:int8");
+  assert.equal(kept.keptName(at(8192, "ternary")), kept.keptName(at(2048, "ternary")), "a ternary one is the same at every context");
+  assert.equal(decodeURIComponent(kept.keptName(at(8192, "float32"))), "a/b@0123:float32:8192");
+  assert.equal(decodeURIComponent(kept.keptName(at(undefined, "float16"))), "a/b@0123:float16:4096");
+  assert.deepEqual(kept.keptNames(at(8192)).map(decodeURIComponent), ["a/b@0123:int8", "a/b@0123:int8:4096", "a/b@0123:int6", "a/b@0123:int6:4096"]);
+  assert.deepEqual(kept.keptNames(at(8192, "float32")).map(decodeURIComponent), ["a/b@0123:float32:8192", "a/b@0123:float32:4096"]);
+  assert.deepEqual(kept.keptNames(at(undefined, "float32")).map(decodeURIComponent), ["a/b@0123:float32:4096"]);
+  assert.equal(kept.contextOf(model), 4096, "the page's most where the entry asks none");
+  // kept before T326: moved to its old name, as a visitor has it
+  assert.equal(await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary), undefined);
+  const folders = (await root.getDirectoryHandle("converted-v1")).children, before = encodeURIComponent("a/b@0123:int8:4096");
+  folders.set(before, folders.get(kept.keptName(model)));
+  folders.delete(kept.keptName(model));
+  for (const asked of [model, at(8192), at(2048, "int8")]) {
+    const found = await kept.openKept(asked);
+    assert.equal(found?.name, before, "what was kept under its context's name is read");
+    assert.deepEqual(await readBack(found), bytes);
+    assert.ok(kept.serves(found, asked), "and the page says it is kept");
+    assert.deepEqual(await kept.replaced(asked), [], "and it is not replaced");
+  }
+  assert.equal(await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary), undefined);
+  assert.deepEqual((await kept.keptModels()).map(({ name }) => decodeURIComponent(name)).sort(), ["a/b@0123:int8", "a/b@0123:int8:4096"]);
+  assert.equal((await kept.openKept(model)).name, kept.keptName(model), "a new conversion is kept under the new name, and read first");
+  // the header's seq_len set to the context asked for, no longer than the file may be read at
+  const first = (said) => {
+    const bytes = new Uint8Array(28 + 4);
+    new DataView(bytes.buffer).setInt32(24, said, true);
+    return bytes;
+  };
+  const read = (said, manifested, asked, rest = 0) => {
+    const bytes = first(said), context = kept.contextRead(bytes, { ...manifest, ...manifested }, asked);
+    assert.equal(new DataView(bytes.buffer).getInt32(24, true), context, "the header says the context it is read at");
+    assert.equal(new DataView(bytes.buffer).getInt32(28, true), rest, "and nothing after it is touched");
+    return context;
+  };
+  assert.equal(read(4096, { longest: 262144 }, at(8192)), 8192, "longer, to the context asked for");
+  assert.equal(read(8192, { longest: 262144 }, model), 4096, "shorter");
+  assert.equal(read(4096, { longest: 6000 }, at(8192)), 6000, "no longer than the model's own");
+  assert.equal(read(4096, { longest: 4096, options: { dtype: "float32" } }, at(8192, "float32")), 4096, "a file of tables as long as its context: its own");
+  // what was kept before T326 says no longest: its header's own, unless the converter may have cut it at 4096
+  assert.equal(read(4096, {}, at(8192)), 8192, "a quantized file cut at 4096: read at the context asked for");
+  assert.equal(read(2048, {}, at(8192)), 2048, "a model of a shorter context: its own");
+  assert.equal(read(4096, { options: { dtype: "float16" } }, at(8192, "float16")), 4096);
+  assert.equal(read(4096, {}, at(1024)), 1024);
 }
 console.log("ok");

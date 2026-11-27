@@ -70,6 +70,8 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
   if (part.done || part.value.length < HEADER_BYTES) {
     return { miss: "what is kept is empty" };
   }
+  // (T326: at the context the load asks for: the header's seq_len set to it, before the memory is chosen by the header)
+  keptModule!.contextRead(part.value, manifest, model);
   const weights = weightsBuffer(manifest.bytes, headerInts(part.value), ownStops(manifest.options, model), undefined, kept.where === "opfs");
   if (weights.hole) skipping.range = weights.hole;
   let tokenizer;
@@ -120,11 +122,12 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
 // checkpoint: the weights (weightsBuffer), bytes long; tokenizer: a PyProxy of the converted tokenizer. Returns why
 // nothing was kept, or undefined.
 // T156, kept: the file of a model on the GPU alone, written as the conversion came (kept.ts's keeper)
-async function keepConverted(model: Remote, checkpoint: Weights, bytes: number, tokenizer: Bytes, options: Options, signal: AbortSignal, kept?: Keeper) {
+// (T326: longest, the converter's Conversion.longest, kept beside it: the longest context it may be read at)
+async function keepConverted(model: Remote, checkpoint: Weights, bytes: number, tokenizer: Bytes, options: Options, longest: number, signal: AbortSignal, kept?: Keeper) {
   const view = tokenizer.getBuffer("u8");
   const vocabulary = view.data.slice();
   view.release();
-  const manifest = { id: model.id, name: model.name, repo: model.hf.repo, revision: model.hf.revision, bytes, options, saved: Date.now() };
+  const manifest = { id: model.id, name: model.name, repo: model.hf.repo, revision: model.hf.revision, bytes, options, saved: Date.now(), longest };
   // under the bits it was converted to, which the worker may have chosen (T115)
   const converted = { ...model, conversion: { ...model.conversion, dtype: options.dtype } };
   // T136: what this model was kept as before its source changed is never used again, and takes the room it needs
@@ -196,7 +199,8 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     // memory): int8 where its forward pass fits a 32-bit memory or the browser has a 64-bit one, six bits where neither
     // (T133), once the header is known
     // (T329.2.2: a table of every layer's inputs not counted where it will stay in the file kept as it comes)
-    const converting = { ...model.conversion, dtype: model.conversion?.dtype ?? ((header: Parameters<typeof automaticBits>[0], form: Parameters<typeof automaticBits>[1],
+    // (T326: at the context the load asks for, kept.ts's contextOf(): the one place it is chosen)
+    const converting = { ...model.conversion, max_seq_len: keptModule!.contextOf(model), dtype: model.conversion?.dtype ?? ((header: Parameters<typeof automaticBits>[0], form: Parameters<typeof automaticBits>[1],
       sizes: Parameters<typeof automaticBits>[2]) => automaticBits(header, form, sizes, Boolean(keep))) };
     // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels); and the
     // readers of the types a file stores its tensors in, the same float32 several times faster: whichever of them has
@@ -272,7 +276,7 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
       if (remote) {
         postMessage({ type: "status", load: id, text: `${model.name}: keeping the converted model...` } satisfies Status);
         keptAsItCame = Boolean((placed.direct || placed.hole) && keep);
-        kept = await keepConverted(model as Remote, placed, into.bytes, proxies[1], options, signal, placed.direct || placed.hole ? keep : undefined);
+        kept = await keepConverted(model as Remote, placed, into.bytes, proxies[1], options, conversion.longest, signal, placed.direct || placed.hole ? keep : undefined);
       }
     } finally {
       proxies.forEach((proxy) => proxy.destroy());

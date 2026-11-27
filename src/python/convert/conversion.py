@@ -1,9 +1,10 @@
 # The conversion as the page and the build drive it: config.json, the tokenizer and the stream of weights together.
 import json
 
-from engine.dtypes import dtype_of
+from engine.dtypes import QUANTIZED, dtype_of
 from engine.proxy import plain
 from convert.config import check_config, normalize, yarn_attention
+from convert.families import family_of
 from convert.stream import PIECE, Kept, Stream
 from convert.gguf import gguf_model, gguf_read, rope_freqs_values
 from convert.beginning import beginning_and_stops, options_of
@@ -100,6 +101,17 @@ class Conversion:
                                                    readers=readers, piece=piece, stops=beginning.stop_tokens)
         self.options = options_of(self.stream.form, self.stream.dtype, self.config, vocabulary, beginning)
         self.checkpoint = self.stream.out
+
+    @property
+    def longest(self):
+        """T326: the longest context the checkpoint may be read at with nothing of it changed but its header's seq_len
+        (the worker keeps this beside the file it keeps, src/runtime/kept.ts, and sets the header to the context a load
+        asks for): the model's own (max_position_embeddings, as the converter cuts it), where no row of the file is as
+        long as the context; the header's own where one is: a float32 or float16 file's RoPE tables, a table of
+        learned positions (a quantized file leaves the RoPE tables out, the engine makes them of the header)."""
+        if self.stream.dtype not in QUANTIZED or family_of(self.stream.config).fixed_context:
+            return self.stream.header[6]
+        return self.stream.config["max_position_embeddings"]
 
     @property
     def widened(self):
