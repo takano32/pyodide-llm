@@ -102,6 +102,48 @@ def vocabulary_of(hf):
     return hf.get("vocabulary") or None
 
 
+# T684: the keys of the vocabulary's config.json an entry of the list may set over it (hf.vocabulary.overrides: a GGUF
+# that is not quite the model of its vocabulary's config.json, PLaMo 3 NICT's base with Translate's files, T657), by
+# config.json's own spelling, and the kind of value each takes. A table, not any key: a key set over config.json
+# changes what the converter makes without a word, and one misspelt would be read by no one. None of these is one that
+# transformers 5's rope_parameters holds, which normalize() reads over the old names each time it runs (a rope_theta
+# set here would be undone there). The kinds: see OVERRIDDEN. A key added is a row here; the type the list writes it
+# by is made of this table (python_facts.py's overrides)
+OVERRIDES = {"max_position_embeddings": "count", "rope_scaling_factor": "number", "eos_token_id": "tokens"}
+
+
+def integral(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+# (a whole number above 0; a number above 0; a token's id, or a list of one id or more)
+OVERRIDDEN = {"count": lambda value: integral(value) and value > 0,
+              "number": lambda value: isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0,
+              "tokens": lambda value: (integral(value) and value >= 0) or (
+                  isinstance(value, list) and bool(value) and all(integral(one) and one >= 0 for one in value))}
+
+
+def overridden(config, overrides):
+    """config.json's text with what an entry of the list sets over it (T684), once, before anything reads it: the
+    GGUF's agreement with it (gguf_agrees()), the conversion and its options all read what this returns. The text as
+    it was where nothing is set. ValueError, by its name, for a key OVERRIDES has not or a value not of its kind."""
+    if not overrides:
+        return config
+    for key, value in overrides.items():
+        if key not in OVERRIDES:
+            raise ValueError(f"The list sets {key} over config.json, which is not one of the keys it may set "
+                             f"({', '.join(OVERRIDES)}).")
+        if not OVERRIDDEN[OVERRIDES[key]](value):
+            raise ValueError(f"The list sets {key} over config.json to {value!r}, which is not a {OVERRIDES[key]}.")
+    try:
+        original = json.loads(config)
+    except ValueError:
+        raise ValueError("config.json is not JSON.") from None
+    if not isinstance(original, dict):
+        raise ValueError("config.json is not the configuration of a model.")
+    return json.dumps({**original, **overrides})
+
+
 def place_of(hf):
     """Where config.json, the tokenizer and the template are: the original's repository, where the model names one."""
     return "vocabulary" if vocabulary_of(hf) else "weights"
@@ -332,6 +374,8 @@ def opened(hf, make):
     see Weights): by the first row of SOURCES that takes it."""
     rows = [row for row in SOURCES if row.takes(hf)]
     config = None if rows[0].alone else (yield from needed(("text", place_of(hf), hf.get("config") or "config.json")))
+    # (T684: what the list sets over the vocabulary's config.json, before the weights are held to it)
+    config = overridden(config, (vocabulary_of(hf) or {}).get("overrides"))
     reason = None
     for row in rows:
         try:
@@ -352,7 +396,8 @@ def opened(hf, make):
 def conduct(hf, **make):
     """The whole conversion of one model, as a generator of requests (see the top of the file).
     hf: {"weights": the name of the file, "config": config.json's name (or none), "tokenizer": a name or the names to
-    try (or none: TOKENIZERS), "vocabulary": {"tokenizer": ...} where the vocabulary is another repository's (T136)}.
+    try (or none: TOKENIZERS), "vocabulary": {"tokenizer": ..., "overrides": {a key of OVERRIDES: its value}, T684}
+    where the vocabulary is another repository's (T136)}.
     Names only: where the files are (a repository, a folder) is the answerer's to know.
     make: what Conversion() takes besides the files (dtype, max_seq_len, sink, quantize_rows, readers)."""
     try:

@@ -765,6 +765,40 @@ def test_the_rows_of_the_table_take_a_model_by_how_it_is_listed():
     assert [row.alone for row in SOURCES] == [True, False, False, False]
 
 
+def test_what_the_list_sets_over_the_vocabularys_config_is_a_key_of_the_table_of_its_kind():
+    """T684: overridden() leaves config.json's text as it is where nothing is set, sets what is, and refuses a key
+    OVERRIDES has not (by its name: one misspelt would be read by no one) or a value not of its kind. What it makes of
+    a real GGUF and its vocabulary's config.json: tests/test_plamo3.py."""
+    text = "{\"model_type\": \"llama\",  \"eos_token_id\": 1}"
+    for nothing in (None, {}):
+        assert conducting.overridden(text, nothing) is text
+    assert json.loads(conducting.overridden(text, {"eos_token_id": [2, 7], "max_position_embeddings": 4096})) == \
+        {"model_type": "llama", "eos_token_id": [2, 7], "max_position_embeddings": 4096}
+    assert json.loads(conducting.overridden(text, {"rope_scaling_factor": 1.5}))["rope_scaling_factor"] == 1.5
+    assert list(conducting.OVERRIDES) == ["max_position_embeddings", "rope_scaling_factor", "eos_token_id"]
+    with pytest.raises(ValueError, match="sets rope_theta over config.json, which is not one of the keys it may set"):
+        conducting.overridden(text, {"eos_token_id": 2, "rope_theta": 1e6})
+    for key, value in (("max_position_embeddings", 0), ("max_position_embeddings", 4096.0), ("max_position_embeddings", True),
+                       ("rope_scaling_factor", 0), ("rope_scaling_factor", "1"), ("eos_token_id", -1), ("eos_token_id", []),
+                       ("eos_token_id", [2, "3"]), ("eos_token_id", None)):
+        with pytest.raises(ValueError, match=f"sets {key} over config.json to .*, which is not a"):
+            conducting.overridden(text, {key: value})
+    for config in ("not JSON", "[1]"):
+        with pytest.raises(ValueError, match="config.json is not"):
+            conducting.overridden(config, {"eos_token_id": 2})
+
+
+def test_what_the_list_sets_is_read_under_the_vocabulary_alone_and_refused_before_the_weights_are_asked_for(monkeypatch):
+    """The conduct sets it over the config.json it asked for, the vocabulary's, and asks for nothing more where it
+    is refused."""
+    StandIn().into(monkeypatch)
+    hf = {**HF, "weights": "model.gguf", "vocabulary": {"repo": "owner/original", "revision": REVISION, "overrides": {"rope_theta": 1}}}
+    hub = Hub({"owner/original/config.json": "{\"model_type\": \"llama\"}"}, hf)
+    with pytest.raises(ValueError, match="rope_theta"):
+        answered(hub, conduct(hf))
+    assert hub.asked == [f"GET owner/original@{REVISION[:7]} config.json"]
+
+
 def test_a_conduct_that_is_closed_leaves_nothing_running(monkeypatch):
     StandIn().into(monkeypatch)
     for stop in range(6):  # (before the first request is answered, ..., after the stream is: "done" stands)

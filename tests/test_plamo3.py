@@ -19,6 +19,8 @@ from conftest import pack_tokenizer, tiny_vocab
 from made_up import plamo3_model
 from test_convert import converted, reader, safetensors_file
 from test_gguf import unigram
+from conduct_hub import Hub, answered
+from convert.conduct import conduct
 
 import llama2_convert
 from llama2_convert import Safetensors, check_config, checkpoint_form, checkpoint_size, normalize
@@ -456,3 +458,51 @@ def test_its_blocks_are_kept_q_k_and_v_and_the_gate_and_the_up_cut_as_bytes():
     read = lambda made: Llama(bytes(made.checkpoint), bytes(made.tokenizer), **made.options)
     ours, theirs = (np.stack([read(made).forward(token, at) for at, token in enumerate(TOKENS)]) for made in (kept, wide))
     assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
+
+
+# ---- T684: a GGUF of another model than its vocabulary's config.json says, opened by what the list sets over it
+BASE_SIZES = dict(seq_len=16)
+
+
+def overridden_conversion(overrides):
+    """(how a conduct ended, its conversion) of a PLaMo 3's GGUF without yarn (PLaMo 3 NICT's base, T657) with the
+    vocabulary and config.json of a PLaMo 3 of the same sizes with yarn (Translate's: a factor, a longer context,
+    another EOS), overrides set over that config.json by the list (None: no such key)."""
+    tensors, base = plamo3_model(factor=1, **BASE_SIZES)
+    base["eos_token_id"] = 2
+    _, translate = plamo3_model(factor=4.0, seq_len=64)
+    files = {"maker/base-GGUF/base.Q8_0.gguf": plamo3_gguf(tensors, base)[0], "owner/translate/config.json": json.dumps(translate),
+             "owner/translate/tokenizer.json": unigram(base["vocab_size"])}
+    hf = {"repo": "maker/base-GGUF", "revision": "0" * 40, "weights": "base.Q8_0.gguf",
+          "vocabulary": {"repo": "owner/translate", "revision": "1" * 40, "tokenizer": "tokenizer.json",
+                         **({"overrides": overrides} if overrides is not None else {})}}
+    try:
+        last = answered(Hub(files, hf), conduct(hf, dtype="int8", max_seq_len=4096))
+    except ValueError as error:
+        return f"failed: {error}", None
+    return last[0], last[1]
+
+
+def test_what_the_list_sets_over_the_vocabularys_config_is_what_the_gguf_is_held_to_and_converted_by():
+    """T684: Translate's config.json alone refuses the base's GGUF (its yarn: gguf_agrees()); with the three keys the
+    list sets over it (PLaMo 3 NICT's of T657: the context, no yarn, the EOS) the GGUF agrees with it, and the
+    conversion is the base's with its own config.json: the checkpoint, the options (the stops among them) and the
+    tokenizer.bin. Without the overrides, or with {} (every entry of the list today), it is refused as before."""
+    for nothing in (None, {}):
+        ended, _ = overridden_conversion(nothing)
+        assert ended.startswith("failed: ") and "yarn RoPE scaling" in ended, ended
+    tensors, base = plamo3_model(factor=1, **BASE_SIZES)
+    base["eos_token_id"] = 2
+    own = gguf_converted(plamo3_gguf(tensors, base)[0], base, "int8")
+    ended, got = overridden_conversion({"max_position_embeddings": 16, "rope_scaling_factor": 1, "eos_token_id": 2})
+    assert ended == "done", ended
+    assert got.options == own.options and 2 in got.options["stop_tokens"]
+    assert bytes(got.checkpoint) == bytes(own.checkpoint) and bytes(got.tokenizer) == bytes(own.tokenizer)
+    assert struct.unpack("<7i", bytes(got.checkpoint)[:28])[6] == 16
+    # one of them left out: the yarn stays, and the GGUF is refused by it
+    ended, _ = overridden_conversion({"max_position_embeddings": 16, "eos_token_id": 2})
+    assert "yarn RoPE scaling" in ended, ended
+    # and each of the others is what it says: the context the header has (64 without it), the stop (Translate's 1)
+    ended, got = overridden_conversion({"max_position_embeddings": 32, "rope_scaling_factor": 1})
+    assert ended == "done" and struct.unpack("<7i", bytes(got.checkpoint)[:28])[6] == 32
+    assert 2 not in got.options["stop_tokens"] and got.options != own.options

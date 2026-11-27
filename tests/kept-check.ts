@@ -254,6 +254,13 @@ const readBack = async (found) => {
   const withVocabulary = { ...model, hf: { ...model.hf, vocabulary: { repo: "c/d", revision: "4567", tokenizer: "tokenizer.model" } } };
   assert.equal(decodeURIComponent(kept.keptName(model)), "a/b@0123:int8:4096");
   assert.equal(decodeURIComponent(kept.keptName(withVocabulary)), "a/b@0123+c/d@4567:int8:4096");
+  // T684: and what an entry sets over that config.json, by its keys in order; none set is the name of before
+  const overriding = (overrides) => ({ ...withVocabulary, hf: { ...withVocabulary.hf, vocabulary: { ...withVocabulary.hf.vocabulary, overrides } } });
+  assert.equal(decodeURIComponent(kept.keptName(overriding({ rope_scaling_factor: 1, eos_token_id: [2, 3], max_position_embeddings: 4096 }))),
+    "a/b@0123+c/d@4567{eos_token_id=[2,3],max_position_embeddings=4096,rope_scaling_factor=1}:int8:4096");
+  assert.equal(kept.keptName(overriding({ eos_token_id: 2, rope_scaling_factor: 1 })), kept.keptName(overriding({ rope_scaling_factor: 1, eos_token_id: 2 })));
+  assert.notEqual(kept.keptName(overriding({ eos_token_id: 2 })), kept.keptName(overriding({ eos_token_id: 1 })));
+  assert.equal(kept.keptName(overriding({})), kept.keptName(withVocabulary));
   // T363.5: a conversion that kept a GGUF's blocks is another than the same file widened, and neither serves the other
   const blocks = { ...model, conversion: { dtype: "int8", blocks: true } };
   assert.equal(decodeURIComponent(kept.keptName(blocks)), "a/b@0123:int8:4096:blocks");

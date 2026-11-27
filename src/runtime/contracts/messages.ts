@@ -17,6 +17,7 @@
 // a key that is in the type and written nowhere, and a postMessage() without its `satisfies`, which tsc does not.
 import type { Dtype } from "./form.ts";
 import type { Options } from "./python.ts";
+import type { PYTHON_OVERRIDES } from "../built/facts/overrides.ts";
 
 // An item of src/models.ts as the page weighed it (src/page/address.ts's weighed()), or one the page made of a folder,
 // of two files, of a repository or of two URLs: as far as the worker reads it (T368.3; the list's own shape is that
@@ -37,16 +38,21 @@ export type OfTwoUrls = Named & { url: { checkpoint: string; tokenizer: string }
 // repository for the vocabulary, the config and the template, T136), or files: the Files of a folder of the visitor's
 // disk (T374.2.2). conversion: the dtype asked for (none: the worker chooses, T115) and the context it is cut to; blocks
 // (T363.5): a GGUF's K- and i-quantized tensors are kept as the file has them, llama.cpp's blocks, and not widened.
-// shares: the other ids of the list that are the same conversion (kept.ts)
+// shares: the other ids of the list that are the same conversion (kept.ts). T684, vocabulary.overrides: what an entry
+// of the list sets over that repository's config.json (an entry alone: ?hf= and folders name no vocabulary), its keys
+// those of Python's table (convert/conduct.py's OVERRIDES, which refuses any other by its name), each of its kind
 export type Hf = {
   repo?: string;
   revision?: string;
   weights?: string;
   config?: string;
   tokenizer?: string;
-  vocabulary?: { repo: string; revision: string; config?: string; tokenizer?: string };
+  vocabulary?: { repo: string; revision: string; config?: string; tokenizer?: string; overrides?: ConfigOverrides };
   files?: File[];
 };
+// (the values of the kinds of OVERRIDES: a whole number above 0, a number above 0, a token's id or ids)
+type Overridden = { count: number; number: number; tokens: number | number[] };
+export type ConfigOverrides = { -readonly [Key in keyof typeof PYTHON_OVERRIDES]?: Overridden[(typeof PYTHON_OVERRIDES)[Key]] };
 export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_seq_len?: number; blocks?: boolean }; shares?: string[]; file?: undefined; url?: undefined; translation?: undefined };
 // T648.4: a translation model of this site (Firefox Translations', `make models`), which answers a text with its
 // translation: under models/translations/<folder>/, its model's file in parts of 8 MiB (bytes: their size together),

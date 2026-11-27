@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { DEFAULT_MODEL, GROUPS, LICENSES, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, UNASKED_BYTES, asksBefore, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
 import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
+import { PYTHON_OVERRIDES } from "../src/runtime/built/facts/overrides.ts";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
 import { BUILT } from "../src/models/built.ts";
 import { HF_JAPANESE } from "../src/models/hf-japanese.ts";
@@ -24,6 +25,38 @@ for (const entry of MODELS.filter((entry) => entry.hf?.vocabulary)) {
   // T136: the repository its vocabulary and config.json come from is a source too
   assert.ok(LICENSES[entry.hf.vocabulary.repo], `${entry.id}: no license for ${entry.hf.vocabulary.repo} in LICENSES`);
 }
+// T684: what an entry sets over its vocabulary's config.json is keys of Python's table (convert/conduct.py's
+// OVERRIDES, written out as PYTHON_OVERRIDES: the type is made of it, and this holds the values to their kinds as
+// Python does, which tsc does not: a count is a whole number above 0, a number one above 0, tokens an id or ids)
+const OVERRIDDEN: Record<string, (value: unknown) => boolean> = {
+  count: (value) => Number.isInteger(value) && (value as number) > 0,
+  number: (value) => typeof value === "number" && Number.isFinite(value) && value > 0,
+  tokens: (value) => {
+    const ids: unknown[] = Array.isArray(value) ? value : [value];
+    return ids.length > 0 && ids.every((id) => Number.isInteger(id) && (id as number) >= 0);
+  },
+};
+assert.deepEqual(Object.keys(OVERRIDDEN).sort(), [...new Set(Object.values(PYTHON_OVERRIDES))].sort(), "a kind of OVERRIDES that this check does not know");
+function overridesWrong(id: string, overrides: object) {
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!Object.hasOwn(PYTHON_OVERRIDES, key)) return `${id}: it sets ${key} over its vocabulary's config.json, which convert/conduct.py's OVERRIDES has not`;
+    const kind = PYTHON_OVERRIDES[key as keyof typeof PYTHON_OVERRIDES];
+    if (!OVERRIDDEN[kind](value)) return `${id}: it sets ${key} over its vocabulary's config.json to ${JSON.stringify(value)}, which is not a ${kind}`;
+  }
+  return undefined;
+}
+for (const entry of MODELS.filter((entry) => entry.hf?.vocabulary?.overrides)) {
+  assert.equal(overridesWrong(entry.id, entry.hf.vocabulary.overrides!), undefined);
+  assert.ok(Object.keys(entry.hf.vocabulary.overrides!).length, `${entry.id}: overrides that set nothing (leave the key out)`);
+}
+// (and the check says what it should: a key Python has not, a value not of its kind, and each kind's own)
+assert.match(overridesWrong("x", { rope_theta: 1 }) ?? "", /rope_theta .* OVERRIDES has not/);
+assert.match(overridesWrong("x", { max_position_embeddings: 4096.5 }) ?? "", /not a count/);
+assert.match(overridesWrong("x", { eos_token_id: [] }) ?? "", /not a tokens/);
+assert.match(overridesWrong("x", { eos_token_id: [2, -1] }) ?? "", /not a tokens/);
+assert.match(overridesWrong("x", { rope_scaling_factor: 0 }) ?? "", /not a number/);
+assert.equal(overridesWrong("x", { max_position_embeddings: 4096, rope_scaling_factor: 1, eos_token_id: 2 }), undefined);
+assert.equal(overridesWrong("x", { eos_token_id: [1, 2] }), undefined);
 // every Hugging Face entry pins what it fetches by a full commit hash (AGENTS.md: so that nothing changes under the
 // page), the repository its vocabulary comes from as well. The review of T235 found all 54 entries so, with no check
 // that said it must be: a branch name left in an entry would pass every test and let its files change

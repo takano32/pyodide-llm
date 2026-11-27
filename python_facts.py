@@ -31,6 +31,9 @@
 #   families       (src/page/repository.ts, T309) the titles of convert/families' FAMILIES, each once, in its order: the
 #                  families a repository nobody listed may be of, which the page names in the model list's last entry
 #                  (and tests/docs-check.ts finds in README's ?hf=)
+#   overrides      (contracts/messages.ts's ConfigOverrides, T684) convert/conduct.py's OVERRIDES: the keys of the
+#                  vocabulary's config.json an entry of the list may set over it, and the kind of each (a type alone:
+#                  nothing of it is bundled)
 import base64
 import json
 import struct
@@ -73,7 +76,7 @@ def facts():
     return {"architectures": architectures(), "tokenizers": list(conduct.TOKENIZERS),
             "blocks": {name: [ggml, size] for name, (ggml, size, _) in SUPERBLOCKS.items()},
             "converter": CONVERTER, "madeup": madeup(), "quantized": list(D.QUANTIZED), "bytes": {name: bytes_of(name) for name in D.QUANTIZED},
-            "weights": WEIGHTS, "families": titles(FAMILIES.values())}
+            "weights": WEIGHTS, "families": titles(FAMILIES.values()), "overrides": conduct.OVERRIDES}
 
 
 # /benchmark/'s made-up model: Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and

@@ -13,6 +13,7 @@
 
 import { PYTHON_CONVERTER } from "./built/facts/converter.ts";
 import { PYTHON_QUANTIZED } from "./built/facts/quantized.ts";
+import type { ConfigOverrides } from "./contracts/messages.ts";
 import { cache } from "./kept/cache.ts";
 import { keeper as keeperIn, opfs, opfsOpens, openRows } from "./kept/opfs.ts";
 import type { Conversion, Kept, Manifest, Slice } from "./kept/place.ts";
@@ -21,7 +22,7 @@ export type { Conversion, Kept, Manifest, Reader } from "./kept/place.ts";
 export { openRows, opfsOpens };  // (T525: opfsOpens() for the page, src/models/memory.ts's modelBytes())
 // (T368.1, the types. What is read here of a model of the list: where its weights come from and how they are converted.)
 export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number; blocks?: boolean };
-  hf: { repo: string; revision: string; weights?: string; vocabulary?: { repo: string; revision: string } } };
+  hf: { repo: string; revision: string; weights?: string; vocabulary?: { repo: string; revision: string; overrides?: ConfigOverrides } } };
 
 // the places in the order they are looked in and kept in: OPFS first, and a name kept in both is OPFS's
 const PLACES = [opfs, cache];
@@ -34,11 +35,16 @@ const PLACES = [opfs, cache];
 // T505.3: a repository nobody listed (?hf=, the sheet: the id "local") may be opened by one file of it or by another
 // (&file=: its Q8_0.gguf, its Q4_K_M.gguf), and each is another conversion: the file's name after the revision, unless
 // it is the model.safetensors every such repository was opened by before. A model of the list is one file, and its
-// name is what it was
+// name is what it was.
+// T684: what an entry sets over its vocabulary's config.json (vocabulary.overrides) is another conversion too, as the
+// converter makes it: the keys and values after the vocabulary, in the order of the keys ({eos_token_id=2,...}), and
+// nothing where it sets none (every name of before)
 export function keptName(model: Converted) {
   const { dtype = "int8", max_seq_len = 4096, blocks = false } = model.conversion ?? {};
   const { vocabulary, weights } = model.hf;
-  const from = vocabulary ? `+${vocabulary.repo}@${vocabulary.revision}` : "";
+  const overrides = Object.entries(vocabulary?.overrides ?? {}).sort(([a], [b]) => (a < b ? -1 : 1));
+  const set = overrides.length ? `{${overrides.map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(",")}}` : "";
+  const from = vocabulary ? `+${vocabulary.repo}@${vocabulary.revision}${set}` : "";
   const file = model.id === "local" && weights && weights !== "model.safetensors" ? `/${weights}` : "";
   return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}${file}${from}:${dtype}:${max_seq_len}${blocks ? ":blocks" : ""}`);
 }

@@ -1201,6 +1201,33 @@ f"T257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} tex
   if (pattern !== "((.)\\2{3,}| {2,})") throw new Error(`T649.3: the breaks handed from JavaScript make ${pattern}`);
   console.log("T649.3: PLaMo's breaks handed from JavaScript are read");
 }
+// T684: what an entry of the list sets over its vocabulary's config.json, as the worker hands the model to the conduct
+// (conduct.ts's conductOf(): its hf through toPy()): the keys set, an array among them, and a key of no table refused
+// by its name before anything else is asked for
+{
+  const module = pyodide.pyimport("convert.conduct");
+  const hf = (overrides: object) => pyodide.toPy(JSON.parse(JSON.stringify({ repo: "a/b", revision: "0", weights: "m.gguf",
+    vocabulary: { repo: "c/d", revision: "1", overrides } })));
+  const steps = module.conduct(hf({ eos_token_id: [2, 3], max_position_embeddings: 4096 }));
+  const first = steps.next().value.toJs();
+  const second = steps.next('{"model_type": "llama", "eos_token_id": 1}').value.toJs();
+  steps.return();
+  const set = JSON.parse(module.overridden('{"eos_token_id": 1}', pyodide.toPy({ eos_token_id: [2, 3] })));
+  let refused = "";
+  const wrong = module.conduct(hf({ rope_theta: 1 }));
+  wrong.next();
+  try {
+    wrong.next('{"model_type": "llama"}');
+  } catch (error) {
+    refused = String(error);
+  }
+  module.destroy();
+  if (first.join(" ") !== "text vocabulary config.json" || second[0] !== "range" || second[2] !== "m.gguf"
+      || JSON.stringify(set) !== '{"eos_token_id":[2,3]}' || !/rope_theta over config\.json/.test(refused)) {
+    throw new Error(`T684: what the list sets over config.json, handed from JavaScript: ${first} / ${second} / ${JSON.stringify(set)} / ${refused}`);
+  }
+  console.log("T684: what the list sets over the vocabulary's config.json, handed from JavaScript, is read");
+}
 // T617: an entry's replaced (rinna's "<NL>" for a newline, an array of arrays) as the worker hands it to the engine:
 // read in, and what is written turned back, through Pyodide's proxies
 {
