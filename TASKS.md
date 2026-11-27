@@ -38,7 +38,6 @@
 - T294 [追加][WebGPU] GPT-2・NeoX を GPU だけにも置く — 未着手
 - T295 [計測][WebGPU] /benchmark/ の層の表を Qwen・GPT-2 の形でも — 未着手
 - T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 端末の数字待ち
-- T298 [運用][変換] 静けさの 30 秒に、モデルの部品の届いたバイトも数える — 反映済み
 - T305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 未着手
 - T306 [追加][変換] 古い並びの GPT-NeoX の GGUF を読む — 未着手
 - T314 [性能][CPU] 最初の位置（BOS）を丸めずに計算する（T272 から。LFM2.5 の活性値の量子化の損のほぼ全部） — 未着手
@@ -439,14 +438,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T297 [バグ][WebGPU] ベンチの検査で、隣より遠い K と V（farther）を WRONG に — 状態: 端末の数字待ち（2026-11-26、持ち主の決めの順で）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の PC の報告の後。規模 小）
 - 今は数えて出すだけ（T225 のレビュー）。PC の報告で 0 なら WRONG にする。
 - **持ち主の決め（2026-11-26、選択肢で）**: 取りかかる順の決めで、持ち主の端末の数字を待つものに入れた（全部の決めは docs/notes/owner-decisions-2026-11-26.md）。
-
-### T298 [運用][変換] 静けさの 30 秒に、モデルの部品の届いたバイトも数える — 状態: 反映済み（2026-11-27、本線に入れてデプロイした）。前の状態: 未着手（2026-11-26、持ち主の決め: 届いたバイトも数える）。前の状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。案はブランチ `t129-review-model-bytes`。規模 小）
-- モデルの部品が回線を埋めると jsDelivr の最初のバイトが 30 秒に間に合わずフォールバックする（CI の 0.15 Mbps で再現、T129 のレビュー）。代わりに jsDelivr が落ちているときの発見が遅れる。
-- **持ち主の決め（2026-11-26、選択肢で）**: 静けさの 30 秒に、モデルの部品の届いたバイトも数える（遅い回線で止まらないように）。案はブランチ `t129-review-model-bytes`（本線に入れたら消す）。順の 5。
-- **実装（2026-11-27、Opus medium）**: 案のブランチ（古い `public/worker.js` の上）の形を今の本線に書き直した。`src/runtime/worker/pyodide.ts` が数え `modelBytes` と出来事 `modelPartArrived(bytes)` を持ち、`sources.ts` の `download()` が読んだ塊ごとに言う（Cache API から来た部品も）。静けさは 1 つの `silence(seconds, count)`（回ったチックで数える: 前の `watch.quiet` の中身）で、版の問い合わせ（前は素の 30 秒のタイマー）は `modelBytes` を、各段の `watch.quiet` は `watch.arrived + modelBytes` を見る。HF からの取得（変換）は数えない。**代わりに失うもの**: jsDelivr が落ちているとき、止まりが分かるのはモデルの最後のバイトの 30 秒後（遅い回線の大きいモデルなら分の桁）。
-- 試験（`tests/worker-check.ts`、偽の時計と偽の取得）: 版の問い合わせと「the loader」が答えない間に、モデルの部品が 5 秒ごとに 1 MiB ずつ 40 秒届く → 30 秒では諦めず、最後のバイトの 30〜40 秒後に諦める。部品も何も届けない → 30 秒で諦める（版の「hang」の試験もそのまま）。壊し方: `download()` の `modelPartArrived()` を外す → 「the version was given up after 31.05 s」で落ちた。網（`unchanged.ts`）は全部同じ（予定どおり: 網は worker の取得を見ない）。手元: types・worker-check・worker-modules-check・worker-parts-check・worker-init-check・worker-fetches-check・silent-check・`npm run build && node tests/dist-check.ts`・実ブラウザ（Playwright の Chromium、stories260K、準備完了 11.0 秒）・軽い組。CI を回した。訳: 遅い回線の再現（`slow.yml`）は本番を見るので、デプロイの後に。
-- **本線とデプロイ（2026-11-27）**: コミット `f5f9c4b7`、デプロイ run 45926269293（成功）、本番の e2e（stories260K、Chromium）は通った。ブランチ `t129-review-model-bytes` はリモートとローカルから消した。
-- **遅い回線の再現は、直ったと言えない（2026-11-27）**: 本番の `slow.yml`（scenario=slow・rate=18750・fifo・buffer=262144、run 45927735017）は FAILED: 43 秒で「TypeError: Failed to fetch dynamically imported module: …/pyodide.mjs」、フォールバックなし。同じランナーで前後を並べた `tests/slow_in_browser.sh`（tests.yml run 45929503249、前は `36555c43`）: 0.15 Mbps の fifo は前も後も FAILED（前は 30 秒の静けさでフォールバックしてから再び止まる、後は 397 秒で `pyodide.asm.mjs` の import の TypeError）、0.15 Mbps の lane も前後とも同じ TypeError、0.4 Mbps の fair は前後とも ok、**stall（0.4 Mbps、lane）は前 ok → 後 FAILED**（40 秒で `pyodide.mjs` の import の TypeError、フォールバックなし。cdn.jsdelivr.net は 0 バイトで、stall の 200 kB に届いていない）。**読み（未確認）**: import の TypeError は、どの回でもサイトの部品が回線を抜けきった時刻（サイトのバイト ÷ 速さ: 0.8 MB ÷ 18.75 kB/s ≈ 43 秒など）に起きる。代理の待ち行列に留められた jsDelivr の TLS の手順を、相手が先に閉じたように見える。TypeError は `Failure("runtime")` でないのでページはフォールバックしない。前は 30 秒の静けさがこの TypeError より先に鳴ることがあり、そのときはフォールバックした。T298 の後はモデルのバイトが静けさを止めるので、TypeError がいつも先に来る。**持ち主に聞くこと**: (a) 段の中の回線の TypeError（import の失敗）も「runtime」として扱い、フォールバックに入れる（新しい番号で）、(b) T298 を戻す、(c) このまま（代理の作りの影響と読む）。
 
 ### T305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 状態: 未着手（2026-11-26、持ち主の決め: 起こす）。前の状態: 候補（2026-10-02 の洗い出しで採番。T131 で却下した種類の変更）
 - 本物は BOS もダミーの空白も置かず、ページは両方置く（`format_check.py` は 0/9）。エンジンに 2 つの選びが要る。
@@ -994,4 +985,4 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T692 [バグ][その他] Pyodide の段の中の回線の失敗（import の TypeError）もフォールバックに入れる — 状態: 未着手（2026-11-27、T298 の CI から。取りまとめ役の決め: 勧めの案。規模 小）
 - T298 の後、遅い回線（`slow.yml` の 0.15 Mbps と `tests/slow_in_browser.sh` の stall）で、Pyodide の段の中の `import(…/pyodide.mjs)` が「TypeError: Failed to fetch dynamically imported module」で落ち、「runtime」の失敗ではないのでページがフォールバックしない（T298 の項の表: stall は前 ok、後 FAILED）。読み（未確認）: 代理の待ち行列に留められた jsDelivr の TLS を相手が先に閉じた。前は 30 秒の静けさが先に鳴ってフォールバックすることがあった。
 - 取りまとめ役の決め（2026-11-27、訳: T298 を戻すと遅い回線の誤ったフォールバックが戻る。回線の失敗をフォールバックに入れるのは取り消しやすく訪問者の害が小さい）: 段の中の回線の TypeError も「runtime」の失敗と同じくフォールバックに入れる。直したら `slow_in_browser.sh` の 4 つの場合を前後で並べる。
-
+- **T298 のレビューから（2026-11-27）**: 勧めの案でよい（stall は「エラー + フォールバック」が条件なので通る見込み、未実行）。ただし `slow`（0.15）は「ready かつフォールバックなし」が条件なので直らない: 判定に「フォールバックで ready になれば ok」を足すかを決める。0.15 fifo の TypeError は `loadPyodide()` の中（`pyodide.asm.mjs`）でこちらから取り直せない。取り直しの試作（`pyodide.mjs?retry=1` で 1 回: 失敗した import は module map に残るので URL を変える）は stall で 2/2 ok だったが取り直しの枝は踏まれていない: 実装で warn の行を見て決める。stall は同じコミットでも割れるので複数回の割合で見る。
