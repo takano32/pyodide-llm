@@ -919,6 +919,8 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     vocabulary from the original, so a difference in the GGUF's is shown and not counted. The summary (worst
     error, mismatches, the rope_freqs difference, the vocabulary differences) is printed last as one JSON line."""
     from llama2_convert import Safetensors, Shards, quantize, yarn
+    from convert.config import yarn_attention
+    from convert.gguf import attn_factor_taken
 
     version, metadata, infos, data, base = read_gguf(gguf_path)
     raw_config = json.loads((directory / "config.json").read_text())
@@ -971,10 +973,19 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                  "yarn_truncate": "truncate"}
         ours = {name: metadata[f"{arch}.rope.scaling.{key}"] for key, name in names.items()
                 if metadata.get(f"{arch}.rope.scaling.{key}") is not None} if said else None
+        taken = ""
+        if ours is not None:
+            # T683: as the converter reads it (convert/gguf.py's attn_factor_taken()): a GGUF that says no attn_factor
+            # takes the original's (DeepSeek-R1-0528-Qwen3-8B's), and an attn_factor is the attention_factor
+            # normalize() makes of it (T259), which is what the original's normalized config.json says
+            filled = attn_factor_taken({"rope_scaling": {"rope_type": "yarn", **ours}}, raw_config)["rope_scaling"]
+            if "attn_factor" in filled and "attn_factor" not in ours:
+                taken = " (attn_factor not in the GGUF: the original's)"
+            ours = yarn(yarn_attention({"rope_scaling": filled}))
         same = ours is not None and theirs is not None and set(ours) == set(theirs) \
             and all(math.isclose(float(ours[name]), float(theirs[name]), rel_tol=1e-6) for name in ours)
         mismatched += not same
-        print(f"| {arch}.rope.scaling (yarn) | {ours} | rope_scaling = {theirs}{'' if same else ' **differs**'} |")
+        print(f"| {arch}.rope.scaling (yarn) | {ours}{taken} | rope_scaling = {theirs}{'' if same else ' **differs**'} |")
     rows = infos["token_embd.weight"]["shape"][0] if "token_embd.weight" in infos else None
     # a GPT-2 always shares its classifier: llama.cpp writes a copy of the embedding as output.weight, which is held
     # to the original's embedding below (T136's third stage)

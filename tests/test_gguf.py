@@ -641,7 +641,8 @@ def test_a_gguf_reads_its_attn_factor_as_llama_cpp_does():
     """T259: llama.cpp multiplies the magnitude of a yarn (0.1 ln(factor) + 1) by a GGUF's rope.scaling.attn_factor
     (rope_attn_factor, llama-context.cpp), as vLLM and SGLang do a config.json's attn_factor: a GGUF alone that says it
     makes the attention_factor of their product (normalize()), and the original's config.json that says the same
-    attn_factor agrees with it. One that does not is another model (the GGUFs of DeepSeek-R1-0528-Qwen3-8B say none)."""
+    attn_factor agrees with it. An original that says none is another model (T683: a GGUF that says none takes the
+    original's, below)."""
     config, published, file, _ = bonsai_gguf(also=[("qwen3.rope.scaling.attn_factor", 6, 0.5)])
     magnitude = 0.5 * (0.1 * math.log(YARN["factor"]) + 1)
     scaling = fed(file, "int8").options["rope_scaling"]
@@ -655,6 +656,23 @@ def test_a_gguf_reads_its_attn_factor_as_llama_cpp_does():
 
 def file_without_it():
     return bonsai_gguf()[2]
+
+
+def test_a_gguf_that_says_no_attn_factor_takes_the_originals():
+    """T683: llama.cpp's GGUFs of DeepSeek-R1-0528-Qwen3-8B say no attn_factor (its converter writes a config.json's
+    as yarn_attn_factor, or not at all), and the original's config.json says 0.878: the GGUF has said no other one, so
+    it goes with the original's, as config.json or transformers 5's rope_parameters spell it. A GGUF that says one of
+    its own is held to the original's as before, and so is the rest of the yarn."""
+    _, published, file, _ = bonsai_gguf()
+    llama2_convert.gguf_weights(file, json.dumps({**published, "rope_scaling": {**YARN, "attn_factor": 0.5}}))
+    lifted = {key: value for key, value in published.items() if key not in ("rope_scaling", "rope_theta")}
+    llama2_convert.gguf_weights(file, json.dumps({**lifted, "rope_parameters": {**YARN, "attn_factor": 0.5,
+                                                                               "rope_theta": published["rope_theta"]}}))
+    with pytest.raises(ValueError, match="yarn RoPE scaling"):
+        llama2_convert.gguf_weights(file, json.dumps({**published, "rope_scaling": {**YARN, "factor": 8.0, "attn_factor": 0.5}}))
+    said = bonsai_gguf(also=[("qwen3.rope.scaling.attn_factor", 6, 0.25)])[2]
+    with pytest.raises(ValueError, match="yarn RoPE scaling"):
+        llama2_convert.gguf_weights(said, json.dumps({**published, "rope_scaling": {**YARN, "attn_factor": 0.5}}))
 
 
 def test_a_gguf_reads_yarns_bounds_by_transformers_names():

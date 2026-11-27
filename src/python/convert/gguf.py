@@ -290,8 +290,27 @@ def gguf_weights(head, config):
         raise ValueError("config.json is not JSON.") from None
     if not isinstance(original, dict):
         raise ValueError("config.json is not the configuration of a model.")
-    gguf_agrees(normalize(own), normalize(original))
+    gguf_agrees(normalize(attn_factor_taken(own, original)), normalize(original))
     return json.dumps(header), base
+
+
+def attn_factor_taken(own, original):
+    """T683: the config a GGUF's reading gave (own: gguf_model()'s) with the attn_factor of the original's yarn where
+    the GGUF's yarn says none. llama.cpp's GGUFs of DeepSeek-R1-0528-Qwen3-8B (unsloth's, lmstudio-community's,
+    bartowski's, cecloud33's Q8_0) say no rope.scaling.attn_factor: its converter writes a config.json's attn_factor as
+    yarn_attn_factor, or not at all (T259), so a GGUF that says none has not said another one, and the conversion reads
+    the original's config.json anyway. One that says its own is held to the original's as before (gguf_agrees(): the
+    attention_factor normalize() makes of either), and so is every other number of the yarn. The original's as
+    config.json or transformers 5's rope_parameters spell it (normalize() reads both)."""
+    ours = own.get("rope_scaling")
+    if not isinstance(ours, dict) or ours.get("rope_type", ours.get("type")) != "yarn" or "attn_factor" in ours:
+        return own
+    for key in ("rope_scaling", "rope_parameters"):
+        theirs = original.get(key)
+        if isinstance(theirs, dict) and theirs.get("rope_type", theirs.get("type")) == "yarn" \
+                and theirs.get("attn_factor") is not None:
+            return {**own, "rope_scaling": {**ours, "attn_factor": theirs["attn_factor"]}}
+    return own
 
 
 def gguf_agrees(own, config):
