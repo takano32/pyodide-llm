@@ -384,7 +384,7 @@ export function gpuPacking(kind: string): GpuPacking {
 // (REASONS.quiet), is why the model goes on the CPU, and what waits for it throws that reason (lost()) at once: the
 // load gives up there, before the rest of the model is fetched or read, and is loaded again on the CPU (worker/alone.ts's
 // gpuOnlyGaveUp()). Before, a worker gone let the first load run to its end, and one that said nothing failed the load
-const FLOW_BYTES = 64 * 2 ** 20, FLOW_STALL_MS = 60000;
+const FLOW_BYTES = 64 * 2 ** 20, FLOW_STALL_MS = 60000, FLOW_FROZEN_MS = 10000;
 /** T156: the weights of a model on the GPU alone. worker: the GPU's worker (gpu.ts, told to open with gpuOnlyPlan()),
  * tensors: llama2_numpy.external_tensors(), size: the checkpoint's bytes. Returns { holes, place, stored, flow,
  * write(offset, bytes), room(), drained() }: write() puts the bytes outside the holes into memory at base +
@@ -408,11 +408,15 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker, apart = nu
   const wait = async (ahead: bigint) => {
     let seen = Atomics.load(taken, 0), moved = performance.now();
     while (!lost && sent - seen > ahead) {
+      const asked = performance.now();
       if (Atomics.waitAsync) await Atomics.waitAsync(taken, 0, seen, 1000).value;
       else await new Promise((resolve) => setTimeout(resolve, 10));
-      const now = Atomics.load(taken, 0);
-      if (now !== seen) [seen, moved] = [now, performance.now()];
-      else if (performance.now() - moved > FLOW_STALL_MS) gone(REASONS.quiet(FLOW_STALL_MS));
+      const now = Atomics.load(taken, 0), at = performance.now();
+      if (now !== seen) [seen, moved] = [now, at];
+      // (T491's review: a wait that took far longer than the second it asked for is the page frozen (a tab in the
+      // background, a sleeping phone), with the GPU's worker: no word of the worker's silence, and the load goes on)
+      else if (at - asked > FLOW_FROZEN_MS) moved = at;
+      else if (at - moved > FLOW_STALL_MS) gone(REASONS.quiet(FLOW_STALL_MS));
     }
     if (lost) throw new Error(lost);
   };

@@ -534,12 +534,13 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   {
     const real = { waitAsync: Atomics.waitAsync, now: performance.now };
     // (held: a wait ends only where it is woken, as one of a second does within a turn of this check)
-    let clock = 0, waits = 0, held = false, wake = () => {};
+    let clock = 0, waits = 0, held = false, wake = () => {}, jump = 0;
     performance.now = () => clock;
     Atomics.waitAsync = (array, index, value, ms) => ({ async: true, value: new Promise((resolve) => {
       waits += 1;
       wake = () => resolve("ok");
-      if (!held) setImmediate(() => { clock += ms; resolve("timed-out"); });
+      // (jump: the next wait takes this long, a frozen page's)
+      if (!held) setImmediate(() => { clock += jump || ms; jump = 0; resolve("timed-out"); });
     }) });
     const realNotify = Atomics.notify;
     Atomics.notify = (...args) => { wake(); return realNotify(...args); };
@@ -562,6 +563,14 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
       assert.equal(stalled.lost(), "the GPU said nothing for 60 s", "T491: a worker that took nothing for 60 s is not why the model goes on the CPU");
       clock += 120000;
       await assert.rejects(stalled.room(), /^Error: the GPU said nothing for 60 s$/, "T491: the next wait waited again for a worker given up");
+      // T491's review: a wait that took 90 s where it asked for 1 is the page frozen, not the worker silent: the 60 s of
+      // nothing are counted from after it
+      [clock, waits] = [0, 0];
+      const frozen = quiet();
+      frozen.write(inWq, checkpoint.subarray(inWq, inWq + 1000));
+      jump = 90000;
+      await assert.rejects(frozen.drained(), /^Error: the GPU said nothing for 60 s$/);
+      assert.ok(clock >= 90000 + 60000 && clock <= 90000 + 62000, `a page frozen for 90 s was counted in the worker's 60 s of nothing: given up at ${clock / 1000} s`);
       // a worker gone while the weights wait for it: at once, with why
       [clock, waits] = [0, 0];
       const lost = quiet();
