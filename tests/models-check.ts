@@ -6,6 +6,7 @@ import fs from "node:fs";
 import { DEFAULT_MODEL, GROUPS, LICENSES, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, UNASKED_BYTES, asksBefore, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
 import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
 import { PYTHON_OVERRIDES } from "../src/runtime/built/facts/overrides.ts";
+import { keptNames } from "../src/runtime/kept.ts";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
 import { BUILT } from "../src/models/built.ts";
 import { HF_JAPANESE } from "../src/models/hf-japanese.ts";
@@ -57,6 +58,15 @@ assert.match(overridesWrong("x", { eos_token_id: [2, -1] }) ?? "", /not a tokens
 assert.match(overridesWrong("x", { rope_scaling_factor: 0 }) ?? "", /not a number/);
 assert.equal(overridesWrong("x", { max_position_embeddings: 4096, rope_scaling_factor: 1, eos_token_id: 2 }), undefined);
 assert.equal(overridesWrong("x", { eos_token_id: [1, 2] }), undefined);
+// T684 review: a kept name is the name of a directory of the origin private file system (and a part of a Cache API key),
+// and what an entry sets over its vocabulary's config.json is in it as the keys are spelt ({eos_token_id=2,...}: about 80
+// characters of what percent-encoding makes of it): T657's 8B base would be about 250. Whether any browser maps such a
+// name to a file name of its disk is unmeasured; 255 is the NAME_MAX of the common file systems, and the longest name
+// of the list had 228 before an entry set anything. A name past it is a thing to measure in a Safari and a Chrome, and
+// to shorten (the keys of the overrides by a hash, say) before it is kept, not after a 9 GB conversion is lost
+for (const entry of MODELS.filter((entry) => entry.hf)) {
+  for (const name of keptNames(entry)) assert.ok(name.length <= 255, `${entry.id}: its kept name is ${name.length} characters (${name}): see T684's review`);
+}
 // every Hugging Face entry pins what it fetches by a full commit hash (AGENTS.md: so that nothing changes under the
 // page), the repository its vocabulary comes from as well. The review of T235 found all 54 entries so, with no check
 // that said it must be: a branch name left in an entry would pass every test and let its files change
