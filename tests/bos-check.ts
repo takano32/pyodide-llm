@@ -91,6 +91,14 @@ export function unpaired(models: Entry[], first = FIRST): { said: string[]; used
   for (const entry of models) {
     const bos = entry.options?.bos ?? null;
     const template = entry.template;
+    // (T669: an entry whose request the engine puts together, PFML3's, has no template: the request begins after its
+    // bos, which is its vocabulary's row of FIRST)
+    if (entry.pfml) {
+      const row = first.find((row) => row.bos === bos && row.repos.includes(vocabularyOf(entry)!));
+      if (row) used.add(row);
+      else said.push(`${entry.id}: PFML3's request begins after its bos, and ${bos} is no row of FIRST for ${vocabularyOf(entry)}`);
+      continue;
+    }
     if (!template) {
       // (a)
       if (bos !== null && ![JAPANESE, STORY].includes(entry.placeholder ?? "")) {
@@ -152,6 +160,10 @@ const chats = MODELS.filter((entry) => entry.options?.bos !== undefined && entry
   ![JAPANESE, STORY].includes(entry.placeholder ?? ""));
 for (const entry of chats) {
   assert.ok(unpaired([{ ...entry, template: undefined }]).said.length > 0, `${entry.id} with its template taken off is not said`);
+}
+// (T669: and an entry of PFML3's request without its bos)
+for (const entry of MODELS.filter((entry) => entry.pfml)) {
+  assert.ok(unpaired([{ ...entry, options: { ...entry.options, bos: undefined } }]).said.length > 0, `${entry.id} with its bos taken off is not said`);
 }
 console.log(`bos-check: ${checked.length} formats that begin with a mark or a role, ${FIRST.length} rows; ` +
   `${broken} entries said with their bos broken, ${chats.length} with their template taken off`);
