@@ -307,6 +307,10 @@ const bonsai = (repo: string, name: string, quantization: string, dtype: Dtype, 
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
 export const hf = (repo: string, revision: string, tokenizer = "tokenizer.json"): Remote["hf"] => ({ repo, revision, weights: "model.safetensors", config: "config.json", tokenizer });
+// T671: the quantizations of PFN's GGUFs the list takes, and what the note says of their weights. Its Q3_K_M and Q4_0
+// are not (TASKS.md's T671): their Q3_K, Q5_K, Q4_0 and Q4_1 rows are widened, so either is held larger than the Q4_K_M
+const PLAMO_BITS = { Q4_K_M: "4-bit", Q2_K: "2-bit" } as const;
+type PlamoQuantization = keyof typeof PLAMO_BITS;
 /** T649.3: PFN's PLaMo 3 Translate in one of its sizes (T669, the owner's: once, its request put together by the engine
  * in the language the page's field says, pfml; T649.3 had two, English into Japanese and Japanese into English; the
  * owner's T649 (1): its maker PFN in front and PLaMo in the name, as the PLaMo Community License asks of a model built
@@ -321,13 +325,21 @@ export const hf = (repo: string, revision: string, tokenizer = "tokenizer.json")
  * is the request of its chat template, the BOS (1) in front, which engine/pfml.py's pfml_tokens() puts together
  * (T669: the text read literally, the source's language the model's to tell); greedy, as every example of its card
  * translates (do_sample=False, temperature 0). download: the GGUF's bytes; loaded: the checkpoint's
- * (tests/quant_sizes.py). Its prompt is English, which the page's default (Japanese ⇄ English) translates into Japanese */
-export function plamo3Translate(size: string, original: string, gguf: string, download: number, loaded: number): Entry {
-  const lower = size.toLowerCase(), repo = `pfnet/plamo-3-translate-${lower}`, id = `hf-plamo-3-translate-${lower}`;
+ * (tests/quant_sizes.py). Its prompt is English, which the page's default (Japanese ⇄ English) translates into Japanese.
+ * T671 (the owner's, 2026-11-26: the smaller quantizations too): another of PFN's GGUFs of the same revision, an entry
+ * of its own (as Shisa V2.1c LFM2 350M's 4-bit: its name ends in "(2-bit)" and its id in "-q2", its note says the bits;
+ * Q4_K_M's are as they were). Q2_K's
+ * keeps the embedding, wq, wk, wv (Q4_K), w1 and w3 (Q2_K) as they are and widens wo and w2 (Q3_K) and the classifier
+ * (Q6_K) to int8 */
+export function plamo3Translate(size: string, original: string, gguf: string, download: number, loaded: number,
+  quantization: PlamoQuantization = "Q4_K_M"): Entry {
+  const lower = size.toLowerCase(), repo = `pfnet/plamo-3-translate-${lower}`;
+  const bits = PLAMO_BITS[quantization], own = quantization === "Q4_K_M" ? "" : bits;
   const said = (bytes: number) => bytes < 1e9 ? `${Math.round(bytes / 1e6)} MB` : `${(bytes / 1e9).toFixed(1)} GB`;
-  const note = `日本語, English, translation only, 4-bit weights, fetches ${said(download)} (GGUF), kept mostly as it is: ${said(loaded)}, Built with PLaMo`;
-  return { group: "hf", id, name: `PFN PLaMo 3 Translate ${size}`, note,
-    ...ggufOf(`${repo}-GGUF`, gguf, `plamo-3-translate-${lower}-Q4_K_M.gguf`, repo, original, "tokenizer.jsonl"), download,
+  const id = `hf-plamo-3-translate-${lower}${own && `-q${parseInt(own)}`}`;
+  const note = `日本語, English, translation only, ${bits} weights, fetches ${said(download)} (GGUF), kept mostly as it is: ${said(loaded)}, Built with PLaMo`;
+  return { group: "hf", id, name: `PFN PLaMo 3 Translate ${size}${own && ` (${own})`}`, note,
+    ...ggufOf(`${repo}-GGUF`, gguf, `plamo-3-translate-${lower}-${quantization}.gguf`, repo, original, "tokenizer.jsonl"), download,
     conversion: { dtype: "int8", blocks: true }, loaded, rebuilt: true, japanese: true, options: plamo, pfml: true, generation: greedy,
     prompt: "The weather is nice today. Let's go for a walk.",
     placeholder: "Type text to translate (e.g. The weather is nice today. / 今日はいい天気ですね。)" };

@@ -168,8 +168,10 @@ WIDEN = {Q4_0: (32, 18, widen_q4_0), Q4_1: (32, 20, widen_q4_1), Q5_0: (32, 22, 
 # T610.5: the other super-blocks of 256 (the i-quants, Q2_K ...) by the converter's readers, which
 # tests/fork_readers.py holds to the C they were taken from: a reader that read them wrong would put a tensor in the
 # order of 1 from the original, so they measure a GGUF the page keeps in its blocks (llm-jp-3.1 13B's IQ4_XS)
-from convert.superblocks import SUPERBLOCKS  # noqa: E402
-for _name, (_ggml, _block, _read) in SUPERBLOCKS.items():
+# T671: and the K types the converter reads and widens (Q3_K, Q5_K: a Q2_K or Q3_K_M GGUF of PFN's PLaMo 3 Translate
+# holds some of its matrices in them), by its readers too (Q4_K and Q6_K stay this file's own)
+from convert.superblocks import SUPERBLOCKS, WIDENED  # noqa: E402
+for _name, (_ggml, _block, _read) in (*SUPERBLOCKS.items(), *WIDENED.items()):
     if _ggml not in WIDEN:
         WIDEN[_ggml], BYTES[_ggml], TYPE_NAMES[_ggml] = (256, _block, _read), _block / 256, _name
 

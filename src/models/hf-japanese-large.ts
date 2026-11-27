@@ -343,4 +343,7 @@ export const HF_JAPANESE_LARGE: Entry[] = [
   plamo3Translate("0.8B", "cc8e88169807d5a272e8ff06db12eb0129b67f81", "dbeb0856cb0b004b484f190bb71dd65876297013", 573123200, 710892588),
   plamo3Translate("2B", "355637cc04db67195ba87a97da85eaf1d52a22e8", "232fbd7916519edecddfdae0beae7e76fe70453f", 1807199392, 2270399532),
   plamo3Translate("8B", "681bd55cf01f5412aab8881e6a4a276c948fabc1", "2234f168757f570714b333049c9d018161ec5277", 5280442080, 6634161196),
+  // T671: the Q2_K of the two smaller sizes, for a phone (the same revisions; download and loaded as above)
+  plamo3Translate("0.8B", "cc8e88169807d5a272e8ff06db12eb0129b67f81", "dbeb0856cb0b004b484f190bb71dd65876297013", 410135168, 597867564, "Q2_K"),
+  plamo3Translate("2B", "355637cc04db67195ba87a97da85eaf1d52a22e8", "232fbd7916519edecddfdae0beae7e76fe70453f", 1225608352, 1875586092, "Q2_K"),
 ];
