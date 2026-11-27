@@ -3,10 +3,12 @@
 
 import type { Dtype } from "../runtime/contracts/form.ts";
 
-// T643.18: the engine's options an entry writes, closed to the six keys the list writes (a key spelt wrong, stop_token,
+// T643.18: the engine's options an entry writes, closed to the keys the list writes (a key spelt wrong, stop_token,
 // is an error of tsc's; tests/models-check.ts's KEYS is the second copy): bos, the token every text begins with;
 // dtype, a site model's file's; rope_scaling, {} alone (PLAIN_ROPE: no scaling); specials; stop_tokens; tokenizer_kind; and
-// replaced (T617) and stripped, {} alone (T258)
+// replaced (T617). T258's stripped ({} alone: no special takes in the whitespace beside it) is the converter's to say
+// since T689, and no entry writes it: one that must hold sent IDs to a tokenizer that does not strip adds it back here
+// and to KEYS
 export type ListOptions = {
   bos?: number;
   dtype?: Dtype;
@@ -17,9 +19,6 @@ export type ListOptions = {
   // T617: strings the model reads in place of others, written into what goes in and turned back in what comes out
   // (the engine's Tokenizer: rinna's "<NL>" for a newline)
   replaced?: [string, string][];
-  // T258: {} alone: no special takes in the whitespace beside it, whatever the converter read of the tokenizer.json's
-  // lstrip and rstrip (for an entry whose sent IDs are held to the page's tokenizer before it read them: none since T689)
-  stripped?: Record<string, never>;
 };
 export const JAPANESE = "文章の書き出しを入力（例: 富士山は、）";
 export const STORY = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
