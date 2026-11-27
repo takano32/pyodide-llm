@@ -9,7 +9,8 @@
 // too, or make kernels does not see it change.
 //   kernel/matmul.ts       the matrix products (float32, int8, 6 bits, ternary, binary) and what they take beside the
 //                          weights: the corrections' sums, interleave, the outliers' columns; T648.3: the int8
-//                          affine of Firefox Translations' models (affine_q8)
+//                          affine of Firefox Translations' models (affine_q8); T314: int8 weights by float32
+//                          activations as they are, the first position's (matmul_q8f)
 //   kernel/quantize.ts     numbers from one form to another: the stored forms widened to float32, float32
 //                          quantized to int8, six bits, ternary and binary (the converter's, and quantize_x every token)
 //   kernel/attention.ts    rope and attention over a cache of float32 or float16
@@ -41,3 +42,4 @@ export { matmul_b1 } from "./kernel/matmul";
 export { binary_x } from "./kernel/quantize";
 export { affine_q8 } from "./kernel/matmul";
 export { reglu2 } from "./kernel/activations";
+export { matmul_q8f } from "./kernel/matmul";

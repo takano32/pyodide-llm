@@ -103,6 +103,38 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
   return dot32(v128.load(row + o), v128.load(xq + o), v128.load(row + o + 16), v128.load(xq + o + 16));
 }
 
+// T314: int8 weights (wq) with one float32 scale per group (ws), as matmul_q8's, by float32 activations as they are (x:
+// n floats, none rounded). The first position's matrices take theirs so (forward/engine.ts): every position after it
+// reads its keys, values and state, and a rounding of its activations to 8 bits moves them all alike (T272: LFM2.5
+// 350M's perplexity +8.6% of its 8-bit activations, nearly all of it the first position's).
+// A group's 16 weights at v widened to float32 (exactly: to int16, to int32, to float32) and each multiplied by its
+// activation at a; their four products of four added (p0 + p1) + (p2 + p3), a lane each
+// @ts-ignore: decorator
+@inline function products16(v: v128, a: usize): v128 {
+  const low = i16x8.extend_low_i8x16_s(v), high = i16x8.extend_high_i8x16_s(v);
+  const p0 = f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_low_i16x8_s(low)), v128.load(a));
+  const p1 = f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_high_i16x8_s(low)), v128.load(a, 16));
+  const p2 = f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_low_i16x8_s(high)), v128.load(a, 32));
+  const p3 = f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_high_i16x8_s(high)), v128.load(a, 48));
+  return f32x4.add(f32x4.add(p0, p1), f32x4.add(p2, p3));
+}
+// A group's two halves of 16 added, times the group's scale into the row's accumulator, group by group, and its four
+// lanes added in order at the end (tests/int8-check.ts's q8f() adds alike)
+export function matmul_q8f(xout: usize, x: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32): void {
+  const ng = n / GS;
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>n;
+    const srow = ws + ((<usize>i * <usize>ng) << 2);
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < ng; g++) {
+      const o = <usize>(g * GS), a = x + (o << 2);
+      const sum = f32x4.add(products16(v128.load(row + o), a), products16(v128.load(row + o + 16), a + 64));
+      facc = f32x4.add(facc, f32x4.mul(sum, f32x4.splat(load<f32>(srow + (<usize>g << 2)))));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+
 // ---- T230, T231: ternary weights (ternary.ts)
 // The int8 activations of quantize_x (no bias) as the ternary kernels read them, in place: every block of 64 in four
 // planes, byte 16 p + c of the block activation 4 c + p (plane p meets the codes of weights 4 c + p), and after the

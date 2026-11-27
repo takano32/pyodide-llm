@@ -17,6 +17,7 @@
 // argument low or high in every combination, the result held to the all-low one. The V8 of Node 24 on arm64 fails this
 // (it reads v128.load32_splat above 4 GiB at the low 32 bits). An engine without such a memory is skipped (Playwright's
 // WebKit 27.2 has one on Linux: T502).
+// T314: and matmul_q8f, the int8 weights by float32 activations as they are, held to its arithmetic to the bit.
 // T363.4: and the kernels of llama.cpp's blocks (kernels/blocks.ts, blocks_relaxed.ts: Underdog Saluki's weights), every
 // type of the ten through every kernel, each held after every batch to tests/blocks-model.ts, to the bit (the model's
 // text goes to the page; the codebooks are made up there, which the kernels do not mind: blocks-check.ts is where the
@@ -844,6 +845,25 @@ async function inPage({ plain, relaxed }) {
       k.matmul_q8(o, q, s, m, ms, n, 0, rows);
       return close((i) => F[o / 4 + i], exact(0));
     });
+    // T314: matmul_q8f, the same matrix by the activations as they are (the first position's), to the bit: each product a
+    // float32, (p0 + p1) + (p2 + p3) a lane of each half of a group, the halves added, times the group's scale into the
+    // lane, the lanes added in order (tests/int8-check.ts's q8f())
+    const unrounded = Array.from({ length: rows }, (_, i) => {
+      const lanes = [0, 0, 0, 0];
+      for (let g = 0; g < ng; g++) {
+        const p = (j) => f(I[m + i * n + g * 32 + j] * v[g * 32 + j]);
+        for (let lane = 0; lane < 4; lane++) {
+          const half = (h) => f(f(p(h + lane) + p(h + 4 + lane)) + f(p(h + 8 + lane) + p(h + 12 + lane)));
+          lanes[lane] = f(lanes[lane] + f(f(half(0) + half(16)) * F[ms / 4 + i * ng + g]));
+        }
+      }
+      return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
+    });
+    await check("matmul_q8f", () => k.matmul_q8f(o, x, m, ms, n, 0, rows), () => {
+      F.fill(-7, o / 4, o / 4 + rows);
+      k.matmul_q8f(o, x, m, ms, n, 0, rows);
+      return against((i) => F[o / 4 + i], unrounded);
+    });
     if (r) {
       k.quantize_x(q, s, x, n, 64);
       for (let g = 0; g < rows * ng; g++) {  // -64 times the sum of each group's weights
@@ -984,6 +1004,13 @@ async function inPageHigh({ plain, relaxed, addresses }) {
     { name: "rotate", args: ["out", "x", "signs"], want: null, setup: turn, call: (p) => k.rotate(p.out, p.x, p.signs, 128, 128) },
     { name: "unrotate", args: ["out", "x", "signs"], want: null, setup: turn, call: (p) => k.unrotate(p.out, p.x, p.signs, 128, 128) },
     { name: "matmul_q8", args: ["out", "xq", "xs", "w", "ws"], want: 768, setup: (p) => int8(p, 1, 0), call: (p) => k.matmul_q8(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1) },
+    // (T314: 128 weights of 2 by activations of 3 as they are, float32)
+    { name: "matmul_q8f", args: ["out", "x", "w", "ws"], want: 768,
+      setup: (p) => {
+        for (let i = 0; i < 128; i++) { I[p.w + i] = 2; F[p.x / 4 + i] = 3; }
+        for (let g = 0; g < 4; g++) F[p.ws / 4 + g] = 1;
+      },
+      call: (p) => k.matmul_q8f(p.out, p.x, p.w, p.ws, 128, 0, 1) },
     { name: "matmul_q6", args: ["out", "xq", "xs", "w", "ws"], want: null,
       setup: (p) => {  // 4 groups of 32 values of 2, packed as pack6 does (the low nibbles in bytes 0..15, the top bits 0 in 16..23)
         U.fill(0, p.w, p.w + 96);

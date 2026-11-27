@@ -1,5 +1,6 @@
 // int8-check.ts (T644.1): the int8 and int6 kernels the default model takes at every token (relaxed/int8.ts's and relaxed/six.ts's
-// matmul_q8r, matmul_q8r_tile and matmul_q6r; kernel/matmul.ts's matmul_q8, matmul_q6, int8_sums and six_sums; and
+// matmul_q8r, matmul_q8r_tile and matmul_q6r; kernel/matmul.ts's matmul_q8, matmul_q6, int8_sums and six_sums, and
+// T314's matmul_q8f, which the first position's matrices take; and
 // kernel/quantize.ts's quantize_x, whose bytes they read) against the same arithmetic written out here, in the same
 // order, value by value: int8's numbers change with the order of the adds, so the model adds as the kernels do. Node and
 // the compiled kernels alone, a second or so: the light suite runs it. On a 32-bit memory and on a 64-bit one, below and
@@ -17,6 +18,8 @@
 //   matmul_q8: dot32's lane k holds products 2k, 2k + 1, 2k + 8, 2k + 9 of each half of a group; each lane times the
 //     product of the scales into its own float32 lane, group by group, and the four lanes added in order at the end.
 //   matmul_q6, matmul_q6r: those two on the int6 weights widened (llama2_numpy.pack6's bytes, written here).
+//   matmul_q8f (T314): the int8 weights by float32 activations as they are, each product a float32 one, added a lane of
+//     four at a time as kernel/matmul.ts's products16() adds them, the group's sum times its scale into its lane.
 //   matmul_q8r_tile: every (row, token) is matmul_q8r's number to the bit (relaxed/int8.ts 60-65), for 1 to 9 tokens,
 //     ranges of rows that begin and end off the fours and fewer than four rows, rows of 1 to 9 groups (ng % 4 of 0 to 3)
 //     and rows of 2560 and of 2592 bytes (the read ahead of a quad of rows up to 10 KB, and none past it).
@@ -74,6 +77,20 @@ function q8r(w, q, ws, xs, ng) {
   let sum = f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
   for (; g < ng; g++) sum = f(sum + f(exact(g) * f(ws[g] * xs[g])));
   return sum;
+}
+// matmul_q8f for one row (T314): x the activations as they are (float32). Lane k of a half of 16 of a group adds the
+// products of its weights k, 4 + k, 8 + k and 12 + k as (p0 + p1) + (p2 + p3), the group's two halves are added, times
+// the group's scale into the lane, and the four lanes added in order at the end
+function q8f(w, x, ws, ng) {
+  const lanes = [0, 0, 0, 0];
+  for (let g = 0; g < ng; g++) {
+    const p = (j) => f(w[g * 32 + j] * x[g * 32 + j]);
+    for (let k = 0; k < 4; k++) {
+      const half = (h) => f(f(p(h + k) + p(h + 4 + k)) + f(p(h + 8 + k) + p(h + 12 + k)));
+      lanes[k] = f(lanes[k] + f(f(half(0) + half(16)) * ws[g]));
+    }
+  }
+  return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
 }
 // matmul_q8 for one row: q the activations (-127..127)
 function q8(w, q, ws, xs, ng) {
@@ -227,6 +244,27 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
         }
       }
     }
+
+    // ---- T314: matmul_q8f, the int8 weights by float32 activations as they are: moderate random ones, the same large one
+    // everywhere, signs alternating over sixty powers of two, zeros (and -0) among subnormals and ones, and the sizes of
+    // the scales (a zero and subnormals among them)
+    for (let t = 0; t < 5; t++) {
+      for (let j = 0; j < n; j++) {
+        F[xf / 4 + j] = t === 0 ? f(((next() % 2001) - 1000) * 1e-3 * (1 + (j % 5))) : t === 1 ? f(3071.75)
+          : t === 2 ? f((j & 1 ? 1 : -1) * 2 ** ((j % 60) - 30)) : t === 3 ? [0, -0, 2 ** -140, f(-1.1), 1][j % 5] : f(((next() % 3) - 1) * scale(j) * 1e4);
+      }
+      const x = F.slice(xf / 4, xf / 4 + n);
+      const want = Array.from({ length: rows }, (_, i) => q8f(w8.subarray(i * n, i * n + n), x, wsv.subarray(i * ng, i * ng + ng), ng));
+      for (const [r0, r1] of ranges) {
+        F.fill(-7, alone / 4, alone / 4 + rows + 1);
+        k.matmul_q8f(alone, xf, w, ws, n, r0, r1);
+        for (let i = 0; i <= rows; i++) {
+          const value = i >= r0 && i < r1 ? want[i] : -7;
+          if (!Object.is(F[alone / 4 + i], value)) throw new Error(`matmul_q8f${where} differs at row ${i} of rows ${r0}..${r1}, activations ${t}, ${ng} groups: ${F[alone / 4 + i]} against ${value}`);
+        }
+        checked += 1;
+      }
+    }
   }
 
   // ---- quantize_x at both biases: groups of random values, of zeros, of -0, at the ends (the largest first and last,
@@ -265,4 +303,4 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     }
   }
 }
-console.log(`int8-check: matmul_q8r, matmul_q6r, matmul_q8 and matmul_q6 are their arithmetic to the bit, matmul_q8r_tile matmul_q8r's numbers, int8_sums, six_sums and quantize_x their values (${checked} cases, on a 32-bit and a 64-bit memory)`);
+console.log(`int8-check: matmul_q8r, matmul_q6r, matmul_q8, matmul_q6 and matmul_q8f are their arithmetic to the bit, matmul_q8r_tile matmul_q8r's numbers, int8_sums, six_sums and quantize_x their values (${checked} cases, on a 32-bit and a 64-bit memory)`);
