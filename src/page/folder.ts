@@ -4,7 +4,8 @@
 
 // The files Hugging Face publishes: model.safetensors, config.json and a tokenizer (tokenizer.json, or a
 // sentencepiece tokenizer.model / spiece.model). The worker converts them in the browser, to int8 and with a
-// context of 512 tokens unless the settings say otherwise ({"conversion": {"dtype": ..., "max_seq_len": ...}}).
+// context of 4096 tokens (the page's most: kept.ts's contextOf()) unless the settings say otherwise
+// ({"conversion": {"dtype": ..., "max_seq_len": ...}}), the model's own where that is shorter.
 import { PYTHON_TOKENIZERS } from "../runtime/built/facts/tokenizers.ts";
 
 // The tokenizers a folder may come with: the conversion's own list, Python's (TOKENIZERS of
