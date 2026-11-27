@@ -33,10 +33,10 @@ const cpuLines = cpuTable(cpuResult);
 assert.ok(cpuLines.includes("| 1 | 11.2 | 18.9 (56%) | 89.3 | 5.80 | 21.0 (48%) |"), cpuLines.join("\n"));
 assert.ok(cpuLines.includes("| 2 | 10.3 | 20.5 (56%) | 97.1 | 4.50 | 27.0 |"), "no share for the prompt past one thread");
 assert.ok(cpuLines.includes("| 4 | 7.3 | 28.7 | 137.0 | 2.77 | 43.9 |"), "no share against an unsteady ceiling");
-assert.ok(cpuLines.includes("| 8 | skipped: the browser did not start that many software threads (it started 3) | | | | |"), cpuLines.join("\n"));
+assert.ok(cpuLines.includes("| 8 | skipped: the browser did not start that many software threads | | | | |"), cpuLines.join("\n"));
 // T301: and the report's warnings list it (a count asked that did not run), after what failed
 assert.deepEqual(warnings([{ title: "CPU", status: "ok", markdown: cpuLines.join("\n") }]),
-  ["CPU: loop: reading alone; software threads: 8; ceiling: failed: x | y", "CPU: software threads: 8; ms a token: skipped: the browser did not start that many software threads (it started 3)",
+  ["CPU: loop: reading alone; software threads: 8; ceiling: failed: x | y", "CPU: software threads: 8; ms a token: skipped: the browser did not start that many software threads",
    "CPU: loop: reading alone; software threads: 4; ceiling: unsteady: 57.4 GB/s"]);
 assert.ok(cpuLines.includes("| reading alone | 4 | unsteady: 57.4 GB/s |"));
 assert.ok(cpuLines.includes("| reading alone | 8 | failed: x \\| y |"), "a | in a cell");
