@@ -150,16 +150,12 @@ export function matmul_sbr_tile(xout: usize, xq: usize, xs: usize, w: usize, tab
 // tokens of the prompt, as W itself (int8) with S of each 16 weights and F of each block, and the dot products are of
 // the activations by W: signed bytes by signed bytes in all their 8 bits, which relaxed SIMD does not promise (its
 // second operand is 7 bits; arm64's SDOT multiplies signed by signed all the same, x86's PMADDUBSW takes the second as
-// unsigned). signed_dots() is how the caller asks which this engine does, and only where every answer is the exact
+// unsigned). signed_dots() (../relaxed/dots.ts) is how the caller asks which this engine does, and only where every answer is the exact
 // product may it call this kernel: there G is the same integers, and every number is matmul_sbr's to the bit. The K
 // types go through matmul_sbr_tile (their W is not negative, and their M needs the sums anyway).
 // scratch: n + n / 4 + n / 64 bytes of the caller's own (of one thread at a time): W, an int32 S for each 16 weights,
 // a float32 F for each block.
-/** out[0..3] = the four lanes of the relaxed dot product of the 16 bytes at a by the 16 at b. Where they are the sums of
- * the products of signed bytes for every a and b (tests/blocks-check.ts's signedDots() asks), matmul_sbw_tile is right. */
-export function signed_dots(out: usize, a: usize, b: usize): void {
-  v128.store(out, i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(a), v128.load(b), i32x4.splat(0)));
-}
+// (signed_dots() is ../relaxed/dots.ts's, T686: the relaxed module of the ternary products asks it too)
 // the 16 weights h of the block at p, and S of their unit. (h is written out, 0 to 15, where this is used: as a
 // loop's counter every shift by it is a shift by a register, and the row was spread a quarter slower)
 // @ts-ignore: decorator

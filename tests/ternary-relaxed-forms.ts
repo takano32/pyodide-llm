@@ -22,7 +22,9 @@
 //        below; the bench writes its copies so) and its tables at `scratch`, made in every call (the cost of a token's
 //        tables counted against every matrix, as if no two matrices shared their input). At most 12288 a group of 32 in
 //        int16 (16 tables x 768)
+//   t2x  (T686) kernels/'s matmul_t2x itself, x16's form as the kernel is built: what the engine takes where it times faster
 import { codes, fourSums } from "../kernels/ternary";
+export { matmul_t2x } from "../kernels/relaxed/signs";
 import { half, halves4 } from "../kernels/kernel/halves";
 import { hsum } from "../kernels/kernel/math";
 

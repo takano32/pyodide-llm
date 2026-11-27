@@ -16,6 +16,8 @@
 //     128 x 3 a lane, 32 of them a group, and minus the group's sum): the relaxed dot product's pairs (x86's pmaddubsw adds
 //     two products with saturation to int16: 2 x 128 x 3 = 768, nowhere near 32767), the sums in int32, and float32 hold
 //     all of it exactly, and matmul_t2r, matmul_t2 and the tile are the same to the bit.
+//   T686: matmul_t2x and matmul_t2x_tile (the sums in int16, x86's form) wherever matmul_t2r and its tile are: the same
+//     exact arithmetic, so the same numbers to the bit (a lane of int16 is at most 3072 a block, 6144 a group of 32).
 //   ternary_x: the bytes and scales of llama2_numpy.ternary() (the sign + 1 of value j at bits 2 (j & 3) of byte
 //     j >> 2, the largest |value| of a group), and its refusal of a value that is neither 0 nor of that size.
 import fs from "node:fs";
@@ -137,7 +139,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
       }
       return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
     });
-    for (const [name, kernel] of [["matmul_t2r", r.matmul_t2r], ["matmul_t2", k.matmul_t2]]) {
+    for (const [name, kernel] of [["matmul_t2r", r.matmul_t2r], ["matmul_t2x", r.matmul_t2x], ["matmul_t2", k.matmul_t2]]) {
       for (const [r0, r1] of [[0, rows], [0, 1], [rows - 1, rows], [3, 8], [5, 5]]) {
         F.fill(-7, out / 4, out / 4 + rows);
         kernel(out, xq, xs, w, ws, n, r0, r1, 3);
@@ -162,20 +164,23 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
         for (let g = 0; g < ng; g++) F[(at + most * 128) / 4 + g] = f(1e-2 * (1 + (next() % 1000)));
         k.interleave(at, at + most * 128, n);
       }
-      for (const count of [1, 2, 3, 4, 5, 7, 8, tokens]) {
-        for (const [r0, r1] of [[0, rows], [2, 9], [rows - 1, rows]]) {
-          F.fill(-7, outs / 4, (outs + tokens * outFrame) / 4);
-          r.matmul_t2r_tile(outs, frames, frames + most * 128, w, ws, n, r0, r1, count, outFrame, frame, 3);
-          for (let t = 0; t < tokens; t++) {
-            F.fill(-7, alone / 4, alone / 4 + rows);
-            if (t < count) r.matmul_t2r(alone, frames + t * frame, frames + t * frame + most * 128, w, ws, n, r0, r1, 3);
-            for (let i = 0; i < rows; i++) {
-              if (!Object.is(F[(outs + t * outFrame) / 4 + i], F[alone / 4 + i])) {
-                throw new Error(`matmul_t2r_tile${where} differs from matmul_t2r at row ${i}, token ${t} of ${count}, rows ${r0}..${r1}, ${groups} groups`);
+      // (T686: and matmul_t2x_tile, held to matmul_t2r: matmul_t2x is matmul_t2r's numbers above)
+      for (const [name, tile] of [["matmul_t2r_tile", r.matmul_t2r_tile], ["matmul_t2x_tile", r.matmul_t2x_tile]]) {
+        for (const count of [1, 2, 3, 4, 5, 7, 8, tokens]) {
+          for (const [r0, r1] of [[0, rows], [2, 9], [rows - 1, rows]]) {
+            F.fill(-7, outs / 4, (outs + tokens * outFrame) / 4);
+            tile(outs, frames, frames + most * 128, w, ws, n, r0, r1, count, outFrame, frame, 3);
+            for (let t = 0; t < tokens; t++) {
+              F.fill(-7, alone / 4, alone / 4 + rows);
+              if (t < count) r.matmul_t2r(alone, frames + t * frame, frames + t * frame + most * 128, w, ws, n, r0, r1, 3);
+              for (let i = 0; i < rows; i++) {
+                if (!Object.is(F[(outs + t * outFrame) / 4 + i], F[alone / 4 + i])) {
+                  throw new Error(`${name}${where} differs from matmul_t2r at row ${i}, token ${t} of ${count}, rows ${r0}..${r1}, ${groups} groups`);
+                }
               }
             }
+            checked += 1;
           }
-          checked += 1;
         }
       }
     }
@@ -218,7 +223,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
           }
           return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
         });
-        for (const [name, kernel] of [["matmul_t2r", r.matmul_t2r], ["matmul_t2", k.matmul_t2]]) {
+        for (const [name, kernel] of [["matmul_t2r", r.matmul_t2r], ["matmul_t2x", r.matmul_t2x], ["matmul_t2", k.matmul_t2]]) {
           F.fill(-7, out / 4, out / 4 + rows);
           kernel(out, at, at + most * 128, w, ws, n, 0, rows, 3);
           for (let i = 0; i < rows; i++) {
@@ -229,15 +234,15 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
           checked += 1;
         }
         // the tile takes the five tokens whole (a four and the one left after it)
-        if (t === count - 1) {
+        for (const [name, tile] of t === count - 1 ? [["matmul_t2r_tile", r.matmul_t2r_tile], ["matmul_t2x_tile", r.matmul_t2x_tile]] : []) {
           F.fill(-7, outs / 4, (outs + count * outFrame) / 4);
-          r.matmul_t2r_tile(outs, frames, frames + most * 128, w, ws, n, 0, rows, count, outFrame, frame, 3);
+          tile(outs, frames, frames + most * 128, w, ws, n, 0, rows, count, outFrame, frame, 3);
           for (let u = 0; u < count; u++) {
             F.fill(-7, alone / 4, alone / 4 + rows);
             r.matmul_t2r(alone, frames + u * frame, frames + u * frame + most * 128, w, ws, n, 0, rows, 3);
             for (let i = 0; i < rows; i++) {
               if (!Object.is(F[(outs + u * outFrame) / 4 + i], F[alone / 4 + i])) {
-                throw new Error(`matmul_t2r_tile${where}: the largest sums, pattern ${index}, token ${u}, row ${i}: ${F[(outs + u * outFrame) / 4 + i]} against ${F[alone / 4 + i]}`);
+                throw new Error(`${name}${where}: the largest sums, pattern ${index}, token ${u}, row ${i}: ${F[(outs + u * outFrame) / 4 + i]} against ${F[alone / 4 + i]}`);
               }
             }
           }
@@ -376,4 +381,4 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     checked += 7;
   }
 }
-console.log(`ternary-check: interleave, matmul_t2r, matmul_t2 and ternary_x are their arithmetic to the bit, and matmul_b1r, matmul_b1, their tile and binary_x (T634) the ternary ones' numbers for the same signs (${checked} cases, on a 32-bit and a 64-bit memory)`);
+console.log(`ternary-check: interleave, matmul_t2r, matmul_t2x (T686), their tiles, matmul_t2 and ternary_x are their arithmetic to the bit, and matmul_b1r, matmul_b1, their tile and binary_x (T634) the ternary ones' numbers for the same signs (${checked} cases, on a 32-bit and a 64-bit memory)`);

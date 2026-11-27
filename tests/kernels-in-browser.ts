@@ -18,6 +18,8 @@
 // (it reads v128.load32_splat above 4 GiB at the low 32 bits). An engine without such a memory is skipped (Playwright's
 // WebKit 27.2 has one on Linux: T502).
 // T314: and matmul_q8f, the int8 weights by float32 activations as they are, held to its arithmetic to the bit.
+// T686: and matmul_t2x and matmul_t2x_tile (the ternary products with the sums in int16, x86's form), held to the same
+// arithmetic as matmul_t2r and its tile, and through the 64-bit builds.
 // T363.4: and the kernels of llama.cpp's blocks (kernels/blocks.ts, blocks_relaxed.ts: Underdog Saluki's weights), every
 // type of the ten through every kernel, each held after every batch to tests/blocks-model.ts, to the bit (the model's
 // text goes to the page; the codebooks are made up there, which the kernels do not mind: blocks-check.ts is where the
@@ -356,19 +358,23 @@ async function inPage({ plain, relaxed }) {
   await product("matmul_t2", () => k.matmul_t2(out, xq, xs, w, ws, n, 0, rows, 3));
   if (r) {
     await product("matmul_t2r", () => r.matmul_t2r(out, xq, xs, w, ws, n, 0, rows, 3));
+    // (T686: the sums in int16, x86's form, the same numbers)
+    await product("matmul_t2x", () => r.matmul_t2x(out, xq, xs, w, ws, n, 0, rows, 3));
     // the tile: five tokens a frame apart (a four and one), each its own activations
     const perToken = Array.from({ length: tokens }, (_, t) => { const at = activations(t + 1); const sc = Float32Array.from({ length: ng }, () => f(1e-2 * (1 + (next() % 1000)))); return { at, sc, expected: want(at, sc) }; });
     const setUp = () => perToken.forEach(({ at, sc }, t) => prepare(frames + t * frame, at, sc));
-    await check("matmul_t2r_tile", () => r.matmul_t2r_tile(outs, frames, frames + n, w, ws, n, 0, rows, tokens, 1024, frame, 3), () => {
-      setUp();
-      F.fill(-7, outs / 4, outs / 4 + tokens * 256);
-      r.matmul_t2r_tile(outs, frames, frames + n, w, ws, n, 0, rows, tokens, 1024, frame, 3);
-      for (let t = 0; t < tokens; t++) {
-        const wrong = against((i) => F[(outs + t * 1024) / 4 + i], perToken[t].expected);
-        if (wrong) return `token ${t} ${wrong}`;
-      }
-      return null;
-    });
+    for (const name of ["matmul_t2r_tile", "matmul_t2x_tile"]) {
+      await check(name, () => r[name](outs, frames, frames + n, w, ws, n, 0, rows, tokens, 1024, frame, 3), () => {
+        setUp();
+        F.fill(-7, outs / 4, outs / 4 + tokens * 256);
+        r[name](outs, frames, frames + n, w, ws, n, 0, rows, tokens, 1024, frame, 3);
+        for (let t = 0; t < tokens; t++) {
+          const wrong = against((i) => F[(outs + t * 1024) / 4 + i], perToken[t].expected);
+          if (wrong) return `token ${t} ${wrong}`;
+        }
+        return null;
+      });
+    }
   }
 
   // ---- T544: the same products of rows of 7 groups (a number no multiple of 4: the scales read four at a time and then
@@ -407,17 +413,20 @@ async function inPage({ plain, relaxed }) {
     await product7("matmul_t2", () => k.matmul_t2(out7, xq7, xs7, w7, ws7, n7, 0, rows, 3));
     if (r) {
       await product7("matmul_t2r", () => r.matmul_t2r(out7, xq7, xs7, w7, ws7, n7, 0, rows, 3));
+      await product7("matmul_t2x", () => r.matmul_t2x(out7, xq7, xs7, w7, ws7, n7, 0, rows, 3));
       const perToken7 = Array.from({ length: tokens }, (_, t) => { const at = activations7(t + 1), sc = scales7(); return { at, sc, expected: want7(at, sc) }; });
-      await check("matmul_t2r_tile (7 groups a row)", () => r.matmul_t2r_tile(outs7, frames7, frames7 + n7, w7, ws7, n7, 0, rows, tokens, 1024, frame, 3), () => {
-        perToken7.forEach(({ at, sc }, t) => prepare7(frames7 + t * frame, at, sc));
-        F.fill(-7, outs7 / 4, outs7 / 4 + tokens * 256);
-        r.matmul_t2r_tile(outs7, frames7, frames7 + n7, w7, ws7, n7, 0, rows, tokens, 1024, frame, 3);
-        for (let t = 0; t < tokens; t++) {
-          const wrong = against((i) => F[(outs7 + t * 1024) / 4 + i], perToken7[t].expected);
-          if (wrong) return `token ${t} ${wrong}`;
-        }
-        return null;
-      });
+      for (const name of ["matmul_t2r_tile", "matmul_t2x_tile"]) {
+        await check(`${name} (7 groups a row)`, () => r[name](outs7, frames7, frames7 + n7, w7, ws7, n7, 0, rows, tokens, 1024, frame, 3), () => {
+          perToken7.forEach(({ at, sc }, t) => prepare7(frames7 + t * frame, at, sc));
+          F.fill(-7, outs7 / 4, outs7 / 4 + tokens * 256);
+          r[name](outs7, frames7, frames7 + n7, w7, ws7, n7, 0, rows, tokens, 1024, frame, 3);
+          for (let t = 0; t < tokens; t++) {
+            const wrong = against((i) => F[(outs7 + t * 1024) / 4 + i], perToken7[t].expected);
+            if (wrong) return `token ${t} ${wrong}`;
+          }
+          return null;
+        });
+      }
     }
   }
 
@@ -1028,6 +1037,9 @@ async function inPageHigh({ plain, relaxed, addresses }) {
     r && { name: "matmul_t2r", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 1), call: (p) => r.matmul_t2r(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 3) },
     r && { name: "matmul_t2r_tile", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 4),
       call: (p) => r.matmul_t2r_tile(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 4, 64, 1024, 3) },
+    r && { name: "matmul_t2x", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 1), call: (p) => r.matmul_t2x(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 3) },
+    r && { name: "matmul_t2x_tile", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 4),
+      call: (p) => r.matmul_t2x_tile(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 4, 64, 1024, 3) },
     r && { name: "matmul_b1r", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => binary(p, 1), call: (p) => r.matmul_b1r(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 2) },
     r && { name: "matmul_b1r_tile", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => binary(p, 4),
       call: (p) => r.matmul_b1r_tile(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 4, 64, 1024, 2) },

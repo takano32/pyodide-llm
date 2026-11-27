@@ -73,6 +73,8 @@ export const ADDRESSES = {
   affine_q8: [0, 1, 2, 5, 8, 10],
   // T314: int8 weights by float32 activations as they are (the first position's matrices)
   matmul_q8f: [0, 1, 2, 3],
+  // T686: the ternary products with their sums in int16 (x86's form)
+  matmul_t2x: [0, 1, 2, 3, 4], matmul_t2x_tile: [0, 1, 2, 3, 4],
 };
 // (T368.1, the types. A kernel takes numbers, its addresses as BigInt on a 64-bit memory, and what it returns is for
 // its caller to know: most return nothing. The kernels are the names of ADDRESSES and no other: a kernel that is
@@ -142,6 +144,8 @@ type Arguments = {
   matmul_b1r_tile: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, count: number, os: number, frame: number, two: number];
   affine_q8: [out: number, x: number, xq: number, m: number, k: number, w: number, n: number, alpha: number, shifts: number, unquant: number, bias: number];
   matmul_q8f: [xout: number, x: number, wq: number, ws: number, n: number, r0: number, r1: number];
+  matmul_t2x: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, three: number];
+  matmul_t2x_tile: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, count: number, os: number, frame: number, three: number];
 };
 export type Kernels = { [name in keyof typeof ADDRESSES]: (...args: Arguments[name]) => unknown };
 // a job as it is run: an array, or its view of the control area's table

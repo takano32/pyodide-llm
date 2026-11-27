@@ -3,4 +3,5 @@
 // whole module as it compiles it, and then has blocks.ts's alone. matmul_sbr is matmul_sb's numbers to the bit.
 
 export { matmul_sbr } from "./blocks/token";
-export { matmul_sbr_tile, matmul_sbw_tile, signed_dots } from "./blocks/tile";
+export { matmul_sbr_tile, matmul_sbw_tile } from "./blocks/tile";
+export { signed_dots } from "./relaxed/dots";
