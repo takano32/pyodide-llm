@@ -117,7 +117,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 
 ---
 
-## B. PC（Windows の Chrome、NVIDIA）: 全 10 手順、約 4〜6 時間（GB 級の取得が多い）
+## B. PC（Windows の Chrome、NVIDIA）: 全 11 手順、約 4〜6 時間（GB 級の取得が多い）
 
 前の準備: 機械のメモリ（GB）とグラフィックカードのメモリ（GB）、Chrome のバージョンを 1 行メモ。F12 でコンソールを開いておく。保存の空きを 60 GB ほど。大きいモデルは見終わったら About の一覧から保存を消してよい。
 
@@ -170,6 +170,9 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 
 **B-10 大きすぎる断り（T129 (d)）**
 - 開く: `頭?hf=Qwen/Qwen2.5-32B-Instruct`。数秒で「This model is too large for a web page: it needs about 42 GB …」が出るか。そのあと devtools の Application → Storage（OPFS）に空のフォルダが残っていないか。[目]。
+
+**B-11 一覧に無い GGUF を塊のまま（T505.4）**
+- 開く: `頭?hf=bartowski/Qwen2.5-14B-Instruct-GGUF`（取得 9 GB。メモリ 16 GB 以上の PC で）。URL が `&file=Qwen2.5-14B-Instruct-Q4_K_M.gguf` に替わるか、[状] に「llama.cpp's blocks」と「64-bit memory」があるか、準備完了まで行くか、[答]・tok/s（CI の EPYC 9V45 は 4 本で 2.6）。閉じて同じ URL をもう 1 回: 保存から開くか。[状]・[答]・[目]。iPhone と Mac の Safari で同じ URL を開く手順は D-5・E-3 の「Safari has none yet」と同じ見方（取得の前に断るか）。
 
 ---
 
@@ -292,6 +295,7 @@ Mac があれば Safari の「開発」メニューで [コ] が取れる（無�
 | T229 のレビュー（Qwen3.5 の状態と 7 ビット） | A-6 の 4、B-4 の 1、D-4 の 5 |
 | T245・T247 のレビュー (a)(b)(c) | E-2（a）、F-3 の 3（b: 4 と言う端末が無ければ手順なし）、A-6 の 4（c） |
 | T506（Safari の 64 ビットのメモリ） | E-2・E-3、D-5 の 3 |
+| T505.4 のレビュー（一覧に無い GGUF を塊のまま） | B-11（Safari は D-5・E-3 と同じ見方） |
 | T230・T231（Bonsai 1.7B の 3 値） | A-7 の 1、B-4 の 5、D-4 の 6、F-3 の 2。(a) は T232 (a) に替わった。(e)（前の int8 の保存）は手順なし: その後 `CONVERTER` が上がり、古い保存はもう消えている |
 | T249・T250 のレビュー (a)(b)(c) | B-6 の 1・2、A-7 の 3・A-8 の 8、D-4 の 1・D-5 の 2 |
 | T233（27B） | B-8 の 2、C-1、A-8 の 9、D-5 の 4 |
