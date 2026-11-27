@@ -541,7 +541,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     const kernels = () => new Proxy({}, { get: (_, name) => (...args) => {
       said.push([String(name), args]);
       if (name === "signed_dots" && dots !== undefined) new Int32Array(memory.buffer).fill(dots, args[0] / 4, args[0] / 4 + 4);
-      now += ms[name] ?? 0;
+      now += typeof ms[name] === "function" ? ms[name](args) : ms[name] ?? 0;
       return 0;
     } });
     const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: false, shared: false };
@@ -554,7 +554,8 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     engine.forwardMany([3, 4, 5, 6, 7], 2);
     const block = said.splice(0);
     engine.release();
-    const timed = made.filter(([name]) => name.startsWith("matmul_"));
+    // (the timed calls: the warm-up's of one row of 128 are not)
+    const timed = made.filter(([name, args]) => name.startsWith("matmul_") && args[5] !== 128);
     return { pairs: engine.pairs, timed, one, block, products: (said) => [...new Set(said.map(([name]) => name).filter((name) => name.startsWith("matmul_")))] };
   };
   const X86 = 4 * 255, ARM = -4;
@@ -569,6 +570,10 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   const told = run({ dots: X86, trying: { pairs: true } });
   assert.deepEqual([told.pairs, told.timed.length], [true, 0], "the tests' answer: taken, nothing timed");
   assert.deepEqual(faster.one.filter(([name]) => name.startsWith("matmul_")), told.one.filter(([name]) => name.startsWith("matmul_")), "the timing gave back what it took of the memory: a token's products at the addresses of an engine that timed nothing");
+  // the kernels cold at first: matmul_t2x slow for its first calls (its code not yet optimized), then twice as fast
+  let cold = 0;
+  const warming = run({ dots: X86, ms: { matmul_t2r: 2, matmul_t2x: ([, , , , , n]) => (n === 128 ? 0 : cold++ < 7 ? 5 : 1) } });
+  assert.equal(warming.pairs, true, "x86, the int16 sums slow in their first rounds and twice as fast after: taken");
   const slower = run({ dots: X86, ms: { matmul_t2r: 1, matmul_t2x: 2 } });
   assert.deepEqual([slower.pairs, slower.products(slower.one), slower.products(slower.block)], [false, ["matmul_t2r"], ["matmul_t2r_tile"]], "x86, the int16 sums slower: not taken");
   const near = run({ dots: X86, ms: { matmul_t2r: 1, matmul_t2x: 0.96 } });

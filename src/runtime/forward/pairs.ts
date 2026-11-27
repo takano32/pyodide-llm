@@ -7,17 +7,23 @@
 // kernels/README.md). So it is asked of x86's relaxed dot product alone (signed_dots: x86 takes the second operand for
 // unsigned, arm64 for signed: an arm64 engine, the owner's Android's, times nothing), and there timed: the model's own
 // largest ternary matrix (at most MOST_BYTES of its rows) by either kernel in turn, the order turned every round, the
-// lower median of each; the int16 form where it is faster by more than the noise of a run (choice.ts's BETTER, the
+// fastest round of each; the int16 form where it is faster by more than the noise of a run (choice.ts's BETTER, the
 // threads' margin). Once an engine, nothing on a token's path: the matrices take the kind chosen (tensors.ts).
+// The kernels are cold here (the engine's first calls of them): an engine compiles a function again, optimized, in the
+// background after it has run a while, and uses that from a later call on, so the first rounds may set one form's
+// unoptimized code against the other's optimized one. The CI's EPYC 9V74 chose the int32 sums so once in four engines
+// with the lower median of seven rounds after three calls each. So both are first called often on one row (as
+// jobs.ts's warmUp() warms a thread), and the fastest of more rounds is read (a round is slowed by what else runs, never
+// sped up).
 
 import { packingOf } from "../jobs.ts";
-import { lowerMedian, BETTER } from "./choice.ts";
+import { BETTER } from "./choice.ts";
 import type { Kernels } from "../jobs.ts";
 import type { Plan } from "../contracts/plan.ts";
 
 // the rounds of the timing (each kernel once a round, after WARM calls of each), and the most bytes of a matrix's rows
 // a call reads (a 2048-wide ternary row is 512 bytes: 4096 rows. 1.7B's w1 whole is 3 MiB, a 27B's 22 MiB)
-const ROUNDS = 7, WARM = 3, MOST_BYTES = 2 << 20;
+const ROUNDS = 11, WARM = 2, TINY = 1000, MOST_BYTES = 2 << 20;
 
 /** T686: whether this engine takes matmul_t2x for its ternary matrices. relaxed: the relaxed module's kernels (null:
  * none, or the model does not run on them); direct: the matrices are on the GPU alone (none multiplied here); pairs:
@@ -39,6 +45,7 @@ export function pairsChosen({ relaxed, memory, alloc, base, tensors, direct, clo
   const xq = alloc(n), xs = alloc((n / 32) * 8), out = alloc(taken * 4), w = base + widest.offset, s = base + widest.scales;
   const kernels = [relaxed.matmul_t2r, relaxed.matmul_t2x];
   const call = (which: number) => kernels[which](out, xq, xs, w, s, n, 0, taken, 3);
+  for (let i = 0; i < TINY; i++) for (const kernel of kernels) kernel(out, xq, xs, w, s, 128, 0, 1, 3);
   for (let i = 0; i < WARM; i++) { call(0); call(1); }
   const times: number[][] = [[], []];
   for (let round = 0; round < ROUNDS; round++) {
@@ -48,7 +55,7 @@ export function pairsChosen({ relaxed, memory, alloc, base, tensors, direct, clo
       times[which].push(clock() - began);
     }
   }
-  return lowerMedian(times[1]) < BETTER * lowerMedian(times[0]);
+  return Math.min(...times[1]) < BETTER * Math.min(...times[0]);
 }
 const count = (t: { shape: number[] }) => t.shape.slice(-2).reduce((a, b) => a * b, 1);
 
