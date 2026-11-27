@@ -78,9 +78,6 @@ TOKENIZERS = {"hf-deepseek-r1-llama-8b", "hf-shisa-v2.1-unphi4-14b"}
 KNOWN = {
     # the real tokenizer.json puts no dummy space before the first piece ("A"), the page does ("▁A"): T131, refused
     "hf-rakutenai-2.0-mini-instruct": {"why": "no dummy space before the first piece (T131)", "first_piece": True},
-    # T610.2: the real tokenizer's special tokens strip the spaces beside them (lstrip, rstrip); the list's format trims
-    # the prompt, which leaves only the spaces beside a special token typed in it, kept by the page
-    "hf-shisa-v2.1-unphi4-14b": {"why": "spaces beside a special token typed in the prompt (T610.2)", "unstripped": True},
     # the page asks for the answer's channel at the end of the format (T132): the real text with it is the page's
     "hf-llm-jp-4-8b-instruct": {"why": "the page ends with <|channel|>final<|message|> (T132)",
                                 "text": lambda text, prompt: text + "<|channel|>final<|message|>"},
@@ -335,16 +332,10 @@ def sentencepiece_ids(model_file, text):
     return ids + (model.encode(text[at:]) if at < len(text) else [])
 
 
-def tokenizers_ids(tokenizer_file, text, strip=True):
-    """text as the tokenizers library reads it with tokenizer.json alone (nothing added: the template wrote the BOS);
-    strip=False: its added tokens strip no spaces beside them, as the page's tokenizer (T610.2)"""
+def tokenizers_ids(tokenizer_file, text):
+    """text as the tokenizers library reads it with tokenizer.json alone (nothing added: the template wrote the BOS)"""
     import tokenizers
-    if strip:
-        return tokenizers.Tokenizer.from_file(str(tokenizer_file)).encode(text, add_special_tokens=False).ids
-    read = json.loads(Path(tokenizer_file).read_text())
-    for token in read["added_tokens"]:
-        token["lstrip"] = token["rstrip"] = False
-    return tokenizers.Tokenizer.from_str(json.dumps(read)).encode(text, add_special_tokens=False).ids
+    return tokenizers.Tokenizer.from_file(str(tokenizer_file)).encode(text, add_special_tokens=False).ids
 
 
 def card_replaced(id, prompt):
@@ -438,8 +429,6 @@ def main():
             if matches(real):
                 same += 1
             elif "text" in known and matches(encoded(known["text"](text, prompt))):
-                explained += 1
-            elif known.get("unstripped") and matches(tokenizers_ids(folder / "tokenizer.json", text, strip=False)):
                 explained += 1
             elif known.get("first_piece") and first_piece(reference.convert_ids_to_tokens(page[1:]),
                                                           reference.convert_ids_to_tokens(real)):

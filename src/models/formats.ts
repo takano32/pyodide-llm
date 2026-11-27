@@ -18,7 +18,7 @@ export type ListOptions = {
   // (the engine's Tokenizer: rinna's "<NL>" for a newline)
   replaced?: [string, string][];
   // T258: {} alone: no special takes in the whitespace beside it, whatever the converter read of the tokenizer.json's
-  // lstrip and rstrip (an entry whose sent IDs were held to the page's tokenizer before it read them: UNPHI4)
+  // lstrip and rstrip (for an entry whose sent IDs are held to the page's tokenizer before it read them: none since T689)
   stripped?: Record<string, never>;
 };
 export const JAPANESE = "文章の書き出しを入力（例: 富士山は、）";
@@ -180,10 +180,10 @@ export const QWEN3_AT_ONCE = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>
 export const QWEN3_FROM_IM_START = { bos: 151644, stop_tokens: [151643, 151644, 151645] } satisfies ListOptions;
 // T610.2: Phi-4's ChatML (Shisa V2.1 unphi4 14B), <|im_sep|> after the role. BOS the template's first token, <|im_start|>,
 // as the converter makes it, and its stops (<|endoftext|>, <|im_end|>); the prompt trimmed, since the real tokenizer's
-// special tokens strip the spaces beside them (lstrip, rstrip), which the page's tokenizer did not. T258: it does now
-// (the converter's "stripped"), which would send other IDs for a prompt with a special token typed in it, the real ones
-// (tests/format_check.py: 9/9 exact, as ?hf= of its original sends): left out until the owner says (stripped: {})
-export const UNPHI4 = { bos: 100264, stop_tokens: [100257, 100265], stripped: {} } satisfies ListOptions;
+// special tokens strip the spaces beside them (lstrip, rstrip). T258: the page's tokenizer does that too (the
+// converter's "stripped", which this entry leaves to the converter since T689, the owner's choice: the real IDs also for
+// a prompt with a special token typed in it, tests/format_check.py's 9/9 exact)
+export const UNPHI4 = { bos: 100264, stop_tokens: [100257, 100265] } satisfies ListOptions;
 export const UNPHI4_AFTER_START = "user<|im_sep|>{prompt:trim}<|im_end|><|im_start|>assistant<|im_sep|>";
 export const QWEN3_THINKING_AFTER_START = CHATML_AFTER_START;
 export const QWEN3_AT_ONCE_AFTER_START = `${QWEN3_THINKING_AFTER_START}<think>\n\n</think>\n\n`;
