@@ -153,7 +153,7 @@ URL の旗と `/benchmark/` の節やボタンの名前は、2026-11-21 の本�
 - どれも 1 つ聞いて、準備完了の秒・[状]（GPU だけか、カードに入らず CPU で読み直したか。読み直したならそこまでの秒）・[答]・[コ]（「loaded again on the CPU」の有無）。
 1. ★ Shisa V2.1 Qwen3 8B `頭?model=hf-shisa-v2.1-qwen3-8b` と Qwen3 8B `頭?model=hf-qwen3-8b`: 流行りの問い（答えの頭: Shisa は「2024年以降の流行りとして注目される3つのトレンドは…」、Qwen3 8B は「もちろんです！以下は、2024年以降に…」で始まり、途中で途切れず「坊主と」を繰り返さないか）（T249 (a)）。Ternary Bonsai 8B も同じ問いで（B-5 の 6. で済ませてよい）。
 2. CAT-Thinking 8B `頭?model=hf-cat-thinking-8b`、Llama-3-ELYZA-JP 8B `頭?model=hf-llama-3-elyza-jp-8b`、CAT-Translate 3.3B `頭?model=hf-cat-translate-3.3b`、llm-jp-3 3.7B `頭?model=hf-llm-jp-3-3.7b-instruct3`、Llama 3.2 Shisa V2.1 3B `頭?model=hf-shisa-v2.1-llama3.2-3b`（T249 (a)）。
-3. DeepSeek-R1 Distill Qwen 7B `頭?model=hf-deepseek-r1-qwen-7b`: `What is 17 times 24? Think first.`（`</think>` の後に 408 と答えるまでの秒）。Llama 3.1 8B Instruct `頭?model=hf-llama-3.1-8b-instruct`、DeepSeek-R1 Distill Llama 8B `頭?model=hf-deepseek-r1-llama-8b`（T251 (a)）。
+3. DeepSeek-R1 Distill Qwen 7B `頭?model=hf-deepseek-r1-qwen-7b`: `What is 17 times 24? Think first.`（`</think>` の後に 408 と答えるまでの秒）。Llama 3.1 8B Instruct `頭?model=hf-llama-3.1-8b-instruct`、DeepSeek-R1 Distill Llama 8B `頭?model=hf-deepseek-r1-llama-8b`（T251 (a)）。DeepSeek-R1-0528 Qwen3 8B `頭?model=hf-deepseek-r1-0528-qwen3-8b`: 同じ問い（`</think>` の後に 408 と答えるまでの秒。考えは Distill より長いことがある。8 と言う端末は GPU だけか、カードに入らず CPU に読み直したか）（T683）。
 4. Granite 4.2 8B `頭?model=hf-granite-4.2-8b`（T253 (a)）、Qwen3.5 9B `頭?model=hf-qwen3.5-9b`（メモリに余裕があれば: T247）。
 
 **B-7 Phi（取得 7.6・7.7 GB）（T258）**
