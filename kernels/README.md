@@ -182,7 +182,7 @@ is slower there than the kernel before (Safari on an Intel Mac); nor is it a for
 The int16 sums with the chain are faster everywhere. Against relaxed SIMD (the `matmul_t2r` of Chromium) the kernel is
 still the slower: T231's table, 0.6 of it on arm64.
 
-**Other forms of `matmul_t2r`, timed and not taken (T288, 2026-11-12).** `tests/ternary-browser-bench.ts --relaxed` times
+**Other forms of `matmul_t2r`, timed and not taken (T288, 2026-11-12; `x16` taken where it times faster from T686, below).** `tests/ternary-browser-bench.ts --relaxed` times
 the forms of `tests/ternary-relaxed-forms.ts` against `matmul_t2r` as T275's bench times the plain ones (one thread, each
 browser's engine and Node, every form held to `matmul_t2r` to the bit): `x16`, the planes' products as
 `i16x8.relaxed_dot_i8x16_i7x16_s` added in int16 over a group of 128 and widened once (T231's review's `bxa`); `x16b`, the
@@ -207,6 +207,36 @@ a Zen 5, where `x16` would lose). `tl` is no faster on arm64's V8 (0.94 in Node,
 layout of the weights changed (`CONVERTER`: every ternary model fetched again). What would turn either: the owner taking
 a choice made by timing on x86-64 (`x16`), or Firefox on arm64 (`matmul_t2r` 10 G weights/s there, half V8's: `tl` 1.81
 times, `x16` 1.05) counting enough to change the layout.
+
+**`x16` taken where it times faster: `matmul_t2x` (T686, 2026-11-27).** The owner took the choice made on the device. `relaxed/signs.ts`
+has the form of a group's sums as a second type parameter (`Wide`, `matmul_t2r`'s code as it was, the same bytes; `Pairs`,
+`x16`'s): `matmul_t2x` and `matmul_t2x_tile`, `matmul_t2r`'s numbers to the bit (a lane of int16 is at most 3072 a block,
+6144 a group of 32). The engine chooses once as it is made (`src/runtime/forward/pairs.ts`): where the relaxed dot product
+takes its second operand for unsigned (`signed_dots`, now `relaxed/dots.ts`, of 1 by 255: x86's PMADDUBSW), it calls both
+a thousand times on one row (they are cold: the engine's first calls), then times them on the model's largest ternary
+matrix (at most 2 MiB of its rows) in turn, eleven rounds, and takes `matmul_t2x` where its fastest round is under 0.95
+of the other's. arm64 times nothing. Binary weights keep `matmul_b1r`. Runs 45961378882, 45961382232, 45963853556,
+45963857022, 45963849844, 45967079069, 45967085150 (x86-64) and 45961385378 (arm64), one thread for the kernels (`tests/ternary-browser-bench.ts
+--relaxed --forms rc,x16,t2x`, the geometric mean over the three widths; `rc`, a copy of `matmul_t2r`, 0.991 to 1.003) and
+`tests/compare-builds.sh` on a made-up ternary model of 1.7B's widths (`tests/make_ternary.py … large`), main's build
+against this one's (the control, this build twice, 0.992 to 1.011):
+
+| | EPYC 9V74 (Zen 4) | EPYC 7763 (Zen 3) | EPYC 9V45 (Zen 5) | Xeon 6975P-C | Neoverse-N2 |
+|---|---:|---:|---:|---:|---:|
+| `matmul_t2x` / `matmul_t2r`: Node / Chromium 156 / Firefox 157 | 1.356–1.359 / 1.361–1.363 / 1.110–1.123 | 1.341 / 1.333 / 1.118 | (unmeasured) | 0.926 / 0.945 / 1.112 | 0.649 / 0.655 / 1.046 |
+| the engine chose, fresh processes (`tests/pairs-choice.ts`) | the int16 sums, 24 of 24 | | the int32 sums, 12 of 12 | the int32 sums, 24 of 24 | (nothing timed, 12) |
+| a token (compare-engines, no threads), new ÷ old | 1.298–1.308 | 1.262 | | 0.995–1.019 (control 0.991–1.001) | 1.019 (control 1.008) |
+| a token, 1 / 2 threads | 1.314–1.316 / 1.220–1.222 | 1.281 / 1.203 | 1.015 / 0.997 | 1.002 / 1.005 |
+| a prompt (blocks), 1 / 2 threads | 1.444–1.450 / 1.405–1.411 | 1.429 / 1.395 | 1.002 / 0.995 | (not run) |
+
+The Xeon is why the choice is timed and not written down by the architecture: V8 there runs the int16 sums 0.93 to 0.95
+times as fast (Firefox 1.11), and the engine left them. Firefox times them in its own engine, so a Firefox there takes
+them where they are faster. One of the 9V74's engines (45963857022's compare-engines) chose the int32 sums with the
+first timing (three calls each, the lower median of seven rounds): the kernels' optimized code had not come for both. With the
+warm-up and the fastest of eleven rounds the choice did not flip in 72 fresh processes (runs 45967060919 to 45967085150:
+the 9V74's int16 rounds 0.33 to 0.53 ms against 0.46 to 0.79 of the int32 ones; the Xeon's and the 9V45's int16 rounds
+the slower, about 1.1 times; the 9V45 is a Zen 5, where T231 expected `x16` to lose: why, unmeasured). What the timing costs as a ternary model is loaded on x86: some 2 x 13 calls of 2 MiB
+of weights (about 10 ms at 20 G weights a second) and the warm-up; on arm64 one call of `signed_dots`.
 
 Two things the review of 2026-10-02 found, which no test in Node can see:
 
