@@ -73,10 +73,7 @@ for dtype in ("float32", "ternary"):
     options = json.loads(Path(f"{out}/{dtype}.json").read_text())
     llama = Llama(np.memmap(f"{out}/{dtype}.bin", dtype=np.uint8, mode="r"), Path(f"{out}/{dtype}.tokenizer.bin").read_bytes(),
                   kernels=None, **options)
-    # (T452: the float32 file's tables are the converter's; the entry's RoPE on it, as the ternary one turns by it)
-    if dtype == "float32" and "rope_scaling" in options:
-        from fixed_outputs import with_the_entrys_rope
-        with_the_entrys_rope(llama, options)
+    # (T454: the options say the entry's RoPE, and the float32 engine makes its tables of them as the ternary one does)
     token, rows[dtype] = llama.bos, []
     for pos in range(6):
         rows[dtype].append(np.array(llama.forward(token, pos)))
