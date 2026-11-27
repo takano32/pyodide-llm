@@ -740,6 +740,8 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   assert.deepEqual(pairs, [["PLaMo", "プラモ"], ["Tokyo", "東京"], ["cat", "猫"], ["dog", "犬"], ["a", "b=c"], ["x", "y = z"], ["C#", "シーシャープ"]],
     "each separator, the sides trimmed, the first separator of a line (=> before = at one place), a # inside a term kept");
   assert.deepEqual(unread, [11, 12, 13], "the lines with no separator or an empty side, by their numbers from 1");
+  // (tanakh's reads the line trimmed: a tab that only indents is no separator, and one that ends a term alone is none)
+  assert.deepEqual(glossaryOf(" \tindented = pair\nalone\t\n\t= nothing"), { pairs: [["indented", "pair"]], unread: [2, 3] }, "the line is trimmed before its separator is looked for");
   assert.deepEqual(glossaryOf("a = b\r\nc = d\re = f"), { pairs: [["a", "b"], ["c", "d"], ["e", "f"]], unread: [] }, "any line break");
   assert.deepEqual(glossaryOf(""), { pairs: [], unread: [] }, "nothing typed: no pair");
   assert.deepEqual([unreadSaid([]), unreadSaid([3]), unreadSaid([3, 5]), unreadSaid([1, 2, 4])],

@@ -57,10 +57,10 @@ export function glossaryOf(text: string) {
     if (!said || said.startsWith("#")) return;
     let at = -1, width = 0;
     for (const separator of GLOSSARY_SEPARATORS) {
-      const found = line.indexOf(separator);
+      const found = said.indexOf(separator);
       if (found >= 0 && (at < 0 || found < at)) [at, width] = [found, separator.length];
     }
-    const term = at < 0 ? "" : line.slice(0, at).trim(), translation = at < 0 ? "" : line.slice(at + width).trim();
+    const term = at < 0 ? "" : said.slice(0, at).trim(), translation = at < 0 ? "" : said.slice(at + width).trim();
     if (term && translation) pairs.push([term, translation]);
     else unread.push(index + 1);
   });
