@@ -589,6 +589,54 @@ def test_a_gemma4_gguf_alone_is_refused_by_its_vocabulary():
         llama2_convert.Conversion.from_gguf(file, dtype="int8")
 
 
+E4B_GGUF = GGUF_SHAPES["as E4B is: a classifier of its own, one width of FFN"]
+
+
+def heads_a_layer(counts):
+    """A GGUF of the E4B shape above whose attention.head_count_kv is a list, a number a layer (T694: as unsloth's
+    Gemma 4 31B says it)."""
+    key = "gemma4.attention.head_count_kv"
+    return gemma4_gguf(leave=(key,), more=((key, 9, (4, counts)),), **E4B_GGUF)
+
+
+def test_a_gemma4_gguf_of_one_number_of_key_value_heads_a_layer_is_the_one_of_one_number():
+    """T694: a list of the same number for every layer is that number: the conversion of the same file, to the byte."""
+    config, file, _ = gemma4_gguf(**E4B_GGUF)
+    _, listed, _ = heads_a_layer([2] * 12)
+    vocabulary = unigram(text(config)["vocab_size"])
+    got, expected = (with_original(gguf, config, vocabulary, "tokenizer.json", "int8") for gguf in (listed, file))
+    assert bytes(got.checkpoint) == bytes(expected.checkpoint) and got.options == expected.options
+
+
+def test_a_gemma4_gguf_whose_full_attention_layers_have_other_key_value_heads_is_refused_in_words():
+    """T694: a Gemma 4 31B's GGUF says 16 key-value heads in the sliding layers and 4 in the full-attention ones (its
+    config.json's num_global_key_value_heads), which the engine has not: refused by the words of its config.json, a
+    ValueError (the worker says a ValueError's words, and a TypeError's name). A list that is not one number a kind is
+    refused by the words of the heads."""
+    kinds = "sslsslsslssl"
+    _, file, _ = heads_a_layer([2 if kind == "s" else 1 for kind in kinds])
+    with pytest.raises(ValueError, match=r"^This model cannot be converted: its layers are not the ones of a Gemma 4 E2B or E4B\.$"):
+        llama2_convert.Conversion.from_gguf(file, dtype="int8")
+    _, file, _ = heads_a_layer([2] * 11 + [1])
+    with pytest.raises(ValueError, match="its attention heads do not divide the hidden size"):
+        llama2_convert.Conversion.from_gguf(file, dtype="int8")
+
+
+def test_the_full_attention_layers_without_a_v_of_their_own_are_said_as_the_config_json_says_them():
+    """T694: as transformers' Gemma4TextConfig names them: attention_k_eq_v where a full-attention layer has a k and no
+    v (a 31B's), num_global_key_value_heads where its heads are another number than the sliding layers'."""
+    from convert.families.gemma4 import gemma4_gguf_heads
+
+    kinds = ["sliding_attention", "full_attention"] * 2
+    tensors = {f"blk.{layer}.attn_{part}.weight": {} for layer in range(4) for part in "kv" if not (layer % 2 and part == "v")}
+    assert gemma4_gguf_heads([16, 4, 16, 4], kinds, tensors) == {
+        "num_key_value_heads": 16, "num_global_key_value_heads": 4, "attention_k_eq_v": True}
+    every = {f"blk.{layer}.attn_{part}.weight": {} for layer in range(4) for part in "kv"}
+    assert gemma4_gguf_heads([4, 4, 4, 4], kinds, every) == {"num_key_value_heads": 4}
+    assert gemma4_gguf_heads(4, kinds, every) == {"num_key_value_heads": 4}
+    assert gemma4_gguf_heads([4, 4, 2, 4], kinds, every) == {"num_key_value_heads": [4, 4, 2, 4]}
+
+
 def test_a_part_of_a_head_that_turns_no_pair_or_more_than_the_head_is_refused():
     """The quarter of a full-attention layer's head that RoPE turns (partial_rotary_factor) must be a number above 0, at
     most 1 and turn a pair at least, or it is no usable base of RoPE (T640.4: asked after the two bases)."""

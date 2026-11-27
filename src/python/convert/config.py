@@ -82,7 +82,10 @@ def check_config(config):
     # a head of another size than dim / n_heads (T124) only where q and o are matrices of their own: a Llama's.
     # GPT-2's c_attn and GPT-NeoX's query_key_value are cut into heads of dim / n_heads
     divides = not dim % n_heads and size == dim // n_heads
-    if not isinstance(size, int) or size <= 0 or size % 2 or n_heads % n_kv_heads \
+    # (T694: a number of key-value heads a layer, a list as a GGUF may say them, is no number the engine reads; a
+    # family that reads one a kind has made it its own names before this, families/gemma4.py)
+    if not isinstance(size, int) or size <= 0 or size % 2 or not isinstance(n_kv_heads, int) \
+            or isinstance(n_kv_heads, bool) or n_kv_heads <= 0 or n_heads % n_kv_heads \
             or not (divides or (config.get("head_dim") and family.free_heads)):
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     scaling = config.get("rope_scaling")

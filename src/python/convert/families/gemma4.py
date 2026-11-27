@@ -244,7 +244,31 @@ def gemma4_gguf_config(key, tensors):
                   rope_proportion=PROPORTION)
     if config["vocab_size_per_layer_input"] is None:
         del config["vocab_size_per_layer_input"]
+    config.update(gemma4_gguf_heads(key("attention.head_count_kv", config["num_attention_heads"]),
+                                    config["layer_types"], tensors))
     return config
+
+
+def gemma4_gguf_heads(counts, kinds, tensors):
+    """T694: the key-value heads by config.json's names, where llama.cpp says them a layer each (attention.head_count_kv
+    a list, as of a Gemma 4 31B: 16 in the sliding layers, 4 in the full-attention ones, and those without a v of their
+    own): num_key_value_heads of the sliding layers, and as transformers' Gemma4TextConfig says them, the full-attention
+    layers' as num_global_key_value_heads where they differ and attention_k_eq_v where they have no attn_v, which
+    gemma4_check() refuses by its words as it refuses the original's. A list that is not one number a kind stays a list,
+    which check_config() refuses."""
+    if not isinstance(counts, list):
+        return {"num_key_value_heads": counts}
+    of = lambda kind: sorted({count for count, other in zip(counts, kinds) if other == kind})
+    sliding, full = of(SLIDING), of(FULL)
+    if len(counts) != len(kinds) or len(sliding) > 1 or len(full) > 1 or not (sliding or full):
+        return {"num_key_value_heads": counts}
+    said = {"num_key_value_heads": (sliding or full)[0]}
+    if sliding and full and full != sliding:
+        said["num_global_key_value_heads"] = full[0]
+    layers = [layer for layer, kind in enumerate(kinds) if kind == FULL]
+    if any(f"blk.{layer}.attn_k.weight" in tensors and f"blk.{layer}.attn_v.weight" not in tensors for layer in layers):
+        said["attention_k_eq_v"] = True
+    return said
 
 
 def gemma4_rope_freqs(config):
