@@ -10,7 +10,10 @@
 //      count, and what a token of a prompt costs in blocks of 1, 2, 4, 8 and 16, with each count.
 //
 //   node tests/threads-check.ts [model id ...] [--threads 1,2,4,8] [--rounds 5] [--positions 64] [--kv-start 16]
-//        [--from 0] [--without kv16] [--versus-half]
+//        [--from 0] [--without kv16] [--versus-half] [--pairs on|off]
+//
+// --pairs (T686): the ternary products with the sums in int16 (matmul_t2x) taken, or not, whatever the engine would
+// choose (createForward()'s trying); on: and the greedy logits held to an engine's that does not take them, to the bit.
 //
 // --from: the speeds of step 2 are measured from this position on, the KV cache filled up to it first (T109: the
 // attention of a long context).
@@ -50,6 +53,7 @@ if (isMainThread) {
   const from = Number(option("--from", 0));
   const without = option("--without", "").split(",").filter(Boolean);
   const wide = args.includes("--wide"), versusHalf = args.includes("--versus-half");
+  const pairs = option("--pairs") === undefined ? undefined : option("--pairs") === "on";
   // T101: --high (with --wide) puts the checkpoint 4 GiB up a 64-bit memory, so that every address the forward pass
   // uses is past 2^32 (the pages below are never touched, so they cost no memory)
   const high = wide && args.includes("--high") ? 2 ** 32 : 0;
@@ -79,7 +83,7 @@ if (isMainThread) {
     py.globals.set("OUTSIDE", outside);
     py.globals.set("OPTIONS", py.toPy(entry.options));
     py.runPython(`import llama2_numpy, engine.model\nfrom llama2_numpy import Llama\nengine.model.KV_START = ${kvStart}\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, disable=${JSON.stringify(without)}, **OPTIONS)`);
-    const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size, plan, counts, rounds, positions, from, wide, versusHalf } });
+    const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size, plan, counts, rounds, positions, from, wide, versusHalf, pairs } });
     const result = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
     console.log(`${entry.name}: ${result}`);
     failed ||= result.includes("DIFFER");
@@ -87,16 +91,18 @@ if (isMainThread) {
   }
   process.exit(failed ? 1 : 0);
 } else {
-  const { memory, base, size, plan, counts, rounds, positions, from, wide, versusHalf } = workerData;
+  const { memory, base, size, plan, counts, rounds, positions, from, wide, versusHalf, pairs } = workerData;
+  const trying = { pairs };
   const suffix = wide ? "64" : "";  // T101: a 64-bit memory and its kernels
   const kernels = compileKernels(fs.readFileSync(built(`simdkernel_shared${suffix}.wasm`)), fs.readFileSync(built(`simdkernel_relaxed_shared${suffix}.wasm`)), wide);
-  const engine = createForward({ memory, base, size, kernels, plan, spawn });
-  const greedy = () => {
+  const engine = createForward({ memory, base, size, kernels, plan, spawn, trying });
+  if (pairs && !engine.pairs) throw new Error("--pairs on: the engine did not take the int16 sums (is the model ternary, on relaxed SIMD?)");
+  const greedy = (e = engine) => {
     const seen = [];
     let token = plan.bos ?? 1;
     for (let pos = 0; pos < positions; pos++) {
-      engine.forward(token, pos, true);
-      const logits = engine.logits();
+      e.forward(token, pos, true);
+      const logits = e.logits();
       seen.push(logits.slice());
       token = logits.indexOf(Math.max(...logits));
     }
@@ -166,7 +172,18 @@ if (isMainThread) {
   // T96: the page keeps one memory for model after model. A second engine on this memory, after the first has
   // ended its threads, must run as the first did (the control area holds what the first left there).
   engine.stopThreads();
-  const again = createForward({ memory, base, size, kernels, plan, spawn });
+  // T686: the int16 sums' logits are the int32 ones', to the bit (an engine on one thread that does not take them)
+  let pairsLine = "";
+  if (pairs) {
+    const without = createForward({ memory, base, size, kernels, plan, trying: { pairs: false } });
+    const same = greedy(without).every((row, i) => row.every((v, j) => Object.is(v, reference[i][j])));
+    without.release();
+    pairsLine = same ? "the int16 sums (matmul_t2x) the same to the bit as the int32 ones; " : "the int16 sums (matmul_t2x) DIFFER from the int32 ones; ";
+  } else if (pairs === undefined && Object.values(plan.tensors).some((t) => t?.kind === "ternary")) {
+    // (what this device chose: forward/pairs.ts times the two on x86 alone)
+    pairsLine = `this device's engine ${engine.pairs ? "took" : "did not take"} the int16 sums (matmul_t2x); `;
+  }
+  const again = createForward({ memory, base, size, kernels, plan, spawn, trying });
   await again.setThreads(counts[counts.length - 1]);
   let token = plan.bos ?? 1, reused = true;
   for (let pos = 0; pos < positions && reused; pos++) {
@@ -331,7 +348,7 @@ if (isMainThread) {
   }
   parentPort.postMessage(`${went ? "a software thread that stops mid-chunk is given up and the text is the same; " : "a software thread that stops mid-chunk DIFFERS or hangs; "}${lateLine}${convolutionLine}` +
     `${late ? "helpers that come up after a release are ended; " : "helpers that come up after a release are left alive (DIFFERS); "}` +
-    `${reused ? "a second engine on the same memory runs the same; " : "a second engine on the same memory DIFFERS or hangs; "}${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
+    `${reused ? "a second engine on the same memory runs the same; " : "a second engine on the same memory DIFFERS or hangs; "}${pairsLine}${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
     `${blocksDiffer.length ? `the prompt in blocks DIFFERS with ${blocksDiffer.join(", ")} threads` : "the prompt in blocks the same to the bit"}; ` +
     counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${promptLine}; ${searchLine}${versusLine}`);
   engine.stopThreads();

@@ -594,6 +594,9 @@ if [ "$suite" = full ]; then
   # and with every address above 4 GiB (--wide --high), where a Qwen3.5 4B or 9B keeps its states and its tensors of the linear layers
   part "the software threads, a made-up Qwen3.5 above 4 GiB" node tests/threads-check.ts .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --wide --high --rounds 1 --positions 24
   part "the software threads, made-up ternary models" node tests/threads-check.ts .tmp/made-up-ternary-qwen3 .tmp/made-up-ternary-rotated --rounds 1
+  # T686: and with the ternary products' sums in int16 (matmul_t2x, x86's form) taken whatever the device: to the bit
+  # with any count, and against an engine that does not take them
+  part "the software threads, made-up ternary models with the sums in int16" node tests/threads-check.ts .tmp/made-up-ternary-qwen3 .tmp/made-up-ternary-hybrid --rounds 1 --pairs on
   part "the software threads, a made-up Qwen3.5 in a rotated basis" node tests/threads-check.ts .tmp/made-up-rotated-float32 .tmp/made-up-rotated-int8 --rounds 1
   # T260: an LFM2's matrices shared out among the threads, to the bit, a thread that stops in the middle of a phase (the
   # convolution's rows are this thread's alone, outside every phase), and with every address above 4 GiB

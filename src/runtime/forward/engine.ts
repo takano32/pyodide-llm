@@ -19,6 +19,7 @@ import { gpuFit, lastKept } from "./gpufit.ts";
 import { stackPlacesOf } from "./alone.ts";
 import { gpuSide } from "./gpuside.ts";
 import { blockTables } from "./blocks.ts";
+import { pairsChosen } from "./pairs.ts";
 import { stagingReader } from "./staging.ts";
 import { partsOf, tensorsOf } from "./tensors.ts";
 import type { Kernels } from "../jobs.ts";
@@ -42,8 +43,10 @@ const STACKED_VECTORS = ["q_norm", "k_norm", "q_norm_wide", "k_norm_wide"] as co
 export type Compiled = { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; wide?: boolean; blocks?: Blocks | null };
 export type Blocks = { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null };
 // what createForward() is made with for the tests alone, to hold every form of a kernel to the others: signed, whether
-// the tile of the signed dot product is taken (left out: where the engine's relaxed SIMD multiplies so, signed_dots)
-export type Trying = { signed?: boolean };
+// the tile of the signed dot product is taken (left out: where the engine's relaxed SIMD multiplies so, signed_dots);
+// pairs (T686), whether the ternary matrices take the kernels with the sums in int16 (left out: where they time faster
+// on x86, pairs.ts)
+export type Trying = { signed?: boolean; pairs?: boolean };
 // What an engine is made of (the comments above createForward() say each)
 export type Made = {
   memory: WebAssembly.Memory; base: number; size: number; kernels: Compiled; plan: Plan;
@@ -175,7 +178,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const { tables, spread } = blocked ? blockTables({ k, relaxed, alloc, memory, base, tensors: T, partsOf, signed: trying.signed }) : { tables: 0, spread: 0 };
   // T641.2: the model's tensors by their names (tensors.ts): the address of a float32 copy, a matrix as the kernels
   // multiply by it
-  const { floats, matrix, embedder, outlierColumns, unrounds } = tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread });
+  // T686: the ternary products with the sums in int16 where this device runs them faster (pairs.ts). What it takes of
+  // the memory is for its timing alone, and given back: the memory after it is where it was without
+  const untimed = top;
+  const pairs = pairsChosen({ relaxed, memory, alloc, base, tensors: T, direct: Boolean(direct), clock, pairs: trying.pairs });
+  top = untimed;
+  const { floats, matrix, embedder, outlierColumns, unrounds } = tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread, pairs });
 
   // ---- the activations: one frame per token, BATCH of them for a prompt (T108). A frame holds what one token needs,
   // in the order it always had, and the next token's frame follows: every array of token t is t * S bytes after token
@@ -713,6 +721,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       return cache.read(from, count);
     },
     memoryBytes: () => memory.buffer.byteLength,
+    /** T686: whether the ternary matrices multiply with the sums in int16 (matmul_t2x: pairs.ts chose it) */
+    pairs,
   };
 }
 // (T368.4) the engine of one model, as Python and the worker call it

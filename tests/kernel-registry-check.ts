@@ -74,6 +74,8 @@ const KINDS = [
   // T314: int8 weights by float32 activations as they are (the first position's), the job's input and scales as a
   // float32 matrix's input and its weights are
   ["matmul_q8f", "plain", [1, 2, 4, 5, 7, 20, 30], { rowBytes: (n) => n }],
+  // T686: the ternary products with the sums in int16, as matmul_t2r's
+  ["matmul_t2x", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, T], { tile: ["matmul_t2x_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, T]], rowBytes: (n) => n / 4 }],
 ];
 const more = (name) => KINDS.find(([kind]) => kind === name)[3];
 const jobOf = (kind, said = {}) => [KIND[kind], 1, 2, 3, 4, 5, more(kind).a6 ?? 6, said.n ?? 7, 8, 9, said.count ?? 1, 100, 200, 300];
@@ -273,7 +275,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   const FACTS = {
     int8: { relaxed: "matmul_q8r", plain: "matmul_q8", unrounded: "matmul_q8f", sums: "int8_sums", xs: 4, ready: [[["quantize_x", [1, 2, 3, 96, 64]]], [["quantize_x", [1, 2, 3, 96, 0]]]] },
     int6: { relaxed: "matmul_q6r", plain: "matmul_q6", sums: "six_sums", xs: 4, ready: [[["quantize_x", [1, 2, 3, 96, 64]]], [["quantize_x", [1, 2, 3, 96, 0]]]] },
-    ternary: { relaxed: "matmul_t2r", plain: "matmul_t2", sums: null, xs: 8,
+    ternary: { relaxed: "matmul_t2r", plain: "matmul_t2", pairs: "matmul_t2x", sums: null, xs: 8,
       ready: [[["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]], [["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]]] },
     binary: { relaxed: "matmul_b1r", plain: "matmul_b1", sums: null, xs: 8,
       ready: [[["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]], [["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]]] },
@@ -284,7 +286,9 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   assert.deepEqual(Object.keys(PACKED), Object.keys(FACTS));
   for (const [name, fact] of Object.entries(FACTS)) {
     const packing = PACKED[name];
-    assert.deepEqual([packing.jobs.relaxed, packing.jobs.plain, packing.jobs.signed, packing.jobs.unrounded], [KIND[fact.relaxed], KIND[fact.plain], KIND[fact.signed], KIND[fact.unrounded]], `${name}: the kinds of its jobs`);
+    assert.deepEqual([packing.jobs.relaxed, packing.jobs.plain, packing.jobs.signed, packing.jobs.unrounded, packing.jobs.pairs], [KIND[fact.relaxed], KIND[fact.plain], KIND[fact.signed], KIND[fact.unrounded], KIND[fact.pairs]], `${name}: the kinds of its jobs`);
+    // (T686: a job of the sums in int16 is the relaxed module's, a matrix's of the packing's rows, with a tile as its relaxed job has)
+    if (fact.pairs) assert.deepEqual([WORK[fact.pairs].from, WORK[fact.pairs].rowBytes(256), Boolean(WORK[fact.pairs].tile)], ["relaxed", packing.rowBytes(256), Boolean(WORK[fact.relaxed].tile)], `${name}: its job of the sums in int16`);
     // (T314: a job of the activations as they are is the plain module's, a matrix's, and its rows are the packing's)
     if (fact.unrounded) assert.deepEqual([WORK[fact.unrounded].from, WORK[fact.unrounded].rowBytes(256), Boolean(WORK[fact.unrounded].tile)], ["plain", packing.rowBytes(256), false], `${name}: its job of the activations as they are`);
     assert.deepEqual([WORK[fact.relaxed].from, WORK[fact.plain].from], ["relaxed", "plain"], `${name}: its relaxed job is the relaxed module's, the other the plain one's`);
@@ -518,5 +522,65 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   }
   console.log(`ok: ${read} engines on made-up bytes: an embedding's row, the outlier channels' columns and a matrix widened to float32 are each weight as its packing reads it, times its group's scale`);
   console.log(`ok: ${engines} engines (int8, int6, ternary, binary and float32, with relaxed SIMD and without) ask of their kernels what the packing says: the corrections, the first position's kernel (T314), a token's and a block's, and every token of a block made ready in its frame`);
+}
+// ---- T686: the choice of the ternary products with the sums in int16 (forward/pairs.ts), on Python's plan of a small
+// ternary model, the kernels the ones that write down their calls and, here, answer as an engine would: signed_dots
+// the four lanes of x86's relaxed dot product (the second operand unsigned: 4 x 255 of 1 by 255) or of arm64's (signed:
+// -4), and each product moving a made-up clock by its ms (the engine's clock). The int16 sums where they are faster by
+// more than BETTER, on x86 alone; the tests' answer (trying) over the timing; no relaxed SIMD, none. What the timing
+// took of the memory is given back: a token's calls are at the addresses of an engine that timed nothing.
+{
+  const { plans } = await import("./plans.ts");
+  const { createForward, keysInHalf } = await import(runtimeUrl("forward.js"));
+  const { plansOf, planOf, FORM, empty } = plans(new URL("..", import.meta.url));
+  const header = [256, 512, 2, 8, 4, 2000, 300], form = { ...FORM, qk_norm: true, head_dim: 64 };
+  const [p] = plansOf([{ header, form, dtype: "ternary" }]);
+  const run = ({ dots, ms = { matmul_t2r: 2, matmul_t2x: 1 }, relaxed = true, trying }) => {
+    const said = [];
+    let now = 0, memory;
+    const kernels = () => new Proxy({}, { get: (_, name) => (...args) => {
+      said.push([String(name), args]);
+      if (name === "signed_dots" && dots !== undefined) new Int32Array(memory.buffer).fill(dots, args[0] / 4, args[0] / 4 + 4);
+      now += ms[name] ?? 0;
+      return 0;
+    } });
+    const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: false, shared: false };
+    memory = new WebAssembly.Memory({ initial: Math.ceil((64 + p.size) / 65536) + 1 });
+    const engine = createForward({ memory, base: 64, size: p.size, kernels: { plain: empty, relaxed: relaxed ? empty : null, wide: false },
+      plan: planOf(p, { relaxed, kvStart: 16, outliers: 8 }), halfKeys: keysInHalf(p.header, p.size, options), wrap: kernels, clock: () => now, trying });
+    const made = said.splice(0);
+    engine.forward(8, 1, true);
+    const one = said.splice(0);
+    engine.forwardMany([3, 4, 5, 6, 7], 2);
+    const block = said.splice(0);
+    engine.release();
+    const timed = made.filter(([name]) => name.startsWith("matmul_"));
+    return { pairs: engine.pairs, timed, one, block, products: (said) => [...new Set(said.map(([name]) => name).filter((name) => name.startsWith("matmul_")))] };
+  };
+  const X86 = 4 * 255, ARM = -4;
+  const faster = run({ dots: X86 });
+  assert.equal(faster.pairs, true, "x86, the int16 sums twice as fast: taken");
+  assert.deepEqual([faster.products(faster.one), faster.products(faster.block)], [["matmul_t2x"], ["matmul_t2x_tile"]], "x86, taken: a token's and a block's products");
+  // the timing: the same matrix and rows by either kernel, in turn, the order turned every round
+  assert.ok(faster.timed.length >= 8, "timed several rounds");
+  assert.deepEqual(faster.timed.map(([, args]) => args.slice(1).join()).filter((args, i, all) => all.indexOf(args) === i).length, 1, "the two kernels timed on the same matrix and activations");
+  const order = faster.timed.map(([name]) => name).slice(-4);
+  assert.ok(order.join() === "matmul_t2r,matmul_t2x,matmul_t2x,matmul_t2r" || order.join() === "matmul_t2x,matmul_t2r,matmul_t2r,matmul_t2x", `the order turned every round: ${order}`);
+  const told = run({ dots: X86, trying: { pairs: true } });
+  assert.deepEqual([told.pairs, told.timed.length], [true, 0], "the tests' answer: taken, nothing timed");
+  assert.deepEqual(faster.one.filter(([name]) => name.startsWith("matmul_")), told.one.filter(([name]) => name.startsWith("matmul_")), "the timing gave back what it took of the memory: a token's products at the addresses of an engine that timed nothing");
+  const slower = run({ dots: X86, ms: { matmul_t2r: 1, matmul_t2x: 2 } });
+  assert.deepEqual([slower.pairs, slower.products(slower.one), slower.products(slower.block)], [false, ["matmul_t2r"], ["matmul_t2r_tile"]], "x86, the int16 sums slower: not taken");
+  const near = run({ dots: X86, ms: { matmul_t2r: 1, matmul_t2x: 0.96 } });
+  assert.equal(near.pairs, false, "x86, the int16 sums faster by less than the margin: not taken");
+  const arm = run({ dots: ARM });
+  assert.deepEqual([arm.pairs, arm.timed.length, arm.products(arm.one)], [false, 0, ["matmul_t2r"]], "arm64 (signed by signed), the int16 sums faster all the same: not taken, nothing timed");
+  const neither = run({});
+  assert.deepEqual([neither.pairs, neither.timed.length], [false, 0], "a dot product that answers neither x86's nor arm64's: not taken, nothing timed");
+  const plain = run({ dots: X86, relaxed: false });
+  assert.deepEqual([plain.pairs, plain.products(plain.one)], [false, ["matmul_t2"]], "no relaxed SIMD: not taken");
+  const toldNot = run({ dots: X86, trying: { pairs: false } });
+  assert.deepEqual([toldNot.pairs, toldNot.timed.length], [false, 0], "the tests' answer not to: not taken, nothing timed");
+  console.log("ok: T686's choice: the ternary products with the sums in int16 on x86 where they time faster by more than the margin, not on arm64, not without relaxed SIMD; the tests' answer over the timing; the memory as without it");
 }
 await leave(0);

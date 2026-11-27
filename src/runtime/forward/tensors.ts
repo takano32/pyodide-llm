@@ -18,10 +18,11 @@ export const partsOf = (t: Tensor): Part[] => t.layers ?? [t as Part];
 
 // What the readers are made with: the plan, the checkpoint's address in the memory, the memory (room), the kernels
 // (relaxed: null where the engine runs without relaxed SIMD), direct (T156: the layers on the GPU alone), and the tables
-// of llama.cpp's blocks and the scratch of their signed tile (blocks.ts's blockTables(); 0: the model has none)
-export type Reading = { plan: Plan; base: number; room: Room; k: Kernels; relaxed: Kernels | null; direct?: Direct; tables: number; spread: number };
+// of llama.cpp's blocks and the scratch of their signed tile (blocks.ts's blockTables(); 0: the model has none), and
+// (T686) pairs: whether the packings that have a kind of job with the sums in int16 take it (pairs.ts's pairsChosen())
+export type Reading = { plan: Plan; base: number; room: Room; k: Kernels; relaxed: Kernels | null; direct?: Direct; tables: number; spread: number; pairs: boolean };
 
-export function tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread }: Reading) {
+export function tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread, pairs }: Reading) {
   const T = plan.tensors, derived: Derived = plan.derived ?? {}, { alloc } = room;
   const count = (t: Tensor) => t.shape.reduce((a, b) => a * b, 1);
   // a float32 copy of a tensor: float16 converted; a packed one (int8, int6, ternary: jobs.ts's PACKED says how each
@@ -134,7 +135,8 @@ export function tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread
       }
       // (a layer's values, scales and corrections: 0 where the packing has none)
       const layer = (l: number) => [values + l * rows * rowBytes, scales + l * scaled, corrections && corrections + l * corrected];
-      return { rows, n, kind: t.kind as Packed, group: t.group, layer, job: relaxed ? packing.jobs.relaxed : packing.jobs.plain, ready: readyOf(packing),
+      const job = !relaxed ? packing.jobs.plain : pairs && packing.jobs.pairs !== undefined ? packing.jobs.pairs : packing.jobs.relaxed;
+      return { rows, n, kind: t.kind as Packed, group: t.group, layer, job, ready: readyOf(packing),
         unrounded: packing.jobs.unrounded };
     }
     // (a layer of a stack that is float32 by itself: widened or taken as it is, where it is)

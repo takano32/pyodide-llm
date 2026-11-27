@@ -344,6 +344,17 @@ export const WORK = kinds({
     one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q8f(out, a, a4, a5, a7, r0, r1),
     warm: (k, { xq, w, s, out }) => { k.matmul_q8f(out, xq, w, s, 32, 0, 1); },
   },
+  // T686: as matmul_t2r, the planes' products added in int16 (x86's form: forward/pairs.ts takes it where it times
+  // faster), each number matmul_t2r's to the bit. Its tile: as matmul_t2r_tile
+  matmul_t2x: {
+    from: "relaxed", rowBytes: (n) => n / 4,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_t2x(out, a, b, a4, a5, a7, r0, r1, THREE),
+    tile: (k) => (out, a, b, a4, a5, a6, a7, r0, r1, count, os, as) => k.matmul_t2x_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, THREE),
+    warm: (k, { xq, xs, w, s, out }) => {
+      k.matmul_t2x(out, xq, xs, w, s, 128, 0, 1, THREE);
+      k.matmul_t2x_tile(out, xq, xs, w, s, 128, 0, 1, 4, 0, 0, THREE);
+    },
+  },
 });
 export type Kind = keyof typeof WORK;
 /** the number of each kind of job: its place in WORK */
@@ -362,7 +373,8 @@ export const TILE_ROWS = Object.values(WORK).map((work: Work) => work.tileRows ?
 //   jobs      the kind of the job that multiplies by it, with relaxed SIMD and without (signed: with a relaxed dot
 //             product that multiplies signed bytes by signed bytes, where the packing has a kernel for that; T314,
 //             unrounded: by the activations as they are, float32, which the first position's matrices take, where the
-//             packing has a kernel for that: int8's)
+//             packing has a kernel for that: int8's; T686, pairs: with relaxed SIMD, the sums in int16, which an
+//             engine takes where it times them faster: ternary's)
 //   tabled    (llama.cpp's blocks) its kernels take the engine's tables and this number, the type's, where the others
 //             take a matrix's scales and corrections; the engine has their modules for such a model alone
 //   takes     the form its kernels take the activations in, by a name: matrices whose packings say the same name
@@ -383,7 +395,7 @@ export type Ready = (xq: number, xs: number, x: number, n: number) => void;
 export type Packing<Name extends string = string> = {
   rowBytes(n: number): number; scale: number; value?(U: Uint8Array, at: number, i: number): number;
   row?(k: Kernels, tables: number): (out: number, w: number, n: number) => void;
-  jobs: { relaxed: number; plain: number; signed?: number; unrounded?: number }; tabled?: number; takes: string;
+  jobs: { relaxed: number; plain: number; signed?: number; unrounded?: number; pairs?: number }; tabled?: number; takes: string;
   sums: "int8_sums" | "six_sums" | null; ready(k: Kernels, relaxed: boolean): Ready; xs: number;
   group: number; gpu: { as: Name; alone: boolean; dot: boolean } | null;
 };
@@ -433,7 +445,7 @@ export const PACKED = packings({
   // (scale: 2), PQ2_0's own
   ternary: {
     rowBytes: (n) => n / 4, scale: 2, value: (U, at, i) => ((U[at + (i >> 2)] >> (2 * (i & 3))) & 3) - 1, takes: "interleaved",
-    jobs: { relaxed: KIND.matmul_t2r, plain: KIND.matmul_t2 }, sums: null, xs: 8,
+    jobs: { relaxed: KIND.matmul_t2r, plain: KIND.matmul_t2, pairs: KIND.matmul_t2x }, sums: null, xs: 8,
     ready: (k) => (xq, xs, x, n) => {
       k.quantize_x(xq, xs, x, n, 0);
       k.interleave(xq, xs, n);
