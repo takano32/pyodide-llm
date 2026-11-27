@@ -8,8 +8,9 @@ import struct
 
 import numpy as np
 import pytest
-from made_up import hugging_face, safetensors_file, synthetic_weights
+from made_up import gemma3_model, gemma4_model, hugging_face, lfm2_model, phi3_model, safetensors_file, synthetic_weights
 from test_gpt2 import POSITIONS, gpt2_model
+from test_phi3 import LONGROPE
 
 from llama2_convert import Conversion
 from llama2_numpy import Llama
@@ -79,3 +80,35 @@ def test_a_float_checkpoint_holds_tables_as_long_as_its_context(dtype):
 def test_a_gpt2s_learned_positions_are_its_context_at_every_dtype():
     made = converted(gpt2, "int8", 8)
     assert seq_len(made.checkpoint) == POSITIONS and made.longest == POSITIONS
+
+
+LONG = 48
+FAMILIES = {
+    "a Phi-3 whose window cuts the context": (lambda: phi3_model(seq_len=LONG, window=40), 40),
+    "a Phi-4 mini whose longrope cuts it to the original": (lambda: phi3_model(**LONGROPE), 16),
+    "a Gemma 3": (lambda: gemma3_model(seq_len=LONG), LONG),
+    "a Gemma 4": (lambda: gemma4_model(seq_len=LONG), LONG),
+    "an LFM2": (lambda: lfm2_model(seq_len=LONG), LONG),
+}
+
+
+@pytest.mark.parametrize("name", FAMILIES)
+def test_the_longest_is_the_context_the_converter_cuts_the_model_to(name):
+    """T326's review: a family that cuts the context itself (a window, longrope's original) says the cut as the longest,
+    where reading the header's seq_len up to the model's own would run it past what it can: and what is read at the
+    longest is what the converter makes at it, logits to the bit"""
+    model, cut = FAMILIES[name]
+
+    def made(context):
+        tensors, config = model()
+        return converted(lambda: (safetensors_file(tensors), config), "int8", context)
+
+    short, long = made(8), made(4096)
+    assert short.longest == long.longest == cut and seq_len(long.checkpoint) == cut
+    read = bytearray(short.checkpoint)
+    struct.pack_into("<i", read, 24, short.longest)
+    assert read == long.checkpoint
+    options = {key: value for key, value in short.options.items() if key != "template"}
+    here, there = Llama(bytes(read), bytes(short.tokenizer), **options), Llama(bytes(long.checkpoint), bytes(long.tokenizer), **options)
+    for pos, token in enumerate(range(3, 3 + cut - 1)):
+        assert np.array_equal(here.forward(token, pos), there.forward(token, pos)), pos
