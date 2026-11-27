@@ -806,10 +806,23 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       gpuContext.console = console;
     }
     // T491: load() itself, its loader a stand-in that places the weights as checkpointLoaded() does: a GPU's worker that
-    // fails gives the first load up at its next wait, and the model is loaded once more, on the CPU, and is ready; a
-    // load that fails for another reason fails as it did, and a cancelled one stays cancelled
+    // fails gives the first load up at its next wait, and the model is loaded once more, on the CPU, and is ready; so
+    // does one that takes nothing for 60 s (the owner, 2026-11-26: it failed the load), on this check's clock (forward.js
+    // waits a second at a time, each at once here); a load that fails for another reason fails as it did, and a
+    // cancelled one stays cancelled
     {
       const loads = [], said = [], posted = [];
+      const silent = async (waiting) => {
+        const real = { waitAsync: Atomics.waitAsync, now: performance.now };
+        let clock = 0;
+        performance.now = () => clock;
+        Atomics.waitAsync = (array, index, value, ms) => ({ async: true, value: new Promise((resolve) => setImmediate(() => { clock += ms; resolve("timed-out"); })) });
+        try {
+          return await waiting();
+        } finally {
+          [Atomics.waitAsync, performance.now] = [real.waitAsync, real.now];
+        }
+      };
       gpuContext.loaderStandIn = async (model, kind, signal) => {
         const into = ask("checkpointSink()");
         into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
@@ -819,6 +832,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
           if (into.weights.direct && (gpuContext.failing === "gpu" || gpuContext.failing === "cancel")) workers.at(-1).fail({ message: "no such script" });
           if (gpuContext.failing === "cancel") gpuContext.cancel();
           await ask("weightsRoom()");
+          if (into.weights.direct && gpuContext.failing === "silent") await silent(() => ask("weightsDrained()"));
           if (gpuContext.failing === "other") throw new Error("a part was refused");
           signal.throwIfAborted();
           return {};
@@ -839,6 +853,11 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       assert.equal(await loaded("loaded, gpu", "gpu"), "ready");
       assert.deepEqual([loads, said, posted.filter((type) => type === "ready").length], [["the GPU alone", "the CPU"], [line], 1],
         "T491: a load whose GPU's worker failed was not given up and loaded once more on the CPU");
+      await ask("gpuOnlyEnding");
+      assert.equal(await loaded("loaded, silent", "silent"), "ready");
+      assert.deepEqual([loads, said, posted.filter((type) => type === "ready").length],
+        [["the GPU alone", "the CPU"], ["gpu: the GPU said nothing for 60 s: the model was on the GPU alone, and is loaded again on the CPU"], 1],
+        "T491: a load whose GPU's worker took nothing for 60 s was not loaded once more on the CPU");
       await ask("gpuOnlyEnding");
       assert.equal(await loaded("loaded, other", "other"), "threw: a part was refused");
       assert.deepEqual([loads, said, ask("cpuOnly.has('loaded, other')")], [["the GPU alone"], [], false], "a load that failed for another reason was loaded again on the CPU");

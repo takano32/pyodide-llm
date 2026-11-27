@@ -163,11 +163,11 @@ const ok = (line) => {
 
   // (3, the review) a GPU's worker that takes no more of the weights (forward.js's room(), T156) is no more cured by
   // fetching the part again than a memory that refuses: the part is not asked for three times
-  run("gpuOnlyNow = { room: () => Promise.reject(new Error('the GPU took no weights for 60 s')) }");
+  run("gpuOnlyNow = { room: () => Promise.reject(new Error('the GPU said nothing for 60 s')) }");
   try {
     fresh(plain);
     const failed = await failure(download().into(written().write));
-    assert.match(failed?.error.message ?? "", /^the GPU took no weights/, "the part was fetched again where the GPU took no weights");
+    assert.match(failed?.error.message ?? "", /^the GPU said nothing for 60 s/, "the part was fetched again where the GPU took no weights");
     assert.equal(requests.length, 3, `${requests.length} requests for 3 parts`);
   } finally {
     run("gpuOnlyNow = undefined");

@@ -21,8 +21,8 @@ import type { Tensors } from "../contracts/plan.ts";
 
 // T156: a model on the GPU alone: what forward.ts reads of it (Direct), its GPU's worker, why the GPU stopped under
 // it (or null), where the loops that write its weights wait (room) and its builder (drained), and end(): the worker
-// stopped, resolved once it said so. T491, gone(): why the worker went before the engine was built (an error:
-// forward.ts's gpuOnlyWeights), or undefined
+// stopped, resolved once it said so. T491, gone(): why the worker went before the engine was built (an error, or
+// nothing taken for 60 s: forward.ts's gpuOnlyWeights), or undefined
 export type GpuOnly = Direct & { worker: Worker; lost: string | null; room: GpuOnlyWeights["room"]; drained: GpuOnlyWeights["drained"]; end(): Promise<void>;
   gone(): string | undefined };
 // where a model goes (gpuOnlyWeightsFor()): forward.ts's place and, where it may go on the GPU alone, its tensors,
@@ -270,7 +270,7 @@ export async function gpuOnlyReady(model: Listed, id: number, engine: Engine | u
   return false;
 }
 /** T491 (the owner, 2026-11-26): after a load that failed: whether it failed because the GPU's worker of the model on
- * the GPU alone went before its engine was built (it said "error"), which its loops that
+ * the GPU alone went before its engine was built (it said "error", or took nothing for 60 s), which its loops that
  * write threw at once: the model goes on the CPU from now on this visit, and is loaded again there (true). The worker
  * was let go of as the load ended (gpuOnlyBuffer()'s destroy()): the next load waits for it (gpuOnlyEnding). Any other
  * failure is the load's own (false) */

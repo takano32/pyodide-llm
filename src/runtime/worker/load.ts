@@ -52,7 +52,7 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
       : model.hf ? await converted(model, signal, id) : await checkpointLoaded(model, (kind = sourceOf(model)), signal, id);
   } catch (error) {
     // T491 (the owner, 2026-11-26): the GPU's worker of a model on the GPU alone went before its engine was built (it
-    // did not start, or threw): the load gave up as soon as that was known, and the model is loaded
+    // did not start, or took nothing for 60 s): the load gave up as soon as that was known, and the model is loaded
     // again on the CPU, from what this one kept or cached where it can (a kept conversion, the Cache API's parts)
     if (signal.aborted || !gpuOnlyGaveUp(model)) throw error;
     return load(model, signal, id);

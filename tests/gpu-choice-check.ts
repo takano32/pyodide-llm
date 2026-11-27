@@ -529,7 +529,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
 
   // T377: a worker that counts nothing. The loops that write wait for it, a second at a time, and give up after 60 s
   // of nothing; a worker said to be gone (it did not start, or threw: whoever made it heard its "error") is waited for
-  // no longer, and is posted nothing more. T491: a worker gone is why the model goes on the CPU (lost()), which every wait
+  // no longer, and is posted nothing more. T491: either is why the model goes on the CPU (lost()), which every wait
   // throws from then on: the load gives up there. The clock is this check's: every wait takes as long as it asked for, at once
   {
     const real = { waitAsync: Atomics.waitAsync, now: performance.now };
@@ -556,8 +556,12 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
       stalled.write(inWq, checkpoint.subarray(inWq, inWq + 1000));
       await stalled.room();  // (1000 bytes ahead are within what may wait)
       assert.deepEqual([clock, sent], [0, [1000]]);
-      await assert.rejects(stalled.drained(), /^Error: the GPU took no weights for 60 s$/);
+      assert.equal(stalled.lost(), undefined);
+      await assert.rejects(stalled.drained(), /^Error: the GPU said nothing for 60 s$/);
       assert.ok(clock > 60000 && clock <= 62000, `a worker that took nothing was given up after ${clock / 1000} s, not after the 60 s`);
+      assert.equal(stalled.lost(), "the GPU said nothing for 60 s", "T491: a worker that took nothing for 60 s is not why the model goes on the CPU");
+      clock += 120000;
+      await assert.rejects(stalled.room(), /^Error: the GPU said nothing for 60 s$/, "T491: the next wait waited again for a worker given up");
       // a worker gone while the weights wait for it: at once, with why
       [clock, waits] = [0, 0];
       const lost = quiet();
