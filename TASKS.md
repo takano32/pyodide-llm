@@ -92,9 +92,9 @@
 - T686 [性能][CPU] x86-64 の 3 値のカーネルの int16 の和の形を、端末で測って選ぶ — 未着手
 - T687 [性能][CPU] arm64 の Firefox のための 3 値の表の形 — 未着手
 - T691 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面の残り — 未着手
-- T692 [バグ][その他] Pyodide の段の中の回線の失敗（import の TypeError）もフォールバックに入れる — 反映済み
 - T693 [性能][CPU] Q3_K・Q5_K・Q6_K の塊のカーネル — 未着手
 - T694 [バグ][変換] Gemma 4 31B の GGUF を変換器が文でなく TypeError で落とす — 未着手
+- T693 [バグ][その他] 0.15 Mbps の fifo で「the runtime」の静けさが数えられずフォールバックする — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -917,24 +917,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T691 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面の残り — 状態: 未着手（2026-11-26、T289 から切り出した。持ち主の判断: 文面。規模 小）
 - T289 で 27B の note に「needs 16 GB」を入れた後の残り。持ち主に区切りのまとめで聞く: (1) 4 と言う端末の Ternary Bonsai 4B に警告が出ない（footprint 2.66 GB、T230 のレビュー）。(2) 設定の「Automatic keeps int8 unless it does not fit」は 3 値のモデルに合わない（3 値は 3 値のまま持つ）。(3) Underdog Saluki 27B（読み込み 7.96 GB + 0.3 GB で 8 GiB の内）も 8 と言う端末に警告が出ない同じ形かもしれない（後ろの分を数えた全体は未計測）。(4) 警告の数「needs about 8,000 MB」が後ろの 0.6 GB を数えず、27B の note の「16 GB」と食い違って見える（T289 の案 (b): 約 9,500 MB）。
 
-### T692 [バグ][その他] Pyodide の段の中の回線の失敗（import の TypeError）もフォールバックに入れる — 状態: 反映済み（2026-11-27、本線に入れてデプロイした）。前の状態: 未着手（2026-11-27、T298 の CI から。取りまとめ役の決め: 勧めの案。規模 小）
-- T298 の後、遅い回線（`slow.yml` の 0.15 Mbps と `tests/slow_in_browser.sh` の stall）で、Pyodide の段の中の `import(…/pyodide.mjs)` が「TypeError: Failed to fetch dynamically imported module」で落ち、「runtime」の失敗ではないのでページがフォールバックしない（T298 の項の表: stall は前 ok、後 FAILED）。読み（未確認）: 代理の待ち行列に留められた jsDelivr の TLS を相手が先に閉じた。前は 30 秒の静けさが先に鳴ってフォールバックすることがあった。
-- 取りまとめ役の決め（2026-11-27、訳: T298 を戻すと遅い回線の誤ったフォールバックが戻る。回線の失敗をフォールバックに入れるのは取り消しやすく訪問者の害が小さい）: 段の中の回線の TypeError も「runtime」の失敗と同じくフォールバックに入れる。直したら `slow_in_browser.sh` の 4 つの場合を前後で並べる。
-- **T298 のレビューから（2026-11-27）**: 勧めの案でよい（stall は「エラー + フォールバック」が条件なので通る見込み、未実行）。ただし `slow`（0.15）は「ready かつフォールバックなし」が条件なので直らない: 判定に「フォールバックで ready になれば ok」を足すかを決める。0.15 fifo の TypeError は `loadPyodide()` の中（`pyodide.asm.mjs`）でこちらから取り直せない。取り直しの試作（`pyodide.mjs?retry=1` で 1 回: 失敗した import は module map に残るので URL を変える）は stall で 2/2 ok だったが取り直しの枝は踏まれていない: 実装で warn の行を見て決める。stall は同じコミットでも割れるので複数回の割合で見る。
-- **実装（2026-11-27、Opus medium）**: `src/runtime/worker/pyodide.ts` の `stepOf()` の段に「モジュールを import する段」の印（3 つ目の引数 `imports`）を足し、「the loader」（`pyodide.mjs` の import）と「the runtime」（`loadPyodide()` の中の `pyodide.asm.mjs` の import）だけに付けた。その段が TypeError で落ちたら `Failure("runtime", 'Pyodide <版>: "<段>" could not fetch a module of its own (<元の文>)', { cause })` にする（ページは 1 回フォールバックする）。**見分けの線**: 段とエラーの名前（`name === "TypeError"`）で、文では見ない。ほかの段（NumPy・jinja2）の TypeError と、import の SyntaxError（届いたが読めない）はそのまま。`failureOf()` には段が分からないので、`stepOf()` の中（ExitStatus を「runtime」にする所と同じ所）で決めた。**取り直しは足さなかった**（取りまとめ役の決め、訳: 下の表で lane・stall はフォールバックの 1 回で足りた。失敗した import は module map に残るので URL を変える枝が要り、試験も CI も踏まない枝になる。`loadPyodide()` の中の import はこちらから呼び直せない）。**`slow-check.ts` の `slow` の判定**: 準備完了で、フォールバックが無いか、あってもその訳が静けさ（「got nothing from the network for」「did not answer in N seconds」がページのコンソールに無い）なら ok で、後者は「ok (ready after a fallback for an import that did not come)」と言う。静けさでのフォールバックは今までどおり FAILED（T118・T298 が見ているもの）。
-- 試験: `tests/worker-check.ts` に、偽の import が TypeError で落ちると「the loader」「the runtime」が「runtime」になり cause を持つこと、NumPy の段の TypeError はそのままであること。`tests/worker-memory-check.ts` の「Error はそのまま」の例は TypeError から SyntaxError に替えた。壊し方: 「the loader」の `imports` を外す → 「the loader: an import that did not come is no fallback」で落ちた。手元: types・worker-check・worker-memory-check・`npm run build && node tests/dist-check.ts`・実ブラウザ（Playwright の Chromium、stories260K、準備完了 21.5 秒）・軽い組（2414 秒）。CI を回した。訳: 遅い回線の再現は手元で見られない（開発機でブラウザの遅い回線を回さない形に合わせ、`slow_in_browser.sh` を 1 本）。
-- **前後**（`tests/slow_in_browser.sh`、tests.yml run 45937624733、同じランナーで前（その時の `origin/main`）と後を交互に。stall は 3 回ずつ）:
-
-  | 場合 | 前 | 後 |
-  |---|---|---|
-  | slow 0.15 Mbps fifo | FAILED 1/1（645 秒で ready、「the runtime」の静けさでフォールバック） | FAILED 1/1（同じ: 645 秒、「the runtime」の静けさでフォールバック） |
-  | slow 0.15 Mbps lane | FAILED 1/1（70 秒で `pyodide.mjs` の TypeError、フォールバックなし） | ok 1/1（「the loader」の TypeError でフォールバック、691 秒で ready） |
-  | slow 0.4 Mbps fair | ok 1/1（235 秒） | ok 1/1（236 秒） |
-  | stall 0.4 Mbps lane | FAILED 0/3 ok（40 秒で TypeError、フォールバックなし） | ok 3/3（「the loader」の TypeError でフォールバック、84〜85 秒で「the runtime」の静けさのエラー） |
-
-  run の終わりは failure（後の fifo の FAILED のため）。**残り（新しい番号の候補、取りまとめ役へ）**: 0.15 Mbps fifo の「the runtime」の静けさ。読み（未確認）: `loadPyodide()` の中の `pyodide.asm.mjs` の import は Worker の fetch を通らず、`PerformanceObserver` が終わりに 1 つ数えるだけなので、深い待ち行列の 0.15 Mbps でその本文が届く間は何も数えられない（stories260K の部品はそれより先に届き終わる）。T298 の CI ではこの場合が 397 秒の TypeError だったので、同じコミットでも割れる。
 ### T693 [性能][CPU] Q3_K・Q5_K・Q6_K の塊のカーネル — 状態: 未着手（2026-11-27、T505.4 から。取りまとめ役の決め: 別の回に。規模 大）
 - T505.4 で数えたもの（docs/notes/t505.4-gguf-blocks-2026-11-27.md）: huggingface.co の GGUF の上位 500 のうち、密な形で int8 が 16 GiB を越えるのは 52。いまの型（`BLOCKS` の 10）で塊のまま入るファイルを選べるのが 34、選べないのが 18。Q3_K・Q5_K・Q6_K を塊のまま持てれば（見積もり: ファイルの 1.06 倍）選べないものは 10 に、14B は Q4_K_M の代わりに Q6_K、27B の多くは IQ3_M・IQ3_XXS の代わりに Q3_K_M を選べる。Q4_K_M の塊のまま持った大きさも 1.20〜1.28 倍 → 1.0 倍の近くに。
 - 費用: (1) カーネル（`kernels/blocks/types.ts` に型 3 つ、型の番号で分ける並び 4 か所、`blocks-check`・`blocks-model.ts` の `TYPES`、`kernels-in-browser.ts`）。**Q6_K は重み 16 個の単位の尺度が符号つきの int8 で、32 個の群の整数の和が float32 で厳密な範囲（2^24）を越える（32 × 63 × 127 × 128）**: 今の「群の和を float32 で厳密に」の形のまま入らない。(2) Python の `BLOCKS` に足すと、一覧の `blocks: true` の項目（Qwen3 14B・llm-jp-3.1 13B など）の Q6_K の行が塊のまま残り、チェックポイントが変わる: `CONVERTER` を上げる（訪問者の取り直し）、`loaded` と note の数、`tests/quant_sizes.py` で数え直す。(3) GPU の `SUPERBLOCKS` に足すか（足すと塊のモデルの端末の鍵が 1 回動く。足さないと、いま GPU に置ける Q4_K の束のモデルが Q6_K の行のために CPU に残る: 先に数える）。(4) ページの `KEPT` と `BYTES_A_WEIGHT` を測り直す。検証手順 5・6（27B と Saluki）。
 ### T694 [バグ][変換] Gemma 4 31B の GGUF を変換器が文でなく TypeError で落とす — 状態: 未着手（2026-11-27、T505.4 で見つけた。規模 小）
 - unsloth/gemma-4-31B-it-GGUF の GGUF（Q8_0・Q4_K_M など、頭だけを読んだ）を GGUF だけで開くと、`convert/config.py` の `check_config()` が「TypeError: unsupported operand type(s) for %: 'int' and 'list'」で落ちる（`n_heads % n_kv_heads`: 層ごとの `head_count_kv` が配列）。ページでは訪問者に例外の型の文が出る見込み（未確認）。直し: 読めるなら読む（Gemma 4 の層ごとの head は E2B・E4B で読んでいる）、読めなければ今ある文で断る。31B は int8 で 16 GiB を越えるので、読めれば T505.4 の道（塊のまま）に入る。
+
+### T693 [バグ][その他] 0.15 Mbps の fifo で「the runtime」の静けさが数えられずフォールバックする — 状態: 未着手（2026-11-27、T692 のレビューから。規模 小、急がない）
+- `pyodide.asm.mjs` の import は Worker の `fetch` を通らず、`PerformanceObserver` が終わりに 1 つ数えるだけなので、本文が届く間の静けさが数えられない（T692 の前後とも FAILED、準備完了はするが静けさでのフォールバック）。
+- 案: `prefetchNumpy` と同じ形で、「the loader」の段のうちに数える `fetch` で `pyodide.asm.mjs` を先に取る（HTTP キャッシュが import に当たる）。ファイル名は `pyodide.mjs` の中に決め打ちで版で変わりうる。確かめは `slow_in_browser.sh` の fifo 1 本。覆す条件: 先取りしても静けさが消えない・先取りが本体の取得と二重になって遅い回線で損になる。
+
