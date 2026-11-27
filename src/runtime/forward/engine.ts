@@ -175,7 +175,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const { tables, spread } = blocked ? blockTables({ k, relaxed, alloc, memory, base, tensors: T, partsOf, signed: trying.signed }) : { tables: 0, spread: 0 };
   // T641.2: the model's tensors by their names (tensors.ts): the address of a float32 copy, a matrix as the kernels
   // multiply by it
-  const { floats, matrix, embedder, outlierColumns } = tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread });
+  const { floats, matrix, embedder, outlierColumns, unrounds } = tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread });
 
   // ---- the activations: one frame per token, BATCH of them for a prompt (T108). A frame holds what one token needs,
   // in the order it always had, and the next token's frame follows: every array of token t is t * S bytes after token
@@ -271,6 +271,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const perLayered = perLayer(core, rows ?? ((offset, bytes, to) => { U.copyWithin(to, base + offset, base + offset + bytes); }));
   // the position that comes next for the layers that keep a state, -1 once a run stopped half way
   let stateAt = 0;
+  // T314: the first position's run multiplies the layers' matrices by the input as it is (float32) where they have a
+  // job for that (int8's): unroundedFirst, one has (asked once they are made); unrounding, the run is so
+  const unroundedFirst = unrounds();
+  let unrounding = false;
 
   // T237: the signs of a rotated basis for every width a matrix reads (Python's, each times 1 / sqrt(block))
   const signs: Record<number, number> | null = rotated ? Object.fromEntries(plan.widths.rotated.map((width) => {
@@ -373,8 +377,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // (T621: last, a layer of llama.cpp's blocks' fourth word: its spread, matmulsByKind()'s; 0 of any other)
   const jobOf = (m: Held, out: number, outStride: number, input: number, l: number, count: number) => {
     const [w, s, c, last = 0] = m.layer(l);
+    if (unrounding && m.unrounded !== undefined) return [m.unrounded, out, input, 0, w, s, 0, m.n, 0, m.rows, count, outStride, S, 0];
     return m.ready ? [m.job!, out, xq, xs, w, s, c, m.n, last, m.rows, count, outStride, S, S] : [m.job!, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
   };
+  // what makes a matrix's input ready (null: it reads it as it is, a float32 matrix's, T314 the first position's)
+  const readyOf = (m: Held) => (unrounding && m.unrounded !== undefined ? null : m.ready ?? null);
   // T363.5: the same of a model whose rows have kinds of their own (the plan's own_kinds): a stack may be its layers,
   // each a matrix of a kind of its own, and the matrices of one input may take their activations in different forms.
   // Those that take them alike go out as one phase, after the activations are made ready for them; then the next
@@ -385,7 +392,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       for (let t = 0; t < count; t++) k.rotate(xr + t * S, input + t * S, signs![n], n, rotated);
       input = xr;
     }
-    const readied = helds.map(([m]) => m.ready ?? null);
+    const readied = helds.map(([m]) => readyOf(m));
     readied.forEach((ready, first) => {
       if (readied.indexOf(ready) !== first) return;
       if (ready) for (let t = 0; t < count; t++) ready(xq + t * S, xs + t * S, input + t * S, n);
@@ -396,7 +403,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T237: in a rotated basis the matrices read R of the input, turned here once for all of them (a kernel on this
   // thread: 5 blocks of 1024 take a few microseconds, a thousandth of the rows they are multiplied by)
   function matmulsAlike(input: number, count: number, list: Product[]) {
-    const { n, ready } = list[0][0]!;
+    const { n } = list[0][0]!, ready = readyOf(list[0][0]!);
     if (rotated) {
       for (let t = 0; t < count; t++) k.rotate(xr + t * S, input + t * S, signs![n], n, rotated);
       input = xr;
@@ -418,10 +425,17 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // one token (count 1) or up to BATCH tokens of a prompt at positions pos0, pos0 + 1, ... (T108). Every token is
   // computed as it would be alone: the same kernels on the same numbers, only the matmuls of a layer go out once for
   // all of them. The logits, if asked for, are the last token's.
+  // T314: the first position alone where it is unrounded, a block from there from position 1 (the same numbers)
   function run(tokens: number[], pos0: number, needLogits: boolean) {
     // T156: the layers are on the GPU alone: a block or a step it did not take cannot run here
     if (direct) throw onGpu.notHere();
+    if (pos0 > 0 || !unroundedFirst || tokens.length === 1) return through(tokens, pos0, needLogits);
+    through(tokens.slice(0, 1), 0, false);
+    through(tokens.slice(1), 1, needLogits);
+  }
+  function through(tokens: number[], pos0: number, needLogits: boolean) {
     const count = tokens.length;
+    unrounding = pos0 === 0 && unroundedFirst;
     if (pos0 + count - 1 >= cache.capacity) cache.grow(pos0 + count - 1);
     views();
     cpuWrote(pos0);  // T135: from here on the cache holds what the GPU does not

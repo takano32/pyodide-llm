@@ -24,9 +24,11 @@ import type { KindNumbers } from "../contracts/gpu/protocol.ts";
 // PACKED, in groups of group) or float32; and for a layer the addresses of its values and, where it is packed, of its
 // scales and its corrections (0: none). onGpu (T156): on the GPU alone, its addresses the checkpoint's offsets.
 // T375.4: job and ready are the CPU's (the kind of the job that multiplies by it and what makes its input ready:
-// engine.ts's matmuls()); this side reads neither
+// engine.ts's matmuls()); this side reads neither. T314: unrounded, the CPU's too: the kind of the job that multiplies
+// by it with its input as it is, float32, which the first position's matrices take (none: its packing has no kernel
+// for that, and the first position's input is made ready as any other's)
 // (T363.5: layers, of a stack whose layers are each of a kind of their own: each layer's matrix, and kind is "layers")
-export type Held = { rows: number; n: number; kind: "f32" | Packed | "layers"; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null; layers?: Held[] };
+export type Held = { rows: number; n: number; kind: "f32" | Packed | "layers"; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null; unrounded?: number; layers?: Held[] };
 // a matmul of one input: [the matrix (one the model has: matmuls() reads it as there), its output, the output's stride, the layer]
 export type Product = [Held | null, number, number, number];
 // The engine's memory after the checkpoint: alloc() takes bytes of it (and never gives them back), and F, U and H are

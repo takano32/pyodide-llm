@@ -71,6 +71,9 @@ const KINDS = [
   // T612: attention with its scores capped, the job's out stride (100: a job of one token has no use for it) the cap
   ["attention_capped", "plain", [1, 2, 3, 4, 5, 6, 9, 7, 8, 20, 30, 100], {}],
   ["attention_f16_capped", "plain", [1, 2, 3, 4, 5, 6, 9, 7, 8, 20, 30, 100], {}],
+  // T314: int8 weights by float32 activations as they are (the first position's), the job's input and scales as a
+  // float32 matrix's input and its weights are
+  ["matmul_q8f", "plain", [1, 2, 4, 5, 7, 20, 30], { rowBytes: (n) => n }],
 ];
 const more = (name) => KINDS.find(([kind]) => kind === name)[3];
 const jobOf = (kind, said = {}) => [KIND[kind], 1, 2, 3, 4, 5, more(kind).a6 ?? 6, said.n ?? 7, 8, 9, said.count ?? 1, 100, 200, 300];
@@ -265,9 +268,10 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
 }
 {
   // the facts of each packing, a second copy: the kinds of its jobs, its corrections' kernel, the bytes of a group of
-  // activations in xs, and what makes the activations ready (relaxed, plain)
+  // activations in xs, and what makes the activations ready (relaxed, plain). T314: unrounded, the kind of its job of
+  // the activations as they are (the first position's), where it has one
   const FACTS = {
-    int8: { relaxed: "matmul_q8r", plain: "matmul_q8", sums: "int8_sums", xs: 4, ready: [[["quantize_x", [1, 2, 3, 96, 64]]], [["quantize_x", [1, 2, 3, 96, 0]]]] },
+    int8: { relaxed: "matmul_q8r", plain: "matmul_q8", unrounded: "matmul_q8f", sums: "int8_sums", xs: 4, ready: [[["quantize_x", [1, 2, 3, 96, 64]]], [["quantize_x", [1, 2, 3, 96, 0]]]] },
     int6: { relaxed: "matmul_q6r", plain: "matmul_q6", sums: "six_sums", xs: 4, ready: [[["quantize_x", [1, 2, 3, 96, 64]]], [["quantize_x", [1, 2, 3, 96, 0]]]] },
     ternary: { relaxed: "matmul_t2r", plain: "matmul_t2", sums: null, xs: 8,
       ready: [[["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]], [["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]]] },
@@ -280,7 +284,9 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   assert.deepEqual(Object.keys(PACKED), Object.keys(FACTS));
   for (const [name, fact] of Object.entries(FACTS)) {
     const packing = PACKED[name];
-    assert.deepEqual([packing.jobs.relaxed, packing.jobs.plain, packing.jobs.signed], [KIND[fact.relaxed], KIND[fact.plain], KIND[fact.signed]], `${name}: the kinds of its jobs`);
+    assert.deepEqual([packing.jobs.relaxed, packing.jobs.plain, packing.jobs.signed, packing.jobs.unrounded], [KIND[fact.relaxed], KIND[fact.plain], KIND[fact.signed], KIND[fact.unrounded]], `${name}: the kinds of its jobs`);
+    // (T314: a job of the activations as they are is the plain module's, a matrix's, and its rows are the packing's)
+    if (fact.unrounded) assert.deepEqual([WORK[fact.unrounded].from, WORK[fact.unrounded].rowBytes(256), Boolean(WORK[fact.unrounded].tile)], ["plain", packing.rowBytes(256), false], `${name}: its job of the activations as they are`);
     assert.deepEqual([WORK[fact.relaxed].from, WORK[fact.plain].from], ["relaxed", "plain"], `${name}: its relaxed job is the relaxed module's, the other the plain one's`);
     assert.ok(WORK[fact.relaxed].rowBytes && WORK[fact.plain].rowBytes, `${name}: its jobs are a matrix's`);
     assert.equal(packing.sums, fact.sums, `${name}: the kernel of its corrections`);
@@ -359,15 +365,18 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
 // ---- the engine reads them: createForward() on Python's plan of a small model in each packing and in float32, its
 // kernels the ones that write down their calls. What it asks of them is what the model's packing says, chosen as its
 // matrices are made: the corrections' kernel, the kernel of a token's rows and of a block's, and the activations made
-// ready for every token of a block (a frame apart) before the matrices of an input are multiplied.
+// ready for every token of a block (a frame apart) before the matrices of an input are multiplied. T314: and the
+// first position's kernel, which takes the input as it is where the packing has one (a block from there that position
+// alone first).
 {
   const { plans } = await import("./plans.ts");
   const { createForward, keysInHalf } = await import(runtimeUrl("forward.js"));
   const { plansOf, planOf, FORM, empty } = plans(new URL("..", import.meta.url));
   const header = [256, 512, 3, 8, 4, 2000, 300], form = { ...FORM, qk_norm: true, head_dim: 64 }, LAYERS = header[2], BLOCK = 5;
-  // (a second copy again: [relaxed, plain] each)
+  // (a second copy again: [relaxed, plain] each. T314: first, the kernel of the first position's rows where it is
+  // another (the packing's job of the activations as they are: int8's), which makes none of them ready)
   const ASKED = {
-    int8: { sums: ["int8_sums", null], one: ["matmul_q8r", "matmul_q8"], block: ["matmul_q8r_tile", "matmul_q8"], bias: [64, 0], interleaved: false },
+    int8: { sums: ["int8_sums", null], one: ["matmul_q8r", "matmul_q8"], block: ["matmul_q8r_tile", "matmul_q8"], first: ["matmul_q8f", "matmul_q8f"], bias: [64, 0], interleaved: false },
     int6: { sums: ["six_sums", null], one: ["matmul_q6r", "matmul_q6"], block: ["matmul_q6r", "matmul_q6"], bias: [64, 0], interleaved: false },
     ternary: { sums: [null, null], one: ["matmul_t2r", "matmul_t2"], block: ["matmul_t2r_tile", "matmul_t2"], bias: [0, 0], interleaved: true },
     binary: { sums: [null, null], one: ["matmul_b1r", "matmul_b1"], block: ["matmul_b1r_tile", "matmul_b1"], bias: [0, 0], interleaved: true },
@@ -387,12 +396,20 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
       const made = said.splice(0);
       assert.deepEqual(named(made, "_sums"), asked.sums[i] ? [asked.sums[i]] : [], `${what}: the corrections, as the engine is made`);
       engine.forward(7, 0, true);
+      const opening = said.splice(0);
+      engine.forward(8, 1, true);
       const one = said.splice(0);
-      engine.forwardMany(Array.from({ length: BLOCK }, (_, t) => 3 + t), 1);
+      engine.forwardMany(Array.from({ length: BLOCK }, (_, t) => 3 + t), 2);
       const block = said.splice(0);
+      // (T314: a block from the first position: that position alone, then the rest a block from position 1, where the
+      // first position has a kernel of its own)
+      engine.forwardMany(Array.from({ length: BLOCK }, (_, t) => 3 + t), 0);
+      const fromFirst = said.splice(0);
       engine.release();
+      assert.deepEqual(named(opening, "matmul_"), [(asked.first ?? asked.one)[i]], `${what}: the kernel of the first position's rows`);
       assert.deepEqual(named(one, "matmul_"), [asked.one[i]], `${what}: the kernel of a token's rows`);
       assert.deepEqual(named(block, "matmul_"), [asked.block[i]], `${what}: the kernel of a block's rows`);
+      assert.deepEqual(named(fromFirst, "matmul_"), asked.first ? [asked.first[i], asked.block[i]] : [asked.block[i]], `${what}: the kernels of a block from the first position`);
       assert.match(engine.backend, new RegExp(p.dtype === "float32" ? "^SIMD kernels, float32" : `^SIMD kernels, ${p.dtype}${relaxed ? ", relaxed SIMD" : ""}( |$)`), `${what}: what the status says`);
       // the corrections a relaxed kernel is handed are the ones the packing's kernel made for that matrix, a layer's
       // after the layer's before
@@ -411,8 +428,11 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
       // block, each a frame after the one before, before the input's matrices
       const ready = (said) => said.filter(([name]) => name === "quantize_x");
       if (asked.bias[i] === null) {
-        assert.deepEqual([ready(one), ready(block), named(one, "interleave"), named(block, "interleave")], [[], [], [], []], `${what}: float32 weights read the input as it is`);
+        assert.deepEqual([ready(opening), ready(one), ready(block), ready(fromFirst), named(one, "interleave"), named(block, "interleave")], [[], [], [], [], [], []], `${what}: float32 weights read the input as it is`);
       } else {
+        // (T314: the first position's input as it is, where the packing has a kernel for that, none of it made ready)
+        assert.equal(ready(opening).length, asked.first ? 0 : 4 * LAYERS + 1, `${what}: the first position's inputs made ready`);
+        assert.equal(ready(fromFirst).length, (asked.first ? BLOCK - 1 : BLOCK) * 4 * LAYERS, `${what}: a block's inputs from the first position made ready`);
         assert.equal(ready(one).length, 4 * LAYERS + 1, `${what}: a token's inputs made ready`);
         assert.equal(ready(block).length, BLOCK * 4 * LAYERS, `${what}: a block's inputs made ready, every token's`);
         for (const [, args] of [...ready(one), ...ready(block)]) assert.equal(args[4], asked.bias[i], `${what}: the bias of the activations`);
@@ -484,7 +504,8 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
         plan.outliers.forEach((c, i) => {
           assert.deepEqual(Array.from({ length: vocab }, (_, v) => F[columns / 4 + i * vocab + v]), Array.from({ length: vocab }, (_, v) => weight(table, v * dim + c)), `${what}: the column of outlier channel ${c}`);
         });
-        assert.deepEqual(named(said, "matmul_"), [Object.keys(KIND)[packing.jobs.relaxed]]);
+        // (T314: the first position's kernel, which takes the input as it is where the packing has one)
+        assert.deepEqual(named(said, "matmul_"), [Object.keys(KIND)[packing.jobs.unrounded ?? packing.jobs.relaxed]]);
       } else {
         // every matrix is float32 now: the first product's is the first layer's wq, widened where the engine put it
         assert.deepEqual(named(said, "matmul_"), ["matmul_f32"], `${what}: float32 products`);
@@ -496,6 +517,6 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     }
   }
   console.log(`ok: ${read} engines on made-up bytes: an embedding's row, the outlier channels' columns and a matrix widened to float32 are each weight as its packing reads it, times its group's scale`);
-  console.log(`ok: ${engines} engines (int8, int6, ternary, binary and float32, with relaxed SIMD and without) ask of their kernels what the packing says: the corrections, a token's kernel and a block's, and every token of a block made ready in its frame`);
+  console.log(`ok: ${engines} engines (int8, int6, ternary, binary and float32, with relaxed SIMD and without) ask of their kernels what the packing says: the corrections, the first position's kernel (T314), a token's and a block's, and every token of a block made ready in its frame`);
 }
 await leave(0);

@@ -333,6 +333,13 @@ export const WORK = kinds({
     one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1, a9) => k.attention_f16_capped(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1, a9),
     warm: (k, { xq, w, c, out }) => { k.attention_f16_capped(out, xq, w, w, c, 0, 1, 1, 4, 0, 1, 50); },
   },
+  // T314: out, x, -, w, scales, -, n: int8 weights by float32 activations as they are, none rounded (the first
+  // position's matrices: forward/engine.ts)
+  matmul_q8f: {
+    from: "plain", rowBytes: (n) => n,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q8f(out, a, a4, a5, a7, r0, r1),
+    warm: (k, { xq, w, s, out }) => { k.matmul_q8f(out, xq, w, s, 32, 0, 1); },
+  },
 });
 export type Kind = keyof typeof WORK;
 /** the number of each kind of job: its place in WORK */
@@ -349,7 +356,9 @@ export const TILE_ROWS = Object.values(WORK).map((work: Work) => work.tileRows ?
 //             at a time: an embedding's row, a tensor widened to float32); or
 //   row       (llama.cpp's blocks, of which no weight is read alone) what writes a row n wide at w as float32 to out
 //   jobs      the kind of the job that multiplies by it, with relaxed SIMD and without (signed: with a relaxed dot
-//             product that multiplies signed bytes by signed bytes, where the packing has a kernel for that)
+//             product that multiplies signed bytes by signed bytes, where the packing has a kernel for that; T314,
+//             unrounded: by the activations as they are, float32, which the first position's matrices take, where the
+//             packing has a kernel for that: int8's)
 //   tabled    (llama.cpp's blocks) its kernels take the engine's tables and this number, the type's, where the others
 //             take a matrix's scales and corrections; the engine has their modules for such a model alone
 //   takes     the form its kernels take the activations in, by a name: matrices whose packings say the same name
@@ -370,7 +379,7 @@ export type Ready = (xq: number, xs: number, x: number, n: number) => void;
 export type Packing<Name extends string = string> = {
   rowBytes(n: number): number; scale: number; value?(U: Uint8Array, at: number, i: number): number;
   row?(k: Kernels, tables: number): (out: number, w: number, n: number) => void;
-  jobs: { relaxed: number; plain: number; signed?: number }; tabled?: number; takes: string;
+  jobs: { relaxed: number; plain: number; signed?: number; unrounded?: number }; tabled?: number; takes: string;
   sums: "int8_sums" | "six_sums" | null; ready(k: Kernels, relaxed: boolean): Ready; xs: number;
   group: number; gpu: { as: Name; alone: boolean; dot: boolean } | null;
 };
@@ -399,7 +408,7 @@ const blocks = ([type, bytes]: readonly [number, number]): Packing<never> => ({
 export const PACKED = packings({
   int8: {
     rowBytes: (n) => n, scale: 4, value: (U, at, i) => signed(U[at + i]), takes: "biased",
-    jobs: { relaxed: KIND.matmul_q8r, plain: KIND.matmul_q8 }, sums: "int8_sums", ready: biased, xs: 4,
+    jobs: { relaxed: KIND.matmul_q8r, plain: KIND.matmul_q8, unrounded: KIND.matmul_q8f }, sums: "int8_sums", ready: biased, xs: 4,
     group: 32, gpu: { as: "int8", alone: true, dot: false },
   },
   // T98: six bits a weight, 32 of them in 24 bytes, the layout of llama2_numpy.pack6 (six bits, then two zero bits)

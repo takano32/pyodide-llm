@@ -134,7 +134,8 @@ export function tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread
       }
       // (a layer's values, scales and corrections: 0 where the packing has none)
       const layer = (l: number) => [values + l * rows * rowBytes, scales + l * scaled, corrections && corrections + l * corrected];
-      return { rows, n, kind: t.kind as Packed, group: t.group, layer, job: relaxed ? packing.jobs.relaxed : packing.jobs.plain, ready: readyOf(packing) };
+      return { rows, n, kind: t.kind as Packed, group: t.group, layer, job: relaxed ? packing.jobs.relaxed : packing.jobs.plain, ready: readyOf(packing),
+        unrounded: packing.jobs.unrounded };
     }
     // (a layer of a stack that is float32 by itself: widened or taken as it is, where it is)
     if (t !== T[source]) return { rows, n, kind: "f32", job: KIND.matmul_f32, ready: null, layer: ((w) => () => [w])(t.kind === "f32" ? base + t.offset : widen(t)) };
@@ -186,5 +187,10 @@ export function tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread
     return { columns, picked };
   }
 
-  return { floats, matrix, embedder, outlierColumns };
+  // T314: whether a matrix of the layers (of those made so far: the engine asks once its layers are made) has a job of
+  // its input as it is, which a run of the first position takes (its packing's, jobs.ts's PACKED: int8's). The
+  // classifier is not asked: the first position has logits only where a prompt is that one token
+  const unrounds = () => [...matrices].some(([name, m]) => name !== "wcls" && m !== null && [m, ...(m.layers ?? [])].some(({ unrounded }) => unrounded !== undefined));
+
+  return { floats, matrix, embedder, outlierColumns, unrounds };
 }
