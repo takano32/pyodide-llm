@@ -212,8 +212,10 @@ await served?.close();
 // T692: on a slow line, a fallback is the check's failure where the worker took the line for one that stopped (its 30
 // seconds of stillness, what T118 and T298 are about). One after an import whose file did not come (a TLS handshake
 // that jsDelivr closed while it waited behind the model: the line broke, it was not slow) is the page doing what it
-// should, and ready after it is ok, said as such. Read from the worker's error in the page's console
-const stilled = console_.some((line) => /got nothing from the network for|did not answer in \d+ seconds/.test(line));
-const ok = scenario === "slow" ? outcome.ready && (!state.fellBack || !stilled) : Boolean(outcome.error) && state.fellBack && !/the test:/.test(outcome.error);
+// should, and ready after it is ok, said as such. Read from the worker's error in the page's console, and by what is
+// to be found there (the sentence of worker/pyodide.ts's stepOf(), which tests/worker-check.ts holds), not by what is
+// not: a sentence that changed fails this check, where a search for the stillness's words passed every fallback
+const imported = console_.some((line) => /"the (?:loader|runtime)" stopped \(TypeError.*a module of its own may not have arrived/.test(line));
+const ok = scenario === "slow" ? outcome.ready && (!state.fellBack || imported) : Boolean(outcome.error) && state.fellBack && !/the test:/.test(outcome.error);
 console.log(ok ? (scenario === "slow" && state.fellBack ? "ok (ready after a fallback for an import that did not come)" : "ok") : "FAILED");
 await leave(ok ? 0 : 1);
