@@ -255,7 +255,7 @@ console.log("ok: a file is named in an address by names with / between them, non
     assert.equal(found.hf.weights, file);
     assert.deepEqual(found.conversion, { dtype: "int8", blocks: true }, `${file} is not converted with its blocks kept`);
     assert.ok(keptBytes(files.find(({ path }) => path === file)) + BESIDE_WEIGHTS <= WIDE_BYTES);
-    assert.equal(decodeURIComponent(keptName(found)), `owner/model@${REVISION}/${file}:int8:4096:blocks`);
+    assert.equal(decodeURIComponent(keptName(found)), `owner/model@${REVISION}/${file}:int8:blocks`);
   }
   // a model that fits as int8 is as it was: its Q8_0, widened
   assert.equal(bestGguf(nemo)?.path, "Mistral-Nemo-12B-Q8_0.gguf");
