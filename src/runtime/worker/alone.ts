@@ -21,8 +21,10 @@ import type { Tensors } from "../contracts/plan.ts";
 
 // T156: a model on the GPU alone: what forward.ts reads of it (Direct), its GPU's worker, why the GPU stopped under
 // it (or null), where the loops that write its weights wait (room) and its builder (drained), and end(): the worker
-// stopped, resolved once it said so
-export type GpuOnly = Direct & { worker: Worker; lost: string | null; room: GpuOnlyWeights["room"]; drained: GpuOnlyWeights["drained"]; end(): Promise<void> };
+// stopped, resolved once it said so. T491, gone(): why the worker went before the engine was built (an error:
+// forward.ts's gpuOnlyWeights), or undefined
+export type GpuOnly = Direct & { worker: Worker; lost: string | null; room: GpuOnlyWeights["room"]; drained: GpuOnlyWeights["drained"]; end(): Promise<void>;
+  gone(): string | undefined };
 // where a model goes (gpuOnlyWeightsFor()): forward.ts's place and, where it may go on the GPU alone, its tensors,
 // the bytes kept in the memory then and those with the forward pass after them
 export type Placed = Place & { tensors?: Tensors; stored?: number; gpuOnly?: number };
@@ -184,14 +186,15 @@ export function gpuOnlyBuffer(size: number, header: Header, options: Options, { 
   // it makes its device and buffers once it opens, from a plan it was handed whole)
   let weights: GpuOnlyWeights;
   // T377: a worker that says "error" before the engine is built (its script did not arrive, or it threw) takes no more
-  // of the weights and counts none: the loops that write stop waiting for it at once (they waited 60 s, and the load
-  // failed), and the engine, which listens from start() on, is handed the error it missed once it is built (failed)
+  // of the weights and counts none. T491: the loops that write throw why at their next wait for it, and the load gives
+  // up there (gpuOnlyGaveUp()). An error past their last wait, before the engine is built, is handed to the engine,
+  // which listens from start() on, once it is built (failed)
   let failed: ErrorEvent | undefined;
   try {
     weights = forward.gpuOnlyWeights({ memory, base, size, tensors, worker, apart: table?.hole });
     worker.addEventListener("error", (event) => {
       failed ??= event;
-      weights.gone();
+      weights.gone(event.message);
     });
     worker.postMessage({ type: "open", plan, flow: weights.flow } satisfies ToGpu);
   } catch (error) {
@@ -203,12 +206,12 @@ export function gpuOnlyBuffer(size: number, header: Header, options: Options, { 
   // every layer's inputs, of which a token reads one row, wherever the table is: the CPU's token was reckoned to read
   // the E2B's 2.6 GB of it and the E4B's 3.2 GB, 2.0 and 1.6 times what it reads)
   const tableOf = forward.tableHole(tensors), reads = size - (tableOf ? tableOf[1] - tableOf[0] : 0);
+  let built = false;
   const direct: GpuOnly = gpuOnlyNow = { worker, lost: null, stored, size: reads, place: weights.place,
     layerWeights, cpu: gpuRequest?.cpu, usage: gpuRequest?.usage ?? forward.USAGE_UNKNOWN,
-    room: weights.room, drained: weights.drained, onLost: (why) => { direct.lost = why; }, end };
+    room: weights.room, drained: weights.drained, onLost: (why) => { direct.lost = why; }, end, gone: () => (built ? undefined : weights.lost()) };
   pooled(memory);
   const kernels = (wide ? wideKernels!.shared : sharedKernels)!;
-  let built = false;
   return {
     direct,
     hole: table?.hole ?? null,
@@ -254,8 +257,7 @@ export async function gpuOnlyReady(model: Listed, id: number, engine: Engine | u
   if (!direct || engine === undefined) return true;
   await engine.gpu;
   if (!direct.lost) return true;
-  console.warn(`gpu: ${direct.lost}: the model was on the GPU alone, and is loaded again on the CPU`);
-  cpuOnly.add(modelKey(model));
+  onCpu(model, direct.lost);
   // (the CPU was faster: the page keeps it for this model and device once the load on the CPU is ready, and the next
   // visit loads on the CPU at once. The load's id: the page reads no word of a load another choice cancelled, the
   // second review of T156: a verdict that came late was kept for the model chosen since)
@@ -266,4 +268,24 @@ export async function gpuOnlyReady(model: Listed, id: number, engine: Engine | u
   await direct.end();
   gpuOnlyNow = undefined;
   return false;
+}
+/** T491 (the owner, 2026-11-26): after a load that failed: whether it failed because the GPU's worker of the model on
+ * the GPU alone went before its engine was built (it said "error"), which its loops that
+ * write threw at once: the model goes on the CPU from now on this visit, and is loaded again there (true). The worker
+ * was let go of as the load ended (gpuOnlyBuffer()'s destroy()): the next load waits for it (gpuOnlyEnding). Any other
+ * failure is the load's own (false) */
+export function gpuOnlyGaveUp(model: Listed) {
+  const why = gpuOnlyNow?.gone();
+  if (!why) return false;
+  onCpu(model, why);
+  gpuOnlyNow = undefined;
+  return true;
+}
+/** T491: the model loading now was given up on the GPU alone (gpuOnlyGaveUp()'s question, before the load ends: a
+ * kept model's read, whose failures are otherwise read as a kept file that could not be read) */
+export const gpuOnlyGone = () => Boolean(gpuOnlyNow?.gone());
+// (said, and on the CPU from now on this visit)
+function onCpu(model: Listed, why: string) {
+  console.warn(`gpu: ${why}: the model was on the GPU alone, and is loaded again on the CPU`);
+  cpuOnly.add(modelKey(model));
 }

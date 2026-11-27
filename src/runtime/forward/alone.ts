@@ -379,15 +379,18 @@ export function gpuPacking(kind: string): GpuPacking {
 // FLOW_STALL_MS. They wait without blocking: a worker made from a worker may not even start while the one that made
 // it blocks (Chromium, gpu-check's first run: the GPU's worker took nothing for 60 s)
 // T377: a worker that is gone (it did not start, or threw: whoever made it hears its "error") takes nothing more and
-// counts nothing more: gone() says so, and nothing waits for it from then on (else every load waited those 60 s and
-// then failed, where the model can be loaded again on the CPU at once)
+// counts nothing more: gone() says so, and nothing waits for it from then on.
+// T491 (the owner, 2026-11-26): nor does the load go on: a worker gone is why the model goes on the CPU, and what
+// waits for it throws that reason (lost()) at once: the load gives up there, before the rest of the model is fetched
+// or read, and is loaded again on the CPU (worker/alone.ts's gpuOnlyGaveUp()). Before, the first load ran to its end
 const FLOW_BYTES = 64 * 2 ** 20, FLOW_STALL_MS = 60000;
 /** T156: the weights of a model on the GPU alone. worker: the GPU's worker (gpu.ts, told to open with gpuOnlyPlan()),
  * tensors: llama2_numpy.external_tensors(), size: the checkpoint's bytes. Returns { holes, place, stored, flow,
  * write(offset, bytes), room(), drained() }: write() puts the bytes outside the holes into memory at base +
  * place(offset), and posts those in them to the worker (a copy each); room() resolves once the worker is no more than
  * FLOW_BYTES behind, drained() once it has all of them; stored is what memory holds (the checkpoint less the holes).
- * gone() (T377): the worker takes no more (the bytes for it are dropped from then on, and room() and drained() resolve). */
+ * gone(said) (T377): the worker takes no more (the bytes for it are dropped from then on); T491: lost() says why, and
+ * room() and drained() throw it from then on. */
 // T334.3: apart, a stretch of the checkpoint neither in the memory nor on the GPU (a Gemma 4's table of every layer's
 // inputs, which stays where the model is kept as it comes: perlayer.ts's tableHole()), or null: its bytes go nowhere
 // here, and place() leaves it out as it leaves the GPU's holes out
@@ -396,19 +399,24 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker, apart = nu
   const holes = gpuHoles(tensors), all = apart ? [...holes, apart].sort((a, b) => a[0] - b[0]) : holes, place = placer(all);
   const stored = size - all.reduce((sum, [start, end]) => sum + (end - start), 0);
   const flow = new SharedArrayBuffer(8), taken = new BigInt64Array(flow);
-  let sent = 0n, gone = false;
+  let sent = 0n, lost: string | undefined;
+  const gone = (why: string) => {
+    lost ??= why;
+    Atomics.notify(taken, 0);
+  };
   const wait = async (ahead: bigint) => {
     let seen = Atomics.load(taken, 0), moved = performance.now();
-    while (!gone && sent - seen > ahead) {
+    while (!lost && sent - seen > ahead) {
       if (Atomics.waitAsync) await Atomics.waitAsync(taken, 0, seen, 1000).value;
       else await new Promise((resolve) => setTimeout(resolve, 10));
       const now = Atomics.load(taken, 0);
       if (now !== seen) [seen, moved] = [now, performance.now()];
       else if (performance.now() - moved > FLOW_STALL_MS) throw new Error(`the GPU took no weights for ${FLOW_STALL_MS / 1000} s`);
     }
+    if (lost) throw new Error(lost);
   };
   const post = (offset: number, chunk: Uint8Array, from: number, to: number) => {
-    if (gone) return;
+    if (lost) return;
     const bytes = chunk.slice(from, to);
     worker.postMessage({ type: "weights", offset: offset + from, bytes }, [bytes.buffer]);
     sent += BigInt(to - from);
@@ -430,11 +438,11 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker, apart = nu
     room: () => wait(BigInt(FLOW_BYTES)),
     /** every byte posted is on the GPU (or was dropped by a GPU that failed) */
     drained: () => wait(0n),
-    /** T377: the GPU's worker takes no more of them: what waits for it stops waiting, now */
-    gone() {
-      gone = true;
-      Atomics.notify(taken, 0);
-    },
+    /** T377: the GPU's worker takes no more of them (said: what the browser said of it): what waits for it stops
+     * waiting, now, and throws why (T491) */
+    gone: (said: string | undefined) => gone(REASONS.notStarted(said)),
+    /** T491: why the worker takes no more (it is gone), or undefined */
+    lost: () => lost,
   };
 }
 // T334.1: what a layer's places in a Gemma 4's stacks are read from (Python's layer_facts(): the plan's layers, or T334.3

@@ -9,7 +9,7 @@ import { switchesNow } from "./request.ts";
 import { adopted } from "./loaded.ts";
 import { since, took } from "./clock.ts";
 import { pythonBuffer, automaticBits, weightsBuffer, checkpointSink, ownStops, runsPacked, tableInMemoryFromNow, blocksWidenedNow } from "./weights.ts";
-import { gpuOnlyPossible, weightsRoom, weightsDrained } from "./alone.ts";
+import { gpuOnlyPossible, gpuOnlyGone, weightsRoom, weightsDrained } from "./alone.ts";
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.ts";
 import { HEADER_BYTES, headerInts } from "./sources.ts";
 import { templatePackage, placePython } from "./pyodide.ts";
@@ -53,8 +53,10 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
   // header says it)
   const skipping: { range?: [number, number] } = {};
   const parts = kept.parts(skipping)[Symbol.asyncIterator]();
+  // (T491: nor is a GPU's worker that went under a model on the GPU alone: the kept model is read again on the CPU, where
+  // it was read as a kept file that could not be read, and converted again)
   const unreadable = (error: unknown) => {
-    if (signal.aborted) {
+    if (signal.aborted || gpuOnlyGone()) {
       throw error;
     }
     return { miss: `could not read what is kept: ${(error as Thrown).message ?? error}` };  // evicted: convert again

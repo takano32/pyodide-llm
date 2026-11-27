@@ -7,7 +7,7 @@ import { threadsRequest, switchesNow } from "./request.ts";
 import { llama, engineNow, adopted, letGo } from "./loaded.ts";
 import { since, took, secondsSoFar, loadStarted } from "./clock.ts";
 import { pythonBuffer, weightsBuffer, loadBegan, runsPacked, rowsReady } from "./weights.ts";
-import { weightsDrained, gpuOnlyReady } from "./alone.ts";
+import { weightsDrained, gpuOnlyReady, gpuOnlyGaveUp } from "./alone.ts";
 import { weightsBytes } from "./pool.ts";
 import { sourceOf, headerInts } from "./sources.ts";
 import type { SourceKind } from "./sources.ts";
@@ -46,9 +46,17 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
   // T641.4: a model of Hugging Face is converted, every other kind's checkpoint is read as it is (its kind: sources.ts's
   // SOURCES, which says what follows its ready); either says what its ready says besides. T648.4: a translation model
   // is none of them, and is read by translate.ts
-  let kind: SourceKind | undefined;
-  const said = model.translation ? await translated(model, signal, id)
-    : model.hf ? await converted(model, signal, id) : await checkpointLoaded(model, (kind = sourceOf(model)), signal, id);
+  let kind: SourceKind | undefined, said;
+  try {
+    said = model.translation ? await translated(model, signal, id)
+      : model.hf ? await converted(model, signal, id) : await checkpointLoaded(model, (kind = sourceOf(model)), signal, id);
+  } catch (error) {
+    // T491 (the owner, 2026-11-26): the GPU's worker of a model on the GPU alone went before its engine was built (it
+    // did not start, or threw): the load gave up as soon as that was known, and the model is loaded
+    // again on the CPU, from what this one kept or cached where it can (a kept conversion, the Cache API's parts)
+    if (signal.aborted || !gpuOnlyGaveUp(model)) throw error;
+    return load(model, signal, id);
+  }
   if (!(await gpuOnlyReady(model, id, engineNow()))) return load(model, signal, id);  // T156: the GPU failed on it alone
   // T329.2.2: its table was not all kept as it came (only a conversion keeps a table as it comes: always true for the others)
   if (!rowsReady(model)) return load(model, signal, id);

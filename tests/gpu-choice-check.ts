@@ -529,7 +529,8 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
 
   // T377: a worker that counts nothing. The loops that write wait for it, a second at a time, and give up after 60 s
   // of nothing; a worker said to be gone (it did not start, or threw: whoever made it heard its "error") is waited for
-  // no longer, and is posted nothing more. The clock is this check's: every wait takes as long as it asked for, at once
+  // no longer, and is posted nothing more. T491: a worker gone is why the model goes on the CPU (lost()), which every wait
+  // throws from then on: the load gives up there. The clock is this check's: every wait takes as long as it asked for, at once
   {
     const real = { waitAsync: Atomics.waitAsync, now: performance.now };
     // (held: a wait ends only where it is woken, as one of a second does within a turn of this check)
@@ -557,7 +558,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
       assert.deepEqual([clock, sent], [0, [1000]]);
       await assert.rejects(stalled.drained(), /^Error: the GPU took no weights for 60 s$/);
       assert.ok(clock > 60000 && clock <= 62000, `a worker that took nothing was given up after ${clock / 1000} s, not after the 60 s`);
-      // a worker gone while the weights wait for it: at once, and without an error
+      // a worker gone while the weights wait for it: at once, with why
       [clock, waits] = [0, 0];
       const lost = quiet();
       lost.write(inWq, checkpoint.subarray(inWq, inWq + 1000));
@@ -565,23 +566,24 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
       const waiting = lost.drained();
       await new Promise((resolve) => setImmediate(resolve));
       assert.equal(waits, 1, "the weights did not wait for a worker that had taken nothing yet");
-      lost.gone();
+      lost.gone("no such script");
       let timer;
-      const ended = await Promise.race([waiting.then(() => "ended"), new Promise((resolve) => { timer = setTimeout(() => resolve("still waiting"), 2000); })]);
+      const ended = await Promise.race([waiting.then(() => "resolved", (error) => error.message), new Promise((resolve) => { timer = setTimeout(() => resolve("still waiting"), 2000); })]);
       clearTimeout(timer);
       held = false;
-      assert.deepEqual([ended, clock, waits], ["ended", 0, 1], "the weights went on waiting for a worker that was gone (the load fails 60 s later, where it can go on on the CPU at once)");
+      assert.deepEqual([ended, clock, waits], ["the GPU's worker did not start (no such script)", 0, 1],
+        "the weights went on waiting for a worker that was gone, or did not throw why (T491: the load gives up at once, and goes on on the CPU)");
       // gone before anything waits: nothing waits, and what comes for the worker after it is not posted (the rest still
       // goes into the memory)
       [clock, waits] = [0, 0];
       sent.length = 0;
       const never = quiet();
       never.write(inWq, checkpoint.subarray(inWq, inWq + 1000));
-      never.gone();
+      never.gone(undefined);
       const norm = tensors.rms_ffn_weight.offset;
       never.write(norm - 8, checkpoint.subarray(norm - 8, norm + 8));  // (the end of wo's scales and the start of a norm)
-      await never.room();
-      await never.drained();
+      await assert.rejects(never.room(), /^Error: the GPU's worker did not start \(an error\)$/);
+      await assert.rejects(never.drained(), /^Error: the GPU's worker did not start \(an error\)$/);
       assert.deepEqual([clock, waits, sent], [0, 0, [1000]], "a worker that was gone was waited for, or posted more of the weights");
       assert.deepEqual([...new Uint8Array(memory.buffer, base + place(norm), 8)], [...checkpoint.subarray(norm, norm + 8)], "the bytes outside the holes did not go into the memory once the worker was gone");
     } finally {
