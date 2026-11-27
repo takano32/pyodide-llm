@@ -539,7 +539,7 @@ WGSL を足すとき。目録 `shaders/engine.ts` に行（どこに足しても
 - **クロスオリジンの応答のヘッダは、`Access-Control-Expose-Headers` に無いと読めない**（CDN は `*` で見せ、**WebKit は `*` を効かせない**: `Content-Range` が読めなかった）。大きさは HEAD の `Content-Length` から取る。
 - **Range 要求にファイル全体（200）が返ることがある**（WebKit と HF の CDN、T112）。本文をそのまま流すと変換器が位置のずれたバイトを読み、モデルは読み込めるのに壊れた文を出した。`fetchRange` は 200 なら要求した範囲だけを流れながら切り出し、残りは取り消して console に記録する（丸ごと読んでから切り出していた頃は部品ごとにファイル全体を取っていた）。頼んだより短い 206 は `inOrder` がエラーにする。
 - **本文が途中で短く終わっても、エラーになるとは限らない。長さを確かめる**（短いまま Cache API に保存されると、次からずっとそれを読む）。
-- **Pyodide の読み込みの期限は「進まない時間」で決める**（30 秒何も届かなければフォールバック）。**NumPy の wheel は `loadPackage("numpy", { checkIntegrity: false })` で取る**（`integrity` を付けた fetch は本文を読み終えるまで解決しない）。細部は [docs/notes/pitfalls.md](docs/notes/pitfalls.md)。
+- **Pyodide の読み込みの期限は「進まない時間」で決める**（30 秒何も届かなければフォールバック。同時に取っているモデルの部品の届いたバイトも「届いた」と数える: T298。だから jsDelivr の止まりが分かるのはモデルの最後のバイトの 30 秒後）。**NumPy の wheel は `loadPackage("numpy", { checkIntegrity: false })` で取る**（`integrity` を付けた fetch は本文を読み終えるまで解決しない）。細部は [docs/notes/pitfalls.md](docs/notes/pitfalls.md)。
 
 ### メモリ・Worker・保存
 

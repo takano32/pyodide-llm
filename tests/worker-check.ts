@@ -523,6 +523,43 @@ const ok = (line) => {
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
   ok("NumPy is fetched without integrity: its bytes count on a slow line, and a stop is given up after 30 s");
 
+  // T298 (the review of T129, the owner's choice of 2026-11-26): a model of this site streams while Pyodide loads, its
+  // parts fetched before the counting began: what they bring is a sign that the line is alive. The version asked for,
+  // and the loader that waits for its import, are not given up at 30 s while the model's bytes come (a line that they
+  // fill holds back the first bytes of a new connection: slow.yml at 0.15 Mbps with one queue of 256 KB), but 30 s
+  // after the last of them. Where neither comes, they are given up at 30 s (above, and the version's "hang" in (1)).
+  {
+    const slowModel = { checkpoint: "m", bytes: PART };  // 8 chunks, one every 5 s: the last byte at 40 s
+    const streaming = (url, init) => (url.endsWith("/models/m.000") ? new Response(body(0, PART, { signal: init.signal, delay: 5000 }), { status: 200 }) : "hang");
+    for (const [name, wait, why] of [
+      ["the version", () => context.resolvePyodideVersion(""), /did not answer in 30 seconds/],
+      ["the loader", () => run("pyodideSteps")("314.0.7", () => new Promise(() => {})), /"the loader" got nothing from the network for 30 seconds/],
+    ]) {
+      fresh(streaming);
+      const load = new AbortController();
+      context.download(slowModel, load.signal, 1);
+      const began = clock.now();
+      const failed = await failure(wait());
+      load.abort();
+      assert.match(failed?.error.message ?? "", why, name);
+      assert.equal(failed.error.kind, "runtime", name);
+      const after = (failed.at - began) / 1000;
+      assert.ok(after >= 40 + quiet && after < 40 + quiet + 10, `${name} was given up after ${after} s: 30 s after the model's last byte (at 40 s) is the time`);
+    }
+    // where the model's part brings nothing either (it stops before its first chunk), the loader is given up at 30 s
+    fresh((url, init) => (url.endsWith("/models/m.000") ? new Response(body(0, PART, { signal: init.signal, delay: 5000, stall: true }), { status: 200 }) : "hang"));
+    const load = new AbortController();
+    context.download(slowModel, load.signal, 1);
+    const began = clock.now();
+    const failed = await failure(run("pyodideSteps")("314.0.7", () => new Promise(() => {})));
+    load.abort();
+    assert.match(failed?.error.message ?? "", /"the loader" got nothing from the network for 30 seconds/);
+    const after = (failed.at - began) / 1000;
+    assert.ok(after >= quiet && after < quiet + 10, `the loader beside a model that stopped was given up after ${after} s`);
+  }
+  assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
+  ok("the model's bytes are a sign of life while Pyodide loads, and a model that stops too is no sign");
+
   // (3) T397: templatePackage(), jinja2 for the converter's reading of chat templates. Pyodide's own package by its
   // name (no version here), with the integrity check loadPackage has by default. T640.14 (the owner: as the other
   // packages): waited for as NumPy is, a step of Pyodide's: one that does not come fails the conversion as NumPy's

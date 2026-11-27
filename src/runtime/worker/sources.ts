@@ -7,6 +7,7 @@ import { root } from "./request.ts";
 import { Failure, failureOf, told } from "../failure.ts";
 import { since } from "./clock.ts";
 import { weightsRoom } from "./alone.ts";
+import { modelPartArrived } from "./pyodide.ts";
 import { innerAbort, worthRetrying, inOrder, fetchRange, sized } from "./ranges.ts";
 import type { Thrown } from "../failure.ts";
 import type { Write } from "./weights.ts";
@@ -115,6 +116,8 @@ export function download(model: Parts, signal: AbortSignal, load: number, shown 
         }
         // a chunk that was already on its way when the load was cancelled: its buffer is gone
         inner.signal.throwIfAborted();
+        // T298: a sign that the line is alive, for the watch of Pyodide's loading that runs meanwhile
+        modelPartArrived(value.length);
         if (sink) {
           // T129 (3): a write the memory refused (gone, or too small) is not cured by fetching the part again, nor is a
           // GPU's worker that takes no more of the weights (T156: a model on the GPU alone, its worker no more than
