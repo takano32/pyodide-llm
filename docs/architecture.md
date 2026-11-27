@@ -122,7 +122,7 @@ used, but not kept, and is run again once the GPU is ready.
 - Hugging Face models are fetched in parts of 8 or 16 MiB over 6 connections, in the order of the file, and each
   tensor is converted when it arrives. The download is never held as a whole: the peak is about the converted
   model.
-- 195 of the 216 Hugging Face entries in the list are fetched as a GGUF (168 as Q8_0, the Ternary Bonsai models as
+- 192 of the 213 Hugging Face entries in the list are fetched as a GGUF (168 as Q8_0, the Ternary Bonsai models as
   ternary files, the 1-bit Bonsai models as Q1_0, 17 of the largest in llama.cpp's blocks, Q4_K_M or IQ2), with the
   vocabulary and the configuration of the original repository: Q8_0 is about half the download and the same weights
   to within the rounding of the scales; the ternary, 1-bit and block files are kept as they are. Each GGUF was compared with its original tensor by tensor before it replaced it, one file at a time:
